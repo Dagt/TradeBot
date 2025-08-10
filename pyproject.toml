@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingbot-mvp"
+version = "0.1.0"
+description = "MVP de bot de trading intradía/scalping/arbitraje (local)"
+authors = [{name="Tu Nombre", email="you@example.com"}]
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["tradingbot"]

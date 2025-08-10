@@ -1,0 +1,27 @@
+# Core
+numpy>=1.26
+pandas>=2.2
+polars>=0.20
+numba>=0.59
+pydantic>=2.7
+pydantic-settings>=2.2
+typer>=0.12
+uvloop>=0.19; platform_system != "Windows"
+
+# Data/Exchanges
+ccxt>=4.3.90
+
+# API & Server
+fastapi>=0.112
+uvicorn[standard]>=0.30
+
+# Storage
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+asyncpg>=0.29
+
+# Monitoring
+prometheus-client>=0.20
+
+# Backtesting helpers
+vectorbtpro==0.0.0; python_version == "0"  # placeholder if later used
