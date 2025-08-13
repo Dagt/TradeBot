@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>TradingBot Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
+    h1, h2 { margin: 0.2rem 0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+    table { width:100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
+    th { background:#0f1622; position: sticky; top:0; }
+    .muted { color:#94a3b8; }
+    .badge { display:inline-block; padding:2px 8px; border-radius: 999px; border:1px solid #334155; font-size:12px; }
+    .buy { color:#10b981; }
+    .sell { color:#f43f5e; }
+    .ok { color:#22c55e }
+    .warn { color:#f59e0b }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .kv { background:#0f1622; border:1px solid #1f2937; border-radius:10px; padding:10px; }
+    .kv .k { font-size:12px; color:#94a3b8 }
+    .kv .v { font-size:18px; margin-top:4px }
+  </style>
+</head>
+<body>
+  <h1>TradingBot Dashboard</h1>
+  <div class="muted" id="health">Comprobando estado…</div>
+
+  <div class="grid3" style="margin:14px 0 20px">
+    <div class="kv"><div class="k">Señales (últimas)</div><div class="v" id="sum-count">—</div></div>
+    <div class="kv"><div class="k">Edge promedio</div><div class="v" id="sum-avg-edge">—</div></div>
+    <div class="kv"><div class="k">Notional promedio (QUOTE)</div><div class="v" id="sum-avg-notional">—</div></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Señales Triangulares</h2>
+      <div class="muted">Auto‑refresh 5s</div>
+      <div style="overflow:auto; max-height: 60vh; margin-top:10px">
+        <table id="tbl-signals">
+          <thead>
+            <tr>
+              <th>ts</th><th>paridad</th><th>dir</th><th>edge</th><th>notional</th><th>bq</th><th>mq</th><th>mb</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Órdenes</h2>
+      <div class="muted">Auto‑refresh 5s</div>
+      <div style="overflow:auto; max-height: 60vh; margin-top:10px">
+        <table id="tbl-orders">
+          <thead>
+            <tr>
+              <th>ts</th><th>strategy</th><th>symbol</th><th>side</th><th>qty</th><th>px</th><th>status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+
+function fmtEdge(x){ if(x==null) return "—"; return (x*100).toFixed(3)+"%"; }
+function fmtNum(x, d=6){ if(x==null) return "—"; const n=Number(x); return isFinite(n)? n.toFixed(d): x; }
+
+async function refreshHealth(){
+  try {
+    const r = await fetch(api("/health"));
+    const j = await r.json();
+    const s = j.status === "ok" ? `<span class="ok">OK</span>` : `<span class="warn">WARN</span>`;
+    const db = j.db ? `<span class="ok">DB</span>` : `<span class="warn">no DB</span>`;
+    document.getElementById("health").innerHTML = `Estado: ${s} · ${db}`;
+  } catch (e) {
+    document.getElementById("health").innerHTML = `<span class="warn">Sin conexión</span>`;
+  }
+}
+
+async function refreshSummary(){
+  try {
+    const r = await fetch(api("/tri/summary?limit=200"));
+    const j = await r.json();
+    const s = j.summary || {};
+    document.getElementById("sum-count").textContent = s.count ?? "0";
+    document.getElementById("sum-avg-edge").textContent = fmtEdge(s.avg_edge);
+    document.getElementById("sum-avg-notional").textContent = fmtNum(s.avg_notional, 2);
+  } catch(e){}
+}
+
+function renderSignals(items){
+  const tb = document.querySelector("#tbl-signals tbody");
+  tb.innerHTML = "";
+  for(const r of items){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${r.ts?.replace('T',' ').replace('Z','')}</td>
+      <td>${r.base}/${r.mid}/${r.quote}</td>
+      <td><span class="badge">${r.direction}</span></td>
+      <td>${fmtEdge(r.edge)}</td>
+      <td class="mono">${fmtNum(r.notional_quote,2)}</td>
+      <td class="mono">${fmtNum(r.bq,2)}</td>
+      <td class="mono">${fmtNum(r.mq,2)}</td>
+      <td class="mono">${fmtNum(r.mb,6)}</td>
+    `;
+    tb.appendChild(tr);
+  }
+}
+
+function renderOrders(items){
+  const tb = document.querySelector("#tbl-orders tbody");
+  tb.innerHTML = "";
+  for(const r of items){
+    const tr = document.createElement("tr");
+    const sideCls = (r.side||"").toLowerCase()==="buy" ? "buy" : "sell";
+    tr.innerHTML = `
+      <td class="mono">${r.ts?.replace('T',' ').replace('Z','')}</td>
+      <td>${r.strategy}</td>
+      <td class="mono">${r.symbol}</td>
+      <td class="${sideCls}">${r.side}</td>
+      <td class="mono">${fmtNum(r.qty,6)}</td>
+      <td class="mono">${fmtNum(r.px,4)}</td>
+      <td>${r.status}</td>
+    `;
+    tb.appendChild(tr);
+  }
+}
+
+async function refreshTables(){
+  try {
+    const r1 = await fetch(api("/tri/signals?limit=100"));
+    const j1 = await r1.json();
+    renderSignals(j1.items || []);
+  } catch(e){}
+  try {
+    const r2 = await fetch(api("/orders?limit=120"));
+    const j2 = await r2.json();
+    renderOrders(j2.items || []);
+  } catch(e){}
+}
+
+// boot
+refreshHealth(); refreshSummary(); refreshTables();
+setInterval(refreshHealth, 5000);
+setInterval(refreshSummary, 5000);
+setInterval(refreshTables, 5000);
+</script>
+</body>
+</html>

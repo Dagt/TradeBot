@@ -49,3 +49,23 @@ CREATE TABLE IF NOT EXISTS market.orders (
   ext_order_id text,
   notes jsonb
 );
+CREATE INDEX IF NOT EXISTS idx_orders_ts ON market.orders(ts);
+
+-- Triangular Arbitrage signals (persistencia de oportunidades)
+CREATE TABLE IF NOT EXISTS market.tri_signals (
+  id bigserial PRIMARY KEY,
+  ts timestamptz NOT NULL DEFAULT now(),
+  exchange text NOT NULL,  -- e.g. 'binance'
+  base text NOT NULL,
+  mid text NOT NULL,
+  quote text NOT NULL,
+  direction text NOT NULL,    -- 'b->m' o 'm->b'
+  edge numeric NOT NULL,      -- edge neto (decimal, ej 0.001 = 0.1%)
+  notional_quote numeric NOT NULL,
+  taker_fee_bps numeric NOT NULL,
+  buffer_bps numeric NOT NULL,
+  bq numeric NOT NULL,        -- precio BASE/QUOTE
+  mq numeric NOT NULL,        -- precio MID/QUOTE
+  mb numeric NOT NULL         -- precio MID/BASE
+);
+CREATE INDEX IF NOT EXISTS idx_tri_signals_ts ON market.tri_signals(ts);

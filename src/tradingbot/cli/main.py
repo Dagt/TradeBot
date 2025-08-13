@@ -7,7 +7,9 @@ from ..backtest.event_engine import run_backtest_csv
 from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
 from ..execution.paper import PaperAdapter
-from ..live.runner import run_live_binance  # <-- NUEVO
+from ..live.runner import run_live_binance
+from ..live.runner_futures_testnet import run_live_binance_futures_testnet
+from ..live.runner_triangular import run_triangular_binance, TriConfig, TriRoute
 
 app = typer.Typer(add_completion=False)
 
@@ -81,6 +83,58 @@ def run_live_binance_cli(symbol: str = "BTC/USDT", fee_bps: float = 1.5, persist
     import asyncio
     try:
         asyncio.run(run_live_binance(symbol=symbol, fee_bps=fee_bps, persist_pg=persist_pg))
+    except KeyboardInterrupt:
+        print("Detenido por el usuario.")
+
+@app.command()
+def run_live_binance_futures_testnet_cli(
+    symbol: str = "BTC/USDT",
+    leverage: int = 5,
+    trade_qty: float = 0.001,
+    dry_run: bool = True
+):
+    """
+    Conecta WS (precio) + ejecuta órdenes en Binance Futures TESTNET (o Paper si dry_run=True).
+    """
+    setup_logging()
+    import asyncio
+    try:
+        asyncio.run(run_live_binance_futures_testnet(
+            symbol=symbol,
+            leverage=leverage,
+            trade_qty=trade_qty,
+            dry_run=dry_run
+        ))
+    except KeyboardInterrupt:
+        print("Detenido por el usuario.")
+
+@app.command()
+def run_triangular_binance_cli(
+    base: str = "BTC",
+    mid: str = "ETH",
+    quote: str = "USDT",
+    notional_quote: float = 50.0,
+    taker_fee_bps: float = 7.5,
+    buffer_bps: float = 3.0,
+    edge_threshold_bps: float = 10.0,  # 0.10% por default
+    persist_pg: bool = False
+):
+    """
+    Arbitraje triangular intra-exchange con WS público (Binance) y ejecución PAPER.
+    Si --persist-pg true, guarda señales y órdenes en Timescale.
+    """
+    setup_logging()
+    cfg = TriConfig(
+        route=TriRoute(base=base, mid=mid, quote=quote),
+        taker_fee_bps=taker_fee_bps,
+        buffer_bps=buffer_bps,
+        notional_quote=notional_quote,
+        edge_threshold=edge_threshold_bps/10000.0,
+        persist_pg=persist_pg
+    )
+    import asyncio
+    try:
+        asyncio.run(run_triangular_binance(cfg))
     except KeyboardInterrupt:
         print("Detenido por el usuario.")
 

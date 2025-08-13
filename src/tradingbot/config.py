@@ -12,11 +12,18 @@ class Settings(BaseSettings):
     pg_password: str = "postgres"
     pg_db: str = "trading"
 
-    # Exchanges
+    # Exchanges Spot (por si los usas luego)
     binance_api_key: str | None = None
     binance_api_secret: str | None = None
     bybit_api_key: str | None = None
     bybit_api_secret: str | None = None
+
+    # Binance Futures (USDT-M) - TESTNET
+    binance_futures_api_key: str | None = None
+    binance_futures_api_secret: str | None = None
+    binance_futures_testnet: bool = True
+    binance_futures_leverage: int = 5    # puedes cambiarlo en CLI también
+    binance_futures_market: str = "USDT-M"  # informativo
 
     class Config:
         env_file = ".env"
