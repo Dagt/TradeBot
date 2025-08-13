@@ -1,49 +1,56 @@
-import asyncio, logging
+# src/tradingbot/adapters/binance_ws.py
+import asyncio
+import json
+import logging
+import websockets
+from datetime import datetime, timezone
 from typing import AsyncIterator
-try:
-    import ccxt
-except Exception:  # pragma: no cover
-    ccxt = None
 
 from .base import ExchangeAdapter
 
 log = logging.getLogger(__name__)
 
-class BinanceAdapter(ExchangeAdapter):
+def _binance_symbol_stream(symbol: str) -> str:
+    # Binance usa minúsculas y sin separador para streams (BTCUSDT -> btcusdt)
+    return symbol.replace("/", "").lower() + "@trade"
+
+class BinanceWSAdapter(ExchangeAdapter):
+    """
+    Solo streaming de trades vía WS (no órdenes). Útil para alimentar precios al paper broker.
+    """
     name = "binance"
 
-    def __init__(self, api_key: str | None = None, api_secret: str | None = None, testnet: bool = True):
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.testnet = testnet
-        # Nota: para WebSocket L2/Trades se recomienda cliente WS nativo o ccxt.pro (comercial).
-        self.rest = None
-        if ccxt:
-            self.rest = ccxt.binanceusdm() if testnet else ccxt.binance()
-            if api_key and api_secret and self.rest:
-                self.rest.apiKey = api_key
-                self.rest.secret = api_secret
-            if testnet and self.rest:
-                # Futuros testnet
-                self.rest.set_sandbox_mode(True)
+    def __init__(self, ws_base: str | None = None):
+        # Mainnet: wss://stream.binance.com:9443/stream?streams=
+        # (Si usas testnet de futures, configura desde settings; lo dejamos parametrizable)
+        self.ws_base = ws_base or "wss://stream.binance.com:9443/stream?streams="
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        # Placeholder: en producción, usar websockets nativos para baja latencia.
+        stream = _binance_symbol_stream(symbol)
+        url = self.ws_base + stream
+        backoff = 1.0
         while True:
-            await asyncio.sleep(1.0)
-            yield {"ts": None, "price": None, "qty": None, "side": None}
+            try:
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                    log.info("Conectado WS Binance trades: %s", url)
+                    backoff = 1.0
+                    async for raw in ws:
+                        msg = json.loads(raw)
+                        d = msg.get("data") or {}
+                        # Trade payload (t=trade id, p=price, q=qty, T=trade time ms, m=is buyer maker)
+                        price = float(d.get("p")) if d.get("p") is not None else None
+                        qty = float(d.get("q")) if d.get("q") is not None else None
+                        ts_ms = d.get("T")
+                        side = "sell" if d.get("m") else "buy"  # buyer is maker -> aggressive sell
+                        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        yield {"ts": ts, "price": price, "qty": qty, "side": side}
+            except Exception as e:
+                log.warning("WS desconectado (%s). Reintentando en %.1fs ...", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None) -> dict:
-        if not self.rest:
-            raise RuntimeError("ccxt no disponible")
-        params = {}
-        if type_.lower() == "limit":
-            resp = self.rest.create_order(symbol, "limit", side, qty, price, params)
-        else:
-            resp = self.rest.create_order(symbol, "market", side, qty, None, params)
-        log.info("Order placed: %s", resp)
-        return resp
+    async def place_order(self, *args, **kwargs) -> dict:
+        raise NotImplementedError("BinanceWSAdapter no gestiona órdenes")
 
     async def cancel_order(self, order_id: str) -> dict:
-        # Implementar cancelación si es necesario (se requiere symbol para ccxt)
-        return {"status": "not_implemented", "order_id": order_id}
+        raise NotImplementedError("BinanceWSAdapter no gestiona órdenes")

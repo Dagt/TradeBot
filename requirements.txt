@@ -10,6 +10,7 @@ uvloop>=0.19; platform_system != "Windows"
 
 # Data/Exchanges
 ccxt>=4.3.90
+websockets>=12.0
 
 # API & Server
 fastapi>=0.112
@@ -24,4 +25,4 @@ asyncpg>=0.29
 prometheus-client>=0.20
 
 # Backtesting helpers
-vectorbtpro==0.0.0; python_version == "0"  # placeholder if later used
+vectorbtpro==0.0.0; python_version == "0"  # placeholder si se usa luego
