@@ -73,16 +73,25 @@ async def run_live_binance_futures_testnet(
         if abs(delta) < 1e-9:
             continue
 
-        # Mapeo simple: si delta>0 -> buy trade_qty; si delta<0 -> sell trade_qty
         side = "buy" if delta > 0 else "sell"
-        order = Order(symbol=symbol, side=side, type_="market", qty=abs(trade_qty))
+
+        # --- NEW: cap por balance futures (USDT libre y leverage) ---
+        from ..execution.balance import fetch_futures_usdt_free, cap_qty_by_balance_futures
         try:
-            resp = await exec_adapter.place_order(order.symbol, order.side, order.type_, order.qty)
+            bal = await fetch_futures_usdt_free(exec_adapter.rest)
+            capped_qty = cap_qty_by_balance_futures(side, abs(trade_qty), closed.c, bal.free_usdt, leverage,
+                                                    utilization=0.5)
+            if capped_qty <= 0:
+                log.info("Skip order (USDT libre insuficiente). Free: %s", bal.free_usdt)
+                continue
+        except Exception as e:
+            log.warning("No se pudo leer balance futures: %s (continuo con qty original)", e)
+            capped_qty = abs(trade_qty)
+
+        try:
+            resp = await exec_adapter.place_order(symbol, side, "market", capped_qty, mark_price=closed.c)
             state.fills += 1
             log.info("LIVE FILL (dry_run=%s) %s", dry_run, resp)
         except Exception as e:
             log.error("Error enviando orden: %s", e)
 
-        eq = broker.equity()
-        log.info("Bar close %s | px=%.2f vol=%.4f | fills=%d | equity=%.4f",
-                 closed.ts_open.isoformat(), closed.c, closed.v, state.fills, eq)

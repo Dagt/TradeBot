@@ -10,6 +10,9 @@ from ..execution.paper import PaperAdapter
 from ..live.runner import run_live_binance
 from ..live.runner_futures_testnet import run_live_binance_futures_testnet
 from ..live.runner_triangular import run_triangular_binance, TriConfig, TriRoute
+from ..market.exchange_meta import ExchangeMeta
+from ..execution.normalize import adjust_order
+from ..live.runner_spot_testnet import run_live_binance_spot_testnet
 
 app = typer.Typer(add_completion=False)
 
@@ -138,6 +141,137 @@ def run_triangular_binance_cli(
     except KeyboardInterrupt:
         print("Detenido por el usuario.")
 
+@app.command()
+def validate_order_cli(
+    symbol: str = "BTC/USDT",
+    side: str = "buy",
+    type_: str = "market",
+    qty: float = 0.001,
+    price: float = 0.0,
+    mark_price: float = 65000.0
+):
+    """
+    Valida/normaliza una orden contra filtros del exchange (tick/step/minNotional).
+    Útil antes de operar real.
+    """
+    setup_logging()
+    import json
+
+    meta = ExchangeMeta.binanceusdm_testnet()
+    meta.load_markets()
+    rules = meta.rules_for(symbol)
+
+    px = None if type_.lower()=="market" else float(price)
+    ar = adjust_order(px, float(qty), float(mark_price), rules, side)
+    result = {
+        "symbol": symbol,
+        "side": side,
+        "type": type_.lower(),
+        "input_qty": qty,
+        "input_price": None if px is None else price,
+        "rules": {
+            "price_step": rules.price_step,
+            "qty_step": rules.qty_step,
+            "min_qty": rules.min_qty,
+            "min_notional": rules.min_notional
+        },
+        "adjusted": {
+            "price": ar.price,
+            "qty": ar.qty,
+            "notional": ar.notional,
+            "ok": ar.ok,
+            "reason": ar.reason
+        }
+    }
+    typer.echo(json.dumps(result, indent=2))
+
+@app.command()
+def run_live_binance_spot_testnet_cli(
+    symbol: str = "BTC/USDT",
+    trade_qty: float = 0.001,
+    persist_pg: bool = False
+):
+    """
+    Ejecuta la estrategia BreakoutATR en Binance SPOT Testnet con validación de tamaños.
+    """
+    setup_logging()
+    import asyncio
+    try:
+        asyncio.run(run_live_binance_spot_testnet(symbol=symbol, trade_qty=trade_qty, persist_pg=persist_pg))
+    except KeyboardInterrupt:
+        print("Detenido por el usuario.")
+
+# --- comando: validar orden spot ---
+@app.command()
+def validate_order_spot_cli(
+    symbol: str = "BTC/USDT",
+    side: str = "buy",
+    type_: str = "market",
+    qty: float = 0.001,
+    price: float = 0.0,
+    mark_price: float = 65000.0
+):
+    """
+    Valida/normaliza una orden contra filtros SPOT testnet (tick/step/minNotional).
+    """
+    setup_logging()
+    import json
+    meta = ExchangeMeta.binance_spot_testnet()
+    meta.load_markets()
+    rules = meta.rules_for(symbol)
+    px = None if type_.lower()=="market" else float(price)
+    ar = adjust_order(px, float(qty), float(mark_price), rules, side)
+    result = {
+        "venue": "binance_spot_testnet",
+        "symbol": symbol,
+        "side": side,
+        "type": type_.lower(),
+        "input_qty": qty,
+        "input_price": None if px is None else price,
+        "rules": {
+            "price_step": rules.price_step,
+            "qty_step": rules.qty_step,
+            "min_qty": rules.min_qty,
+            "min_notional": rules.min_notional
+        },
+        "adjusted": {
+            "price": ar.price,
+            "qty": ar.qty,
+            "notional": ar.notional,
+            "ok": ar.ok,
+            "reason": ar.reason
+        }
+    }
+    typer.echo(json.dumps(result, indent=2))
+
+# Spot balances
+@app.command()
+def balances_spot_cli():
+    """Muestra balances SPOT testnet (free base/quote de algunas monedas comunes)."""
+    from ..market.exchange_meta import ExchangeMeta
+    import json, asyncio
+    async def run():
+        meta = ExchangeMeta.binance_spot_testnet()
+        await asyncio.to_thread(meta.client.load_markets, True)
+        bal = await asyncio.to_thread(meta.client.fetch_balance)
+        keep = ["USDT","BTC","ETH","BNB"]
+        out = {k: bal.get(k) for k in keep if bal.get(k)}
+        print(json.dumps(out, indent=2))
+    import asyncio; asyncio.run(run())
+
+# Futures balances
+@app.command()
+def balances_futures_cli():
+    """Muestra USDT libre en Futures testnet."""
+    from ..market.exchange_meta import ExchangeMeta
+    import json, asyncio
+    async def run():
+        meta = ExchangeMeta.binanceusdm_testnet()
+        await asyncio.to_thread(meta.client.load_markets, True)
+        bal = await asyncio.to_thread(meta.client.fetch_balance, {"type":"future"})
+        out = {"USDT": bal.get("USDT")}
+        print(json.dumps(out, indent=2))
+    import asyncio; asyncio.run(run())
 def main():
     app()
 

@@ -1,4 +1,4 @@
-# src/tradingbot/adapters/binance_futures.py
+# src/tradingbot/adapters/binance_spot.py
 from __future__ import annotations
 import asyncio
 import logging
@@ -16,66 +16,41 @@ from ..execution.normalize import adjust_order
 
 log = logging.getLogger(__name__)
 
-class BinanceFuturesAdapter(ExchangeAdapter):
-    name = "binance_futures_usdm_testnet"
+class BinanceSpotAdapter(ExchangeAdapter):
+    """
+    Órdenes reales en Binance SPOT **TESTNET** vía CCXT, con validación (tick/step/minNotional).
+    Usa WS aparte para precios (ver SpotWSAdapter abajo o pasa mark_price).
+    """
+    name = "binance_spot_testnet"
 
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
-        testnet: bool = True,
-        leverage: int = 5,
-    ):
+    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, testnet: bool = True):
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
-
-        self.leverage = leverage
-        self.testnet = testnet
-
-        self.rest = ccxt.binanceusdm({
-            "apiKey": api_key or settings.binance_futures_api_key,
-            "secret": api_secret or settings.binance_futures_api_secret,
+        self.rest = ccxt.binance({
+            "apiKey": api_key or settings.binance_api_key,
+            "secret": api_secret or settings.binance_api_secret,
             "enableRateLimit": True,
-            "options": {"defaultType": "future"},
+            "options": {"defaultType": "spot"},
         })
         self.rest.set_sandbox_mode(testnet)
 
-        # Cache de metadatos/filters
-        self.meta = ExchangeMeta.binanceusdm_testnet(
-            api_key or settings.binance_futures_api_key,
-            api_secret or settings.binance_futures_api_secret
+        self.meta = ExchangeMeta.binance_spot_testnet(
+            api_key or settings.binance_api_key,
+            api_secret or settings.binance_api_secret
         )
         try:
             self.meta.load_markets()
         except Exception as e:
-            log.warning("load_markets falló: %s", e)
-
-        try:
-            self.rest.set_position_mode(False)
-        except Exception as e:
-            log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            log.warning("load_markets spot falló: %s", e)
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
-    async def _ensure_leverage(self, symbol: str):
-        try:
-            market = self.rest.market(symbol)
-            await self._to_thread(self.rest.set_leverage, self.leverage, market["symbol"])
-        except Exception as e:
-            log.debug("set_leverage falló: %s", e)
-
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("usa BinanceWSAdapter para stream de trades")
+        raise NotImplementedError("Usa SpotWSAdapter o pasa mark_price manual")
 
     async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None, reduce_only: bool = False, mark_price: float | None = None) -> dict:
-        """
-        Ahora valida/normaliza (tick, step, minNotional) vía exchangeInfo (ccxt.load_markets()).
-        Para MARKET, pasa mark_price para validar minNotional.
-        """
         await self._ensure_leverage(symbol)
-
-        # Normalización
         try:
             rules = self.meta.rules_for(symbol)
         except Exception as e:
@@ -96,8 +71,12 @@ class BinanceFuturesAdapter(ExchangeAdapter):
 
         order_type = "market" if type_.lower() == "market" else "limit"
         params = {"reduceOnly": reduce_only}
+
+        async def _call():
+            return await self._to_thread(self.rest.create_order, symbol, order_type, side, qty, price, params)
+
         try:
-            resp = await self._to_thread(self.rest.create_order, symbol, order_type, side, qty, price, params)
+            resp = await with_retry(_call, retries=5, base_delay=0.4, max_delay=3.0)
             return {"status": "sent", "provider": "ccxt", "resp": resp}
         except Exception as e:
             log.error("Error create_order: %s", e)
