@@ -62,3 +62,31 @@ def index():
         return Response(content=html, media_type="text/html")
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
+
+@app.get("/risk/exposure")
+def risk_exposure(venue: str = "binance_spot_testnet"):
+    if not _CAN_PG:
+        return {"venue": venue, "total_notional": 0.0, "items": []}
+    from ...storage.timescale import select_latest_portfolio
+    rows = select_latest_portfolio(_ENGINE, venue=venue)
+    total = sum(float(r["notional_usd"] or 0.0) for r in rows)
+    items = [
+        {"symbol": r["symbol"], "position": float(r["position"]), "price": float(r["price"]), "notional_usd": float(r["notional_usd"])}
+        for r in rows
+    ]
+    return {"venue": venue, "total_notional": total, "items": items}
+
+@app.get("/risk/events")
+def risk_events(venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1, le=200)):
+    if not _CAN_PG:
+        return {"venue": venue, "items": []}
+    from ...storage.timescale import select_recent_risk_events
+    items = select_recent_risk_events(_ENGINE, venue=venue, limit=limit)
+    return {"venue": venue, "items": items}
+
+@app.get("/pnl/summary")
+def pnl_summary(venue: str = "binance_spot_testnet"):
+    if not _CAN_PG:
+        return {"venue": venue, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
+    from ...storage.timescale import select_pnl_summary
+    return select_pnl_summary(_ENGINE, venue=venue)

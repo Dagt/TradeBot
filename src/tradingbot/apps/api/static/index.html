@@ -32,8 +32,18 @@
   <div class="grid3" style="margin:14px 0 20px">
     <div class="kv"><div class="k">Señales (últimas)</div><div class="v" id="sum-count">—</div></div>
     <div class="kv"><div class="k">Edge promedio</div><div class="v" id="sum-avg-edge">—</div></div>
+    <div class="kv"><div class="k">Último evento riesgo</div><div class="v" id="sum-risk-last">—</div></div>
     <div class="kv"><div class="k">Notional promedio (QUOTE)</div><div class="v" id="sum-avg-notional">—</div></div>
+    <div class="kv"><div class="k">Exposición total (Spot)</div><div class="v" id="sum-expo-spot">—</div></div>
+    <div class="kv"><div class="k">Exposición total (Spot)</div><div class="v" id="sum-expo-fut">—</div></div>
+    <div class="kv"><div class="k">UPnL (Spot)</div><div class="v" id="sum-upnl-spot">—</div></div>
+    <div class="kv"><div class="k">RPnL (Spot)</div><div class="v" id="sum-rpnl-spot">—</div></div>
+    <div class="kv"><div class="k">PnL Neto (Spot)</div><div class="v" id="sum-net-spot">—</div></div>
+    <div class="kv"><div class="k">UPnL (Spot)</div><div class="v" id="sum-upnl-fut">—</div></div>
+    <div class="kv"><div class="k">RPnL (Spot)</div><div class="v" id="sum-rpnl-fut">—</div></div>
+    <div class="kv"><div class="k">PnL Neto (Spot)</div><div class="v" id="sum-net-fut">—</div></div>
   </div>
+
 
   <div class="row">
     <div class="card">
@@ -65,6 +75,39 @@
         </table>
       </div>
     </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Eventos de riesgo (Spot)</h2>
+      <div class="muted">Últimos 20</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-risk-events">
+          <thead><tr><th>ts</th><th>kind</th><th>symbol</th><th>message</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Exposición por símbolo (Spot)</h2>
+      <div class="muted">Último snapshot por símbolo</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-expo-spot">
+          <thead><tr><th>symbol</th><th>position</th><th>px</th><th>notional</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Spot)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-spot">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -72,6 +115,7 @@ const api = (path) => `${location.origin}${path}`;
 
 function fmtEdge(x){ if(x==null) return "—"; return (x*100).toFixed(3)+"%"; }
 function fmtNum(x, d=6){ if(x==null) return "—"; const n=Number(x); return isFinite(n)? n.toFixed(d): x; }
+function fmtUSD(x){ if(x==null) return "—"; const n=Number(x); if(!isFinite(n)) return x; return n.toLocaleString(undefined,{maximumFractionDigits:2}); }
 
 async function refreshHealth(){
   try {
@@ -147,8 +191,113 @@ async function refreshTables(){
   } catch(e){}
 }
 
+async function refreshExposure(){
+  try{
+    const r = await fetch(api("/risk/exposure?venue=binance_spot_testnet"));
+    const j = await r.json();
+    document.getElementById("sum-expo-spot").textContent = "$ " + fmtUSD(j.total_notional || 0);
+    const tb = document.querySelector("#tbl-expo-spot tbody");
+    tb.innerHTML = "";
+    for(const it of (j.items || [])){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${it.symbol}</td>
+        <td class="mono">${fmtNum(it.position, 6)}</td>
+        <td class="mono">${fmtNum(it.price, 2)}</td>
+        <td class="mono">$ ${fmtUSD(it.notional_usd)}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }catch(e){}
+}
+
+async function refreshRisk(){
+  try{
+    const r = await fetch(api("/risk/events?venue=binance_spot_testnet&limit=20"));
+    const j = await r.json();
+    const items = j.items || [];
+    const tb = document.querySelector("#tbl-risk-events tbody");
+    tb.innerHTML = "";
+    for(const it of items){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="mono">${(it.ts||"").replace('T',' ').replace('Z','')}</td>
+        <td>${it.kind}</td>
+        <td>${it.symbol}</td>
+        <td>${it.message}</td>
+      `;
+      tb.appendChild(tr);
+    }
+    // banner “último evento”
+    if(items.length){
+      const last = items[0];
+      const label = `[${last.kind}] ${last.symbol} – ${last.message}`;
+      document.getElementById("sum-risk-last").textContent = label;
+    } else {
+      document.getElementById("sum-risk-last").textContent = "—";
+    }
+  }catch(e){}
+
+async function refreshSpotPnL(){
+  try{
+    const r = await fetch(api("/pnl/summary?venue=binance_spot_testnet"));
+    const j = await r.json();
+    const t = j.totals || {};
+    document.getElementById("sum-upnl-spot").textContent = "$ " + fmtUSD(t.upnl || 0);
+    document.getElementById("sum-rpnl-spot").textContent = "$ " + fmtUSD(t.rpnl || 0);
+    document.getElementById("sum-net-spot").textContent = "$ " + fmtUSD(t.net_pnl || 0);
+
+    const tb = document.querySelector("#tbl-pnl-spot tbody");
+    tb.innerHTML = "";
+    for(const it of (j.items || [])){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${it.symbol}</td>
+        <td class="mono">${fmtNum(it.qty,6)}</td>
+        <td class="mono">${fmtNum(it.avg_price,2)}</td>
+        <td class="mono">$ ${fmtUSD(it.upnl)}</td>
+        <td class="mono">$ ${fmtUSD(it.realized_pnl)}</td>
+        <td class="mono">$ ${fmtUSD(it.fees_paid)}</td>
+        <td class="mono">$ ${fmtUSD(it.total_pnl)}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }catch(e){}
+}
+
+async function refreshFuturePnL(){
+  try{
+    const r = await fetch(api("/pnl/summary?venue=binance_futures_um_testnet"));
+    const j = await r.json();
+    const t = j.totals || {};
+    document.getElementById("sum-upnl-spot").textContent = "$ " + fmtUSD(t.upnl || 0);
+    document.getElementById("sum-rpnl-spot").textContent = "$ " + fmtUSD(t.rpnl || 0);
+    document.getElementById("sum-net-spot").textContent = "$ " + fmtUSD(t.net_pnl || 0);
+
+    const tb = document.querySelector("#tbl-pnl-spot tbody");
+    tb.innerHTML = "";
+    for(const it of (j.items || [])){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${it.symbol}</td>
+        <td class="mono">${fmtNum(it.qty,6)}</td>
+        <td class="mono">${fmtNum(it.avg_price,2)}</td>
+        <td class="mono">$ ${fmtUSD(it.upnl)}</td>
+        <td class="mono">$ ${fmtUSD(it.realized_pnl)}</td>
+        <td class="mono">$ ${fmtUSD(it.fees_paid)}</td>
+        <td class="mono">$ ${fmtUSD(it.total_pnl)}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }catch(e){}
+}
+
 // boot
 refreshHealth(); refreshSummary(); refreshTables();
+setInterval(refreshExposure, 5000); refreshExposure();
+setInterval(refreshRisk, 5000); refreshRisk();
+setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
+setInterval(refreshFutureSpotPnL, 5000); refreshFutureSpotPnL();
 setInterval(refreshHealth, 5000);
 setInterval(refreshSummary, 5000);
 setInterval(refreshTables, 5000);

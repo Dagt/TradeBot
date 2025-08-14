@@ -69,3 +69,57 @@ CREATE TABLE IF NOT EXISTS market.tri_signals (
   mb numeric NOT NULL         -- precio MID/BASE
 );
 CREATE INDEX IF NOT EXISTS idx_tri_signals_ts ON market.tri_signals(ts);
+
+-- Portfolio exposure snapshots (por símbolo)
+CREATE TABLE IF NOT EXISTS market.portfolio_snapshots (
+  ts timestamptz NOT NULL DEFAULT now(),
+  venue text NOT NULL,          -- ej: binance_spot_testnet / binance_futures_um_testnet
+  symbol text NOT NULL,         -- BTC/USDT
+  position numeric NOT NULL,    -- qty base (spot: >=0; futures: puede ser +/-)
+  price numeric NOT NULL,       -- último precio usado para valorar
+  notional_usd numeric NOT NULL -- |position| * price (aprox en USD/USDT)
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_ts ON market.portfolio_snapshots(ts);
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_venue ON market.portfolio_snapshots(venue);
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_symbol ON market.portfolio_snapshots(symbol);
+
+-- Risk events (violaciones/cierres auto)
+CREATE TABLE IF NOT EXISTS market.risk_events (
+  id bigserial PRIMARY KEY,
+  ts timestamptz NOT NULL DEFAULT now(),
+  venue text NOT NULL,
+  symbol text NOT NULL,
+  kind text NOT NULL,        -- 'VIOLATION' | 'AUTO_CLOSE' | 'INFO'
+  message text NOT NULL,
+  details jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_risk_events_ts ON market.risk_events(ts);
+CREATE INDEX IF NOT EXISTS idx_risk_events_venue ON market.risk_events(venue);
+CREATE INDEX IF NOT EXISTS idx_risk_events_symbol ON market.risk_events(symbol);
+
+-- Posiciones por símbolo (acumuladas; avg_cost en base del símbolo)
+CREATE TABLE IF NOT EXISTS market.positions (
+  venue text NOT NULL,
+  symbol text NOT NULL,
+  qty numeric NOT NULL,            -- qty base (spot >=0; futures +/-)
+  avg_price numeric NOT NULL,      -- costo promedio (USDT por unidad base)
+  realized_pnl numeric NOT NULL,   -- PnL realizado acumulado (USDT)
+  fees_paid numeric NOT NULL,      -- fees acumuladas (USDT)
+  PRIMARY KEY (venue, symbol)
+);
+
+-- Snapshots de PnL (para dashboard/series)
+CREATE TABLE IF NOT EXISTS market.pnl_snapshots (
+  ts timestamptz NOT NULL DEFAULT now(),
+  venue text NOT NULL,
+  symbol text NOT NULL,
+  qty numeric NOT NULL,
+  price numeric NOT NULL,          -- último mark
+  avg_price numeric NOT NULL,
+  upnl numeric NOT NULL,           -- (mark - avg)*qty   (futures con signo de qty)
+  rpnl numeric NOT NULL,           -- realized acumulado en positions
+  fees numeric NOT NULL            -- fees acumuladas
+);
+CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_ts ON market.pnl_snapshots(ts);
+CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_venue ON market.pnl_snapshots(venue);
+CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_symbol ON market.pnl_snapshots(symbol);

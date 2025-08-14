@@ -4,7 +4,7 @@ import json
 import logging
 import websockets
 from datetime import datetime, timezone
-from typing import AsyncIterator
+from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
 
@@ -44,9 +44,53 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if d.get("m") else "buy"
-                        yield {"ts": ts, "price": price, "qty": qty, "side": side}
+                        yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
             except Exception as e:
                 log.warning("WS spot testnet desconectado (%s). Reintento en %.1fs ...", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+
+    async def stream_trades_multi(self, symbols: Iterable[str]) -> AsyncIterator[dict]:
+        """
+        Un solo socket con múltiples streams. Yields:
+        {"symbol": <sym>, "ts": datetime, "price": float, "qty": float, "side": "buy"/"sell"}
+        """
+        streams = "/".join(_stream_name(s) for s in symbols)
+        url = self.ws_base + streams
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                    log.info("Conectado WS Spot testnet multi: %s", url)
+                    backoff = 1.0
+                    async for raw in ws:
+                        msg = json.loads(raw)
+                        stream = (msg.get("stream") or "")
+                        data = msg.get("data") or {}
+                        price = data.get("p")
+                        qty = data.get("q")
+                        ts_ms = data.get("T")
+                        if price is None:
+                            continue
+                        symbol_key = stream.split("@")[0].upper()
+                        # re‑insertamos la barra (BTCUSDT -> BTC/USDT)
+                        if symbol_key.endswith("USDT"):
+                            base = symbol_key[:-4]
+                            symbol = f"{base}/USDT"
+                        else:
+                            # fallback simple (si hay otros quotes)
+                            # intenta separar último 3/4 chars como quote comunes
+                            candidates = ("USDT","BUSD","BTC","ETH","BNB","FDUSD","TUSD")
+                            match = next((q for q in candidates if symbol_key.endswith(q)), None)
+                            symbol = f"{symbol_key[:-len(match)]}/{match}" if match else symbol_key
+
+                        price = float(price)
+                        qty = float(qty or 0.0)
+                        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        side = "sell" if data.get("m") else "buy"
+                        yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
+            except Exception as e:
+                log.warning("WS spot testnet multi desconectado (%s). Reintento en %.1fs ...", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
