@@ -145,3 +145,23 @@ CREATE INDEX IF NOT EXISTS idx_fills_ts ON market.fills(ts);
 CREATE INDEX IF NOT EXISTS idx_fills_venue ON market.fills(venue);
 CREATE INDEX IF NOT EXISTS idx_fills_symbol ON market.fills(symbol);
 CREATE INDEX IF NOT EXISTS idx_fills_strategy ON market.fills(strategy);
+
+-- db/migrations/020_market_oco_orders.sql
+CREATE TABLE IF NOT EXISTS market.oco_orders (
+  id            BIGSERIAL PRIMARY KEY,
+  venue         TEXT        NOT NULL,
+  symbol        TEXT        NOT NULL,
+  side          TEXT        NOT NULL CHECK (side IN ('long','short')),
+  qty           DOUBLE PRECISION NOT NULL,
+  entry_price   DOUBLE PRECISION NOT NULL,
+  sl_price      DOUBLE PRECISION NOT NULL,
+  tp_price      DOUBLE PRECISION NOT NULL,
+  status        TEXT        NOT NULL DEFAULT 'active'  -- 'active' | 'triggered' | 'cancelled'
+                   CHECK (status IN ('active','triggered','cancelled')),
+  triggered     TEXT        NULL CHECK (triggered IN ('SL','TP')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_oco_orders_venue_symbol_status
+  ON market.oco_orders (venue, symbol, status);

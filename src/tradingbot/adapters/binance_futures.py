@@ -2,7 +2,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Any, Dict
 
 try:
     import ccxt
@@ -68,37 +68,72 @@ class BinanceFuturesAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         raise NotImplementedError("usa BinanceWSAdapter para stream de trades")
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None, reduce_only: bool = False, mark_price: float | None = None) -> dict:
+    async def place_order(self, symbol: str, side: str, type_: str, qty: float, reduce_only: bool = False, mark_price: float | None = None) -> Dict[str, Any]:
         """
-        Ahora valida/normaliza (tick, step, minNotional) vía exchangeInfo (ccxt.load_markets()).
-        Para MARKET, pasa mark_price para validar minNotional.
+        Envía una orden y retorna un dict con campos estandarizados:
+        {
+          "status": "filled"/"sent"/"error",
+          "resp": <payload crudo>,
+          "fill_price": float|None,
+          "fee_usdt": float|None,
+          "ext_order_id": str|None
+        }
         """
-        await self._ensure_leverage(symbol)
-
-        # Normalización
         try:
-            rules = self.meta.rules_for(symbol)
-        except Exception as e:
-            log.debug("No se pudieron obtener reglas; enviando sin normalizar: %s", e)
-            rules = None
+            params = {"reduceOnly": reduce_only} if reduce_only else {}
+            # IMPORTANTE: en testnet/ccxt, a veces el fill llega como market order inmediatamente.
+            order = await self.rest.create_order(
+                symbol.replace("/", ""),  # o símbolo según mapping que uses
+                type_.lower(),
+                side.lower(),
+                qty,
+                None,  # price para market = None
+                params
+            )
+            # Extraer id
+            ext_id = order.get("id") or order.get("orderId") or None
 
-        if rules:
-            ar = adjust_order(price if type_.lower()=="limit" else None,
-                              qty,
-                              mark_price or (price or 0.0),
-                              rules,
-                              side)
-            if not ar.ok:
-                return {"status": "rejected", "reason": ar.reason, "adj": {"price": ar.price, "qty": ar.qty, "notional": ar.notional}}
-            qty = ar.qty
-            if type_.lower() == "limit":
-                price = ar.price
+            # Intentar leer fills/avgPrice
+            fill_px = None
+            fee_usdt = None
 
-        order_type = "market" if type_.lower() == "market" else "limit"
-        params = {"reduceOnly": reduce_only}
-        try:
-            resp = await self._to_thread(self.rest.create_order, symbol, order_type, side, qty, price, params)
-            return {"status": "sent", "provider": "ccxt", "resp": resp}
+            # ccxt: a veces trae 'average' y 'fee'
+            # Nota: en binance futures el 'fee' puede venir como {cost, currency}. Convertimos a USDT si currency es USDT.
+            try:
+                if "info" in order and isinstance(order["info"], dict):
+                    info = order["info"]
+                    # average fill (si existe)
+                    fill_px = float(info.get("avgPrice") or info.get("averagePrice") or info.get("price") or 0) or None
+                    # fees: puede venir en 'fills' o en 'info'
+                    fills = info.get("fills") or []
+                    if isinstance(fills, list) and fills:
+                        # sumamos fees en USDT si están
+                        total_fee = 0.0
+                        for f in fills:
+                            f_cost = f.get("commission")
+                            f_curr = f.get("commissionAsset")
+                            if f_cost is not None and (f_curr or "").upper() in ("USDT", "BUSD"):
+                                try:
+                                    total_fee += float(f_cost)
+                                except:
+                                    pass
+                        fee_usdt = total_fee if total_fee > 0 else None
+                # fallback a campos "average" de ccxt normalizados
+                if fill_px is None and order.get("average"):
+                    fill_px = float(order["average"])
+                fee = order.get("fee")
+                if fee and isinstance(fee, dict) and (fee.get("currency") or "").upper() in ("USDT", "BUSD"):
+                    fee_usdt = float(fee.get("cost"))
+
+            except Exception as e:
+                log.debug("No se pudieron extraer fill/fee de la respuesta: %s", e)
+
+            # Si no tenemos fill_px, usa mark_price como aproximación
+            if fill_px is None and mark_price is not None:
+                fill_px = float(mark_price)
+
+            status = "filled" if fill_px is not None else "sent"
+            return {"status": status, "resp": order, "fill_price": fill_px, "fee_usdt": fee_usdt, "ext_order_id": ext_id}
         except Exception as e:
-            log.error("Error create_order: %s", e)
-            return {"status": "error", "error": str(e), "symbol": symbol, "side": side, "qty": qty, "price": price}
+            log.error("Error placing futures order: %s", e)
+            return {"status": "error", "error": str(e), "resp": {}, "fill_price": None, "fee_usdt": None, "ext_order_id": None}

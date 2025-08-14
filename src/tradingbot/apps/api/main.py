@@ -127,3 +127,24 @@ def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
     recalced = rebuild_positions_from_fills(_ENGINE, venue=venue)
     current = select_pnl_summary(_ENGINE, venue=venue)["items"]
     return {"venue": venue, "from_fills": recalced, "current": current}
+
+@app.get("/fills/slippage")
+def fills_slippage(
+    venue: str = "binance_spot_testnet",
+    hours: int = Query(6, ge=1, le=168)
+):
+    if not _CAN_PG:
+        return {"venue": venue, "hours": hours, "global": {}, "buy": {}, "sell": {}}
+    from ...storage.timescale import select_slippage
+    return select_slippage(_ENGINE, venue=venue, hours=hours)
+
+@app.get("/oco/active")
+def oco_active(venue: str, symbols: str):
+    """
+    symbols: CSV "BTC/USDT,ETH/USDT"
+    """
+    if not _CAN_PG:
+        return {}
+    from ...storage.timescale import load_active_oco_by_symbols
+    lst = [s.strip().upper().replace("-", "/") for s in symbols.split(",") if s.strip()]
+    return load_active_oco_by_symbols(_ENGINE, venue=venue, symbols=lst)

@@ -1,7 +1,7 @@
 # src/tradingbot/live/runner_spot_testnet_multi.py
 from __future__ import annotations
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from .runner import BarAggregator
@@ -12,12 +12,15 @@ from ..risk.manager import RiskManager
 from ..execution.balance import fetch_spot_balances, cap_qty_by_balance_spot
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
+from ..risk.oco import OcoBook, OcoOrder
 
 # Persistencia opcional
 try:
     from ..storage.timescale import (
         get_engine, insert_order, insert_bar_1m, insert_portfolio_snapshot, insert_risk_event,
-        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill
+        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill,
+        # 👇 NUEVOS (persistencia OCO)
+        load_active_oco_by_symbols, upsert_oco, update_oco_active, cancel_oco, mark_oco_triggered
     )
     _CAN_PG = True
 except Exception:
@@ -33,14 +36,19 @@ async def run_live_binance_spot_testnet_multi(
     per_symbol_cap_usdt: float = 500.0,
     auto_close: bool = True,
     soft_cap_pct: float = 0.10,
-    soft_cap_grace_sec: int = 30
+    soft_cap_grace_sec: int = 30,
+    sl_pct: float = 0.01,          # 1% SL
+    tp_pct: float = 0.02,          # 2% TP
+    cooldown_secs: int = 60,        # cooldown tras SL
+    trail_pct: float | None = 0.004,
 ):
     """
     Spot TESTNET multi-símbolo:
       - WS multi-stream -> barras 1m
       - BreakoutATR + Risk por símbolo
-      - Guardia con hard/soft caps + auto-close opcional
+      - Hard/Soft caps + auto-close
       - Rehidratación de posiciones + PnL
+      - OCO simulado (SL/TP) + cooldown post-SL
       - Inserción de FILLs en BD
     """
     venue = "binance_spot_testnet"
@@ -62,6 +70,49 @@ async def run_live_binance_spot_testnet_multi(
 
     engine = get_engine() if (persist_pg and _CAN_PG) else None
 
+    # === OCO con persistencia (callbacks) ===
+    def _on_create(symbol: str, order: OcoOrder):
+        if persist_pg and engine is not None:
+            upsert_oco(engine, venue=venue, symbol=symbol, side=order.side,
+                       qty=order.qty, entry_price=order.entry_price,
+                       sl_price=order.sl_price, tp_price=order.tp_price, status="active")
+
+    def _on_update(symbol: str, order: OcoOrder):
+        if persist_pg and engine is not None:
+            update_oco_active(engine, venue=venue, symbol=symbol,
+                              qty=order.qty, entry_price=order.entry_price,
+                              sl_price=order.sl_price, tp_price=order.tp_price)
+
+    def _on_cancel(symbol: str):
+        if persist_pg and engine is not None:
+            cancel_oco(engine, venue=venue, symbol=symbol)
+
+    def _on_trigger(symbol: str, which: str):
+        if persist_pg and engine is not None:
+            mark_oco_triggered(engine, venue=venue, symbol=symbol, triggered=which)
+
+    oco = OcoBook(
+        on_create=_on_create,
+        on_update=_on_update,
+        on_cancel=_on_cancel,
+        on_trigger=_on_trigger
+    )
+
+    # === Rehidratar OCOs activos desde BD (si existen) ===
+    if persist_pg and engine is not None:
+        try:
+            persisted = load_active_oco_by_symbols(engine, venue=venue, symbols=symbols)
+            preload_items = {}
+            for sym, r in persisted.items():
+                preload_items[sym] = OcoOrder(
+                    symbol=sym, side=r["side"], qty=r["qty"],
+                    entry_price=r["entry_price"], sl_price=r["sl_price"], tp_price=r["tp_price"]
+                )
+            oco.preload(preload_items)
+            log.info("OCOs rehidratados (spot): %s", list(preload_items.keys()))
+        except Exception as e:
+            log.warning("No se pudieron rehidratar OCOs (spot): %s", e)
+
     # Rehidratación
     pos_book: dict[str, Position] = {}
     if engine is not None:
@@ -82,7 +133,65 @@ async def run_live_binance_spot_testnet_multi(
         for s in symbols:
             pos_book[s] = Position()
 
+    cooldown_until: dict[str, datetime] = {s: datetime.fromtimestamp(0, tz=timezone.utc) for s in symbols}
     taker_fee_bps = 7.5  # estimado spot testnet
+
+    async def close_position_for(sym: str, reason_kind: str, now_price: float, qty_override: float | None = None):
+        """Cierra posición spot (long) con market SELL y persiste todo."""
+        qty_to_close = float(qty_override) if qty_override is not None else max(0.0, pos_book[sym].qty)
+        if qty_to_close <= 0:
+            return False
+        try:
+            resp = await exec_adapter.place_order(sym, "sell", "market", qty_to_close, mark_price=now_price)
+            # PnL/posiciones
+            pos_book[sym] = apply_fill(pos_book[sym], "sell", float(qty_to_close), float(now_price), taker_fee_bps, venue_type="spot")
+            guard.st.positions[sym] = pos_book[sym].qty
+            log.warning("[%s] %s ejecutado: qty=%.6f px=%.4f", sym, reason_kind, qty_to_close, now_price)
+            if engine is not None:
+                try:
+                    # Orden + Fill
+                    insert_order(engine,
+                                 strategy="breakout_atr_spot",
+                                 exchange=venue,
+                                 symbol=sym,
+                                 side="sell",
+                                 type_="market",
+                                 qty=float(qty_to_close),
+                                 px=None,
+                                 status=resp.get("status", "sent"),
+                                 ext_order_id=str(resp.get("ext_order_id") or None),
+                                 notes=resp)
+                    insert_fill(engine,
+                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                        symbol=sym, side="sell", type_="market",
+                        qty=float(qty_to_close),
+                        price=float(resp.get("fill_price") or now_price),
+                        fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
+                        reduce_only=False, ext_order_id=str(resp.get("ext_order_id") or None),
+                        raw=resp
+                    )
+                    # PnL snapshots + evento
+                    upsert_position(engine, venue=venue, symbol=sym,
+                                    qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
+                                    realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
+                    upnl = mark_to_market(pos_book[sym], now_price)
+                    insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
+                                        price=now_price, avg_price=pos_book[sym].avg_price,
+                                        upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
+                    insert_risk_event(engine, venue=venue, symbol=sym, kind=reason_kind, message=f"{reason_kind} market close", details={"qty": qty_to_close, "price": now_price})
+                except Exception:
+                    pass
+            return True
+        except Exception as e:
+            log.error("[%s] cierre por %s falló: %s", sym, reason_kind, e)
+            return False
+
+    # Wrapper para que OCO también active cooldown cuando sea STOP_LOSS
+    async def _oco_close_fn(s, reason, qty, px):
+        ok = await close_position_for(s, reason, px, qty_override=qty)
+        if ok and reason == "STOP_LOSS":
+            cooldown_until[s] = datetime.now(timezone.utc) + timedelta(seconds=cooldown_secs)
+        return ok
 
     async for t in ws.stream_trades_multi(symbols):
         sym = t["symbol"].upper().replace("-", "/")
@@ -113,6 +222,25 @@ async def run_live_binance_spot_testnet_multi(
             except Exception:
                 pass
 
+        # === OCO simulado: evalúa SL/TP linkeados a la posición ===
+        await oco.evaluate(
+            symbol=sym,
+            last_price=closed.c,
+            pos_qty=pos_book[sym].qty,
+            entry_price=pos_book[sym].avg_price,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
+            close_fn=_oco_close_fn,
+            trail_pct=trail_pct  # <-- nuevo (puede ser None)
+        )
+
+        # Cooldown post-stop (solo tras SL)
+        if datetime.now(timezone.utc) < cooldown_until[sym]:
+            remain = (cooldown_until[sym] - datetime.now(timezone.utc)).total_seconds()
+            log.debug("[%s] EN COOLDOWN (%.1fs restantes). Omitiendo señales.", sym, remain)
+            continue
+
+        # Señal de estrategia
         df: pd.DataFrame = aggs[sym].last_n_bars_df(200)
         if len(df) < 140:
             continue
@@ -151,7 +279,6 @@ async def run_live_binance_spot_testnet_multi(
                             log.warning("[%s] AUTO_CLOSE spot ejecutado: %s | resp=%s", sym, msg, resp)
                             if engine is not None:
                                 try:
-                                    # Orden + Fill
                                     insert_order(engine,
                                                  strategy="breakout_atr_spot",
                                                  exchange=venue,
@@ -161,16 +288,17 @@ async def run_live_binance_spot_testnet_multi(
                                                  qty=float(capped_qty_close),
                                                  px=None,
                                                  status=resp.get("status", "sent"),
-                                                 ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                                 ext_order_id=str(resp.get("ext_order_id") or None),
                                                  notes=resp)
                                     insert_fill(engine,
                                         ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
                                         symbol=sym, side="sell", type_="market",
-                                        qty=float(capped_qty_close), price=float(closed.c), fee_usdt=None,
-                                        reduce_only=False, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                        qty=float(capped_qty_close),
+                                        price=float(resp.get("fill_price") or closed.c),
+                                        fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
+                                        reduce_only=False, ext_order_id=str(resp.get("ext_order_id") or None),
                                         raw=resp
                                     )
-                                    # PnL snapshots
                                     upsert_position(engine, venue=venue, symbol=sym,
                                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
                                                     realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
@@ -226,13 +354,15 @@ async def run_live_binance_spot_testnet_multi(
                                  qty=float(capped_qty),
                                  px=None,
                                  status=resp.get("status", "sent"),
-                                 ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                 ext_order_id=str(resp.get("ext_order_id") or None),
                                  notes=resp)
                     insert_fill(engine,
                         ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
                         symbol=sym, side=side, type_="market",
-                        qty=float(capped_qty), price=float(closed.c), fee_usdt=None,
-                        reduce_only=False, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                        qty=float(capped_qty),
+                        price=float(resp.get("fill_price") or closed.c),
+                        fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
+                        reduce_only=False, ext_order_id=str(resp.get("ext_order_id") or None),
                         raw=resp
                     )
                 except Exception:

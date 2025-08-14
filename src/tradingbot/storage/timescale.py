@@ -293,3 +293,144 @@ def rebuild_positions_from_fills(engine, venue: str) -> dict:
         out[sym] = p
     # normalizamos a dict serializable
     return {k: dict(qty=v.qty, avg_price=v.avg_price, realized_pnl=v.realized_pnl, fees_paid=v.fees_paid) for k, v in out.items()}
+
+# --- Slippage agregado desde fills ---
+def select_slippage(engine, *, venue: str, symbol: str | None = None, hours: int = 6):
+    """
+    Slippage = (fill_price - ref_price) / ref_price.
+    Usamos ref_price = último price en portfolio_snapshots anterior o cercano al ts del fill.
+    Si no hay snapshot cercano, omitimos el fill para slippage.
+    Devuelve agregados: count, mean, p50, p90, p99 por lado y global.
+    """
+    # 1) Traer fills recientes con price
+    sql_fills = '''
+      SELECT ts, symbol, side, price
+      FROM market.fills
+      WHERE venue = :venue
+        AND ts >= now() - (:hours::text || ' hours')::interval
+        AND price IS NOT NULL
+      ORDER BY ts ASC
+    '''
+    # 2) Para cada fill, buscamos el snapshot inmediatamente anterior (misma symbol)
+    sql_ref = '''
+      SELECT price FROM market.portfolio_snapshots
+      WHERE venue = :venue AND symbol = :symbol AND ts <= :ts
+      ORDER BY ts DESC
+      LIMIT 1
+    '''
+    import numpy as np
+    out = {"global": [], "buy": [], "sell": []}
+    with engine.begin() as conn:
+        fills = conn.execute(text(sql_fills), {"venue": venue, "hours": hours}).mappings().all()
+        for f in fills:
+            sym = f["symbol"]
+            ts = f["ts"]
+            px_fill = float(f["price"])
+            ref_row = conn.execute(text(sql_ref), {"venue": venue, "symbol": sym, "ts": ts}).mappings().first()
+            if not ref_row:
+                continue
+            px_ref = float(ref_row["price"])
+            if px_ref <= 0:
+                continue
+            slip = (px_fill - px_ref) / px_ref
+            out["global"].append(slip)
+            out[f["side"].lower()].append(slip)
+
+    def stats(arr):
+        if not arr:
+            return {"count": 0, "mean": 0.0, "p50": 0.0, "p90": 0.0, "p99": 0.0}
+        a = np.array(arr, dtype=float)
+        return {
+            "count": int(a.size),
+            "mean": float(a.mean()),
+            "p50": float(np.percentile(a, 50)),
+            "p90": float(np.percentile(a, 90)),
+            "p99": float(np.percentile(a, 99)),
+        }
+    return {
+        "venue": venue,
+        "hours": hours,
+        "global": stats(out["global"]),
+        "buy": stats(out["buy"]),
+        "sell": stats(out["sell"])
+    }
+
+# --- OCO persistence ---------------------------------------------------------
+def upsert_oco(engine, *, venue: str, symbol: str, side: str,
+               qty: float, entry_price: float, sl_price: float, tp_price: float, status: str = "active"):
+    sql = text("""
+    INSERT INTO market.oco_orders (venue, symbol, side, qty, entry_price, sl_price, tp_price, status)
+    VALUES (:venue, :symbol, :side, :qty, :entry_price, :sl_price, :tp_price, :status)
+    ON CONFLICT (id) DO NOTHING; -- no natural key, insert simple (dejamos 1 activo por símbolo)
+    """)
+    # Antes, cancelamos cualquiera activo para ese venue/símbolo (1 OCO activo por símbolo)
+    sql_cancel_old = text("""
+      UPDATE market.oco_orders
+      SET status='cancelled', updated_at=now()
+      WHERE venue=:venue AND symbol=:symbol AND status='active'
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql_cancel_old, {"venue": venue, "symbol": symbol})
+        conn.execute(sql, {
+            "venue": venue, "symbol": symbol, "side": side,
+            "qty": float(qty), "entry_price": float(entry_price),
+            "sl_price": float(sl_price), "tp_price": float(tp_price),
+            "status": status
+        })
+
+def update_oco_active(engine, *, venue: str, symbol: str,
+                      qty: float, entry_price: float, sl_price: float, tp_price: float):
+    sql = text("""
+      UPDATE market.oco_orders
+      SET qty=:qty, entry_price=:entry_price, sl_price=:sl_price, tp_price=:tp_price, updated_at=now()
+      WHERE venue=:venue AND symbol=:symbol AND status='active'
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql, {
+            "venue": venue, "symbol": symbol,
+            "qty": float(qty), "entry_price": float(entry_price),
+            "sl_price": float(sl_price), "tp_price": float(tp_price)
+        })
+
+def mark_oco_triggered(engine, *, venue: str, symbol: str, triggered: str):
+    sql = text("""
+      UPDATE market.oco_orders
+      SET status='triggered', triggered=:triggered, updated_at=now()
+      WHERE venue=:venue AND symbol=:symbol AND status='active'
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql, {"venue": venue, "symbol": symbol, "triggered": triggered})
+
+def cancel_oco(engine, *, venue: str, symbol: str):
+    sql = text("""
+      UPDATE market.oco_orders
+      SET status='cancelled', updated_at=now()
+      WHERE venue=:venue AND symbol=:symbol AND status='active'
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql, {"venue": venue, "symbol": symbol})
+
+def load_active_oco_by_symbols(engine, *, venue: str, symbols: list[str]):
+    if not symbols:
+        return {}
+    # simple IN; si prefieres, usa un temp table
+    placeholders = ",".join([f":s{i}" for i in range(len(symbols))])
+    params = {"venue": venue}
+    for i, s in enumerate(symbols):
+        params[f"s{i}"] = s
+    sql = text(f"""
+      SELECT venue, symbol, side, qty, entry_price, sl_price, tp_price
+      FROM market.oco_orders
+      WHERE venue=:venue AND status='active' AND symbol IN ({placeholders})
+    """)
+    out = {}
+    with engine.begin() as conn:
+        for row in conn.execute(sql, params).mappings():
+            out[row["symbol"]] = {
+                "side": row["side"],
+                "qty": float(row["qty"]),
+                "entry_price": float(row["entry_price"]),
+                "sl_price": float(row["sl_price"]),
+                "tp_price": float(row["tp_price"]),
+            }
+    return out
