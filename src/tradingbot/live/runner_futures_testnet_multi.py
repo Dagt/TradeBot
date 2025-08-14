@@ -16,7 +16,7 @@ from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
 try:
     from ..storage.timescale import (
         get_engine, insert_order, insert_bar_1m, insert_portfolio_snapshot, insert_risk_event,
-        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks
+        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill
     )
     _CAN_PG = True
 except Exception:
@@ -36,8 +36,12 @@ async def run_live_binance_futures_testnet_multi(
     soft_cap_grace_sec: int = 30
 ):
     """
-    Futures UM TESTNET multi-símbolo con soft/hard caps + auto-close reduce-only.
-    Incluye rehidratación de posiciones y PnL.
+    Futures UM TESTNET multi-símbolo:
+      - WS multi-stream -> barras 1m
+      - BreakoutATR + Risk por símbolo
+      - Hard/Soft caps + auto-close reduce-only
+      - Rehidratación de posiciones + PnL
+      - Inserción de FILLs en BD
     """
     venue = "binance_futures_um_testnet"
     symbols = [s.upper().replace("-", "/") for s in symbols]
@@ -78,7 +82,7 @@ async def run_live_binance_futures_testnet_multi(
         for s in symbols:
             pos_book[s] = Position()
 
-    taker_fee_bps = 2.0  # típico futures
+    taker_fee_bps = 2.0  # estimado futures testnet
 
     async for t in ws.stream_trades_multi(symbols, channel="aggTrade"):
         sym = t["symbol"].upper().replace("-", "/")
@@ -122,7 +126,7 @@ async def run_live_binance_futures_testnet_multi(
 
         side = "buy" if delta > 0 else "sell"
 
-        # ***** SOFT CAPS: decisión *****
+        # ----- SOFT CAPS -----
         action, reason, metrics = guard.soft_cap_decision(sym, side, abs(trade_qty), closed.c)
         if action == "block":
             log.info("[%s] Orden bloqueada: %s | metrics=%s", sym, reason, metrics)
@@ -132,7 +136,7 @@ async def run_live_binance_futures_testnet_multi(
                 except Exception:
                     pass
 
-            # AUTO‑CLOSE (futures): reduce-only en el lado opuesto a la posición
+            # AUTO‑CLOSE (futures): reduce-only en lado opuesto a la posición
             if auto_close:
                 need_qty, msg, met = guard.compute_auto_close_qty(sym, closed.c)
                 if need_qty > 0:
@@ -140,12 +144,32 @@ async def run_live_binance_futures_testnet_multi(
                         cur_pos = guard.st.positions.get(sym, 0.0)
                         close_side = "sell" if cur_pos > 0 else "buy"
                         resp = await exec_adapter.place_order(sym, close_side, "market", need_qty, reduce_only=True, mark_price=closed.c)
-                        # Actualiza PnL y guard
+                        # PnL/posiciones
                         pos_book[sym] = apply_fill(pos_book[sym], close_side, float(need_qty), float(closed.c), taker_fee_bps, venue_type="futures")
                         guard.st.positions[sym] = pos_book[sym].qty
                         log.warning("[%s] AUTO_CLOSE futures ejecutado: %s | resp=%s", sym, msg, resp)
                         if engine is not None:
                             try:
+                                # Orden + Fill
+                                insert_order(engine,
+                                             strategy="breakout_atr_futures",
+                                             exchange=venue,
+                                             symbol=sym,
+                                             side=close_side,
+                                             type_="market",
+                                             qty=float(need_qty),
+                                             px=None,
+                                             status=resp.get("status", "sent"),
+                                             ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                             notes=resp)
+                                insert_fill(engine,
+                                    ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
+                                    symbol=sym, side=close_side, type_="market",
+                                    qty=float(need_qty), price=float(closed.c), fee_usdt=None,
+                                    reduce_only=True, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                    raw=resp
+                                )
+                                # PnL snapshots
                                 upsert_position(engine, venue=venue, symbol=sym,
                                                 qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
                                                 realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
@@ -160,15 +184,16 @@ async def run_live_binance_futures_testnet_multi(
                     except Exception as e:
                         log.error("[%s] AUTO_CLOSE futures falló: %s", sym, e)
             continue
+
         elif action == "soft_allow":
             if engine is not None:
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="INFO", message=reason, details=metrics)
                 except Exception:
                     pass
-            # sigue flujo normal (balances + orden)
+            # continúa flujo normal
 
-        # Cap por balance (USDT libre * leverage)
+        # ----- Balance → cap qty -----
         try:
             bal = await fetch_futures_usdt_free(exec_adapter.rest)
             capped_qty = cap_qty_by_balance_futures(side, abs(trade_qty), closed.c, bal.free_usdt, leverage, utilization=0.5)
@@ -179,11 +204,12 @@ async def run_live_binance_futures_testnet_multi(
             log.warning("[%s] No se pudo leer balance futures: %s (continuo qty original)", sym, e)
             capped_qty = abs(trade_qty)
 
-        # Ejecuta orden y actualiza PnL/posiciones
+        # ----- Enviar orden normal -----
         try:
             resp = await exec_adapter.place_order(sym, side, "market", capped_qty, mark_price=closed.c)
             log.info("[%s] FUTURES TESTNET FILL %s", sym, resp)
 
+            # PnL/posiciones
             pos_book[sym] = apply_fill(pos_book[sym], side, float(capped_qty), float(closed.c), taker_fee_bps, venue_type="futures")
             guard.st.positions[sym] = pos_book[sym].qty
 
@@ -200,7 +226,13 @@ async def run_live_binance_futures_testnet_multi(
                                  status=resp.get("status", "sent"),
                                  ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
                                  notes=resp)
-                    
+                    insert_fill(engine,
+                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
+                        symbol=sym, side=side, type_="market",
+                        qty=float(capped_qty), price=float(closed.c), fee_usdt=None,
+                        reduce_only=False, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                        raw=resp
+                    )
                 except Exception:
                     pass
                 try:

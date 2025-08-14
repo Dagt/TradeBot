@@ -17,7 +17,7 @@ from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
 try:
     from ..storage.timescale import (
         get_engine, insert_order, insert_bar_1m, insert_portfolio_snapshot, insert_risk_event,
-        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks
+        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill
     )
     _CAN_PG = True
 except Exception:
@@ -36,11 +36,12 @@ async def run_live_binance_spot_testnet_multi(
     soft_cap_grace_sec: int = 30
 ):
     """
-    Spot TESTNET multi-símbolo con:
-    - WS multi-stream -> barras 1m
-    - BreakoutATR + Risk por símbolo
-    - Guard con hard/soft caps + auto-close opcional
-    - Rehidratación de posiciones y PnL
+    Spot TESTNET multi-símbolo:
+      - WS multi-stream -> barras 1m
+      - BreakoutATR + Risk por símbolo
+      - Guardia con hard/soft caps + auto-close opcional
+      - Rehidratación de posiciones + PnL
+      - Inserción de FILLs en BD
     """
     venue = "binance_spot_testnet"
     symbols = [s.upper().replace("-", "/") for s in symbols]
@@ -61,7 +62,7 @@ async def run_live_binance_spot_testnet_multi(
 
     engine = get_engine() if (persist_pg and _CAN_PG) else None
 
-    # Rehidratación: posiciones y marks previos
+    # Rehidratación
     pos_book: dict[str, Position] = {}
     if engine is not None:
         try:
@@ -81,7 +82,7 @@ async def run_live_binance_spot_testnet_multi(
         for s in symbols:
             pos_book[s] = Position()
 
-    taker_fee_bps = 7.5  # spot testnet
+    taker_fee_bps = 7.5  # estimado spot testnet
 
     async for t in ws.stream_trades_multi(symbols):
         sym = t["symbol"].upper().replace("-", "/")
@@ -98,7 +99,7 @@ async def run_live_binance_spot_testnet_multi(
         if closed is None:
             continue
 
-        # Persistir barra + snapshot de portafolio
+        # Persistencia de barra + snapshot de portafolio
         if engine is not None:
             try:
                 insert_bar_1m(engine, exchange=venue, symbol=sym,
@@ -126,7 +127,7 @@ async def run_live_binance_spot_testnet_multi(
 
         side = "buy" if delta > 0 else "sell"
 
-        # ***** SOFT CAPS: decisión *****
+        # ----- SOFT CAPS -----
         action, reason, metrics = guard.soft_cap_decision(sym, side, abs(trade_qty), closed.c)
         if action == "block":
             log.info("[%s] Orden bloqueada: %s | metrics=%s", sym, reason, metrics)
@@ -144,12 +145,32 @@ async def run_live_binance_spot_testnet_multi(
                         capped_qty_close = min(need_qty, abs(guard.st.positions.get(sym, 0.0)))
                         if capped_qty_close > 0:
                             resp = await exec_adapter.place_order(sym, "sell", "market", capped_qty_close, mark_price=closed.c)
-                            # Actualiza PnL y guard
+                            # PnL/posiciones
                             pos_book[sym] = apply_fill(pos_book[sym], "sell", float(capped_qty_close), float(closed.c), taker_fee_bps, venue_type="spot")
                             guard.st.positions[sym] = pos_book[sym].qty
                             log.warning("[%s] AUTO_CLOSE spot ejecutado: %s | resp=%s", sym, msg, resp)
                             if engine is not None:
                                 try:
+                                    # Orden + Fill
+                                    insert_order(engine,
+                                                 strategy="breakout_atr_spot",
+                                                 exchange=venue,
+                                                 symbol=sym,
+                                                 side="sell",
+                                                 type_="market",
+                                                 qty=float(capped_qty_close),
+                                                 px=None,
+                                                 status=resp.get("status", "sent"),
+                                                 ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                                 notes=resp)
+                                    insert_fill(engine,
+                                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                                        symbol=sym, side="sell", type_="market",
+                                        qty=float(capped_qty_close), price=float(closed.c), fee_usdt=None,
+                                        reduce_only=False, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                                        raw=resp
+                                    )
+                                    # PnL snapshots
                                     upsert_position(engine, venue=venue, symbol=sym,
                                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
                                                     realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
@@ -164,16 +185,16 @@ async def run_live_binance_spot_testnet_multi(
                     except Exception as e:
                         log.error("[%s] AUTO_CLOSE spot falló: %s", sym, e)
             continue
+
         elif action == "soft_allow":
-            # registramos INFO (ventana activa), pero se permite continuar
             if engine is not None:
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="INFO", message=reason, details=metrics)
                 except Exception:
                     pass
-            # sigue flujo normal (balances + orden)
+            # continúa flujo normal
 
-        # Cap por balance
+        # ----- Balances → cap qty -----
         try:
             base, quote = sym.split("/")
             balances = await fetch_spot_balances(exec_adapter.rest, base, quote)
@@ -185,11 +206,12 @@ async def run_live_binance_spot_testnet_multi(
             log.warning("[%s] No se pudo leer balances spot: %s (continuo qty original)", sym, e)
             capped_qty = abs(trade_qty)
 
-        # Ejecuta orden y actualiza PnL/posiciones
+        # ----- Enviar orden normal -----
         try:
             resp = await exec_adapter.place_order(sym, side, "market", capped_qty, mark_price=closed.c)
             log.info("[%s] SPOT TESTNET FILL %s", sym, resp)
 
+            # PnL/posiciones
             pos_book[sym] = apply_fill(pos_book[sym], side, float(capped_qty), float(closed.c), taker_fee_bps, venue_type="spot")
             guard.st.positions[sym] = pos_book[sym].qty
 
@@ -206,7 +228,13 @@ async def run_live_binance_spot_testnet_multi(
                                  status=resp.get("status", "sent"),
                                  ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
                                  notes=resp)
-
+                    insert_fill(engine,
+                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                        symbol=sym, side=side, type_="market",
+                        qty=float(capped_qty), price=float(closed.c), fee_usdt=None,
+                        reduce_only=False, ext_order_id=str(resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
+                        raw=resp
+                    )
                 except Exception:
                     pass
                 try:
