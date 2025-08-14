@@ -93,3 +93,15 @@ def apply_fill(pos: Position, side: str, qty: float, px: float, taker_fee_bps: f
 def mark_to_market(pos: Position, mark_px: float) -> float:
     """ UPnL: (mark - avg)*qty (con signo de qty). En spot qty>=0; en futures qty puede ser +/- """
     return (float(mark_px) - pos.avg_price) * pos.qty
+
+def position_from_db(row: dict | None) -> Position:
+    """Crea Position desde fila de BD (o posición vacía si None)."""
+    if not row:
+        return Position()
+    return Position(
+        qty=float(row.get("qty", 0.0) or 0.0),
+        avg_price=float(row.get("avg_price", 0.0) or 0.0),
+        realized_pnl=float(row.get("realized_pnl", 0.0) or 0.0),
+        fees_paid=float(row.get("fees_paid", 0.0) or 0.0),
+    )
+

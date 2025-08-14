@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from ...storage.timescale import select_recent_fills
 from pathlib import Path
 
 # Persistencia
@@ -90,3 +91,39 @@ def pnl_summary(venue: str = "binance_spot_testnet"):
         return {"venue": venue, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
     from ...storage.timescale import select_pnl_summary
     return select_pnl_summary(_ENGINE, venue=venue)
+
+@app.get("/pnl/timeseries")
+def pnl_timeseries(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None),
+    bucket: str = Query("1 minute"),
+    hours: int = Query(6, ge=1, le=168)   # hasta 7 días
+):
+    if not _CAN_PG:
+        return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": []}
+    from ...storage.timescale import select_pnl_timeseries
+    points = select_pnl_timeseries(_ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours)
+    return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": points}
+
+@app.get("/fills/recent")
+def fills_recent(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500)
+):
+    if not _CAN_PG:
+        return {"venue": venue, "items": []}
+    items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
+    return {"venue": venue, "symbol": symbol, "items": items}
+
+@app.get("/positions/rebuild_preview")
+def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
+    """
+    No modifica BD; devuelve posiciones calculadas desde fills para comparar con market.positions
+    """
+    if not _CAN_PG:
+        return {"venue": venue, "from_fills": {}, "current": []}
+    from ...storage.timescale import rebuild_positions_from_fills, select_pnl_summary
+    recalced = rebuild_positions_from_fills(_ENGINE, venue=venue)
+    current = select_pnl_summary(_ENGINE, venue=venue)["items"]
+    return {"venue": venue, "from_fills": recalced, "current": current}

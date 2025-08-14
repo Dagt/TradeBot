@@ -283,20 +283,27 @@ def run_live_binance_spot_testnet_multi_cli(
     persist_pg: bool = False,
     total_cap_usdt: float = 1000.0,
     per_symbol_cap_usdt: float = 500.0,
-    auto_close: bool = True
+    auto_close: bool = True,
+    soft_cap_pct: float = 0.10,
+    soft_cap_grace_sec: int = 30
 ):
     setup_logging()
     syms = [s.strip() for s in symbols.split(",") if s.strip()]
     import asyncio
     try:
+        from ..live.runner_spot_testnet_multi import run_live_binance_spot_testnet_multi
         asyncio.run(run_live_binance_spot_testnet_multi(
-            syms, trade_qty=trade_qty, persist_pg=persist_pg,
-            total_cap_usdt=total_cap_usdt, per_symbol_cap_usdt=per_symbol_cap_usdt,
-            auto_close=auto_close
+            syms,
+            trade_qty=trade_qty,
+            persist_pg=persist_pg,
+            total_cap_usdt=total_cap_usdt,
+            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            auto_close=auto_close,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec
         ))
     except KeyboardInterrupt:
         print("Detenido por el usuario.")
-
 
 
 # --- comando multi-símbolo FUTURES TESTNET ---
@@ -308,19 +315,30 @@ def run_live_binance_futures_testnet_multi_cli(
     persist_pg: bool = False,
     total_cap_usdt: float = 2000.0,
     per_symbol_cap_usdt: float = 1000.0,
-    auto_close: bool = True
+    auto_close: bool = True,
+    soft_cap_pct: float = 0.10,
+    soft_cap_grace_sec: int = 30
 ):
     setup_logging()
     syms = [s.strip() for s in symbols.split(",") if s.strip()]
     import asyncio
     try:
+        from ..live.runner_futures_testnet_multi import run_live_binance_futures_testnet_multi
         asyncio.run(run_live_binance_futures_testnet_multi(
-            syms, leverage=leverage, trade_qty=trade_qty, persist_pg=persist_pg,
-            total_cap_usdt=total_cap_usdt, per_symbol_cap_usdt=per_symbol_cap_usdt,
-            auto_close=auto_close
+            syms,
+            leverage=leverage,
+            trade_qty=trade_qty,
+            persist_pg=persist_pg,
+            total_cap_usdt=total_cap_usdt,
+            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            auto_close=auto_close,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec
         ))
     except KeyboardInterrupt:
         print("Detenido por el usuario.")
+
+
 
 def main():
     app()

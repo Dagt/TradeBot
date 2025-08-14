@@ -108,10 +108,27 @@
         </table>
       </div>
     </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>PnL (Spot) – Serie temporal</h2>
+      <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
+      <div style="padding:10px">
+        <canvas id="chart-pnl-spot" height="120"></canvas>
+      </div>
+    </div>
   </div>
 
+  <div class="card" style="margin-top:16px">
+      <h2>PnL (Spot) – Serie temporal</h2>
+      <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
+      <div style="padding:10px">
+        <canvas id="chart-pnl-fut" height="120"></canvas>
+      </div>
+    </div>
+  </div>
 <script>
 const api = (path) => `${location.origin}${path}`;
+let pnlChart;
 
 function fmtEdge(x){ if(x==null) return "—"; return (x*100).toFixed(3)+"%"; }
 function fmtNum(x, d=6){ if(x==null) return "—"; const n=Number(x); return isFinite(n)? n.toFixed(d): x; }
@@ -292,15 +309,80 @@ async function refreshFuturePnL(){
   }catch(e){}
 }
 
+function buildPnlChart(ctx, labels, upnl, rpnl, net){
+  if(pnlChart){ pnlChart.destroy(); }
+  pnlChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'UPnL', data: upnl },
+        { label: 'RPnL', data: rpnl },
+        { label: 'Neto', data: net }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { maxRotation: 0 }, grid: { display: false } },
+        y: { beginAtZero: false }
+      },
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: $ ${Number(ctx.parsed.y).toLocaleString(undefined,{maximumFractionDigits:2})}`
+          }
+        }
+      }
+    }
+  });
+}
+
+async function refreshPnlChart(){
+  try{
+    // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
+    const r = await fetch(api("/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6"));
+    const j = await r.json();
+    const pts = j.points || [];
+    const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
+    const upnl = pts.map(p => p.upnl || 0);
+    const rpnl = pts.map(p => p.rpnl || 0);
+    const net  = pts.map(p => p.net || 0);
+    const ctx = document.getElementById("chart-pnl-spot").getContext("2d");
+    buildPnlChart(ctx, labels, upnl, rpnl, net);
+  }catch(e){}
+}
+
+async function refreshPnlChartFut(){
+  try{
+    // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
+    const r = await fetch(api("/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6"));
+    const j = await r.json();
+    const pts = j.points || [];
+    const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
+    const upnl = pts.map(p => p.upnl || 0);
+    const rpnl = pts.map(p => p.rpnl || 0);
+    const net  = pts.map(p => p.net || 0);
+    const ctx = document.getElementById("chart-pnl-fut").getContext("2d");
+    buildPnlChart(ctx, labels, upnl, rpnl, net);
+  }catch(e){}
+}
 // boot
 refreshHealth(); refreshSummary(); refreshTables();
 setInterval(refreshExposure, 5000); refreshExposure();
 setInterval(refreshRisk, 5000); refreshRisk();
 setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
 setInterval(refreshFutureSpotPnL, 5000); refreshFutureSpotPnL();
+setInterval(refreshPnlChart, 10000); refreshPnlChart();
+setInterval(refreshPnlChartFut, 10000); refreshPnlChartFut();
 setInterval(refreshHealth, 5000);
 setInterval(refreshSummary, 5000);
 setInterval(refreshTables, 5000);
+
 </script>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </html>

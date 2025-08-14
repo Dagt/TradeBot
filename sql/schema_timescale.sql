@@ -123,3 +123,25 @@ CREATE TABLE IF NOT EXISTS market.pnl_snapshots (
 CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_ts ON market.pnl_snapshots(ts);
 CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_venue ON market.pnl_snapshots(venue);
 CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_symbol ON market.pnl_snapshots(symbol);
+
+-- Fills ejecutados (reales o simulados)
+CREATE TABLE IF NOT EXISTS market.fills (
+  id bigserial PRIMARY KEY,
+  ts timestamptz NOT NULL DEFAULT now(),
+  venue text NOT NULL,             -- ej: binance_spot_testnet / binance_futures_um_testnet
+  strategy text NOT NULL,          -- ej: breakout_atr_spot
+  symbol text NOT NULL,            -- BTC/USDT
+  side text NOT NULL,              -- buy/sell
+  type text NOT NULL,              -- market/limit
+  qty numeric NOT NULL,            -- cantidad base
+  price numeric,                   -- precio de ejecución (si lo conocemos)
+  notional numeric,                -- qty*price (si aplica)
+  fee_usdt numeric,                -- costo estimado/real en USDT (si aplica)
+  reduce_only boolean DEFAULT false,
+  ext_order_id text,               -- id de orden del exchange (si aplica)
+  raw jsonb                        -- payload crudo (para forense)
+);
+CREATE INDEX IF NOT EXISTS idx_fills_ts ON market.fills(ts);
+CREATE INDEX IF NOT EXISTS idx_fills_venue ON market.fills(venue);
+CREATE INDEX IF NOT EXISTS idx_fills_symbol ON market.fills(symbol);
+CREATE INDEX IF NOT EXISTS idx_fills_strategy ON market.fills(strategy);

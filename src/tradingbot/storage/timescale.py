@@ -153,3 +153,143 @@ def select_pnl_summary(engine, venue: str) -> dict:
         }
         totals["net_pnl"] = totals["upnl"] + totals["rpnl"] - totals["fees"]
         return {"items": pos, "totals": totals}
+
+# --- Rehidratación de posiciones y marks ---
+
+def load_positions(engine, venue: str) -> dict:
+    """Devuelve {symbol: {'qty': float, 'avg_price': float, 'realized_pnl': float, 'fees_paid': float}}"""
+    with engine.begin() as conn:
+        rows = conn.execute(text('''
+            SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid
+            FROM market.positions
+            WHERE venue = :venue
+        '''), dict(venue=venue)).mappings().all()
+        out = {}
+        for r in rows:
+            out[r["symbol"]] = {
+                "qty": float(r["qty"]),
+                "avg_price": float(r["avg_price"]),
+                "realized_pnl": float(r["realized_pnl"]),
+                "fees_paid": float(r["fees_paid"]),
+            }
+        return out
+
+def load_latest_marks(engine, venue: str) -> dict:
+    """Devuelve {symbol: price} a partir de portfolio_snapshots (último precio conocido por símbolo)."""
+    with engine.begin() as conn:
+        rows = conn.execute(text('''
+            SELECT DISTINCT ON (symbol) symbol, price
+            FROM market.portfolio_snapshots
+            WHERE venue = :venue
+            ORDER BY symbol, ts DESC
+        '''), dict(venue=venue)).mappings().all()
+        return {r["symbol"]: float(r["price"]) for r in rows}
+
+# --- PnL timeseries (agrupado por time_bucket) ---
+def select_pnl_timeseries(engine, *, venue: str, symbol: str | None = None, bucket: str = "1 minute", hours: int = 6) -> list[dict]:
+    """
+    Devuelve puntos agregados por time_bucket en las últimas `hours` horas.
+    Si symbol es None => agrega todos los símbolos del venue.
+    net = sum(upnl + rpnl - fees) por bucket.
+    """
+    where = "venue = :venue AND ts >= now() - (:hours::text || ' hours')::interval"
+    params = {"venue": venue, "hours": hours, "bucket": bucket}
+    if symbol:
+        where += " AND symbol = :symbol"
+        params["symbol"] = symbol
+
+    sql = f"""
+        SELECT
+          time_bucket(:bucket, ts) AS bucket_ts,
+          SUM(upnl)  AS upnl_sum,
+          SUM(rpnl)  AS rpnl_sum,
+          SUM(fees)  AS fees_sum,
+          SUM(upnl + rpnl - fees) AS net_sum
+        FROM market.pnl_snapshots
+        WHERE {where}
+        GROUP BY bucket_ts
+        ORDER BY bucket_ts ASC
+    """
+    with engine.begin() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+        out = []
+        for r in rows:
+            out.append({
+                "ts": r["bucket_ts"].isoformat(),
+                "upnl": float(r["upnl_sum"] or 0.0),
+                "rpnl": float(r["rpnl_sum"] or 0.0),
+                "fees": float(r["fees_sum"] or 0.0),
+                "net": float(r["net_sum"] or 0.0),
+            })
+        return out
+
+# --- Fills: inserción y consulta ---
+def insert_fill(engine, *, ts, venue: str, strategy: str, symbol: str, side: str, type_: str,
+                qty: float, price: float | None, fee_usdt: float | None,
+                reduce_only: bool = False, ext_order_id: str | None = None, raw: dict | None = None):
+    with engine.begin() as conn:
+        conn.execute(text('''
+            INSERT INTO market.fills (ts, venue, strategy, symbol, side, type, qty, price, notional, fee_usdt, reduce_only, ext_order_id, raw)
+            VALUES (:ts, :venue, :strategy, :symbol, :side, :type, :qty, :price, 
+                    CASE WHEN :price IS NULL THEN NULL ELSE :qty * :price END,
+                    :fee_usdt, :reduce_only, :ext_order_id, :raw)
+        '''), dict(
+            ts=ts, venue=venue, strategy=strategy, symbol=symbol, side=side, type=type_,
+            qty=float(qty), price=(float(price) if price is not None else None),
+            fee_usdt=(float(fee_usdt) if fee_usdt is not None else None),
+            reduce_only=bool(reduce_only), ext_order_id=ext_order_id, raw=raw or {}
+        ))
+
+def select_recent_fills(engine, venue: str, symbol: str | None = None, limit: int = 100) -> list[dict]:
+    where = "venue = :venue"
+    params = {"venue": venue, "lim": limit}
+    if symbol:
+        where += " AND symbol = :symbol"
+        params["symbol"] = symbol
+    sql = f'''
+      SELECT ts, strategy, symbol, side, type, qty, price, notional, fee_usdt, reduce_only, ext_order_id
+      FROM market.fills
+      WHERE {where}
+      ORDER BY ts DESC
+      LIMIT :lim
+    '''
+    with engine.begin() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(r) for r in rows]
+
+# --- Conciliación: reconstruir posiciones desde fills (opcional) ---
+def rebuild_positions_from_fills(engine, venue: str) -> dict:
+    """
+    Recorre fills históricos y reconstruye qty/avg_price/rpnl/fees por símbolo.
+    Devuelve {symbol: {...}}. No escribe; solo calcula.
+    """
+    # Traemos todos los fills del venue ordenados cronológicamente
+    sql = '''
+      SELECT ts, symbol, side, type, qty, price, fee_usdt
+      FROM market.fills
+      WHERE venue = :venue AND price IS NOT NULL
+      ORDER BY ts ASC
+    '''
+    with engine.begin() as conn:
+        rows = conn.execute(text(sql), dict(venue=venue)).mappings().all()
+
+    from ..risk.pnl import Position, apply_fill
+    out: dict[str, Position] = {}
+    # Asumimos taker fee bps aproximadas; si tus fills traen fee_usdt real, lo sumaremos aparte
+    taker_bps_guess = 2.0 if "futures" in venue else 7.5
+    for r in rows:
+        sym = r["symbol"]
+        if sym not in out:
+            out[sym] = Position()
+        p = out[sym]
+        px = float(r["price"])
+        q = float(r["qty"])
+        side = (r["side"] or "buy").lower()
+        p = apply_fill(p, side, q, px, taker_bps_guess, venue_type=("futures" if "futures" in venue else "spot"))
+        # ajusta fees si viene real
+        fee = r["fee_usdt"]
+        if fee is not None:
+            p.fees_paid += float(fee)
+        out[sym] = p
+    # normalizamos a dict serializable
+    return {k: dict(qty=v.qty, avg_price=v.avg_price, realized_pnl=v.realized_pnl, fees_paid=v.fees_paid) for k, v in out.items()}
