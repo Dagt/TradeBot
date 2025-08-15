@@ -231,7 +231,7 @@ async def run_live_binance_futures_testnet_multi(
                                         upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
                     insert_risk_event(engine, venue=venue, symbol=sym, kind=reason_kind, message=f"{reason_kind} reduce-only close", details={"side": close_side, "qty": qty_to_close, "price": now_price})
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("FUTURES persist failure en close_position_for: order/fill/pnl/risk_event")
             return True
         except Exception as e:
             log.error("[%s] cierre por %s falló: %s", sym, reason_kind, e)
@@ -313,13 +313,13 @@ async def run_live_binance_futures_testnet_multi(
                 insert_bar_1m(engine, exchange=venue, symbol=sym,
                               ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
             except Exception:
-                log.exception("Error persistiendo orden/fill/PNL/riskevent (futures)")
+                log.exception("FUTURES persist failure al insertar barra 1m")
             try:
                 cur_pos = guard.st.positions.get(sym, 0.0)
                 insert_portfolio_snapshot(engine, venue=venue, symbol=sym,
                                           position=cur_pos, price=closed.c, notional_usd=abs(cur_pos)*closed.c)
             except Exception:
-                log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                log.exception("FUTURES persist failure al insertar snapshot de portafolio")
 
         # === OCO simulado: evalúa SL/TP linkeados a la posición (long/short) ===
         await oco.evaluate(
@@ -366,7 +366,7 @@ async def run_live_binance_futures_testnet_multi(
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="VIOLATION", message=reason, details=metrics)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (futures)")
+                    log.exception("FUTURES persist failure en CAP_SOFT riskevent")
 
             # AUTO‑CLOSE (futures): reduce-only opuesto a la posición
             if auto_close:
@@ -420,7 +420,7 @@ async def run_live_binance_futures_testnet_multi(
                                 insert_risk_event(engine, venue=venue, symbol=sym, kind="AUTO_CLOSE", message=msg,
                                                   details={"executed_side": close_side, "executed_qty": need_qty})
                             except Exception:
-                                log.exception("Error persistiendo AUTO_CLOSE (futures)")
+                                log.exception("FUTURES persist failure en AUTO_CLOSE: insert_order")
                     except Exception as e:
                         log.error("[%s] AUTO_CLOSE futures falló: %s", sym, e)
             continue
@@ -483,7 +483,7 @@ async def run_live_binance_futures_testnet_multi(
                         raw=resp
                     )
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("FUTURES persist failure en AUTO_CLOSE: insert_fill")
                 try:
                     upsert_position(engine, venue=venue, symbol=sym,
                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
@@ -493,6 +493,6 @@ async def run_live_binance_futures_testnet_multi(
                                         price=closed.c, avg_price=pos_book[sym].avg_price,
                                         upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("FUTURES persist failure en AUTO_CLOSE: insert_pnl_snapshot")
         except Exception as e:
             log.error("[%s] Error orden futures testnet: %s", sym, e)
