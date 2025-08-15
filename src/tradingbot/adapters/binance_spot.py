@@ -1,6 +1,7 @@
 # src/tradingbot/adapters/binance_spot.py
 from __future__ import annotations
 import asyncio
+import os
 import logging, time, uuid
 from typing import AsyncIterator, Optional, Any, Dict
 
@@ -33,7 +34,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},
         })
-        self.taker_fee_bps = 10.0
+        self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS", "10.0"))
         self.rest.set_sandbox_mode(testnet)
 
         self.meta = ExchangeMeta.binance_spot_testnet(

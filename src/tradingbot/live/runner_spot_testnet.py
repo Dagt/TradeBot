@@ -4,11 +4,14 @@ import logging
 from datetime import datetime, timezone
 import pandas as pd
 
+from ..execution.normalize import adjust_order
+
 from .runner import BarAggregator  # el mismo agregador de 1m
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
 from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
+
 
 # Persistencia opcional
 try:
@@ -79,26 +82,45 @@ async def run_live_binance_spot_testnet(
             log.warning("No se pudo leer balances spot: %s (continuo con qty original)", e)
             capped_qty = abs(trade_qty)
 
+        # --- Envío de la orden (API) ---
         try:
-            resp = await exec_adapter.place_order(symbol, side, "market", capped_qty, mark_price=closed.c)
+            rules = exec_adapter.meta.rules[symbol]  # debe existir en tu adapter/meta
+            ok, adj_qty, adj_price, reason = adjust_order(side, capped_qty, closed.c, rules)
+            if not ok:
+                log.warning(
+                    "SPOT abort order por filtros (%s): symbol=%s qty=%.10f price=%.10f",
+                    reason, symbol, capped_qty, closed.c
+                )
+                continue
+
+            resp = await exec_adapter.place_order(symbol, side, "market", adj_qty, mark_price=adj_price)
             log.info("SPOT TESTNET FILL %s", resp)
-            # Actualizar RiskManager con el fill ejecutado
-            risk.add_fill(side, capped_qty)
-            if engine is not None:
-                try:
-                    insert_order(engine,
-                                 strategy="breakout_atr_spot",
-                                 exchange="binance_spot_testnet",
-                                 symbol=symbol,
-                                 side=side,
-                                 type_="market",
-                                 qty=float(capped_qty),
-                                 px=None,
-                                 status=resp.get("status", "sent"),
-                                 ext_order_id=str(
-                                     resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
-                                 notes=resp)
-                except Exception:
-                    log.exception("No se pudo insertar order")
+
+            # Actualiza RiskManager con la cantidad realmente enviada
+            try:
+                risk.add_fill(side, adj_qty)
+            except Exception:
+                pass
+
         except Exception:
-            log.exception("No se pudo insertar order")
+            log.exception("SPOT fallo al ENVIAR orden al exchange (place_order)")
+            continue  # seguimos con el siguiente tick/iteración del loop
+
+        # --- Persistencia (BD) ---
+        if engine is not None:
+            try:
+                insert_order(
+                    engine,
+                    strategy="breakout_atr_spot",
+                    exchange="binance_spot_testnet",
+                    symbol=symbol,
+                    side=side,
+                    type_="market",
+                    qty=float(adj_qty),
+                    px=None,
+                    status=resp.get("status", "sent") if isinstance(resp, dict) else "sent",
+                    ext_order_id=resp.get("ext_order_id"),
+                    notes=resp,
+                )
+            except Exception:
+                log.exception("SPOT persist failure: insert_order")

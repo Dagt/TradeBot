@@ -14,6 +14,7 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
 from ..risk.oco import OcoBook, OcoOrder
+from ..execution.normalize import adjust_order
 
 try:
     from ..storage.timescale import (
@@ -187,9 +188,19 @@ async def run_live_binance_futures_testnet_multi(
         close_side = "sell" if q > 0 else "buy"
         qty_to_close = float(qty_override) if qty_override is not None else abs(q)
         try:
-            resp = await exec_adapter.place_order(sym, close_side, "market", qty_to_close, reduce_only=True, mark_price=now_price)
+            rules = exec_adapter.meta.rules[sym]
+            ok, adj_qty, adj_price, reason = adjust_order(close_side, qty_to_close, now_price, rules)
+            if not ok:
+                log.warning("[%s] FUTURES abort AUTO_CLOSE por filtros (%s): qty=%.10f px=%.10f", sym, reason,
+                            qty_to_close, now_price)
+                return False
+
+            resp = await exec_adapter.place_order(sym, close_side, "market", adj_qty, reduce_only=True,
+                                                  mark_price=adj_price)
             # PnL/posiciones
-            pos_book[sym] = apply_fill(pos_book[sym], close_side, float(qty_to_close), float(now_price), taker_fee_bps, venue_type="futures")
+            pos_book[sym] = apply_fill(pos_book[sym], close_side, float(adj_qty), float(adj_price), taker_fee_bps,
+                                       venue_type="futures")
+
             guard.st.positions[sym] = pos_book[sym].qty
             # --- Actualiza pérdidas realizadas (delta) ---
             delta_r = pos_book[sym].realized_pnl - last_rpnl[sym]
@@ -197,7 +208,8 @@ async def run_live_binance_futures_testnet_multi(
                 dguard.on_realized_delta(delta_r)
                 last_rpnl[sym] = pos_book[sym].realized_pnl
 
-            log.warning("[%s] %s ejecutado: side=%s qty=%.6f px=%.4f", sym, reason_kind, close_side, qty_to_close, now_price)
+            log.warning("[%s] %s ejecutado: side=%s qty=%.6f px=%.4f", sym, reason_kind, close_side, adj_qty, adj_price)
+
             if engine is not None:
                 try:
                     # Orden + Fill
@@ -207,7 +219,7 @@ async def run_live_binance_futures_testnet_multi(
                                  symbol=sym,
                                  side=close_side,
                                  type_="market",
-                                 qty=float(qty_to_close),
+                                 qty=float(adj_qty),
                                  px=None,
                                  status=resp.get("status", "sent"),
                                  ext_order_id=str(resp.get("ext_order_id") or None),
@@ -215,8 +227,8 @@ async def run_live_binance_futures_testnet_multi(
                     insert_fill(engine,
                         ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
                         symbol=sym, side=close_side, type_="market",
-                        qty=float(qty_to_close),
-                        price=float(resp.get("fill_price") or now_price),
+                        qty=float(adj_qty),
+                        price=float(resp.get("fill_price") or adj_price),
                         fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
                         reduce_only=True, ext_order_id=str(resp.get("ext_order_id") or None),
                         raw=resp
@@ -225,11 +237,11 @@ async def run_live_binance_futures_testnet_multi(
                     upsert_position(engine, venue=venue, symbol=sym,
                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
                                     realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
-                    upnl = mark_to_market(pos_book[sym], now_price)
+                    upnl = mark_to_market(pos_book[sym], adj_price)
                     insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
-                                        price=now_price, avg_price=pos_book[sym].avg_price,
+                                        price=adj_price, avg_price=pos_book[sym].avg_price,
                                         upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
-                    insert_risk_event(engine, venue=venue, symbol=sym, kind=reason_kind, message=f"{reason_kind} reduce-only close", details={"side": close_side, "qty": qty_to_close, "price": now_price})
+                    insert_risk_event(engine, venue=venue, symbol=sym, kind=reason_kind, message=f"{reason_kind} reduce-only close", details={"side": close_side, "qty": adj_qty, "price": adj_price})
                 except Exception:
                     log.exception("FUTURES persist failure en close_position_for: order/fill/pnl/risk_event")
             return True
@@ -313,13 +325,13 @@ async def run_live_binance_futures_testnet_multi(
                 insert_bar_1m(engine, exchange=venue, symbol=sym,
                               ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
             except Exception:
-                log.exception("FUTURES persist failure al insertar barra 1m")
+                log.exception("FUTURES persist failure: insert_bar_1m")
             try:
                 cur_pos = guard.st.positions.get(sym, 0.0)
                 insert_portfolio_snapshot(engine, venue=venue, symbol=sym,
                                           position=cur_pos, price=closed.c, notional_usd=abs(cur_pos)*closed.c)
             except Exception:
-                log.exception("FUTURES persist failure al insertar snapshot de portafolio")
+                log.exception("FUTURES persist failure: insert_portfolio_snapshot")
 
         # === OCO simulado: evalúa SL/TP linkeados a la posición (long/short) ===
         await oco.evaluate(
@@ -375,9 +387,19 @@ async def run_live_binance_futures_testnet_multi(
                     try:
                         cur_pos = guard.st.positions.get(sym, 0.0)
                         close_side = "sell" if cur_pos > 0 else "buy"
-                        resp = await exec_adapter.place_order(sym, close_side, "market", need_qty, reduce_only=True, mark_price=closed.c)
+                        rules = exec_adapter.meta.rules[sym]
+                        ok, adj_qty, adj_price, reason = adjust_order(close_side, need_qty, closed.c, rules)
+                        if not ok:
+                            log.warning("[%s] FUTURES abort AUTO_CLOSE por filtros (%s): qty=%.10f px=%.10f", sym,
+                                        reason, need_qty, closed.c)
+                            continue
+
+                        resp = await exec_adapter.place_order(sym, close_side, "market", adj_qty, reduce_only=True,
+                                                              mark_price=adj_price)
                         # PnL/posiciones
-                        pos_book[sym] = apply_fill(pos_book[sym], close_side, float(need_qty), float(closed.c), taker_fee_bps, venue_type="futures")
+                        pos_book[sym] = apply_fill(pos_book[sym], close_side, float(adj_qty), float(adj_price),
+                                                   taker_fee_bps, venue_type="futures")
+
                         guard.st.positions[sym] = pos_book[sym].qty
                         if sym in risks:
                             risks[sym].set_position(pos_book[sym].qty)
@@ -396,7 +418,7 @@ async def run_live_binance_futures_testnet_multi(
                                              symbol=sym,
                                              side=close_side,
                                              type_="market",
-                                             qty=float(need_qty),
+                                             qty=float(adj_qty),
                                              px=None,
                                              status=resp.get("status", "sent"),
                                              ext_order_id=str(resp.get("ext_order_id") or None),
@@ -404,8 +426,8 @@ async def run_live_binance_futures_testnet_multi(
                                 insert_fill(engine,
                                     ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
                                     symbol=sym, side=close_side, type_="market",
-                                    qty=float(need_qty),
-                                    price=float(resp.get("fill_price") or closed.c),
+                                    qty=float(adj_qty),
+                                    price=float(resp.get("fill_price") or adj_price),
                                     fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
                                     reduce_only=True, ext_order_id=str(resp.get("ext_order_id") or None),
                                     raw=resp
@@ -413,12 +435,12 @@ async def run_live_binance_futures_testnet_multi(
                                 upsert_position(engine, venue=venue, symbol=sym,
                                                 qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
                                                 realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
-                                upnl = mark_to_market(pos_book[sym], closed.c)
+                                upnl = mark_to_market(pos_book[sym], adj_price)
                                 insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
-                                                    price=closed.c, avg_price=pos_book[sym].avg_price,
+                                                    price=adj_price, avg_price=pos_book[sym].avg_price,
                                                     upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
                                 insert_risk_event(engine, venue=venue, symbol=sym, kind="AUTO_CLOSE", message=msg,
-                                                  details={"executed_side": close_side, "executed_qty": need_qty})
+                                                  details={"executed_side": close_side, "executed_qty": adj_qty})
                             except Exception:
                                 log.exception("FUTURES persist failure en AUTO_CLOSE: insert_order")
                     except Exception as e:
@@ -430,7 +452,7 @@ async def run_live_binance_futures_testnet_multi(
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="INFO", message=reason, details=metrics)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("FUTURES persist failure en riskevent INFO")
             # continúa flujo normal
 
         # ----- Balance → cap qty -----
@@ -446,11 +468,19 @@ async def run_live_binance_futures_testnet_multi(
 
         # ----- Enviar orden normal -----
         try:
-            resp = await exec_adapter.place_order(sym, side, "market", capped_qty, mark_price=closed.c)
+            rules = exec_adapter.meta.rules[sym]
+            ok, adj_qty, adj_price, reason = adjust_order(side, capped_qty, closed.c, rules)
+            if not ok:
+                log.warning("[%s] FUTURES abort order por filtros (%s): qty=%.10f px=%.10f", sym, reason, capped_qty,
+                            closed.c)
+                continue
+
+            resp = await exec_adapter.place_order(sym, side, "market", adj_qty, mark_price=adj_price)
             log.info("[%s] FUTURES TESTNET FILL %s", sym, resp)
 
-            # PnL/posiciones
-            pos_book[sym] = apply_fill(pos_book[sym], side, float(capped_qty), float(closed.c), taker_fee_bps, venue_type="futures")
+            # PnL/posiciones (usar adj_qty)
+            pos_book[sym] = apply_fill(pos_book[sym], side, float(adj_qty), float(adj_price), taker_fee_bps,
+                                       venue_type="futures")
             guard.st.positions[sym] = pos_book[sym].qty
             if sym in risks:
                 risks[sym].set_position(pos_book[sym].qty)
@@ -468,7 +498,7 @@ async def run_live_binance_futures_testnet_multi(
                                  symbol=sym,
                                  side=side,
                                  type_="market",
-                                 qty=float(capped_qty),
+                                 qty=float(adj_qty),
                                  px=None,
                                  status=resp.get("status", "sent"),
                                  ext_order_id=str(resp.get("ext_order_id") or None),
@@ -476,14 +506,14 @@ async def run_live_binance_futures_testnet_multi(
                     insert_fill(engine,
                         ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
                         symbol=sym, side=side, type_="market",
-                        qty=float(capped_qty),
-                        price=float(resp.get("fill_price") or closed.c),
+                        qty=float(adj_qty),
+                        price=float(resp.get("fill_price") or adj_price),
                         fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
                         reduce_only=False, ext_order_id=str(resp.get("ext_order_id") or None),
                         raw=resp
                     )
                 except Exception:
-                    log.exception("FUTURES persist failure en AUTO_CLOSE: insert_fill")
+                    log.exception("FUTURES persist failure tras orden: insert_fill")
                 try:
                     upsert_position(engine, venue=venue, symbol=sym,
                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
@@ -493,6 +523,6 @@ async def run_live_binance_futures_testnet_multi(
                                         price=closed.c, avg_price=pos_book[sym].avg_price,
                                         upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
                 except Exception:
-                    log.exception("FUTURES persist failure en AUTO_CLOSE: insert_pnl_snapshot")
+                    log.exception("FUTURES persist failure tras orden: insert_pnl_snapshot")
         except Exception as e:
             log.error("[%s] Error orden futures testnet: %s", sym, e)

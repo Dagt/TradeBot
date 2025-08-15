@@ -1,6 +1,7 @@
 # src/tradingbot/adapters/binance_futures.py
 from __future__ import annotations
 import asyncio
+import os
 import logging, time, uuid
 from typing import AsyncIterator, Optional, Any, Dict
 
@@ -40,7 +41,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "future"},
         })
-        self.taker_fee_bps = 5.0
+        self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS_FUT", "5.0"))
         self.rest.set_sandbox_mode(testnet)
 
         # Cache de metadatos/filters
