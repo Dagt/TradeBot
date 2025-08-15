@@ -48,6 +48,17 @@ def insert_tri_signal(engine, *, exchange: str, base: str, mid: str, quote: str,
             VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional_quote, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
         '''), dict(exchange=exchange, base=base, mid=mid, quote=quote, direction=direction, edge=edge, notional_quote=notional_quote, taker_fee_bps=taker_fee_bps, buffer_bps=buffer_bps, bq=bq, mq=mq, mb=mb))
 
+
+def insert_cross_signal(engine, *, symbol: str, spot_exchange: str, perp_exchange: str,
+                        spot_px: float, perp_px: float, edge: float):
+    """Persist cross-exchange arbitrage opportunities."""
+    with engine.begin() as conn:
+        conn.execute(text('''
+            INSERT INTO market.cross_signals (symbol, spot_exchange, perp_exchange, spot_px, perp_px, edge)
+            VALUES (:symbol, :spot_exchange, :perp_exchange, :spot_px, :perp_px, :edge)
+        '''), dict(symbol=symbol, spot_exchange=spot_exchange, perp_exchange=perp_exchange,
+                   spot_px=spot_px, perp_px=perp_px, edge=edge))
+
 # --- Lecturas simples para API ---
 
 def select_recent_tri_signals(engine, limit: int = 100) -> list[dict[str, Any]]:
