@@ -40,6 +40,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "future"},
         })
+        self.taker_fee_bps = 5.0
         self.rest.set_sandbox_mode(testnet)
 
         # Cache de metadatos/filters

@@ -33,6 +33,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},
         })
+        self.taker_fee_bps = 10.0
         self.rest.set_sandbox_mode(testnet)
 
         self.meta = ExchangeMeta.binance_spot_testnet(
