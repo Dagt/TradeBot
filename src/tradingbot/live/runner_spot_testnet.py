@@ -11,11 +11,13 @@ from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
 from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
+from ..risk.daily_guard import DailyGuard, GuardLimits
+from .common_exec import persist_bar_and_snapshot, persist_after_order
 
 
 # Persistencia opcional
 try:
-    from ..storage.timescale import get_engine, insert_order, insert_bar_1m
+    from ..storage.timescale import get_engine, insert_order, insert_bar_1m, insert_risk_event
     _CAN_PG = True
 except Exception:
     _CAN_PG = False
@@ -36,6 +38,27 @@ async def run_live_binance_spot_testnet(
     strat = BreakoutATR()
     risk = RiskManager(max_pos=1.0)
 
+    # Guardia diaria / ventana (ajusta los límites a tu gusto)
+    trading_window_utc = "00:00-23:59"
+    dguard = DailyGuard(GuardLimits(
+        daily_max_loss_usdt=100.0,  # pérdida diaria máxima
+        daily_max_drawdown_pct=0.05,  # dd intradía, 5%
+        max_consecutive_losses=3,  # racha de pérdidas
+        halt_action="close_all"  # en spot sólo bloquearemos señales (no hay pos abiertas en este runner)
+    ), venue="binance_spot_testnet")
+
+    def _in_trading_window(now_utc: datetime) -> bool:
+        try:
+            hhmm = now_utc.strftime("%H:%M")
+            start, end = trading_window_utc.split("-")
+            if start <= end:
+                ok = (start <= hhmm <= end)
+            else:
+                ok = (hhmm >= start) or (hhmm <= end)
+            return ok and (not dguard.halted)
+        except Exception:
+            return not dguard.halted
+
     engine = get_engine() if (persist_pg and _CAN_PG) else None
 
     async for t in ws.stream_trades(symbol):
@@ -47,13 +70,28 @@ async def run_live_binance_spot_testnet(
         if closed is None:
             continue
 
+        # Marca equity aproximada y verifica ventana / halts
+        # (en spot sin posiciones, la equity real no aplica; marcamos cero)
+        dguard.on_mark(datetime.now(timezone.utc), equity_now=0.0)
+
+        if not _in_trading_window(datetime.now(timezone.utc)):
+            # fuera de ventana o halt -> no generamos señales
+            continue
+
+        halted, reason = dguard.check_halt()
+        if halted:
+            log.error("[HALT SPOT] motivo=%s", reason)
+            # (opcional) persiste el evento
+            if engine is not None:
+                try:
+                    insert_risk_event(engine, venue="binance_spot_testnet", symbol=symbol,
+                                      kind=f"HALT_{reason}", message=f"SPOT halt: {reason}", details={})
+                except Exception:
+                    log.exception("SPOT persist failure: risk_event HALT")
+            continue
+
         # Persistir barra 1m (opcional)
-        if engine is not None:
-            try:
-                insert_bar_1m(engine, exchange="binance_spot_testnet", symbol=symbol,
-                              ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
-            except Exception as e:
-                log.debug("No se pudo insertar barra 1m: %s", e)
+        persist_bar_and_snapshot(engine, venue="binance_spot_testnet", symbol=symbol, bar=closed, cur_pos=None)
 
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
@@ -99,6 +137,16 @@ async def run_live_binance_spot_testnet(
             # Actualiza RiskManager con la cantidad realmente enviada
             try:
                 risk.add_fill(side, adj_qty)
+                # Marca pérdida realizada si fue negativa (en spot no llevamos PnL exacto aquí;
+                # puedes calcular delta aproximado si decides llevarlo. Por ahora sólo registramos INFO)
+                try:
+                    if engine is not None:
+                        insert_risk_event(engine, venue="binance_spot_testnet", symbol=symbol,
+                                          kind="INFO", message="ORDER_SENT",
+                                          details={"qty": float(adj_qty), "side": side})
+                except Exception:
+                    log.exception("SPOT persist failure: risk_event ORDER_SENT")
+
             except Exception:
                 pass
 
@@ -107,20 +155,19 @@ async def run_live_binance_spot_testnet(
             continue  # seguimos con el siguiente tick/iteración del loop
 
         # --- Persistencia (BD) ---
-        if engine is not None:
-            try:
-                insert_order(
-                    engine,
-                    strategy="breakout_atr_spot",
-                    exchange="binance_spot_testnet",
-                    symbol=symbol,
-                    side=side,
-                    type_="market",
-                    qty=float(adj_qty),
-                    px=None,
-                    status=resp.get("status", "sent") if isinstance(resp, dict) else "sent",
-                    ext_order_id=resp.get("ext_order_id"),
-                    notes=resp,
-                )
-            except Exception:
-                log.exception("SPOT persist failure: insert_order")
+        persist_after_order(
+            engine,
+            venue="binance_spot_testnet",
+            strategy="breakout_atr_spot",
+            symbol=symbol,
+            side=side,
+            type_="market",
+            qty=float(adj_qty),
+            mark_price=float(adj_price),
+            resp=resp,
+            reduce_only=False,
+            pos_obj=risk,
+            pnl_mark_px=float(adj_price),
+            risk_event_kind=None
+        )
+

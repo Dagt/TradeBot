@@ -15,12 +15,11 @@ from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
 from ..risk.oco import OcoBook, OcoOrder
 from ..execution.normalize import adjust_order
+from .common_exec import persist_bar_and_snapshot, persist_after_order
 
 try:
     from ..storage.timescale import (
-        get_engine, insert_order, insert_bar_1m, insert_portfolio_snapshot, insert_risk_event,
-        upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill,
-        # 👇 NUEVOS (persistencia OCO)
+        get_engine, insert_risk_event, load_positions, load_latest_marks,
         load_active_oco_by_symbols, upsert_oco, update_oco_active, cancel_oco, mark_oco_triggered
     )
     _CAN_PG = True
@@ -212,38 +211,26 @@ async def run_live_binance_futures_testnet_multi(
 
             if engine is not None:
                 try:
-                    # Orden + Fill
-                    insert_order(engine,
-                                 strategy="breakout_atr_futures",
-                                 exchange=venue,
-                                 symbol=sym,
-                                 side=close_side,
-                                 type_="market",
-                                 qty=float(adj_qty),
-                                 px=None,
-                                 status=resp.get("status", "sent"),
-                                 ext_order_id=str(resp.get("ext_order_id") or None),
-                                 notes=resp)
-                    insert_fill(engine,
-                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
-                        symbol=sym, side=close_side, type_="market",
+                    persist_after_order(
+                        engine,
+                        venue=venue,
+                        strategy="breakout_atr_futures",
+                        symbol=sym,
+                        side=close_side,
+                        type_="market",
                         qty=float(adj_qty),
-                        price=float(resp.get("fill_price") or adj_price),
-                        fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
-                        reduce_only=True, ext_order_id=str(resp.get("ext_order_id") or None),
-                        raw=resp
+                        mark_price=float(adj_price),
+                        resp=resp,
+                        reduce_only=True,
+                        pos_obj=pos_book[sym],
+                        pnl_mark_px=float(adj_price),
+                        risk_event_kind=reason_kind,
+                        risk_event_message=f"{reason_kind} reduce-only close",
+                        risk_event_details={"side": close_side, "qty": float(adj_qty), "price": float(adj_price)}
                     )
-                    # PnL snapshots + evento
-                    upsert_position(engine, venue=venue, symbol=sym,
-                                    qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
-                                    realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
-                    upnl = mark_to_market(pos_book[sym], adj_price)
-                    insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
-                                        price=adj_price, avg_price=pos_book[sym].avg_price,
-                                        upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
-                    insert_risk_event(engine, venue=venue, symbol=sym, kind=reason_kind, message=f"{reason_kind} reduce-only close", details={"side": close_side, "qty": adj_qty, "price": adj_price})
                 except Exception:
-                    log.exception("FUTURES persist failure en close_position_for: order/fill/pnl/risk_event")
+                    log.exception("FUTURES persist failure en close_position_for (helper)")
+
             return True
         except Exception as e:
             log.error("[%s] cierre por %s falló: %s", sym, reason_kind, e)
@@ -320,18 +307,13 @@ async def run_live_binance_futures_testnet_multi(
                 await close_position_for(sym, f"HALT_{reason}", closed.c)
             continue
 
-        if engine is not None:
-            try:
-                insert_bar_1m(engine, exchange=venue, symbol=sym,
-                              ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
-            except Exception:
-                log.exception("FUTURES persist failure: insert_bar_1m")
-            try:
-                cur_pos = guard.st.positions.get(sym, 0.0)
-                insert_portfolio_snapshot(engine, venue=venue, symbol=sym,
-                                          position=cur_pos, price=closed.c, notional_usd=abs(cur_pos)*closed.c)
-            except Exception:
-                log.exception("FUTURES persist failure: insert_portfolio_snapshot")
+        persist_bar_and_snapshot(
+            engine,
+            venue=venue,
+            symbol=sym,
+            bar=closed,
+            cur_pos=guard.st.positions.get(sym, 0.0)
+        )
 
         # === OCO simulado: evalúa SL/TP linkeados a la posición (long/short) ===
         await oco.evaluate(
@@ -412,37 +394,26 @@ async def run_live_binance_futures_testnet_multi(
                         log.warning("[%s] AUTO_CLOSE futures ejecutado: %s | resp=%s", sym, msg, resp)
                         if engine is not None:
                             try:
-                                insert_order(engine,
-                                             strategy="breakout_atr_futures",
-                                             exchange=venue,
-                                             symbol=sym,
-                                             side=close_side,
-                                             type_="market",
-                                             qty=float(adj_qty),
-                                             px=None,
-                                             status=resp.get("status", "sent"),
-                                             ext_order_id=str(resp.get("ext_order_id") or None),
-                                             notes=resp)
-                                insert_fill(engine,
-                                    ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
-                                    symbol=sym, side=close_side, type_="market",
+                                persist_after_order(
+                                    engine,
+                                    venue=venue,
+                                    strategy="breakout_atr_futures",
+                                    symbol=sym,
+                                    side=close_side,
+                                    type_="market",
                                     qty=float(adj_qty),
-                                    price=float(resp.get("fill_price") or adj_price),
-                                    fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
-                                    reduce_only=True, ext_order_id=str(resp.get("ext_order_id") or None),
-                                    raw=resp
+                                    mark_price=float(adj_price),
+                                    resp=resp,
+                                    reduce_only=True,
+                                    pos_obj=pos_book[sym],
+                                    pnl_mark_px=float(adj_price),
+                                    risk_event_kind="AUTO_CLOSE",
+                                    risk_event_message=msg,
+                                    risk_event_details={"executed_side": close_side, "executed_qty": float(adj_qty)}
                                 )
-                                upsert_position(engine, venue=venue, symbol=sym,
-                                                qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
-                                                realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
-                                upnl = mark_to_market(pos_book[sym], adj_price)
-                                insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
-                                                    price=adj_price, avg_price=pos_book[sym].avg_price,
-                                                    upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
-                                insert_risk_event(engine, venue=venue, symbol=sym, kind="AUTO_CLOSE", message=msg,
-                                                  details={"executed_side": close_side, "executed_qty": adj_qty})
                             except Exception:
-                                log.exception("FUTURES persist failure en AUTO_CLOSE: insert_order")
+                                log.exception("FUTURES persist failure en AUTO_CLOSE (helper)")
+
                     except Exception as e:
                         log.error("[%s] AUTO_CLOSE futures falló: %s", sym, e)
             continue
@@ -492,37 +463,22 @@ async def run_live_binance_futures_testnet_multi(
 
             if engine is not None:
                 try:
-                    insert_order(engine,
-                                 strategy="breakout_atr_futures",
-                                 exchange=venue,
-                                 symbol=sym,
-                                 side=side,
-                                 type_="market",
-                                 qty=float(adj_qty),
-                                 px=None,
-                                 status=resp.get("status", "sent"),
-                                 ext_order_id=str(resp.get("ext_order_id") or None),
-                                 notes=resp)
-                    insert_fill(engine,
-                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_futures",
-                        symbol=sym, side=side, type_="market",
+                    persist_after_order(
+                        engine,
+                        venue=venue,
+                        strategy="breakout_atr_futures",
+                        symbol=sym,
+                        side=side,
+                        type_="market",
                         qty=float(adj_qty),
-                        price=float(resp.get("fill_price") or adj_price),
-                        fee_usdt=(resp.get("fee_usdt") if resp.get("fee_usdt") is not None else None),
-                        reduce_only=False, ext_order_id=str(resp.get("ext_order_id") or None),
-                        raw=resp
+                        mark_price=float(adj_price),
+                        resp=resp,
+                        reduce_only=False,
+                        pos_obj=pos_book[sym],
+                        pnl_mark_px=float(adj_price),
+                        risk_event_kind=None
                     )
                 except Exception:
-                    log.exception("FUTURES persist failure tras orden: insert_fill")
-                try:
-                    upsert_position(engine, venue=venue, symbol=sym,
-                                    qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
-                                    realized_pnl=pos_book[sym].realized_pnl, fees_paid=pos_book[sym].fees_paid)
-                    upnl = mark_to_market(pos_book[sym], closed.c)
-                    insert_pnl_snapshot(engine, venue=venue, symbol=sym, qty=pos_book[sym].qty,
-                                        price=closed.c, avg_price=pos_book[sym].avg_price,
-                                        upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
-                except Exception:
-                    log.exception("FUTURES persist failure tras orden: insert_pnl_snapshot")
+                    log.exception("FUTURES persist failure tras orden (helper)")
         except Exception as e:
             log.error("[%s] Error orden futures testnet: %s", sym, e)
