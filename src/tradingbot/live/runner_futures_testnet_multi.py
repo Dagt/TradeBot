@@ -313,7 +313,7 @@ async def run_live_binance_futures_testnet_multi(
                 insert_bar_1m(engine, exchange=venue, symbol=sym,
                               ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
             except Exception:
-                log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                log.exception("Error persistiendo orden/fill/PNL/riskevent (futures)")
             try:
                 cur_pos = guard.st.positions.get(sym, 0.0)
                 insert_portfolio_snapshot(engine, venue=venue, symbol=sym,
@@ -366,7 +366,7 @@ async def run_live_binance_futures_testnet_multi(
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="VIOLATION", message=reason, details=metrics)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("Error persistiendo orden/fill/PNL/riskevent (futures)")
 
             # AUTO‑CLOSE (futures): reduce-only opuesto a la posición
             if auto_close:
@@ -420,7 +420,7 @@ async def run_live_binance_futures_testnet_multi(
                                 insert_risk_event(engine, venue=venue, symbol=sym, kind="AUTO_CLOSE", message=msg,
                                                   details={"executed_side": close_side, "executed_qty": need_qty})
                             except Exception:
-                                log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                                log.exception("Error persistiendo AUTO_CLOSE (futures)")
                     except Exception as e:
                         log.error("[%s] AUTO_CLOSE futures falló: %s", sym, e)
             continue

@@ -92,6 +92,8 @@ async def run_live_binance_futures_testnet(
             resp = await exec_adapter.place_order(symbol, side, "market", capped_qty, mark_price=closed.c)
             state.fills += 1
             log.info("LIVE FILL (dry_run=%s) %s", dry_run, resp)
+            # Actualizar RiskManager con el fill ejecutado
+            risk.add_fill(side, capped_qty)
         except Exception as e:
             log.error("Error enviando orden: %s", e)
 

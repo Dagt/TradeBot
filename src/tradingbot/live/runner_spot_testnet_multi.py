@@ -287,13 +287,13 @@ async def run_live_binance_spot_testnet_multi(
                 insert_bar_1m(engine, exchange=venue, symbol=sym,
                               ts=closed.ts_open, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
             except Exception:
-                log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                log.exception("Error insertando barra/snapshot (spot)")
             try:
                 cur_pos = guard.st.positions.get(sym, 0.0)
                 insert_portfolio_snapshot(engine, venue=venue, symbol=sym,
                                           position=cur_pos, price=closed.c, notional_usd=abs(cur_pos)*closed.c)
             except Exception:
-                log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                log.exception("Error insertando barra/snapshot (spot)")
 
         # === OCO simulado: evalúa SL/TP linkeados a la posición ===
         await oco.evaluate(
@@ -338,7 +338,7 @@ async def run_live_binance_spot_testnet_multi(
                 try:
                     insert_risk_event(engine, venue=venue, symbol=sym, kind="VIOLATION", message=reason, details=metrics)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("Error persistiendo AUTO_CLOSE (spot)")
 
             # AUTO‑CLOSE (spot): vende para reducir si hay posición > 0
             if auto_close:
@@ -457,7 +457,7 @@ async def run_live_binance_spot_testnet_multi(
                         raw=resp
                     )
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("Error persistiendo fill/PNL (spot)")
                 try:
                     upsert_position(engine, venue=venue, symbol=sym,
                                     qty=pos_book[sym].qty, avg_price=pos_book[sym].avg_price,
@@ -467,6 +467,6 @@ async def run_live_binance_spot_testnet_multi(
                                         price=closed.c, avg_price=pos_book[sym].avg_price,
                                         upnl=upnl, rpnl=pos_book[sym].realized_pnl, fees=pos_book[sym].fees_paid)
                 except Exception:
-                    log.exception("Error persistiendo orden/fill/PNL/riskevent (spot)")
+                    log.exception("Error persistiendo fill/PNL (spot)")
         except Exception as e:
             log.error("[%s] Error orden spot testnet: %s", sym, e)

@@ -82,6 +82,8 @@ async def run_live_binance_spot_testnet(
         try:
             resp = await exec_adapter.place_order(symbol, side, "market", capped_qty, mark_price=closed.c)
             log.info("SPOT TESTNET FILL %s", resp)
+            # Actualizar RiskManager con el fill ejecutado
+            risk.add_fill(side, capped_qty)
             if engine is not None:
                 try:
                     insert_order(engine,
@@ -96,7 +98,7 @@ async def run_live_binance_spot_testnet(
                                  ext_order_id=str(
                                      resp.get("resp", {}).get("id") if isinstance(resp.get("resp"), dict) else None),
                                  notes=resp)
-                except Exception as e:
-                    log.debug("No se pudo insertar order: %s", e)
-        except Exception as e:
-            log.error("Error orden spot testnet: %s", e)
+                except Exception:
+                    log.exception("No se pudo insertar order")
+        except Exception:
+            log.exception("No se pudo insertar order")

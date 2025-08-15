@@ -136,6 +136,8 @@ async def run_live_binance(symbol: str = "BTC/USDT", fee_bps: float = 1.5, persi
             resp = await broker.place_order(symbol, side, "market", abs(delta))
             fills += 1
             log.info("FILL live %s", resp)
+            # Actualizar RiskManager con el fill ejecutado
+            risk.add_fill(side, abs(delta))
 
         # Persistir barra 1m si quieres (opcional; requiere tabla market.bars creada)
         # Puedes descomentar y ampliar con INSERT a bars.
