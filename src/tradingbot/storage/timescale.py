@@ -1,8 +1,9 @@
 import logging
-from typing import Any, Iterable
+from typing import Any
+
 from sqlalchemy import create_engine, text
+
 from ..config import settings
-from . import timescale as _ts
 
 log = logging.getLogger(__name__)
 
@@ -19,12 +20,19 @@ def insert_trade(engine, t):
             VALUES (now(), :exchange, :symbol, :px, :qty, :side, :trade_id)
         '''), dict(exchange=t.exchange, symbol=t.symbol, px=t.price, qty=t.qty, side=t.side, trade_id=None))
 
-def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float, l: float, c: float, v: float):
+def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
+                  low: float, c: float, v: float):
+    """Insert a 1-minute OHLCV bar into TimescaleDB."""
     with engine.begin() as conn:
-        conn.execute(text('''
+        conn.execute(
+            text(
+                '''
             INSERT INTO market.bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
             VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
-        '''), dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=l, c=c, v=v))
+        '''
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v),
+        )
 
 def insert_order(engine, *, strategy: str, exchange: str, symbol: str, side: str, type_: str, qty: float, px: float | None, status: str, ext_order_id: str | None = None, notes: dict | None = None):
     with engine.begin() as conn:
@@ -61,8 +69,6 @@ def select_recent_orders(engine, limit: int = 100) -> list[dict[str, Any]]:
             LIMIT :lim
         '''), dict(lim=limit)).mappings().all()
         return [dict(r) for r in rows]
-
-from typing import Dict
 
 def insert_portfolio_snapshot(engine, *, venue: str, symbol: str, position: float, price: float, notional_usd: float):
     with engine.begin() as conn:

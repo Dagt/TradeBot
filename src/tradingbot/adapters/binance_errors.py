@@ -10,7 +10,8 @@ def parse_binance_error_code(exc) -> int | None:
         if isinstance(msg, dict):
             return int(msg.get("code"))
         if isinstance(msg, str) and '"code":' in msg:
-            import json, re
+            import json
+
             # intento rápido
             j = json.loads(msg)
             return int(j.get("code"))
