@@ -1,7 +1,6 @@
 # src/tradingbot/execution/balance.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple
 
 @dataclass
 class SpotBalances:

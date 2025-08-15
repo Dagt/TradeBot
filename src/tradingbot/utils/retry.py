@@ -1,8 +1,10 @@
 # src/tradingbot/utils/retry.py
 from __future__ import annotations
+
 import asyncio
-import random
+import inspect
 import logging
+import random
 
 log = logging.getLogger(__name__)
 
@@ -13,20 +15,46 @@ def _is_retryable(exc: Exception) -> bool:
         "ratelimit", "network", "timeout", "ddos", "temporarily", "temporarily_unavailable"
     ])
 
-async def with_retry(coro_fn, *args, retries: int = 5, base_delay: float = 0.5, max_delay: float = 4.0, **kwargs):
+async def _run_fn(fn, *args, **kwargs):
+    """Run ``fn`` regardless of it being sync or async.
+
+    Synchronous callables are executed in a thread via ``asyncio.to_thread`` to
+    avoid blocking the event loop.  Async callables are awaited directly.  If a
+    synchronous callable returns an awaitable (e.g. a partial of an async
+    function), the awaitable is awaited before returning the final result.
     """
-    Ejecuta una función (sync mediante asyncio.to_thread o ya-async) con backoff.
-    Usa: await with_retry(adapter_fn, arg1, arg2, retries=..., base_delay=...)
+
+    if inspect.iscoroutinefunction(fn):
+        return await fn(*args, **kwargs)
+
+    res = await asyncio.to_thread(fn, *args, **kwargs)
+    if inspect.isawaitable(res):
+        return await res
+    return res
+
+
+async def with_retry(fn, *args, retries: int = 5, base_delay: float = 0.5,
+                     max_delay: float = 4.0, **kwargs):
+    """Execute ``fn`` with exponential backoff retries.
+
+    ``fn`` may be either a synchronous or asynchronous callable.  For
+    synchronous callables the execution is dispatched to ``asyncio.to_thread``.
     """
     attempt = 0
     while True:
         try:
-            res = await coro_fn(*args, **kwargs)
-            return res
+            return await _run_fn(fn, *args, **kwargs)
         except Exception as e:
             attempt += 1
             if attempt > retries or not _is_retryable(e):
                 raise
-            delay = min(max_delay, base_delay * (2 ** (attempt - 1))) * (0.85 + random.random() * 0.3)
-            log.warning("retry %d/%d after error: %s (sleep %.2fs)", attempt, retries, e, delay)
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+            delay *= 0.85 + random.random() * 0.3
+            log.warning(
+                "retry %d/%d after error: %s (sleep %.2fs)",
+                attempt,
+                retries,
+                e,
+                delay,
+            )
             await asyncio.sleep(delay)
