@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from .base import ExchangeAdapter
+from ..utils.metrics import WS_FAILURES
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class BinanceWSAdapter(ExchangeAdapter):
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         yield {"ts": ts, "price": price, "qty": qty, "side": side}
             except Exception as e:
+                WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS desconectado (%s). Reintentando en %.1fs ...", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)

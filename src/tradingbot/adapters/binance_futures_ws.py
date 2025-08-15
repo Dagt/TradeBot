@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
+from ..utils.metrics import WS_FAILURES
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                         side = "sell" if d.get("m") else "buy"
                         yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
             except Exception as e:
+                WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS futures testnet desconectado (%s). Reintento en %.1fs ...", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)

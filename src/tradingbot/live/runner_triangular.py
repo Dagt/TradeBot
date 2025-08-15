@@ -7,6 +7,8 @@ from typing import Dict
 
 import websockets
 
+from ..utils.metrics import WS_FAILURES
+
 from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge, compute_qtys_for_route
@@ -153,6 +155,7 @@ async def run_triangular_binance(cfg: TriConfig):
                         edge.direction, edge.net*100, cfg.notional_quote, last, fills, eq
                     )
         except Exception as e:
+            WS_FAILURES.labels(adapter="tri_runner").inc()
             log.warning("WS triangular desconectado (%s). Reintentando en %.1fs ...", e, backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
