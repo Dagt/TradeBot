@@ -14,6 +14,18 @@ CREATE TABLE IF NOT EXISTS market.trades (
 );
 SELECT create_hypertable('market.trades', by_range('ts'), if_not_exists => TRUE);
 
+-- Orderbook snapshots
+CREATE TABLE IF NOT EXISTS market.orderbook (
+  ts timestamptz NOT NULL,
+  exchange text NOT NULL,
+  symbol text NOT NULL,
+  bid_px numeric[] NOT NULL,
+  bid_qty numeric[] NOT NULL,
+  ask_px numeric[] NOT NULL,
+  ask_qty numeric[] NOT NULL
+);
+SELECT create_hypertable('market.orderbook', by_range('ts'), if_not_exists => TRUE);
+
 -- Bars
 CREATE TABLE IF NOT EXISTS market.bars (
   ts timestamptz NOT NULL,
