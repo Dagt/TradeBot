@@ -36,6 +36,7 @@ class OcoBook:
         self._on_update = on_update
         self._on_cancel = on_cancel
         self._on_trigger = on_trigger
+        self._tiers_state: Dict[str, dict] = {}
 
     def preload(self, items: Dict[str, OcoOrder]):
         self._items.update(items)
@@ -86,7 +87,8 @@ class OcoBook:
     async def evaluate(self, symbol: str, last_price: float,
                        pos_qty: float, entry_price: float,
                        sl_pct: float, tp_pct: float,
-                       close_fn, trail_pct: Optional[float] = None):
+                       close_fn, trail_pct: Optional[float] = None,
+                       tp_tiers: Optional[list[tuple[float, float]]] = None):
         if abs(pos_qty) <= 0 or entry_price <= 0:
             self.cancel(symbol)
             return
@@ -109,7 +111,55 @@ class OcoBook:
         # >>> Trailing stop: actualiza sl_price a favor si corresponde
         self._update_trailing(oco, last_price, trail_pct)
         px = float(last_price)
+        # === TP parciales por tiers (opcional) ===
+        # tp_tiers es lista de (r_multiple, fraction), ej: [(1.0, 0.5), (2.0, 0.5)]
+        # R = distancia de riesgo = |entry - sl_price|
+        if tp_tiers and len(tp_tiers) > 0:
+            # inicializar estado si no existe
+            st = self._tiers_state.get(symbol)
+            if st is None or st.get("orig_qty", 0.0) <= 0 or st.get("tiers") != tp_tiers:
+                self._tiers_state[symbol] = {
+                    "orig_qty": abs(pos_qty),
+                    "done": [False] * len(tp_tiers),
+                    "tiers": list(tp_tiers),
+                }
+                st = self._tiers_state[symbol]
 
+            # Recalcular targets por si sl_price cambió por trailing (R cambia)
+            R = abs(oco.entry_price - oco.sl_price)
+            if R > 0:
+                # Revisa cada tier en orden
+                for i, (r_mult, frac) in enumerate(st["tiers"]):
+                    if st["done"][i]:
+                        continue
+                    # precio objetivo según lado
+                    if oco.side == "long":
+                        tgt = oco.entry_price + r_mult * R
+                        hit = px >= tgt
+                    else:
+                        tgt = oco.entry_price - r_mult * R
+                        hit = px <= tgt
+
+                    if hit:
+                        # qty a cerrar = fracción de la cantidad ORIGINAL
+                        qty_to_close = max(0.0, float(frac) * float(st["orig_qty"]))
+                        if qty_to_close > 0:
+                            ok = await close_fn(symbol, f"TAKE_PROFIT_TIER_{i+1}", qty_to_close, px)
+                            if ok:
+                                # marca tier como realizado
+                                st["done"][i] = True
+                                # reduce la qty restante del OCO (persistimos con on_update)
+                                oco.qty = max(0.0, float(oco.qty) - float(qty_to_close))
+                                if self._on_update:
+                                    self._on_update(symbol, oco)
+
+                                # si ya no queda qty, marcamos TP total
+                                if oco.qty <= 1e-12:
+                                    oco.triggered, oco.triggered_at = "TP", datetime.now(timezone.utc)
+                                    if self._on_trigger:
+                                        self._on_trigger(symbol, "TP")
+                                    return
+                        # seguimos para permitir múltiples tiers en el mismo tick
         if (side == "long" and px <= oco.sl_price) or (side == "short" and px >= oco.sl_price):
             ok = await close_fn(symbol, "STOP_LOSS", min(oco.qty, abs(pos_qty)), px)
             if ok:

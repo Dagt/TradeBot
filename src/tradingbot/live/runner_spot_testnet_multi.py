@@ -11,6 +11,7 @@ from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
 from ..execution.balance import fetch_spot_balances, cap_qty_by_balance_spot
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.pnl import Position, position_from_db, apply_fill, mark_to_market
 from ..risk.oco import OcoBook, OcoOrder
 
@@ -19,7 +20,6 @@ try:
     from ..storage.timescale import (
         get_engine, insert_order, insert_bar_1m, insert_portfolio_snapshot, insert_risk_event,
         upsert_position, insert_pnl_snapshot, load_positions, load_latest_marks, insert_fill,
-        # 👇 NUEVOS (persistencia OCO)
         load_active_oco_by_symbols, upsert_oco, update_oco_active, cancel_oco, mark_oco_triggered
     )
     _CAN_PG = True
@@ -37,10 +37,14 @@ async def run_live_binance_spot_testnet_multi(
     auto_close: bool = True,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
-    sl_pct: float = 0.01,          # 1% SL
-    tp_pct: float = 0.02,          # 2% TP
-    cooldown_secs: int = 60,        # cooldown tras SL
+    sl_pct: float = 0.01,
+    tp_pct: float = 0.02,
+    cooldown_secs: int = 60,
     trail_pct: float | None = 0.004,
+    trading_window_utc: str = "00:00-23:59",
+    daily_max_loss_usdt: float = 50.0,
+    daily_max_drawdown_pct: float = 0.05,
+    max_consecutive_losses: int = 3,
 ):
     """
     Spot TESTNET multi-símbolo:
@@ -98,6 +102,27 @@ async def run_live_binance_spot_testnet_multi(
         on_trigger=_on_trigger
     )
 
+    # === Guardia diaria (pérdidas/drawdown/racha) ===
+    dguard = DailyGuard(GuardLimits(
+        daily_max_loss_usdt=daily_max_loss_usdt,
+        daily_max_drawdown_pct=daily_max_drawdown_pct,
+        max_consecutive_losses=max_consecutive_losses,
+        halt_action="close_all"
+    ), venue=venue)
+
+    def _in_trading_window(now_utc: datetime) -> bool:
+        try:
+            hhmm = now_utc.strftime("%H:%M")
+            start, end = trading_window_utc.split("-")
+            if start <= end:
+                ok = (start <= hhmm <= end)
+            else:
+                # Ventana cruza medianoche: activo si (hhmm >= start) o (hhmm <= end)
+                ok = (hhmm >= start) or (hhmm <= end)
+            return ok and (not dguard.halted)
+        except Exception:
+            return not dguard.halted
+
     # === Rehidratar OCOs activos desde BD (si existen) ===
     if persist_pg and engine is not None:
         try:
@@ -115,6 +140,13 @@ async def run_live_binance_spot_testnet_multi(
 
     # Rehidratación
     pos_book: dict[str, Position] = {}
+    def _approx_equity_total() -> float:
+        total = 0.0
+        for s, pos in pos_book.items():
+            px = guard.st.prices.get(s) or 0.0
+            total += pos.realized_pnl + max(0.0, pos.qty) * px  # spot: solo long
+        return total
+
     if engine is not None:
         try:
             dbpos = load_positions(engine, venue=venue)
@@ -147,6 +179,12 @@ async def run_live_binance_spot_testnet_multi(
             pos_book[sym] = apply_fill(pos_book[sym], "sell", float(qty_to_close), float(now_price), taker_fee_bps, venue_type="spot")
             guard.st.positions[sym] = pos_book[sym].qty
             log.warning("[%s] %s ejecutado: qty=%.6f px=%.4f", sym, reason_kind, qty_to_close, now_price)
+            # --- Actualiza pérdidas realizadas (delta) ---
+            delta_r = pos_book[sym].realized_pnl - last_rpnl[sym]
+            if abs(delta_r) > 0:
+                dguard.on_realized_delta(delta_r)
+                last_rpnl[sym] = pos_book[sym].realized_pnl
+
             if engine is not None:
                 try:
                     # Orden + Fill
@@ -193,6 +231,8 @@ async def run_live_binance_spot_testnet_multi(
             cooldown_until[s] = datetime.now(timezone.utc) + timedelta(seconds=cooldown_secs)
         return ok
 
+    last_rpnl: dict[str, float] = {s: pos_book[s].realized_pnl for s in symbols}
+
     async for t in ws.stream_trades_multi(symbols):
         sym = t["symbol"].upper().replace("-", "/")
         if sym not in aggs:
@@ -207,6 +247,23 @@ async def run_live_binance_spot_testnet_multi(
         closed = aggs[sym].on_trade(ts, px, qty)
         if closed is None:
             continue
+
+        # --- Equity & ventana horaria / halts ---
+        dguard.on_mark(datetime.now(timezone.utc), equity_now=_approx_equity_total())
+
+        if not _in_trading_window(datetime.now(timezone.utc)):
+            if dguard.halted and dguard.lim.halt_action == "close_all" and pos_book[sym].qty > 0:
+                await close_position_for(sym, "HALT_CLOSE_ALL", closed.c, qty_override=pos_book[sym].qty)
+            continue
+
+        halted, reason = dguard.check_halt()
+        if halted:
+            log.error("[HALT] %s motivo=%s", sym, reason)
+            if dguard.lim.halt_action == "close_all" and pos_book[sym].qty > 0:
+                await close_position_for(sym, f"HALT_{reason}", closed.c, qty_override=pos_book[sym].qty)
+            continue
+
+        # Persistencia de barra + snapshot de portafolio
 
         # Persistencia de barra + snapshot de portafolio
         if engine is not None:
@@ -231,7 +288,9 @@ async def run_live_binance_spot_testnet_multi(
             sl_pct=sl_pct,
             tp_pct=tp_pct,
             close_fn=_oco_close_fn,
-            trail_pct=trail_pct  # <-- nuevo (puede ser None)
+            trail_pct=trail_pct,
+            tp_tiers=[(1.0, 0.5), (2.0, 0.5)],  # 50% @ 1R, 50% @ 2R
+
         )
 
         # Cooldown post-stop (solo tras SL)
@@ -276,6 +335,12 @@ async def run_live_binance_spot_testnet_multi(
                             # PnL/posiciones
                             pos_book[sym] = apply_fill(pos_book[sym], "sell", float(capped_qty_close), float(closed.c), taker_fee_bps, venue_type="spot")
                             guard.st.positions[sym] = pos_book[sym].qty
+                            # --- Actualiza pérdidas realizadas (delta) ---
+                            delta_r = pos_book[sym].realized_pnl - last_rpnl[sym]
+                            if abs(delta_r) > 0:
+                                dguard.on_realized_delta(delta_r)
+                                last_rpnl[sym] = pos_book[sym].realized_pnl
+
                             log.warning("[%s] AUTO_CLOSE spot ejecutado: %s | resp=%s", sym, msg, resp)
                             if engine is not None:
                                 try:
@@ -342,6 +407,11 @@ async def run_live_binance_spot_testnet_multi(
             # PnL/posiciones
             pos_book[sym] = apply_fill(pos_book[sym], side, float(capped_qty), float(closed.c), taker_fee_bps, venue_type="spot")
             guard.st.positions[sym] = pos_book[sym].qty
+            # --- Actualiza pérdidas realizadas (delta) ---
+            delta_r = pos_book[sym].realized_pnl - last_rpnl[sym]
+            if abs(delta_r) > 0:
+                dguard.on_realized_delta(delta_r)
+                last_rpnl[sym] = pos_book[sym].realized_pnl
 
             if engine is not None:
                 try:

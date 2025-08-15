@@ -1,7 +1,7 @@
 # src/tradingbot/adapters/binance_futures.py
 from __future__ import annotations
 import asyncio
-import logging
+import logging, time, uuid
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
@@ -13,6 +13,8 @@ from .base import ExchangeAdapter
 from ..config import settings
 from ..market.exchange_meta import ExchangeMeta
 from ..execution.normalize import adjust_order
+from .binance_errors import parse_binance_error_code
+from ..execution.retry import with_retries, AmbiguousOrderError
 
 log = logging.getLogger(__name__)
 
@@ -68,72 +70,95 @@ class BinanceFuturesAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         raise NotImplementedError("usa BinanceWSAdapter para stream de trades")
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, reduce_only: bool = False, mark_price: float | None = None) -> Dict[str, Any]:
+    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
+                          price: float | None = None, mark_price: float | None = None,
+                          reduce_only: bool = False, client_order_id: str | None = None):
         """
-        Envía una orden y retorna un dict con campos estandarizados:
-        {
-          "status": "filled"/"sent"/"error",
-          "resp": <payload crudo>,
-          "fill_price": float|None,
-          "fee_usdt": float|None,
-          "ext_order_id": str|None
-        }
+        UM Futures: idempotencia + retries + reconciliación.
         """
-        try:
-            params = {"reduceOnly": reduce_only} if reduce_only else {}
-            # IMPORTANTE: en testnet/ccxt, a veces el fill llega como market order inmediatamente.
-            order = await self.rest.create_order(
-                symbol.replace("/", ""),  # o símbolo según mapping que uses
-                type_.lower(),
-                side.lower(),
-                qty,
-                None,  # price para market = None
-                params
-            )
-            # Extraer id
-            ext_id = order.get("id") or order.get("orderId") or None
+        symbol_ex = symbol.replace("/", "")
+        side_u = side.upper()
+        type_u = type_.upper()
+        qty = float(qty)
+        cid = client_order_id or f"TBT-{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}"
 
-            # Intentar leer fills/avgPrice
-            fill_px = None
-            fee_usdt = None
-
-            # ccxt: a veces trae 'average' y 'fee'
-            # Nota: en binance futures el 'fee' puede venir como {cost, currency}. Convertimos a USDT si currency es USDT.
+        async def _send():
             try:
-                if "info" in order and isinstance(order["info"], dict):
-                    info = order["info"]
-                    # average fill (si existe)
-                    fill_px = float(info.get("avgPrice") or info.get("averagePrice") or info.get("price") or 0) or None
-                    # fees: puede venir en 'fills' o en 'info'
-                    fills = info.get("fills") or []
-                    if isinstance(fills, list) and fills:
-                        # sumamos fees en USDT si están
-                        total_fee = 0.0
-                        for f in fills:
-                            f_cost = f.get("commission")
-                            f_curr = f.get("commissionAsset")
-                            if f_cost is not None and (f_curr or "").upper() in ("USDT", "BUSD"):
-                                try:
-                                    total_fee += float(f_cost)
-                                except:
-                                    pass
-                        fee_usdt = total_fee if total_fee > 0 else None
-                # fallback a campos "average" de ccxt normalizados
-                if fill_px is None and order.get("average"):
-                    fill_px = float(order["average"])
-                fee = order.get("fee")
-                if fee and isinstance(fee, dict) and (fee.get("currency") or "").upper() in ("USDT", "BUSD"):
-                    fee_usdt = float(fee.get("cost"))
+                params = {
+                    "symbol": symbol_ex,
+                    "side": side_u,
+                    "type": type_u,
+                    "quantity": qty,
+                    "newClientOrderId": cid,
+                }
+                if reduce_only:
+                    params["reduceOnly"] = True
+                if type_u == "LIMIT":
+                    if price is None:
+                        raise ValueError("LIMIT requiere price")
+                    params["price"] = float(price)
+                    params["timeInForce"] = "GTC"
 
+                resp = await self.rest.futures_order_new(**params)
+                return {
+                    "status": "sent",
+                    "ext_order_id": resp.get("orderId"),
+                    "client_order_id": resp.get("clientOrderId") or cid,
+                    "fill_price": None,
+                    "raw": resp,
+                }
             except Exception as e:
-                log.debug("No se pudieron extraer fill/fee de la respuesta: %s", e)
+                code = parse_binance_error_code(e)
+                transient = { -1001, -1003, -1021, -1105, None }
+                fatal = { -1013, -2010, -2011, -2019 }
+                ambiguous = { -1001, None }
 
-            # Si no tenemos fill_px, usa mark_price como aproximación
-            if fill_px is None and mark_price is not None:
-                fill_px = float(mark_price)
+                if code in fatal:
+                    log.error("[FUT] Orden fatal %s %s: %s", symbol, params, e)
+                    raise
+                if code in ambiguous:
+                    raise AmbiguousOrderError(f"Ambiguous fut order send: {e}", candidate_client_order_id=cid)
 
-            status = "filled" if fill_px is not None else "sent"
-            return {"status": status, "resp": order, "fill_price": fill_px, "fee_usdt": fee_usdt, "ext_order_id": ext_id}
-        except Exception as e:
-            log.error("Error placing futures order: %s", e)
-            return {"status": "error", "error": str(e), "resp": {}, "fill_price": None, "fee_usdt": None, "ext_order_id": None}
+                log.warning("[FUT] Transient error %s → retry: %s", code, e)
+                raise
+
+        def _on_retry(attempt, exc):
+            log.warning("[FUT] retry #%d %s %s qty=%.8f reduceOnly=%s: %s",
+                        attempt, side_u, symbol, qty, reduce_only, exc)
+
+        try:
+            out = await with_retries(_send, max_attempts=5, on_retry=_on_retry)
+            return out
+        except AmbiguousOrderError as ae:
+            # Reconciliación por clientOrderId
+            try:
+                q = await self.rest.futures_order_get(symbol=symbol_ex, origClientOrderId=ae.client_order_id)
+                return {
+                    "status": q.get("status", "NEW"),
+                    "ext_order_id": q.get("orderId"),
+                    "client_order_id": q.get("clientOrderId"),
+                    "fill_price": None,
+                    "raw": q,
+                }
+            except Exception as e2:
+                try:
+                    lst = await self.rest.futures_all_orders(symbol=symbol_ex, limit=5)
+                    for o in lst or []:
+                        if o.get("clientOrderId") == ae.client_order_id:
+                            return {
+                                "status": o.get("status", "NEW"),
+                                    "ext_order_id": o.get("orderId"),
+                                    "client_order_id": o.get("clientOrderId"),
+                                    "fill_price": None,
+                                    "raw": o,
+                                }
+                except Exception:
+                    pass
+                log.error("[FUT] Reconciliación falló (%s): %s", ae.client_order_id, e2)
+                return {
+                    "status": "unknown",
+                    "ext_order_id": None,
+                    "client_order_id": ae.client_order_id,
+                    "fill_price": None,
+                    "raw": {"error": "reconcile_failed"},
+                }
