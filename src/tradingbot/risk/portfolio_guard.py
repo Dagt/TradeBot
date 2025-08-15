@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Tuple, Optional
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict, deque
+
+import numpy as np
 
 @dataclass
 class GuardConfig:
@@ -17,6 +20,10 @@ class GuardConfig:
 class GuardState:
     positions: Dict[str, float] = field(default_factory=dict)   # qty base
     prices: Dict[str, float] = field(default_factory=dict)      # último mark
+    # retornos simples (dprice/price_prev) para correlaciones intraportafolio
+    returns: Dict[str, deque] = field(
+        default_factory=lambda: defaultdict(lambda: deque(maxlen=50))
+    )
     # ventanas soft activas
     sym_soft_started: Dict[str, Optional[datetime]] = field(default_factory=dict)
     total_soft_started: Optional[datetime] = None
@@ -28,7 +35,12 @@ class PortfolioGuard:
 
     # ---- utilidades base ----
     def mark_price(self, symbol: str, price: float):
-        self.st.prices[symbol] = float(price)
+        price = float(price)
+        prev = self.st.prices.get(symbol)
+        self.st.prices[symbol] = price
+        if prev is not None and prev > 0:
+            ret = (price / prev) - 1.0
+            self.st.returns[symbol].append(ret)
 
     def update_position_on_order(self, symbol: str, side: str, qty: float):
         cur = self.st.positions.get(symbol, 0.0)
@@ -41,6 +53,20 @@ class PortfolioGuard:
 
     def exposure_total(self) -> float:
         return sum(abs(self.st.positions.get(s, 0.0)) * self.st.prices.get(s, 0.0) for s in self.st.positions)
+
+    def correlations(self) -> Dict[Tuple[str, str], float]:
+        """Calcula correlaciones de retornos entre pares de símbolos."""
+        syms = list(self.st.returns.keys())
+        result: Dict[Tuple[str, str], float] = {}
+        for i in range(len(syms)):
+            for j in range(i + 1, len(syms)):
+                a = np.array(self.st.returns[syms[i]], dtype=float)
+                b = np.array(self.st.returns[syms[j]], dtype=float)
+                n = min(len(a), len(b))
+                if n >= 2:
+                    corr = float(np.corrcoef(a[-n:], b[-n:])[0, 1])
+                    result[(syms[i], syms[j])] = corr
+        return result
 
     # ---- hard caps (como antes) ----
     def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:

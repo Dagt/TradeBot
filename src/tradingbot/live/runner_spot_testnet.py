@@ -12,6 +12,7 @@ from ..adapters.binance_spot import BinanceSpotAdapter
 from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
+from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from .common_exec import persist_bar_and_snapshot, persist_after_order
 
 
@@ -27,7 +28,11 @@ log = logging.getLogger(__name__)
 async def run_live_binance_spot_testnet(
     symbol: str = "BTC/USDT",
     trade_qty: float = 0.001,
-    persist_pg: bool = False
+    persist_pg: bool = False,
+    total_cap_usdt: float = 1000.0,
+    per_symbol_cap_usdt: float = 500.0,
+    soft_cap_pct: float = 0.10,
+    soft_cap_grace_sec: int = 30
 ):
     """
     WS spot testnet -> barras 1m -> BreakoutATR -> Risk -> BinanceSpotAdapter (orden real testnet)
@@ -37,6 +42,13 @@ async def run_live_binance_spot_testnet(
     agg = BarAggregator()
     strat = BreakoutATR()
     risk = RiskManager(max_pos=1.0)
+    guard = PortfolioGuard(GuardConfig(
+        total_cap_usdt=total_cap_usdt,
+        per_symbol_cap_usdt=per_symbol_cap_usdt,
+        venue="binance_spot_testnet",
+        soft_cap_pct=soft_cap_pct,
+        soft_cap_grace_sec=soft_cap_grace_sec
+    ))
 
     # Guardia diaria / ventana (ajusta los límites a tu gusto)
     trading_window_utc = "00:00-23:59"
@@ -69,6 +81,8 @@ async def run_live_binance_spot_testnet(
         closed = agg.on_trade(ts, px, qty)
         if closed is None:
             continue
+
+        guard.mark_price(symbol, px)
 
         # Marca equity aproximada y verifica ventana / halts
         # (en spot sin posiciones, la equity real no aplica; marcamos cero)
@@ -107,6 +121,24 @@ async def run_live_binance_spot_testnet(
 
         side = "buy" if delta > 0 else "sell"
 
+        # --- Portfolio guard ---
+        action, reason, metrics = guard.soft_cap_decision(symbol, side, abs(trade_qty), closed.c)
+        if action == "block":
+            log.warning("[PG] Bloqueado %s: %s", symbol, reason)
+            if engine is not None:
+                try:
+                    insert_risk_event(engine, venue="binance_spot_testnet", symbol=symbol,
+                                      kind="VIOLATION", message=reason, details=metrics)
+                except Exception:
+                    log.exception("SPOT persist failure: risk_event VIOLATION")
+            continue
+        elif action == "soft_allow" and engine is not None:
+            try:
+                insert_risk_event(engine, venue="binance_spot_testnet", symbol=symbol,
+                                  kind="INFO", message=reason, details=metrics)
+            except Exception:
+                log.exception("SPOT persist failure: risk_event INFO")
+
         # --- NEW: cap por balance spot ---
         from ..execution.balance import fetch_spot_balances, cap_qty_by_balance_spot
         try:
@@ -137,6 +169,7 @@ async def run_live_binance_spot_testnet(
             # Actualiza RiskManager con la cantidad realmente enviada
             try:
                 risk.add_fill(side, adj_qty)
+                guard.update_position_on_order(symbol, side, float(adj_qty))
                 # Marca pérdida realizada si fue negativa (en spot no llevamos PnL exacto aquí;
                 # puedes calcular delta aproximado si decides llevarlo. Por ahora sólo registramos INFO)
                 try:
