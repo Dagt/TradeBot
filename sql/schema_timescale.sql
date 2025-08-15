@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS market.tri_signals (
 );
 CREATE INDEX IF NOT EXISTS idx_tri_signals_ts ON market.tri_signals(ts);
 
+-- Cross exchange arbitrage opportunities
+CREATE TABLE IF NOT EXISTS market.cross_signals (
+  id bigserial PRIMARY KEY,
+  ts timestamptz NOT NULL DEFAULT now(),
+  symbol text NOT NULL,
+  spot_exchange text NOT NULL,
+  perp_exchange text NOT NULL,
+  spot_px numeric NOT NULL,
+  perp_px numeric NOT NULL,
+  edge numeric NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cross_signals_ts ON market.cross_signals(ts);
+
 -- Portfolio exposure snapshots (por símbolo)
 CREATE TABLE IF NOT EXISTS market.portfolio_snapshots (
   ts timestamptz NOT NULL DEFAULT now(),
