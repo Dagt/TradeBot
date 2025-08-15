@@ -2,8 +2,13 @@
 from fastapi import FastAPI, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from ...storage.timescale import select_recent_fills
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pathlib import Path
+import time
+from starlette.requests import Request
+
+from ...storage.timescale import select_recent_fills
+from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 
 # Persistencia
 try:
@@ -21,9 +26,25 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def _metrics_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start
+    endpoint = request.url.path
+    REQUEST_LATENCY.labels(request.method, endpoint).observe(elapsed)
+    REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
+    return response
+
 @app.get("/health")
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
