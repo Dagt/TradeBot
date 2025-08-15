@@ -4,7 +4,7 @@ import pandas as pd
 
 from ..logging_conf import setup_logging
 from ..backtest.event_engine import run_backtest_csv
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager
 from ..execution.paper import PaperAdapter
 from ..live.runner import run_live_binance
@@ -19,14 +19,20 @@ from ..live.runner_futures_testnet_multi import run_live_binance_futures_testnet
 app = typer.Typer(add_completion=False)
 
 @app.command()
-def backtest(data: str, symbol: str = "BTC/USDT"):
+def backtest(data: str, symbol: str = "BTC/USDT", strategy: str = "breakout_atr"):
     """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)"""
     setup_logging()
-    res = run_backtest_csv(data, symbol=symbol)
+    res = run_backtest_csv(data, symbol=symbol, strategy=strategy)
     typer.echo(res)
 
 @app.command()
-def run_csv_paper(data: str, symbol: str = "BTC/USDT", sleep_ms: int = 50, max_bars: int = 0):
+def run_csv_paper(
+    data: str,
+    symbol: str = "BTC/USDT",
+    strategy: str = "breakout_atr",
+    sleep_ms: int = 50,
+    max_bars: int = 0,
+):
     """
     Reproduce un feed con CSV y ejecuta órdenes en un broker de papel.
     Útil para ver la tubería Estrategia -> Riesgo -> Broker (simulada).
@@ -39,7 +45,10 @@ def run_csv_paper(data: str, symbol: str = "BTC/USDT", sleep_ms: int = 50, max_b
     if not needed_cols.issubset(set(df.columns)):
         raise SystemExit(f"CSV debe contener columnas: {sorted(needed_cols)}")
 
-    strat = BreakoutATR()
+    strat_cls = STRATEGIES.get(strategy)
+    if strat_cls is None:
+        raise SystemExit(f"estrategia desconocida: {strategy}")
+    strat = strat_cls()
     risk = RiskManager(max_pos=1.0)
     broker = PaperAdapter(fee_bps=1.5)  # 1.5 bps = 0.015%
 

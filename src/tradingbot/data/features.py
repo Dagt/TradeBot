@@ -14,6 +14,23 @@ def keltner_channels(df: pd.DataFrame, ema_n: int = 20, atr_n: int = 14, mult: f
     return upper, lower
 
 
+def rsi(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    """Relative Strength Index of the ``close`` column.
+
+    Uses an exponential moving average formulation which closely follows
+    the original indicator.  Values are bounded between 0 and 100.
+    """
+
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(span=n, adjust=False).mean()
+    avg_loss = loss.ewm(span=n, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(100)
+
+
 def order_flow_imbalance(df: pd.DataFrame) -> pd.Series:
     """Compute Order Flow Imbalance (OFI) using top of book changes.
 
