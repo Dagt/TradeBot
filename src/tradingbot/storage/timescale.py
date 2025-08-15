@@ -34,6 +34,23 @@ def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
             dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v),
         )
 
+def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, interval_sec: int):
+    with engine.begin() as conn:
+        conn.execute(text('''
+            INSERT INTO market.funding (ts, exchange, symbol, rate, interval_sec)
+            VALUES (:ts, :exchange, :symbol, :rate, :interval_sec)
+        '''), dict(ts=ts, exchange=exchange, symbol=symbol, rate=rate, interval_sec=interval_sec))
+
+def insert_orderbook(engine, *, ts, exchange: str, symbol: str,
+                     bid_px: list[float], bid_qty: list[float],
+                     ask_px: list[float], ask_qty: list[float]):
+    with engine.begin() as conn:
+        conn.execute(text('''
+            INSERT INTO market.orderbook (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+            VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+        '''), dict(ts=ts, exchange=exchange, symbol=symbol,
+                   bid_px=bid_px, bid_qty=bid_qty, ask_px=ask_px, ask_qty=ask_qty))
+
 def insert_order(engine, *, strategy: str, exchange: str, symbol: str, side: str, type_: str, qty: float, px: float | None, status: str, ext_order_id: str | None = None, notes: dict | None = None):
     with engine.begin() as conn:
         conn.execute(text('''

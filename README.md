@@ -79,3 +79,32 @@ uvicorn tradingbot.apps.api.main:app --reload --port 8080
 ```
 
 > **Nota**: este repo es un esqueleto funcional. Los adaptadores WS/REST y ejecución están stubs listos para ser implementados paso a paso.
+
+## Esquema de datos y carga
+
+El archivo `sql/schema_timescale.sql` crea el esquema `market` con tablas básicas para el almacenamiento de mercado:
+
+- `trades`: ejecuciones individuales
+- `orderbook`: snapshots del libro de órdenes (`bid_px`, `bid_qty`, `ask_px`, `ask_qty`)
+- `bars`: agregados OHLCV
+- `funding`: tasas de funding de perps
+
+Para cargar la estructura en una instancia de TimescaleDB:
+
+```bash
+psql -h localhost -U postgres -f sql/schema_timescale.sql
+```
+
+Luego puedes insertar datos desde Python utilizando los helpers:
+
+```python
+from tradingbot.storage.timescale import get_engine, insert_funding, insert_orderbook
+
+engine = get_engine()
+insert_funding(engine, ts=..., exchange="binance", symbol="BTCUSDT", rate=0.0001, interval_sec=3600)
+insert_orderbook(
+    engine,
+    ts=..., exchange="binance", symbol="BTCUSDT",
+    bid_px=[...], bid_qty=[...], ask_px=[...], ask_qty=[...],
+)
+```
