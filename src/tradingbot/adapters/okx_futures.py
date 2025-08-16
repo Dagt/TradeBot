@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..config import settings
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -25,20 +26,46 @@ class OKXFuturesAdapter(ExchangeAdapter):
 
     name = "okx_futures"
 
-    def __init__(self):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        testnet: bool = False,
+    ):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
         # "swap" cubre contratos perpetuos
-        self.rest = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "swap"}})
+        key = api_key or (settings.okx_testnet_api_key if testnet else settings.okx_api_key)
+        secret = api_secret or (settings.okx_testnet_api_secret if testnet else settings.okx_api_secret)
+        passphrase = api_passphrase or (
+            settings.okx_testnet_api_passphrase if testnet else settings.okx_api_passphrase
+        )
+
+        self.rest = ccxt.okx({
+            "apiKey": key,
+            "secret": secret,
+            "password": passphrase,
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"},
+        })
+        self.rest.set_sandbox_mode(testnet)
         # Validar permisos disponibles
         validate_scopes(self.rest, log)
+
+        self.ws_public_url = (
+            "wss://wspap.okx.com:8443/ws/v5/public?brokerId=9999"
+            if testnet
+            else "wss://ws.okx.com:8443/ws/v5/public"
+        )
+        self.name = "okx_futures_testnet" if testnet else "okx_futures"
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://ws.okx.com:8443/ws/v5/public"
+        url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         backoff = 1.0
@@ -62,7 +89,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
                 backoff = min(backoff * 2, 30.0)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://ws.okx.com:8443/ws/v5/public"
+        url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
         backoff = 1.0

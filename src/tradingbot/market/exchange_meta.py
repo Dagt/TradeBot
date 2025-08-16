@@ -42,6 +42,18 @@ class ExchangeMeta:
         client.set_sandbox_mode(True)
         return cls(name="binance_spot_testnet", client=client)
 
+    @classmethod
+    def binance_spot(cls, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+        if ccxt is None:
+            raise RuntimeError("ccxt no disponible")
+        client = ccxt.binance({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+            "options": {"defaultType": "spot"},
+        })
+        return cls(name="binance_spot", client=client)
+
     def load_markets(self):
         return self.client.load_markets(True)
 

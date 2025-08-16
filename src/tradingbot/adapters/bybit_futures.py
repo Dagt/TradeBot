@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - ccxt optional during tests
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..config import settings
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -25,19 +26,41 @@ class BybitFuturesAdapter(ExchangeAdapter):
 
     name = "bybit_futures"
 
-    def __init__(self):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        testnet: bool = False,
+    ):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
-        self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "swap"}})
+
+        key = api_key or (settings.bybit_testnet_api_key if testnet else settings.bybit_api_key)
+        secret = api_secret or (settings.bybit_testnet_api_secret if testnet else settings.bybit_api_secret)
+
+        self.rest = ccxt.bybit({
+            "apiKey": key,
+            "secret": secret,
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"},
+        })
+        self.rest.set_sandbox_mode(testnet)
         # Validar permisos de la clave
         validate_scopes(self.rest, log)
+
+        self.ws_public_url = (
+            "wss://stream-testnet.bybit.com/v5/public/linear"
+            if testnet
+            else "wss://stream.bybit.com/v5/public/linear"
+        )
+        self.name = "bybit_futures_testnet" if testnet else "bybit_futures"
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/linear"
+        url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
         backoff = 1.0
@@ -61,7 +84,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
                 backoff = min(backoff * 2, 30.0)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/linear"
+        url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
         backoff = 1.0

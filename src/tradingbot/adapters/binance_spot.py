@@ -22,18 +22,27 @@ log = logging.getLogger(__name__)
 
 class BinanceSpotAdapter(ExchangeAdapter):
     """
-    Órdenes reales en Binance SPOT **TESTNET** vía CCXT, con validación (tick/step/minNotional).
+    Adapter de Binance Spot con soporte para modo real o testnet.
     Usa WS aparte para precios (ver SpotWSAdapter abajo o pasa mark_price).
     """
-    name = "binance_spot_testnet"
+    name = "binance_spot"
 
-    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, testnet: bool = True):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        testnet: bool = False,
+    ):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
+
+        key = api_key or (settings.binance_testnet_api_key if testnet else settings.binance_api_key)
+        secret = api_secret or (settings.binance_testnet_api_secret if testnet else settings.binance_api_secret)
+
         self.rest = ccxt.binance({
-            "apiKey": api_key or settings.binance_api_key,
-            "secret": api_secret or settings.binance_api_secret,
+            "apiKey": key,
+            "secret": secret,
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},
         })
@@ -43,14 +52,14 @@ class BinanceSpotAdapter(ExchangeAdapter):
         # Advertir si faltan scopes necesarios o si hay permisos peligrosos
         validate_scopes(self.rest, log)
 
-        self.meta = ExchangeMeta.binance_spot_testnet(
-            api_key or settings.binance_api_key,
-            api_secret or settings.binance_api_secret
-        )
+        meta_factory = ExchangeMeta.binance_spot_testnet if testnet else ExchangeMeta.binance_spot
+        self.meta = meta_factory(key, secret)
         try:
             self.meta.load_markets()
         except Exception as e:
             log.warning("load_markets spot falló: %s", e)
+
+        self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
