@@ -10,6 +10,12 @@ authors = [{name="Tu Nombre", email="you@example.com"}]
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+vectorbt = ["vectorbt>=0.26"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = ["tradingbot"]
+
+[tool.pytest.ini_options]
+markers = ["optional: tests requiring optional dependencies"]
