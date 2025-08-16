@@ -10,8 +10,15 @@ from ..config import settings
 
 if settings.db_backend.lower() == "questdb":
     from .quest import get_engine, insert_trade, insert_orderbook  # noqa: F401
+    from .async_quest import AsyncQuestDBClient as AsyncDBClient  # noqa: F401
 else:  # default to timescale
     from .timescale import get_engine, insert_trade, insert_orderbook  # noqa: F401
+    from .async_timescale import AsyncTimescaleClient as AsyncDBClient  # noqa: F401
 
-__all__ = ["get_engine", "insert_trade", "insert_orderbook"]
+__all__ = [
+    "get_engine",
+    "insert_trade",
+    "insert_orderbook",
+    "AsyncDBClient",
+]
 
