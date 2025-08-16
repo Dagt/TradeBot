@@ -1,10 +1,13 @@
 import numpy as np
 import pandas as pd
-import vectorbt as vbt
+import pytest
+try:  # pragma: no cover - optional dependency
+    import vectorbt as vbt  # type: ignore
+except Exception:  # pragma: no cover
+    vbt = None
 from types import SimpleNamespace
 
 from tradingbot.backtest.event_engine import SlippageModel, run_backtest_csv
-from tradingbot.backtest.vectorbt_engine import run_vectorbt
 from tradingbot.strategies import STRATEGIES
 
 
@@ -54,11 +57,14 @@ def test_pnl_with_and_without_slippage(tmp_path, monkeypatch):
 
 
 def test_run_vectorbt_basic():
+    vbt_local = pytest.importorskip("vectorbt")
+    from tradingbot.backtest.vectorbt_engine import run_vectorbt
+
     class MAStrategy:
         @staticmethod
         def signal(close, fast, slow):
-            fast_ma = vbt.MA.run(close, fast)
-            slow_ma = vbt.MA.run(close, slow)
+            fast_ma = vbt_local.MA.run(close, fast)
+            slow_ma = vbt_local.MA.run(close, slow)
             entries = fast_ma.ma_crossed_above(slow_ma)
             exits = fast_ma.ma_crossed_below(slow_ma)
             return entries, exits
@@ -71,4 +77,54 @@ def test_run_vectorbt_basic():
     assert not stats.empty
     assert {"sharpe_ratio", "max_drawdown", "total_return"} <= set(stats.columns)
     assert list(stats.index.names) == ["fast", "slow"]
+
+
+class OneShotStrategy:
+    name = "oneshot"
+
+    def __init__(self) -> None:
+        self.sent = False
+
+    def on_bar(self, bar):
+        if self.sent:
+            return None
+        self.sent = True
+        return SimpleNamespace(side="buy", strength=1.0)
+
+
+def test_l2_queue_partial_and_cancel(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=3, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.0,
+            "bid": 99.9,
+            "ask": 100.1,
+            "bid_size": [1.0, 1.0, 1.0],
+            "ask_size": [0.2, 0.2, 0.4],
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "l2.csv"
+    df.to_csv(path, index=False)
+
+    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
+    strategies = [("oneshot", "SYM")]
+    data = {"SYM": str(path)}
+
+    res = run_backtest_csv(
+        data,
+        strategies,
+        latency=1,
+        window=1,
+        slippage=SlippageModel(),
+        use_l2=True,
+        cancel_unfilled=True,
+    )
+
+    assert pytest.approx(res["orders"][0]["filled"], rel=1e-9) == 0.2
+    assert len(res["fills"]) == 1
 
