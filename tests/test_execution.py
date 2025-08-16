@@ -1,8 +1,21 @@
+import time
+
 import pytest
 from hypothesis import given, strategies as st
 
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
+from tradingbot.execution.paper import PaperAdapter
+
+
+class TimedPaperAdapter(PaperAdapter):
+    def __init__(self):
+        super().__init__()
+        self.call_times: list[float] = []
+
+    async def place_order(self, *args, **kwargs):  # type: ignore[override]
+        self.call_times.append(time.monotonic())
+        return await super().place_order(*args, **kwargs)
 
 
 @pytest.mark.asyncio
@@ -36,43 +49,52 @@ async def test_paper_stream_updates_price(paper_adapter):
 
 
 @pytest.mark.asyncio
-async def test_twap_splits_orders(paper_adapter):
-    paper_adapter.update_last_price("BTCUSDT", 100.0)
-    router = ExecutionRouter(paper_adapter)
+async def test_twap_splits_orders():
+    adapter = TimedPaperAdapter()
+    adapter.update_last_price("BTCUSDT", 100.0)
+    router = ExecutionRouter(adapter)
     order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=4.0)
-    res = await router.execute(order, algo="twap", slices=4)
+    res = await router.execute(order, algo="twap", slices=4, delay=0.01)
     assert len(res) == 4
-    assert paper_adapter.state.pos["BTCUSDT"].qty == pytest.approx(4.0)
+    assert [r["qty"] for r in res] == [pytest.approx(1.0)] * 4
+    assert adapter.state.pos["BTCUSDT"].qty == pytest.approx(4.0)
+    diffs = [t2 - t1 for t1, t2 in zip(adapter.call_times, adapter.call_times[1:])]
+    assert all(d >= 0.01 for d in diffs)
 
 
 @pytest.mark.asyncio
-async def test_vwap_distribution(paper_adapter):
-    paper_adapter.update_last_price("BTCUSDT", 100.0)
-    router = ExecutionRouter(paper_adapter)
+async def test_vwap_distribution():
+    adapter = TimedPaperAdapter()
+    adapter.update_last_price("BTCUSDT", 100.0)
+    router = ExecutionRouter(adapter)
     order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=6.0)
-    res = await router.execute(order, algo="vwap", volumes=[1, 2, 3])
+    res = await router.execute(order, algo="vwap", volumes=[1, 2, 3], delay=0.01)
     assert len(res) == 3
-    assert paper_adapter.state.pos["BTCUSDT"].qty == pytest.approx(6.0)
+    assert [r["qty"] for r in res] == [pytest.approx(1.0), pytest.approx(2.0), pytest.approx(3.0)]
+    assert adapter.state.pos["BTCUSDT"].qty == pytest.approx(6.0)
+    diffs = [t2 - t1 for t1, t2 in zip(adapter.call_times, adapter.call_times[1:])]
+    assert all(d >= 0.01 for d in diffs)
 
 
 @pytest.mark.asyncio
-async def test_pov_participates(paper_adapter):
-    paper_adapter.update_last_price("BTCUSDT", 100.0)
-    router = ExecutionRouter(paper_adapter)
+async def test_pov_participates():
+    adapter = TimedPaperAdapter()
+    adapter.update_last_price("BTCUSDT", 100.0)
+    router = ExecutionRouter(adapter)
     order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=5.0)
 
-    async def trades():
-        for q in [4.0, 4.0, 4.0]:
-            yield {"ts": 0, "price": 100.0, "qty": q, "side": "buy"}
+    trades = [{"ts": 0, "price": 100.0, "qty": q, "side": "buy"} for q in [4.0, 4.0, 4.0]]
 
     res = await router.execute(
         order,
         algo="pov",
         participation_rate=0.5,
-        trades=trades(),
+        trades=trades,
     )
-    assert paper_adapter.state.pos["BTCUSDT"].qty == pytest.approx(5.0)
-    assert len(res) >= 2
+    assert adapter.state.pos["BTCUSDT"].qty == pytest.approx(5.0)
+    assert [r["qty"] for r in res] == [pytest.approx(2.0), pytest.approx(2.0), pytest.approx(1.0)]
+    diffs = [t2 - t1 for t1, t2 in zip(adapter.call_times, adapter.call_times[1:])]
+    assert all(d < 0.05 for d in diffs)
 
 
 class DummyExecAdapter:
