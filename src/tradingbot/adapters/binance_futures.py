@@ -100,6 +100,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -122,6 +123,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                 }
                 if reduce_only:
                     params["reduceOnly"] = True
+                if iceberg_qty is not None:
+                    params["icebergQty"] = float(iceberg_qty)
                 if send_type == "LIMIT":
                     if price is None:
                         raise ValueError("LIMIT requiere price")

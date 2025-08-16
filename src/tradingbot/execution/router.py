@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import inspect
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 
@@ -161,7 +162,13 @@ class ExecutionRouter:
             time_in_force=order.time_in_force,
         )
         if order.iceberg_qty is not None:
-            kwargs["iceberg_qty"] = order.iceberg_qty
+            sig = inspect.signature(adapter.place_order)
+            params = sig.parameters
+            if (
+                "iceberg_qty" in params
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            ):
+                kwargs["iceberg_qty"] = order.iceberg_qty
 
         res = await adapter.place_order(**kwargs)
         latency = time.monotonic() - start

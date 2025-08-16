@@ -149,9 +149,21 @@ class OKXFuturesAdapter(ExchangeAdapter):
         oi = float(item.get("oi", 0.0))
         return {"ts": ts, "oi": oi}
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None) -> dict:
-        return await self._to_thread(self.rest.create_order, symbol, type_, side, qty, price)
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        iceberg_qty: float | None = None,
+    ) -> dict:
+        params = {}
+        if iceberg_qty is not None:
+            params["iceberg"] = iceberg_qty
+        return await self._to_thread(
+            self.rest.create_order, symbol, type_, side, qty, price, params
+        )
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
         return await self._to_thread(self.rest.cancel_order, order_id, symbol)
