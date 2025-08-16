@@ -10,10 +10,12 @@ from tradingbot.utils.metrics import (
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
+    WS_RECONNECTS,
     TRADING_PNL,
     OPEN_POSITIONS,
     MARKET_LATENCY,
     E2E_LATENCY,
+    ORDER_BOOK_MIN_DEPTH,
 )
 
 # System metrics

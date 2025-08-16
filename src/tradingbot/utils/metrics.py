@@ -21,6 +21,13 @@ WS_FAILURES = Counter(
     ["adapter"],
 )
 
+# Websocket reconnections by adapter
+WS_RECONNECTS = Counter(
+    "ws_reconnections_total",
+    "Total websocket reconnections",
+    ["adapter"],
+)
+
 # Order fills by symbol and side
 FILL_COUNT = Counter(
     "order_fills",
@@ -39,6 +46,13 @@ SLIPPAGE = Histogram(
 QUEUE_POSITION = Histogram(
     "order_queue_position_ratio",
     "Fraction of existing liquidity ahead of the order at best price level",
+    ["symbol", "side"],
+)
+
+# Minimum depth available at top of book
+ORDER_BOOK_MIN_DEPTH = Gauge(
+    "order_book_min_depth",
+    "Minimum order book depth at best price level",
     ["symbol", "side"],
 )
 
