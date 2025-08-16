@@ -160,12 +160,29 @@ def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
 @app.get("/fills/slippage")
 def fills_slippage(
     venue: str = "binance_spot_testnet",
-    hours: int = Query(6, ge=1, le=168)
+    hours: int = Query(6, ge=1, le=168),
+    symbol: str | None = Query(None)
 ):
     if not _CAN_PG:
-        return {"venue": venue, "hours": hours, "global": {}, "buy": {}, "sell": {}}
+        return {"venue": venue, "hours": hours, "symbol": symbol, "global": {}, "buy": {}, "sell": {}}
     from ...storage.timescale import select_slippage
-    return select_slippage(_ENGINE, venue=venue, hours=hours)
+    return select_slippage(_ENGINE, venue=venue, symbol=symbol, hours=hours)
+
+
+@app.get("/pnl/intraday")
+def pnl_intraday(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None)
+):
+    """Return intraday net PnL for the last 24h."""
+    if not _CAN_PG:
+        return {"venue": venue, "symbol": symbol, "net": 0.0, "points": []}
+    from ...storage.timescale import select_pnl_timeseries
+    points = select_pnl_timeseries(
+        _ENGINE, venue=venue, symbol=symbol, bucket="1 hour", hours=24
+    )
+    net = sum(p.get("net", 0.0) for p in points)
+    return {"venue": venue, "symbol": symbol, "net": net, "points": points}
 
 @app.get("/oco/active")
 def oco_active(venue: str, symbols: str):
