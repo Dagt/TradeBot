@@ -1,4 +1,11 @@
 import pytest
+from tradingbot.adapters import (
+    BybitSpotAdapter,
+    BybitFuturesAdapter,
+    OKXSpotAdapter,
+    OKXFuturesAdapter,
+)
+from tradingbot.adapters.base import ExchangeAdapter
 
 
 async def collect_trades(adapter):
@@ -19,3 +26,13 @@ async def test_mock_adapter_stream_and_orders(mock_adapter, mock_trades, mock_or
 
     cancel = await mock_adapter.cancel_order("1")
     assert cancel["status"] == "canceled"
+
+
+def test_registered_adapters_are_subclasses():
+    for cls in (
+        BybitSpotAdapter,
+        BybitFuturesAdapter,
+        OKXSpotAdapter,
+        OKXFuturesAdapter,
+    ):
+        assert issubclass(cls, ExchangeAdapter)
