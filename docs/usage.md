@@ -12,6 +12,21 @@ python -m tradingbot.cli backtest data/btcusdt_1m.csv --symbol BTC/USDT --strate
 python -m tradingbot.cli report --venue binance_spot_testnet
 ```
 
+## Estrategias disponibles
+
+Las estrategias pueden instanciarse pasando parámetros mediante ``**kwargs``.
+Los nombres que deben utilizarse en la CLI (``--strategy``) o al usar la API
+corresponden al atributo ``name`` de cada clase.
+
+| Estrategia        | Nombre           | Parámetros principales                |
+|-------------------|-----------------|--------------------------------------|
+| Momentum          | ``momentum``    | ``rsi_n`` (int), ``rsi_threshold``    |
+| Mean Reversion    | ``mean_reversion`` | ``rsi_n`` (int), ``upper`` y ``lower`` |
+| Breakout por Vol. | ``breakout_vol``| ``lookback`` (int), ``mult`` (float)  |
+| Triangular Arb.   | ``triangular_arb`` | ``taker_fee_bps``, ``buffer_bps``   |
+| Cash & Carry      | ``cash_and_carry`` | ``threshold`` (float)               |
+
+
 ## API
 
 ```
