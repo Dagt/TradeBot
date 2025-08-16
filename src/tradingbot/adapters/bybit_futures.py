@@ -159,6 +159,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
         params: dict | None = None,
     ) -> dict:
         params = params or {}
@@ -166,6 +167,8 @@ class BybitFuturesAdapter(ExchangeAdapter):
             params["postOnly"] = True
         if time_in_force:
             params["timeInForce"] = time_in_force
+        if iceberg_qty is not None:
+            params["iceberg"] = iceberg_qty
         backoff = 1.0
         while True:
             try:
