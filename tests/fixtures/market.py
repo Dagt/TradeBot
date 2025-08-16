@@ -24,3 +24,9 @@ def synthetic_l2():
         "qty": [1.1, 0.9, 0.4],
     })
     return {"bids": bids, "asks": asks}
+
+
+@pytest.fixture
+def synthetic_volatility():
+    """Synthetic volatility value for tests."""
+    return 0.04
