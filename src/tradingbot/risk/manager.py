@@ -1,9 +1,33 @@
+"""Risk manager with event-based integration.
+
+This module started as a very small utility to gate orders based on
+simple stop loss and drawdown thresholds.  The exercises for this kata
+require extending it with a few extra features:
+
+* sizing based on a target volatility
+* daily loss / drawdown stops ("kill-switch")
+* correlation limits derived from a covariance matrix
+* integration with strategies and execution through an :class:`EventBus`
+
+The implementation purposely keeps the original public API so existing
+tests and examples continue to function, while adding optional event
+driven behaviour when a bus is supplied.
+"""
+
+from __future__ import annotations
+
+import asyncio
 from dataclasses import dataclass
+from typing import Dict
+
 from tradingbot.utils.metrics import RISK_EVENTS
+from ..bus import EventBus
 
 
 @dataclass
 class Position:
+    """Simple container for current position size."""
+
     qty: float = 0.0
 
 
@@ -22,17 +46,43 @@ class RiskManager:
         stop_loss_pct: float = 0.0,
         max_drawdown_pct: float = 0.0,
         vol_target: float = 0.0,
+        *,
+        daily_loss_limit: float = 0.0,
+        daily_drawdown_pct: float = 0.0,
+        bus: EventBus | None = None,
     ):
+        """Create a :class:`RiskManager`.
+
+        Parameters mirror the previous version.  ``daily_loss_limit`` and
+        ``daily_drawdown_pct`` enable intraday halt rules.  When ``bus`` is
+        provided, the manager subscribes to a few topics in order to keep its
+        state in sync with fills and price marks and to emit ``risk:halted``
+        events when a limit is breached.
+        """
+
         self.max_pos = max_pos
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
         self.vol_target = abs(vol_target)
+
+        self.daily_loss_limit = abs(daily_loss_limit)
+        self.daily_drawdown_pct = abs(daily_drawdown_pct)
+        self.daily_pnl: float = 0.0
+        self._daily_peak: float = 0.0
+
         self.enabled = True
         self.pos = Position()
         # Variables internas para cálculo de SL/DD
         self._entry_price: float | None = None
         self._peak_price: float | None = None  # máximo a favor (long) / mínimo a favor (short)
         self._trough_price: float | None = None
+
+        self.bus = bus
+        if self.bus is not None:
+            # Actualiza posición y precios desde la ejecución
+            self.bus.subscribe("fill", self._on_fill_event)
+            self.bus.subscribe("price", self._on_price_event)
+            self.bus.subscribe("pnl", self._on_pnl_event)
 
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
@@ -53,6 +103,24 @@ class RiskManager:
         # Si se cerró o se invirtió la posición, reinicia trackers de precio
         if prev == 0 or prev * self.pos.qty <= 0:
             self._reset_price_trackers()
+
+    # ------------------------------------------------------------------
+    # Event bus callbacks
+    async def _on_fill_event(self, evt: dict) -> None:
+        self.add_fill(evt.get("side", ""), evt.get("qty", 0.0))
+
+    async def _on_price_event(self, evt: dict) -> None:
+        price = evt.get("price")
+        if price is None:
+            return
+        if not self.check_limits(price) and self.bus is not None:
+            await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
+
+    async def _on_pnl_event(self, evt: dict) -> None:
+        delta = float(evt.get("delta", 0.0))
+        self.update_pnl(delta)
+        if not self._check_daily_limits() and self.bus is not None:
+            await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
 
     def size(self, signal_side: str, strength: float = 1.0) -> float:
         """
@@ -92,11 +160,96 @@ class RiskManager:
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
         return exceeded
 
+    def update_covariance(
+        self, cov_matrix: Dict[tuple[str, str], float], threshold: float
+    ) -> list[tuple[str, str]]:
+        """Aplica un límite de correlación a partir de una matriz de covarianzas.
+
+        Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
+        para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
+        recorta ``max_pos`` a la mitad y se retornan los pares involucrados.
+        """
+
+        exceeded: list[tuple[str, str]] = []
+        vars: Dict[str, float] = {}
+        for (a, b), cov in cov_matrix.items():
+            if a == b:
+                vars[a] = abs(cov)
+        for (a, b), cov in cov_matrix.items():
+            if a == b:
+                continue
+            va = vars.get(a)
+            vb = vars.get(b)
+            if va and vb and va > 0 and vb > 0:
+                corr = cov / ((va ** 0.5) * (vb ** 0.5))
+                if abs(corr) >= threshold:
+                    exceeded.append((a, b))
+        if exceeded:
+            self.max_pos *= 0.5
+            RISK_EVENTS.labels(event_type="correlation_limit").inc()
+        return exceeded
+
+    def check_portfolio_risk(
+        self,
+        positions: Dict[str, float],
+        cov_matrix: Dict[tuple[str, str], float],
+        max_variance: float,
+    ) -> bool:
+        """Evalúa el riesgo total mediante una matriz de covarianzas.
+
+        ``positions`` contiene cantidades por símbolo (mismas unidades que la
+        covarianza).  Si la varianza total del portafolio excede ``max_variance``
+        se dispara el *kill switch* y la función retorna ``False``.
+        """
+
+        if not positions:
+            return True
+        syms = list(positions.keys())
+        n = len(syms)
+        # Construye matriz completa
+        mat = [[0.0] * n for _ in range(n)]
+        for i, a in enumerate(syms):
+            for j, b in enumerate(syms):
+                mat[i][j] = float(cov_matrix.get((a, b), cov_matrix.get((b, a), 0.0)))
+        # p^T Σ p
+        var = 0.0
+        for i in range(n):
+            for j in range(n):
+                var += positions[syms[i]] * mat[i][j] * positions[syms[j]]
+        if var > max_variance:
+            self.kill_switch("covariance_limit")
+            return False
+        return True
+
     def kill_switch(self, reason: str) -> None:
         """Deshabilita completamente el gestor de riesgo."""
         self.enabled = False
         self.last_kill_reason = reason
         RISK_EVENTS.labels(event_type="kill_switch").inc()
+        if self.bus is not None:
+            # dispatch asynchronously without awaiting
+            asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
+
+    # ------------------------------------------------------------------
+    # Daily PnL / Drawdown tracking
+    def update_pnl(self, delta: float) -> None:
+        """Actualizar PnL diario y pico intradía."""
+        self.daily_pnl += float(delta)
+        if self.daily_pnl > self._daily_peak:
+            self._daily_peak = self.daily_pnl
+
+    def _check_daily_limits(self) -> bool:
+        if self.daily_loss_limit > 0 and self.daily_pnl <= -self.daily_loss_limit:
+            self.kill_switch("daily_loss")
+            return False
+        if (
+            self.daily_drawdown_pct > 0
+            and self._daily_peak > 0
+            and (self._daily_peak - self.daily_pnl) / self._daily_peak >= self.daily_drawdown_pct
+        ):
+            self.kill_switch("daily_drawdown")
+            return False
+        return True
 
     def check_limits(self, price: float) -> bool:
         """Verifica stop loss y drawdown.
@@ -143,8 +296,10 @@ class RiskManager:
             )
 
         if self.stop_loss_pct > 0 and loss_pct >= self.stop_loss_pct:
-            self.enabled = False
+            self.kill_switch("stop_loss")
+            return False
         if self.max_drawdown_pct > 0 and drawdown >= self.max_drawdown_pct:
-            self.enabled = False
+            self.kill_switch("drawdown")
+            return False
 
-        return self.enabled
+        return self._check_daily_limits()
