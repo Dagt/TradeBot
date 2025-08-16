@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
+import vectorbt as vbt
 from types import SimpleNamespace
 
 from tradingbot.backtest.event_engine import SlippageModel, run_backtest_csv
+from tradingbot.backtest.vectorbt_engine import run_vectorbt
 from tradingbot.strategies import STRATEGIES
 
 
@@ -49,4 +51,24 @@ def test_pnl_with_and_without_slippage(tmp_path, monkeypatch):
 
     assert len(no_slip["fills"]) > 0
     assert no_slip["equity"] >= with_slip["equity"]
+
+
+def test_run_vectorbt_basic():
+    class MAStrategy:
+        @staticmethod
+        def signal(close, fast, slow):
+            fast_ma = vbt.MA.run(close, fast)
+            slow_ma = vbt.MA.run(close, slow)
+            entries = fast_ma.ma_crossed_above(slow_ma)
+            exits = fast_ma.ma_crossed_below(slow_ma)
+            return entries, exits
+
+    price = pd.Series(np.sin(np.linspace(0, 10, 100)) + 10)
+    data = pd.DataFrame({"close": price})
+    params = {"fast": [2, 4], "slow": [8]}
+
+    stats = run_vectorbt(data, MAStrategy, params)
+    assert not stats.empty
+    assert {"sharpe_ratio", "max_drawdown", "total_return"} <= set(stats.columns)
+    assert list(stats.index.names) == ["fast", "slow"]
 
