@@ -2,7 +2,13 @@ from fastapi import APIRouter, Response
 from prometheus_client import Gauge, Histogram, Counter, generate_latest, CONTENT_TYPE_LATEST
 
 # Reuse detailed execution metrics
-from tradingbot.utils.metrics import FILL_COUNT, SLIPPAGE, RISK_EVENTS
+from tradingbot.utils.metrics import (
+    FILL_COUNT,
+    SLIPPAGE,
+    RISK_EVENTS,
+    ORDER_LATENCY,
+    MAKER_TAKER_RATIO,
+)
 
 # Trading metrics
 TRADING_PNL = Gauge(
@@ -63,10 +69,33 @@ def metrics_summary() -> dict:
     )
     avg_slippage = slippage_sum / slippage_count if slippage_count else 0.0
 
+    # Compute average order execution latency across venues
+    latency_samples = [
+        sample
+        for metric in ORDER_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    latency_sum = sum(s.value for s in latency_samples if s.name.endswith("_sum"))
+    latency_count = sum(
+        s.value for s in latency_samples if s.name.endswith("_count")
+    )
+    avg_latency = latency_sum / latency_count if latency_count else 0.0
+
+    # Compute average maker/taker ratio across venues
+    ratio_samples = [
+        sample.value
+        for metric in MAKER_TAKER_RATIO.collect()
+        for sample in metric.samples
+        if sample.name == "maker_taker_ratio"
+    ]
+    avg_ratio = sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
+
     return {
         "pnl": TRADING_PNL._value.get(),
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
         "avg_slippage_bps": avg_slippage,
+        "avg_order_latency_seconds": avg_latency,
+        "avg_maker_taker_ratio": avg_ratio,
     }
