@@ -12,7 +12,8 @@
       try {
         const resp = await fetch('/metrics/summary');
         const data = await resp.json();
-        document.getElementById('summary').innerText = `PnL: ${data.pnl} | Disconnects: ${data.disconnects}`;
+        document.getElementById('summary').innerText =
+          `PnL: ${data.pnl} | Disconnects: ${data.disconnects} | Avg Order Latency: ${data.avg_order_latency_seconds} | Maker/Taker Ratio: ${data.avg_maker_taker_ratio}`;
       } catch (err) {
         document.getElementById('summary').innerText = 'Error loading metrics';
       }
