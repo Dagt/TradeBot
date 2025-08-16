@@ -16,6 +16,7 @@ from ..market.exchange_meta import ExchangeMeta
 from ..execution.normalize import adjust_order
 from .binance_errors import parse_binance_error_code
 from ..execution.retry import with_retries, AmbiguousOrderError
+from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         })
         self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS_FUT", "5.0"))
         self.rest.set_sandbox_mode(testnet)
+
+        # Advertir si faltan scopes necesarios o sobran permisos
+        validate_scopes(self.rest, log)
 
         # Cache de metadatos/filters
         self.meta = ExchangeMeta.binanceusdm_testnet(

@@ -15,6 +15,7 @@ from ..config import settings
 from ..market.exchange_meta import ExchangeMeta
 from .binance_errors import parse_binance_error_code  # si no lo tienes, ver notas abajo
 from ..execution.retry import with_retries, AmbiguousOrderError
+from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ class BinanceSpotAdapter(ExchangeAdapter):
         })
         self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS", "10.0"))
         self.rest.set_sandbox_mode(testnet)
+
+        # Advertir si faltan scopes necesarios o si hay permisos peligrosos
+        validate_scopes(self.rest, log)
 
         self.meta = ExchangeMeta.binance_spot_testnet(
             api_key or settings.binance_api_key,

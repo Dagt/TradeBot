@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class OKXSpotAdapter(ExchangeAdapter):
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
         self.rest = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        # Validar permisos disponibles en la API key
+        validate_scopes(self.rest, log)
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)

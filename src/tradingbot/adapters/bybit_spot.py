@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - ccxt optional during tests
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class BybitSpotAdapter(ExchangeAdapter):
             raise RuntimeError("ccxt no está instalado")
         # enableRateLimit respeta límites de la API
         self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        # Advertir si la clave carece de permisos de trade o tiene retiros habilitados
+        validate_scopes(self.rest, log)
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)

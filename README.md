@@ -70,7 +70,17 @@ docker compose up -d timescaledb
 # 3) Configurar variables
 cp .env.example .env
 # edita .env con tus API keys (retiros desactivados, claves restringidas)
+```
 
+### Claves API sólo-trade
+Genera credenciales con los permisos mínimos:
+
+1. Crea una nueva clave en el panel de la exchange.
+2. Activa únicamente permisos de **lectura** y **trade**.
+3. Deshabilita retiros y, si es posible, restringe por IP.
+4. Guarda `API_KEY` y `API_SECRET` en `~/.secrets` (formato `CLAVE=valor`) o en el archivo `.env`.
+
+```bash
 # 4) Probar backtest de ejemplo (simulado, CSV)
 python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
 
