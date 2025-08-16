@@ -25,6 +25,8 @@ class DummyOBAdapter(ExchangeAdapter):
         for snap in self._snapshots:
             yield snap
 
+    stream_order_book = stream_orderbook
+
     async def place_order(self, *args, **kwargs):
         return {}
 
@@ -89,6 +91,8 @@ async def test_stream_orderbook_persists_levels(monkeypatch):
         async def stream_orderbook(self, symbol: str, depth: int):
             yield snapshot
 
+        stream_order_book = stream_orderbook
+
         async def place_order(self, *args, **kwargs):
             return {}
 
@@ -126,6 +130,8 @@ async def test_run_trades_stream_publishes():
         async def stream_orderbook(self, symbol: str, depth: int):
             if False:
                 yield {}
+
+        stream_order_book = stream_orderbook
 
         async def place_order(self, *args, **kwargs):
             return {}
