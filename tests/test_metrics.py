@@ -2,6 +2,11 @@ from tradingbot.utils.metrics import FILL_COUNT, SLIPPAGE, RISK_EVENTS
 
 
 def test_fill_slippage_risk_metrics():
+    # Ensure metrics start from a clean state
+    FILL_COUNT.clear()
+    SLIPPAGE.clear()
+    RISK_EVENTS.clear()
+
     FILL_COUNT.labels(symbol="BTCUSDT", side="buy").inc()
     samples = list(FILL_COUNT.collect())[0].samples
     fill_sample = [s for s in samples if s.name == "order_fills_total" and s.labels["symbol"] == "BTCUSDT" and s.labels["side"] == "buy"][0]
