@@ -7,6 +7,8 @@ from pathlib import Path
 import time
 from starlette.requests import Request
 
+from monitoring.metrics import metrics_summary as _metrics_summary
+
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 
@@ -45,6 +47,12 @@ def health():
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/metrics/summary")
+def metrics_summary():
+    """Expose a summarized view of key metrics."""
+    return _metrics_summary()
 
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
