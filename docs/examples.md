@@ -10,6 +10,9 @@ python -m tradingbot.cli ingest --symbol BTC/USDT
 python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
     --symbol BTC/USDT --strategy breakout_atr
 ```
+Al finalizar se imprimirá un resumen con estadísticas adicionales como
+``sharpe``, ``sortino`` y ``deflated_sharpe_ratio`` junto con ``pnl``,
+``fill_rate`` y ``slippage``.
 
 ## API
 ```bash

@@ -16,6 +16,7 @@ import sys
 import typer
 
 from ..logging_conf import setup_logging
+from analysis.backtest_report import generate_report
 
 
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
@@ -69,6 +70,7 @@ def backtest(
 
     result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
     typer.echo(result)
+    typer.echo(generate_report(result))
 
 
 @app.command("backtest-cfg")
@@ -102,6 +104,7 @@ def backtest_cfg(config: str) -> None:
         result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
+        typer.echo(generate_report(result))
     old_argv = sys.argv
     sys.argv = [sys.argv[0]]
     try:
