@@ -77,6 +77,8 @@ class RiskManager:
         self.pos = Position()
         # Multi-exchange position book: {exchange: {symbol: qty}}
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
+        # PnL por exchange
+        self.pnl_multi: Dict[str, float] = defaultdict(float)
         # Flag metric for kill switch status
         KILL_SWITCH_ACTIVE.set(0)
         # Variables internas para cálculo de SL/DD
@@ -167,7 +169,15 @@ class RiskManager:
     # ------------------------------------------------------------------
     # Event bus callbacks
     async def _on_fill_event(self, evt: dict) -> None:
-        self.add_fill(evt.get("side", ""), evt.get("qty", 0.0))
+        side = evt.get("side", "")
+        qty = evt.get("qty", 0.0)
+        venue = evt.get("venue")
+        symbol = evt.get("symbol")
+        self.add_fill(side, qty)
+        if venue and symbol:
+            book = self.positions_multi.setdefault(venue, {})
+            signed = float(qty) if side == "buy" else -float(qty)
+            book[symbol] = book.get(symbol, 0.0) + signed
 
     async def _on_price_event(self, evt: dict) -> None:
         price = evt.get("price")
@@ -178,7 +188,8 @@ class RiskManager:
 
     async def _on_pnl_event(self, evt: dict) -> None:
         delta = float(evt.get("delta", 0.0))
-        self.update_pnl(delta)
+        venue = evt.get("venue")
+        self.update_pnl(delta, venue=venue)
         if not self._check_daily_limits() and self.bus is not None:
             await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
 
@@ -295,9 +306,11 @@ class RiskManager:
 
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
-    def update_pnl(self, delta: float) -> None:
-        """Actualizar PnL diario y pico intradía."""
+    def update_pnl(self, delta: float, *, venue: str | None = None) -> None:
+        """Actualizar PnL diario y por venue."""
         self.daily_pnl += float(delta)
+        if venue:
+            self.pnl_multi[venue] = self.pnl_multi.get(venue, 0.0) + float(delta)
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
 

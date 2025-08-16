@@ -23,6 +23,11 @@ define el capital en la divisa ``quote``.
 perpetuo utilizando los adapters indicados. El umbral de premium se controla con
 ``--threshold`` y ``--notional`` establece el tamaño por pata.
 
+El **daemon en vivo** ahora puede ejecutar este arbitraje cruzado de manera
+automática entre Binance, Bybit y OKX.  El proceso concilia periódicamente los
+balances por exchange y actualiza tanto el `RiskManager` como el
+`PortfolioGuard` con las posiciones y PnL por venue.
+
 ### Configuraciones con Hydra
 
 El comando `backtest-cfg` permite cargar la configuración desde un archivo

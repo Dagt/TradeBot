@@ -210,7 +210,8 @@ class ExecutionRouter:
         taker_c = self._taker_counts[venue]
         ratio = maker_c / taker_c if taker_c else float(maker_c)
         MAKER_TAKER_RATIO.labels(venue=venue).set(ratio)
-
+        # Propagate venue so downstream components can track positions per exchange
+        res.setdefault("venue", venue)
         return res
 
 

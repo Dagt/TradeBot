@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterable
 
 from ..bus import EventBus
 from ..connectors.base import ExchangeConnector
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
 from ..risk.manager import RiskManager
+from ..risk.portfolio_guard import PortfolioGuard
+from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +46,10 @@ class TradeBotDaemon:
         router: ExecutionRouter,
         symbols: Iterable[str],
         accounts: Optional[Dict[str, ExchangeConnector]] = None,
+        *,
+        guard: PortfolioGuard | None = None,
+        cross_arbs: Iterable[CrossArbConfig] | None = None,
+        balance_interval: float = 60.0,
     ) -> None:
         self.adapters = adapters
         self.strategies = list(strategies)
@@ -51,6 +57,9 @@ class TradeBotDaemon:
         self.router = router
         self.symbols = list(symbols)
         self.accounts = accounts or adapters
+        self.guard = guard
+        self.cross_arbs = list(cross_arbs or [])
+        self.balance_interval = balance_interval
 
         # Event bus used across components
         self.bus = risk_manager.bus or EventBus()
@@ -77,8 +86,108 @@ class TradeBotDaemon:
                 bal = await fetch()  # type: ignore[misc]
                 self.balances[name] = bal
                 log.info("balance", extra={"account": name, "data": bal})
+                # sincroniza posición en RiskManager y PortfolioGuard
+                for sym, info in bal.items():
+                    try:
+                        qty = float(info.get("total", info))  # soporta dict o float
+                    except AttributeError:
+                        qty = float(info)
+                    self.risk.update_position(name, sym, qty)
+                    if self.guard:
+                        self.guard.set_position(name, sym, qty)
             except Exception as exc:  # pragma: no cover - network
                 log.warning("balance_error", extra={"account": name, "err": str(exc)})
+        self._reconcile_balances()
+
+    # ------------------------------------------------------------------
+    def _reconcile_balances(self) -> None:
+        """Log balance differences across venues."""
+        venues = list(self.balances.keys())
+        if len(venues) < 2:
+            return
+        assets = set()
+        for bal in self.balances.values():
+            assets.update(bal.keys())
+        for asset in assets:
+            vals = {v: float(self.balances[v].get(asset, 0.0)) for v in venues}
+            if len(set(vals.values())) > 1:
+                log.info("balance_reconcile", extra={"asset": asset, "balances": vals})
+
+    # ------------------------------------------------------------------
+    async def _balance_worker(self) -> None:
+        while not self._stop.is_set():
+            await self.refresh_balances()
+            await asyncio.sleep(self.balance_interval)
+
+    # ------------------------------------------------------------------
+    async def _cross_arbitrage(self, cfg: CrossArbConfig) -> None:
+        """Simplified cross exchange arbitrage loop."""
+        last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
+        balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}
+        lock = asyncio.Lock()
+
+        async def maybe_trade() -> None:
+            if last["spot"] is None or last["perp"] is None:
+                return
+            edge = (last["perp"] - last["spot"]) / last["spot"]
+            if abs(edge) < cfg.threshold:
+                return
+            async with lock:
+                edge = (last["perp"] - last["spot"]) / last["spot"]
+                if abs(edge) < cfg.threshold:
+                    return
+                qty = cfg.notional / last["spot"]
+                if edge > 0:
+                    spot_side, perp_side = "buy", "sell"
+                else:
+                    spot_side, perp_side = "sell", "buy"
+                resp_spot, resp_perp = await asyncio.gather(
+                    cfg.spot.place_order(cfg.symbol, spot_side, "market", qty),
+                    cfg.perp.place_order(cfg.symbol, perp_side, "market", qty),
+                )
+                balances[cfg.spot.name] += qty if spot_side == "buy" else -qty
+                balances[cfg.perp.name] += qty if perp_side == "buy" else -qty
+                self.risk.update_position(cfg.spot.name, cfg.symbol, balances[cfg.spot.name])
+                self.risk.update_position(cfg.perp.name, cfg.symbol, balances[cfg.perp.name])
+                if self.guard:
+                    self.guard.update_position_on_order(cfg.symbol, spot_side, qty, cfg.spot.name)
+                    self.guard.update_position_on_order(cfg.symbol, perp_side, qty, cfg.perp.name)
+                pnl = (resp_perp.get("price", 0.0) - resp_spot.get("price", 0.0)) * qty
+                self.risk.update_pnl(pnl, venue=cfg.perp.name)
+                self.risk.update_pnl(-pnl, venue=cfg.spot.name)
+                await self.bus.publish(
+                    "fill",
+                    {"symbol": cfg.symbol, "side": spot_side, "qty": qty, "venue": cfg.spot.name, **resp_spot},
+                )
+                await self.bus.publish(
+                    "fill",
+                    {"symbol": cfg.symbol, "side": perp_side, "qty": qty, "venue": cfg.perp.name, **resp_perp},
+                )
+                log.info(
+                    "CROSS ARB edge=%.4f%% spot=%.2f perp=%.2f qty=%.6f pos_spot=%.6f pos_perp=%.6f",
+                    edge * 100,
+                    last["spot"],
+                    last["perp"],
+                    qty,
+                    balances[cfg.spot.name],
+                    balances[cfg.perp.name],
+                )
+
+        async def listen_spot() -> None:
+            async for t in cfg.spot.stream_trades(cfg.symbol):
+                px = t.get("price")
+                if px is not None:
+                    last["spot"] = float(px)
+                    await maybe_trade()
+
+        async def listen_perp() -> None:
+            async for t in cfg.perp.stream_trades(cfg.symbol):
+                px = t.get("price")
+                if px is not None:
+                    last["perp"] = float(px)
+                    await maybe_trade()
+
+        await asyncio.gather(listen_spot(), listen_perp())
 
     # ------------------------------------------------------------------
     async def _stream_adapter(self, name: str, adapter: ExchangeConnector, symbol: str) -> None:
@@ -127,7 +236,10 @@ class TradeBotDaemon:
             return
         order = Order(symbol=symbol, side="buy" if delta > 0 else "sell", type_="market", qty=abs(delta))
         res = await self.router.execute(order)
-        await self.bus.publish("fill", {"symbol": symbol, "side": order.side, "qty": order.qty, **res})
+        venue = res.get("venue")
+        await self.bus.publish("fill", {"symbol": symbol, "side": order.side, "qty": order.qty, "venue": venue, **res})
+        if venue and self.guard:
+            self.guard.update_position_on_order(symbol, order.side, order.qty, venue)
 
     # ------------------------------------------------------------------
     async def _on_halt(self, _evt: dict) -> None:
@@ -140,6 +252,13 @@ class TradeBotDaemon:
     async def run(self) -> None:
         """Entry point for running the daemon until halted."""
         await self.refresh_balances()
+        # periodic balance reconciliation
+        self._tasks.append(asyncio.create_task(self._balance_worker()))
+        # cross exchange arbitrage loops
+        for cfg in self.cross_arbs:
+            task = asyncio.create_task(self._cross_arbitrage(cfg))
+            self._tasks.append(task)
+        # market data streams
         for name, adapter in self.adapters.items():
             for symbol in self.symbols:
                 task = asyncio.create_task(self._stream_adapter(name, adapter, symbol))
