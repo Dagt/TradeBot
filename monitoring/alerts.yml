@@ -1,0 +1,29 @@
+groups:
+  - name: tradebot-alerts
+    rules:
+      - alert: HighMarketLatency
+        expr: histogram_quantile(0.95, sum(rate(market_latency_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High market data latency
+          description: 95th percentile market latency above 1s for 5m
+
+      - alert: NegativePnL
+        expr: trading_pnl < 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Trading PnL is negative
+          description: Trading PnL below zero for 10m
+
+      - alert: Disconnections
+        expr: increase(system_disconnections_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: System disconnections detected
+          description: Disconnections occurred in the last 5m

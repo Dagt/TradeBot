@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>TradeBot Monitoring</title>
+</head>
+<body>
+  <h1>TradeBot Monitoring</h1>
+  <div id="summary">Loading...</div>
+  <script>
+    async function load() {
+      try {
+        const resp = await fetch('/metrics/summary');
+        const data = await resp.json();
+        document.getElementById('summary').innerText = `PnL: ${data.pnl} | Disconnects: ${data.disconnects}`;
+      } catch (err) {
+        document.getElementById('summary').innerText = 'Error loading metrics';
+      }
+    }
+    load();
+  </script>
+</body>
+</html>
