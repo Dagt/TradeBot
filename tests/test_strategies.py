@@ -1,6 +1,7 @@
 import pandas as pd
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
+from hypothesis import given, strategies as st
 
 
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
@@ -27,3 +28,25 @@ def test_order_flow_signals():
     assert sig_buy.side == "buy"
     sig_sell = strat.on_bar({"window": df_sell})
     assert sig_sell.side == "sell"
+
+
+@given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
+def test_order_flow_buy_property(start, inc):
+    df = pd.DataFrame({
+        "bid_qty": [start + i * inc for i in range(3)],
+        "ask_qty": [start - i * inc for i in range(3)],
+    })
+    strat = OrderFlow(window=3, buy_threshold=0.0, sell_threshold=0.0)
+    sig = strat.on_bar({"window": df})
+    assert sig.side == "buy"
+
+
+@given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
+def test_order_flow_sell_property(start, inc):
+    df = pd.DataFrame({
+        "bid_qty": [start - i * inc for i in range(3)],
+        "ask_qty": [start + i * inc for i in range(3)],
+    })
+    strat = OrderFlow(window=3, buy_threshold=0.0, sell_threshold=0.0)
+    sig = strat.on_bar({"window": df})
+    assert sig.side == "sell"
