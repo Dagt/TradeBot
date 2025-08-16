@@ -70,6 +70,7 @@ class _DummyDelegate:
 @pytest.mark.asyncio
 async def test_binance_spot_rest_streams():
     adapter = BinanceSpotAdapter.__new__(BinanceSpotAdapter)
+    ExchangeAdapter.__init__(adapter)
     adapter.rest = _DummyRest()
 
     async def _req(fn, *a, **k):
