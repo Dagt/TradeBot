@@ -11,7 +11,17 @@ python -m tradingbot.cli run-bot --symbol BTC/USDT
 python -m tradingbot.cli backtest data/btcusdt_1m.csv --symbol BTC/USDT --strategy breakout_atr
 python -m tradingbot.cli backtest-cfg src/tradingbot/config/config.yaml
 python -m tradingbot.cli report --venue binance_spot_testnet
+python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 100
+python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures --threshold 0.001 --notional 50
 ```
+
+`tri-arb` lanza un pequeño lazo de arbitraje triangular en Binance. La ruta se
+especifica como ``BASE-MID-QUOTE`` (p.ej. ``BTC-ETH-USDT``) y ``--notional``
+define el capital en la divisa ``quote``.
+
+`cross-arb` busca oportunidades de arbitraje entre un mercado spot y otro
+perpetuo utilizando los adapters indicados. El umbral de premium se controla con
+``--threshold`` y ``--notional`` establece el tamaño por pata.
 
 ### Configuraciones con Hydra
 

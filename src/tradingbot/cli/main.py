@@ -130,6 +130,73 @@ def report(venue: str = "binance_spot_testnet") -> None:
     typer.echo(summary)
 
 
+@app.command("tri-arb")
+def tri_arb(
+    route: str = typer.Argument(..., help="Ruta BASE-MID-QUOTE, ej. BTC-ETH-USDT"),
+    notional: float = typer.Option(100.0, help="Notional en la divisa quote"),
+) -> None:
+    """Ejecutar arbitrage triangular simple en Binance."""
+
+    setup_logging()
+    from ..live.runner_triangular import TriConfig, run_triangular_binance
+    from ..strategies.arbitrage_triangular import TriRoute
+
+    try:
+        base, mid, quote = route.split("-")
+    except ValueError as exc:  # pragma: no cover - validated por typer
+        raise typer.BadParameter("Formato de ruta inválido, usa BASE-MID-QUOTE") from exc
+
+    cfg = TriConfig(route=TriRoute(base, mid, quote), notional_quote=notional)
+    asyncio.run(run_triangular_binance(cfg))
+
+
+@app.command("cross-arb")
+def cross_arb(
+    symbol: str = typer.Argument("BTC/USDT", help="Símbolo a arbitrar"),
+    spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
+    perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
+    threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
+    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
+) -> None:
+    """Arbitraje entre spot y perp usando dos adapters."""
+
+    setup_logging()
+    from ..adapters import (
+        BinanceFuturesAdapter,
+        BinanceSpotAdapter,
+        BybitFuturesAdapter,
+        BybitSpotAdapter,
+        OKXFuturesAdapter,
+        OKXSpotAdapter,
+    )
+    from ..strategies.cross_exchange_arbitrage import (
+        CrossArbConfig,
+        run_cross_exchange_arbitrage,
+    )
+
+    adapters = {
+        "binance_spot": BinanceSpotAdapter,
+        "binance_futures": BinanceFuturesAdapter,
+        "bybit_spot": BybitSpotAdapter,
+        "bybit_futures": BybitFuturesAdapter,
+        "okx_spot": OKXSpotAdapter,
+        "okx_futures": OKXFuturesAdapter,
+    }
+
+    if spot not in adapters or perp not in adapters:
+        choices = ", ".join(sorted(adapters))
+        raise typer.BadParameter(f"Adapters válidos: {choices}")
+
+    cfg = CrossArbConfig(
+        symbol=symbol,
+        spot=adapters[spot](),
+        perp=adapters[perp](),
+        threshold=threshold,
+        notional=notional,
+    )
+    asyncio.run(run_cross_exchange_arbitrage(cfg))
+
+
 def main() -> None:
     """Entry point used by ``python -m tradingbot.cli``."""
 
