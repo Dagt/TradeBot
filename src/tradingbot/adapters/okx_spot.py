@@ -9,10 +9,13 @@ from typing import AsyncIterator
 
 import websockets
 
-try:
+try:  # pragma: no cover - optional during tests
     import ccxt
+    NetworkError = getattr(ccxt, "NetworkError", Exception)
+    ExchangeError = getattr(ccxt, "ExchangeError", Exception)
 except Exception:  # pragma: no cover
     ccxt = None
+    NetworkError = ExchangeError = Exception
 
 from .base import ExchangeAdapter
 from ..utils.secrets import validate_scopes
@@ -120,9 +123,60 @@ class OKXSpotAdapter(ExchangeAdapter):
         oi = float(item.get("oi", 0.0))
         return {"ts": ts, "oi": oi}
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None) -> dict:
-        return await self._to_thread(self.rest.create_order, symbol, type_, side, qty, price)
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+        params: dict | None = None,
+    ) -> dict:
+        params = params or {}
+        if post_only:
+            params["postOnly"] = True
+        if time_in_force:
+            params["timeInForce"] = time_in_force
+        backoff = 1.0
+        while True:
+            try:
+                return await self._request(
+                    self.rest.create_order,
+                    symbol,
+                    type_,
+                    side,
+                    qty,
+                    price,
+                    params,
+                )
+            except NetworkError as e:  # pragma: no cover - network paths
+                log.warning("OKX place_order error %s, retrying in %.1fs", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+            except ExchangeError:
+                raise
 
-    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        return await self._to_thread(self.rest.cancel_order, order_id, symbol)
+    async def cancel_order(
+        self,
+        order_id: str,
+        symbol: str | None = None,
+        params: dict | None = None,
+    ) -> dict:
+        params = params or {}
+        backoff = 1.0
+        while True:
+            try:
+                return await self._request(
+                    self.rest.cancel_order,
+                    order_id,
+                    symbol,
+                    params,
+                )
+            except NetworkError as e:  # pragma: no cover - network paths
+                log.warning("OKX cancel_order error %s, retrying in %.1fs", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+            except ExchangeError:
+                raise
