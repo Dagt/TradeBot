@@ -24,7 +24,7 @@ Example
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Type
+from typing import Dict, Iterable, Type, Any, Tuple, List
 
 import pandas as pd
 import vectorbt as vbt
@@ -76,3 +76,93 @@ def run_vectorbt(
     metrics.columns = ["sharpe_ratio", "max_drawdown", "total_return"]
     metrics.index.set_names(list(params.keys()), inplace=True)
     return metrics
+
+
+def optimize_vectorbt_optuna(
+    data: pd.DataFrame,
+    strategy_cls: Type,
+    param_space: Dict[str, Dict[str, Any]],
+    n_trials: int = 20,
+    metric: str = "sharpe_ratio",
+) -> "optuna.study.Study":
+    """Optimize strategy parameters using Optuna and vectorbt.
+
+    The strategy's ``signal`` method is evaluated for parameter combinations
+    suggested by Optuna.  The objective maximises the specified ``metric``
+    (default Sharpe ratio).
+    """
+
+    import optuna  # type: ignore
+
+    close = data["close"]
+
+    def objective(trial: "optuna.trial.Trial") -> float:
+        params: Dict[str, Any] = {}
+        for name, space in param_space.items():
+            t = space.get("type")
+            low, high = space.get("low"), space.get("high")
+            if t == "int":
+                params[name] = trial.suggest_int(name, int(low), int(high))
+            elif t == "float":
+                params[name] = trial.suggest_float(name, float(low), float(high))
+            else:
+                raise ValueError(f"unsupported param type: {t}")
+
+        entries, exits = strategy_cls.signal(close, **params)
+        freq = pd.infer_freq(data.index) or "1D"
+        pf = vbt.Portfolio.from_signals(close, entries, exits, freq=freq)
+        metric_val = getattr(pf, metric)()
+        return float(metric_val)
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=n_trials)
+    return study
+
+
+def walk_forward(
+    data: pd.DataFrame,
+    strategy_cls: Type,
+    params: Dict[str, Iterable],
+    train_size: int,
+    test_size: int,
+) -> pd.DataFrame:
+    """Perform walk-forward analysis using vectorbt.
+
+    For each rolling window, parameters are selected on the training slice using
+    :func:`run_vectorbt` and evaluated on the subsequent test slice.  Metrics
+    include Sharpe ratio, drawdown, total return and Deflated Sharpe Ratio.
+    """
+
+    from ..utils.performance import dsr
+
+    results: List[Dict[str, Any]] = []
+    step = test_size
+    for start in range(0, len(data) - train_size - test_size + 1, step):
+        train = data.iloc[start : start + train_size]
+        test = data.iloc[start + train_size : start + train_size + test_size]
+
+        train_metrics = run_vectorbt(train, strategy_cls, params)
+        best_idx = train_metrics["sharpe_ratio"].idxmax()
+        if isinstance(best_idx, tuple):
+            best_params = dict(zip(train_metrics.index.names, best_idx))
+        else:
+            best_params = {train_metrics.index.name or list(params.keys())[0]: best_idx}
+
+        entries, exits = strategy_cls.signal(test["close"], **best_params)
+        freq = pd.infer_freq(test.index) or "1D"
+        pf = vbt.Portfolio.from_signals(test["close"], entries, exits, freq=freq)
+        returns = pf.returns().values
+        metrics = {
+            "start": test.index[0] if isinstance(test.index, pd.Index) else start,
+            "end": test.index[-1]
+            if isinstance(test.index, pd.Index)
+            else start + train_size + test_size,
+            "sharpe_ratio": float(pf.sharpe_ratio()),
+            "max_drawdown": float(pf.max_drawdown()),
+            "total_return": float(pf.total_return()),
+            "dsr": dsr(returns, num_trials=len(train_metrics)),
+        }
+        metrics.update(best_params)
+        results.append(metrics)
+
+    return pd.DataFrame(results)
