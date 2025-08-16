@@ -41,6 +41,20 @@ def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, inter
             VALUES (:ts, :exchange, :symbol, :rate, :interval_sec)
         '''), dict(ts=ts, exchange=exchange, symbol=symbol, rate=rate, interval_sec=interval_sec))
 
+
+def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
+    """Persist open interest readings."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.open_interest (ts, exchange, symbol, oi)
+            VALUES (:ts, :exchange, :symbol, :oi)
+        '''
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, oi=oi),
+        )
+
 def insert_orderbook(engine, *, ts, exchange: str, symbol: str,
                      bid_px: list[float], bid_qty: list[float],
                      ask_px: list[float], ask_qty: list[float]):

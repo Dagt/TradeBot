@@ -207,6 +207,24 @@ python -m tradingbot.cli backtest --data /path/to/orderbook.csv --strategy order
 
 El CSV debe contener las columnas `bid_qty` y `ask_qty`.
 
+### Ingesta de Open Interest
+
+Los adaptadores de exchanges (`Binance`, `Bybit`, `OKX`, etc.) exponen el método
+`fetch_oi` para consultar el *open interest*. Para almacenar periódicamente este
+dato en TimescaleDB se puede lanzar la tarea `poll_open_interest` para cada
+exchange/símbolo:
+
+```python
+import asyncio
+from tradingbot.adapters.binance_futures import BinanceFuturesAdapter
+from tradingbot.data.ingestion import poll_open_interest
+
+adapter = BinanceFuturesAdapter(api_key, api_secret)
+asyncio.create_task(poll_open_interest(adapter, "BTC/USDT"))
+
+# Repetir con otros adaptadores: BybitFuturesAdapter, OKXFuturesAdapter, etc.
+```
+
 ## Esquema de datos y carga
 
 El archivo `sql/schema_timescale.sql` crea el esquema `market` con tablas básicas para el almacenamiento de mercado:
@@ -215,6 +233,7 @@ El archivo `sql/schema_timescale.sql` crea el esquema `market` con tablas básic
 - `orderbook`: snapshots del libro de órdenes (`bid_px`, `bid_qty`, `ask_px`, `ask_qty`)
 - `bars`: agregados OHLCV
 - `funding`: tasas de funding de perps
+- `open_interest`: interés abierto por exchange/símbolo
 
 Para cargar la estructura en una instancia de TimescaleDB:
 
