@@ -2,6 +2,11 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
+from typing import Dict, Mapping, Any
+
+from ..risk.manager import RiskManager
+from ..storage.timescale import insert_portfolio_snapshot
+
 @dataclass
 class SpotBalances:
     free_base: float
@@ -46,3 +51,72 @@ def cap_qty_by_balance_futures(side: str, qty: float, price: float, free_usdt: f
     notional_cap = max(0.0, free_usdt * leverage * utilization)
     max_qty = notional_cap / max(price, 1e-12)
     return max(0.0, min(qty, max_qty))
+
+
+async def rebalance_between_exchanges(
+    asset: str,
+    price: float,
+    venues: Mapping[str, Any],
+    risk: RiskManager,
+    engine,
+    *,
+    threshold: float = 0.0,
+) -> None:
+    """Rebalance ``asset`` holdings across ``venues``.
+
+    Parameters
+    ----------
+    asset: str
+        Asset/currency to rebalance, e.g. ``"USDT"``.
+    price: float
+        Reference price in USD for snapshot notional calculation.
+    venues: Mapping[str, Any]
+        Mapping of venue name to a connector exposing ``fetch_balance`` and
+        ``transfer`` methods (synchronous).
+    risk: RiskManager
+        Risk manager instance whose ``positions_multi`` will be updated.
+    engine: Any
+        SQLAlchemy engine for persistence through ``insert_portfolio_snapshot``.
+    threshold: float, optional
+        Minimum balance difference required to trigger a transfer.
+    """
+
+    # Fetch balances for all venues
+    balances: Dict[str, float] = {}
+    for name, client in venues.items():
+        bal = await __to_thread(client.fetch_balance)
+        balances[name] = float((bal.get(asset) or {}).get("free") or 0.0)
+
+    if len(balances) < 2:
+        return
+
+    max_venue = max(balances, key=balances.get)
+    min_venue = min(balances, key=balances.get)
+    diff = balances[max_venue] - balances[min_venue]
+    if diff <= threshold:
+        # No action required
+        for venue, bal in balances.items():
+            risk.update_position(venue, asset, bal)
+        return
+
+    amount = diff / 2
+    src = venues[max_venue]
+    dst = venues[min_venue]
+    # Execute transfer using blocking call in thread
+    await __to_thread(src.transfer, asset, amount, dst)
+
+    balances[max_venue] -= amount
+    balances[min_venue] += amount
+
+    # Update risk manager and persist snapshots
+    for venue, bal in balances.items():
+        risk.update_position(venue, asset, bal)
+        insert_portfolio_snapshot(
+            engine,
+            venue=venue,
+            symbol=asset,
+            position=bal,
+            price=price,
+            notional_usd=bal * price,
+        )
+
