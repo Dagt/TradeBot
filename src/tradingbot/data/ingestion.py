@@ -1,7 +1,9 @@
 import asyncio
+import csv
+from pathlib import Path
 import logging
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 from ..bus import EventBus
 from ..types import Tick, Bar, OrderBook
@@ -10,11 +12,104 @@ from ..storage import quest as qs_storage
 
 log = logging.getLogger(__name__)
 
-Backends = Literal["timescale", "quest"]
+Backends = Literal["timescale", "quest", "csv"]
+
 
 def _get_storage(backend: Backends):
     """Return storage module depending on backend name."""
+    if backend == "csv":
+        return None
     return ts_storage if backend == "timescale" else qs_storage
+
+
+def _csv_path(name: str, path: Path | None = None) -> Path:
+    """Return a path inside ``db/`` for CSV persistence."""
+    if path is None:
+        path = Path("db") / f"{name}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def persist_trades(trades: Iterable[Tick], *, backend: Backends = "timescale", path: Path | None = None) -> None:
+    """Persist an iterable of trades to the selected backend or CSV file."""
+    if backend == "csv":
+        csv_path = _csv_path("trades", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for t in trades:
+                writer.writerow([t.ts.isoformat(), t.exchange, t.symbol, t.price, t.qty, t.side or ""])
+        return
+
+    storage = _get_storage(backend)
+    if storage is None:
+        return
+    engine = storage.get_engine()
+    for t in trades:
+        try:
+            storage.insert_trade(engine, t)
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Trade insert failed: %s", exc)
+
+
+def persist_orderbooks(orderbooks: Iterable[OrderBook], *, backend: Backends = "timescale", path: Path | None = None) -> None:
+    """Persist order book snapshots to the selected backend or CSV file."""
+    if backend == "csv":
+        csv_path = _csv_path("orderbook", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for ob in orderbooks:
+                writer.writerow(
+                    [
+                        ob.ts.isoformat(),
+                        ob.exchange,
+                        ob.symbol,
+                        ";".join(map(str, ob.bid_px)),
+                        ";".join(map(str, ob.bid_qty)),
+                        ";".join(map(str, ob.ask_px)),
+                        ";".join(map(str, ob.ask_qty)),
+                    ]
+                )
+        return
+
+    storage = _get_storage(backend)
+    if storage is None:
+        return
+    engine = storage.get_engine()
+    for ob in orderbooks:
+        try:
+            storage.insert_orderbook(
+                engine,
+                ts=ob.ts,
+                exchange=ob.exchange,
+                symbol=ob.symbol,
+                bid_px=ob.bid_px,
+                bid_qty=ob.bid_qty,
+                ask_px=ob.ask_px,
+                ask_qty=ob.ask_qty,
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Orderbook insert failed: %s", exc)
+
+
+def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: Path | None = None) -> None:
+    """Persist OHLCV bars to the selected backend or CSV file."""
+    if backend == "csv":
+        csv_path = _csv_path("bars", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for b in bars:
+                writer.writerow([b.ts.isoformat(), b.exchange, b.symbol, b.o, b.h, b.l, b.c, b.v])
+        return
+
+    storage = _get_storage(backend)
+    if storage is None:
+        return
+    engine = storage.get_engine()
+    for b in bars:
+        try:
+            storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Bar insert failed: %s", exc)
 
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
