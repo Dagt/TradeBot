@@ -330,6 +330,10 @@ async def run_live_binance_spot_testnet_multi(
 
         side = "buy" if delta > 0 else "sell"
 
+        if not risks[sym].check_limits(closed.c):
+            log.warning("[%s] RiskManager disabled; kill switch activated", sym)
+            continue
+
         # ----- SOFT CAPS -----
         action, reason, metrics = guard.soft_cap_decision(sym, side, abs(trade_qty), closed.c)
         if action == "block":
