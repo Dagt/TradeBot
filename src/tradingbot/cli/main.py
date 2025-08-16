@@ -1,6 +1,11 @@
 # src/tradingbot/cli/main.py
-import typer, logging, time
+import logging
+import time
+from pathlib import Path
+
 import pandas as pd
+import typer
+from hydra import compose, initialize_config_dir
 
 from ..logging_conf import setup_logging
 from ..backtest.event_engine import run_backtest_csv
@@ -19,10 +24,36 @@ from ..live.runner_futures_testnet_multi import run_live_binance_futures_testnet
 app = typer.Typer(add_completion=False)
 
 @app.command()
-def backtest(data: str, symbol: str = "BTC/USDT", strategy: str = "breakout_atr"):
-    """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)"""
+def backtest(
+    data: str = typer.Option(
+        None, help="Ruta CSV para el backtest (se ignora si se usa --config)"
+    ),
+    symbol: str = "BTC/USDT",
+    strategy: str = "breakout_atr",
+    config: str = typer.Option(None, help="Archivo YAML con configuración"),
+):
+    """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)
+
+    Si se provee ``--config``, se cargan parámetros desde un archivo YAML utilizando Hydra.
+    """
     setup_logging()
-    res = run_backtest_csv(data, symbol=symbol, strategy=strategy)
+    strategy_params = None
+    if config:
+        cfg_path = Path(config)
+        with initialize_config_dir(config_dir=str(cfg_path.parent)):
+            cfg = compose(config_name=cfg_path.stem)
+        data = cfg.get("data", data)
+        symbol = cfg.get("symbol", symbol)
+        strategy = cfg.get("strategy", strategy)
+        strategy_params = cfg.get("strategy_params", {})
+    if not data:
+        raise SystemExit("Debe especificar ruta de CSV via --data o en --config")
+    res = run_backtest_csv(
+        data,
+        symbol=symbol,
+        strategy=strategy,
+        strategy_params=strategy_params,
+    )
     typer.echo(res)
 
 @app.command()

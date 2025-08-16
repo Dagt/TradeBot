@@ -74,11 +74,38 @@ cp .env.example .env
 # 4) Probar backtest de ejemplo (simulado, CSV)
 python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
 
+# 4b) Misma prueba usando configuración YAML (Hydra)
+cat <<'YAML' > backtest.yaml
+data: ./data/examples/btcusdt_1m.csv
+symbol: BTC/USDT
+strategy: breakout_atr
+YAML
+python -m tradingbot.cli backtest --config backtest.yaml
+
 # 5) Iniciar API de control/monitoreo
 uvicorn tradingbot.apps.api.main:app --reload --port 8080
 ```
 
 > **Nota**: este repo es un esqueleto funcional. Los adaptadores WS/REST y ejecución están stubs listos para ser implementados paso a paso.
+
+## MLflow y Optuna
+
+El módulo `backtest.event_engine` permite registrar experimentos con [MLflow](https://mlflow.org):
+
+```python
+from tradingbot.backtest.event_engine import run_backtest_csv_mlflow
+
+run_backtest_csv_mlflow("./data/examples/btcusdt_1m.csv")
+```
+
+También se incluye un ejemplo de optimización de hiperparámetros usando [Optuna](https://optuna.org):
+
+```python
+from tradingbot.backtest.event_engine import optimize_strategy
+
+study = optimize_strategy("./data/examples/btcusdt_1m.csv", n_trials=20)
+print(study.best_params)
+```
 
 ## Esquema de datos y carga
 
