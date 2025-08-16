@@ -74,6 +74,10 @@ cp .env.example .env
 # 4) Probar backtest de ejemplo (simulado, CSV)
 python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
 
+# Ejemplo usando la estrategia de flujo de órdenes
+python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv --strategy order_flow
+# Los parámetros ``window``, ``upper`` y ``lower`` pueden ajustarse programáticamente.
+
 # 5) Iniciar API de control/monitoreo
 uvicorn tradingbot.apps.api.main:app --reload --port 8080
 ```
