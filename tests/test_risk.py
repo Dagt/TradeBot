@@ -1,4 +1,6 @@
 
+import asyncio
+import pytest
 from hypothesis import given, strategies as st
 
 def test_risk_manager_position(risk_manager):
@@ -83,3 +85,34 @@ def test_kill_switch_disables():
     assert rm.enabled is False
     assert rm.last_kill_reason == "manual"
     assert after == before + 1
+
+
+@pytest.mark.asyncio
+async def test_daily_loss_limit_via_bus():
+    from tradingbot.risk.manager import RiskManager
+    from tradingbot.bus import EventBus
+
+    bus = EventBus()
+    events = []
+    bus.subscribe("risk:halted", lambda e: events.append(e))
+    rm = RiskManager(max_pos=1, daily_loss_limit=50, bus=bus)
+    await bus.publish("pnl", {"delta": -60})
+    await asyncio.sleep(0)
+    assert rm.enabled is False
+    assert events and events[0]["reason"] == "daily_loss"
+
+
+def test_covariance_limit_triggers_kill():
+    from tradingbot.risk.manager import RiskManager
+
+    rm = RiskManager(max_pos=1)
+    positions = {"BTC": 1.0, "ETH": 1.0}
+    cov = {
+        ("BTC", "BTC"): 0.04,
+        ("ETH", "ETH"): 0.04,
+        ("BTC", "ETH"): 0.039,
+    }
+    ok = rm.check_portfolio_risk(positions, cov, max_variance=0.1)
+    assert ok is False
+    assert rm.enabled is False
+    assert rm.last_kill_reason == "covariance_limit"
