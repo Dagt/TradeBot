@@ -6,7 +6,7 @@ import heapq
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple, Any
+from typing import Any, Dict, Iterable, List, Tuple
 
 import pandas as pd
 
@@ -25,6 +25,11 @@ class Order:
     symbol: str = field(compare=False)
     side: str = field(compare=False)  # "buy" or "sell"
     qty: float = field(compare=False)
+    exchange: str = field(default="default", compare=False)
+    place_price: float = field(default=0.0, compare=False)
+    remaining_qty: float = field(default=0.0, compare=False)
+    filled_qty: float = field(default=0.0, compare=False)
+    total_cost: float = field(default=0.0, compare=False)
 
 
 class SlippageModel:
@@ -45,31 +50,58 @@ class SlippageModel:
         return price + slip if side == "buy" else price - slip
 
 
+class FeeModel:
+    """Very small fee model applying a flat percentage to trade value."""
+
+    def __init__(self, fee: float = 0.0) -> None:
+        self.fee = float(fee)
+
+    def calculate(self, cash: float) -> float:
+        return abs(cash) * self.fee
+
+
 class EventDrivenBacktestEngine:
     """Backtest engine supporting multiple symbols/strategies and order latency."""
 
     def __init__(
         self,
         data: Dict[str, pd.DataFrame],
-        strategies: Iterable[Tuple[str, str]],
+        strategies: Iterable[Tuple[str, str] | Tuple[str, str, str]],
         latency: int = 1,
         window: int = 120,
         slippage: SlippageModel | None = None,
+        exchange_configs: Dict[str, Dict[str, float]] | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
         self.window = int(window)
         self.slippage = slippage
 
+        # Exchange specific configurations
+        self.exchange_latency: Dict[str, int] = {}
+        self.exchange_fees: Dict[str, FeeModel] = {}
+        exchange_configs = exchange_configs or {}
+        for exch, cfg in exchange_configs.items():
+            self.exchange_latency[exch] = int(cfg.get("latency", latency))
+            self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
+        self.default_fee = FeeModel(0.0)
+
         self.strategies: Dict[Tuple[str, str], object] = {}
         self.risk: Dict[Tuple[str, str], RiskManager] = {}
-        for strat_name, symbol in strategies:
+        self.strategy_exchange: Dict[Tuple[str, str], str] = {}
+        for strat_info in strategies:
+            if len(strat_info) == 2:
+                strat_name, symbol = strat_info  # type: ignore[misc]
+                exchange = "default"
+            else:
+                strat_name, symbol, exchange = strat_info  # type: ignore[misc]
             strat_cls = STRATEGIES.get(strat_name)
             if strat_cls is None:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
             self.risk[key] = RiskManager(max_pos=1.0)
+            self.strategy_exchange[key] = exchange
 
     # ------------------------------------------------------------------
     def run(self) -> dict:
@@ -78,6 +110,8 @@ class EventDrivenBacktestEngine:
         equity = 0.0
         fills: List[tuple] = []
         order_queue: List[Order] = []
+        orders: List[Order] = []
+        slippage_total = 0.0
 
         max_len = max(len(df) for df in self.data.values())
         for i in range(max_len):
@@ -88,18 +122,52 @@ class EventDrivenBacktestEngine:
                 if i >= len(df):
                     continue
                 bar = df.iloc[i]
-                price = float(bar["close"])
-                if self.slippage:
-                    price = self.slippage.adjust(order.side, order.qty, price, bar)
-                cash = order.qty * price
-                if order.side == "buy":
-                    equity -= cash
+
+                if "bid" in bar and "ask" in bar:
+                    price = float(bar["ask"] if order.side == "buy" else bar["bid"])
+                    vol_key = "ask_size" if order.side == "buy" else "bid_size"
+                    avail = float(bar.get(vol_key, order.remaining_qty))
+                    fill_qty = min(order.remaining_qty, avail)
                 else:
-                    equity += cash
-                self.risk[(order.strategy, order.symbol)].add_fill(order.side, order.qty)
-                fills.append(
-                    (bar.get("timestamp", i), price, order.qty, order.strategy, order.symbol)
+                    price = float(bar["close"])
+                    fill_qty = order.remaining_qty
+
+                if self.slippage:
+                    price = self.slippage.adjust(order.side, fill_qty, price, bar)
+
+                slip = (
+                    price - order.place_price
+                    if order.side == "buy"
+                    else order.place_price - price
                 )
+                slippage_total += slip * fill_qty
+
+                cash = fill_qty * price
+                fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
+                fee = fee_model.calculate(cash)
+                if order.side == "buy":
+                    equity -= cash + fee
+                else:
+                    equity += cash - fee
+                self.risk[(order.strategy, order.symbol)].add_fill(
+                    order.side, fill_qty
+                )
+                order.filled_qty += fill_qty
+                order.remaining_qty -= fill_qty
+                order.total_cost += price * fill_qty
+                fills.append(
+                    (
+                        bar.get("timestamp", i),
+                        price,
+                        fill_qty,
+                        order.strategy,
+                        order.symbol,
+                        order.exchange,
+                    )
+                )
+                if order.remaining_qty > 1e-9:
+                    order.execute_index = i + 1
+                    heapq.heappush(order_queue, order)
 
             # Generate new orders from strategies
             for (strat_name, symbol), strat in self.strategies.items():
@@ -115,11 +183,23 @@ class EventDrivenBacktestEngine:
                     continue
                 side = "buy" if delta > 0 else "sell"
                 qty = abs(delta)
-                exec_index = i + self.latency
-                heapq.heappush(
-                    order_queue,
-                    Order(exec_index, strat_name, symbol, side, qty),
+                exchange = self.strategy_exchange[(strat_name, symbol)]
+                exec_index = i + self.exchange_latency.get(exchange, self.latency)
+                place_price = float(df["close"].iloc[i])
+                order = Order(
+                    exec_index,
+                    strat_name,
+                    symbol,
+                    side,
+                    qty,
+                    exchange,
+                    place_price,
+                    qty,
+                    0.0,
+                    0.0,
                 )
+                orders.append(order)
+                heapq.heappush(order_queue, order)
 
         # Liquidate remaining positions
         for (strat_name, symbol), risk in self.risk.items():
@@ -128,7 +208,25 @@ class EventDrivenBacktestEngine:
                 last_price = float(self.data[symbol]["close"].iloc[-1])
                 equity += pos * last_price
 
-        result = {"equity": equity, "fills": fills}
+        orders_summary = [
+            {
+                "strategy": o.strategy,
+                "symbol": o.symbol,
+                "side": o.side,
+                "qty": o.qty,
+                "filled": o.filled_qty,
+                "place_price": o.place_price,
+                "avg_price": o.total_cost / o.filled_qty if o.filled_qty else 0.0,
+                "exchange": o.exchange,
+            }
+            for o in orders
+        ]
+        result = {
+            "equity": equity,
+            "fills": fills,
+            "orders": orders_summary,
+            "slippage": slippage_total,
+        }
         log.info("Backtest result: %s", result)
         return result
 
@@ -139,12 +237,18 @@ def run_backtest_csv(
     latency: int = 1,
     window: int = 120,
     slippage: SlippageModel | None = None,
+    exchange_configs: Dict[str, Dict[str, float]] | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
     data = {sym: pd.read_csv(Path(path)) for sym, path in csv_paths.items()}
     engine = EventDrivenBacktestEngine(
-        data, strategies, latency=latency, window=window, slippage=slippage
+        data,
+        strategies,
+        latency=latency,
+        window=window,
+        slippage=slippage,
+        exchange_configs=exchange_configs,
     )
     return engine.run()
 
@@ -155,6 +259,7 @@ def run_backtest_mlflow(
     latency: int = 1,
     window: int = 120,
     slippage: SlippageModel | None = None,
+    exchange_configs: Dict[str, Dict[str, float]] | None = None,
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
 ) -> dict:
@@ -181,6 +286,7 @@ def run_backtest_mlflow(
             latency=latency,
             window=window,
             slippage=slippage,
+            exchange_configs=exchange_configs,
         )
         mlflow.log_metric("equity", result.get("equity", 0.0))
         mlflow.log_metric("fills", len(result.get("fills", [])))
