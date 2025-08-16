@@ -31,17 +31,13 @@ def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
 
     setup_logging()
     from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
-    from ..bus import EventBus
-    from ..data.ingest import run_orderbook_stream
-    from ..storage.timescale import get_engine
+    from ..data.ingestion import stream_orderbook
 
     adapter = BinanceSpotWSAdapter()
-    bus = EventBus()
-    engine = get_engine()
 
     typer.echo(f"Streaming {symbol} order book ... (Ctrl+C to stop)")
     try:
-        asyncio.run(run_orderbook_stream(adapter, symbol, depth, bus, engine))
+        asyncio.run(stream_orderbook(adapter, symbol, depth))
     except KeyboardInterrupt:
         typer.echo("stopped")
 
