@@ -96,6 +96,7 @@ class PaperAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ) -> dict:
         order_id = self._next_order_id()
         last = self.state.last_px.get(symbol)
@@ -112,7 +113,8 @@ class PaperAdapter(ExchangeAdapter):
             elif side == "sell" and price is not None and price <= last:
                 px_exec = last
             else:
-                return {"status": "new", "order_id": order_id, "note": "limit no cruzó; no simulo book"}
+                status = "canceled" if time_in_force in {"IOC", "FOK"} else "new"
+                return {"status": status, "order_id": order_id, "note": "limit no cruzó; no simulo book"}
         else:
             return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
 
