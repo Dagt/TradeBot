@@ -168,6 +168,9 @@ async def run_live_binance(
             continue
 
         delta = risk.size(signal.side, signal.strength)
+        # Ajuste por correlaciones intraportafolio
+        corr_pairs = guard.correlations()
+        delta = risk.adjust_size_for_correlation(symbol, delta, corr_pairs, threshold=0.8)
         if abs(delta) > 1e-9:
             # Verifica límites de riesgo antes de enviar cualquier orden
             if not risk.check_limits(closed.c):
@@ -196,6 +199,8 @@ async def run_live_binance(
             log.info("FILL live %s", resp)
             risk.add_fill(side, abs(delta))
             guard.update_position_on_order(symbol, side, abs(delta))
+            # sincroniza posiciones agregadas en RiskManager
+            risk.update_position("binance", symbol, guard.st.positions.get(symbol, 0.0))
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if abs(delta_rpnl) > 0:
                 dguard.on_realized_delta(delta_rpnl)

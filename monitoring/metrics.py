@@ -8,6 +8,7 @@ from tradingbot.utils.metrics import (
     RISK_EVENTS,
     ORDER_LATENCY,
     MAKER_TAKER_RATIO,
+    KILL_SWITCH_ACTIVE,
 )
 
 # Trading metrics
@@ -95,6 +96,7 @@ def metrics_summary() -> dict:
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
+        "kill_switch_active": KILL_SWITCH_ACTIVE._value.get(),
         "avg_slippage_bps": avg_slippage,
         "avg_order_latency_seconds": avg_latency,
         "avg_maker_taker_ratio": avg_ratio,

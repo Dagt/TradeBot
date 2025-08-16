@@ -49,6 +49,12 @@ RISK_EVENTS = Counter(
     ["event_type"],
 )
 
+# Kill switch status (1 = halted)
+KILL_SWITCH_ACTIVE = Gauge(
+    "kill_switch_active",
+    "Global kill switch active flag",
+)
+
 # Execution latency by venue
 ORDER_LATENCY = Histogram(
     "order_execution_latency_seconds",
