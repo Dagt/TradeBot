@@ -11,6 +11,8 @@ executed.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import typer
 
 from ..logging_conf import setup_logging
@@ -67,6 +69,45 @@ def backtest(
 
     result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
     typer.echo(result)
+
+
+@app.command("backtest-cfg")
+def backtest_cfg(config: str) -> None:
+    """Run a backtest using a Hydra YAML configuration."""
+
+    from pathlib import Path
+
+    import hydra
+    from omegaconf import OmegaConf
+
+    setup_logging()
+    # Register dataclasses and load the YAML file
+    from ..config import hydra_conf as _  # noqa: F401
+
+    cfg_path = Path(config)
+    rel_path = os.path.relpath(cfg_path.parent, Path(__file__).parent)
+
+    @hydra.main(
+        config_path=rel_path,
+        config_name=cfg_path.stem,
+        version_base=None,
+    )
+    def _run(cfg) -> None:  # type: ignore[override]
+        from ..backtest.event_engine import run_backtest_csv
+
+        data = cfg.backtest.data
+        symbol = cfg.backtest.symbol
+        strategy = cfg.backtest.strategy
+
+        result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
+        typer.echo(OmegaConf.to_yaml(cfg))
+        typer.echo(result)
+    old_argv = sys.argv
+    sys.argv = [sys.argv[0]]
+    try:
+        _run()
+    finally:
+        sys.argv = old_argv
 
 
 @app.command()
