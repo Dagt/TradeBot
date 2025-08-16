@@ -59,6 +59,24 @@ def _to_dataframe(data: DataLike, columns: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def _to_dataframe_lists(data: DataLike, columns: Sequence[str]) -> pd.DataFrame:
+    """Normalise ``data`` into a DataFrame preserving list/array values.
+
+    Unlike :func:`_to_dataframe`, this helper keeps list-like values untouched
+    which is required when operating on L2 order book snapshots where each
+    field contains multiple levels.
+    """
+
+    if isinstance(data, pd.DataFrame):
+        return data.loc[:, columns]
+
+    rows = []
+    for snap in data:
+        row = {col: snap.get(col) for col in columns}
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
 @njit
 def _ofi_jit(bid: np.ndarray, ask: np.ndarray) -> np.ndarray:
     """Numba implementation of Order Flow Imbalance."""
@@ -150,13 +168,22 @@ def rsi(data: DataLike, n: int = 14) -> pd.Series:
     return rsi.fillna(100)
 
 
-def order_flow_imbalance(data: DataLike) -> pd.Series:
-    """Order Flow Imbalance based on top of book changes.
+def order_flow_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
+    """Order Flow Imbalance.
+
+    When ``data`` contains Level 2 snapshots with ``bid_px``/``ask_px`` and
+    ``bid_qty``/``ask_qty`` arrays, the imbalance is computed for the top
+    ``depth`` levels using the formulation by Cartea et al.  For simple inputs
+    exposing only ``bid_qty``/``ask_qty`` scalars, the function falls back to a
+    top-of-book approximation identical to previous versions.
 
     Parameters
     ----------
     data:
-        Input exposing ``bid_qty`` and ``ask_qty`` fields.
+        Input exposing order book fields.
+    depth:
+        Number of levels to include in the calculation.  Defaults to ``1``
+        (top of book).
 
     Returns
     -------
@@ -165,20 +192,69 @@ def order_flow_imbalance(data: DataLike) -> pd.Series:
         pressure.
     """
 
-    df = _to_dataframe(data, ["bid_qty", "ask_qty"])
-    bid = df["bid_qty"].to_numpy(np.float64)
-    ask = df["ask_qty"].to_numpy(np.float64)
-    ofi = _ofi_jit(bid, ask)
-    return pd.Series(ofi, index=df.index, name="ofi")
+    if depth < 1:
+        raise ValueError("depth must be at least 1")
+
+    if isinstance(data, pd.DataFrame):
+        has_depth = {"bid_px", "ask_px", "bid_qty", "ask_qty"}.issubset(
+            data.columns
+        )
+    else:
+        data = list(data)
+        has_depth = bool(data) and all(
+            k in data[0] for k in ("bid_px", "ask_px", "bid_qty", "ask_qty")
+        )
+
+    if not has_depth:
+        # Fallback: treat inputs as top-of-book quantities
+        df = _to_dataframe(data, ["bid_qty", "ask_qty"])
+        bid = df["bid_qty"].to_numpy(np.float64)
+        ask = df["ask_qty"].to_numpy(np.float64)
+        ofi = _ofi_jit(bid, ask)
+        return pd.Series(ofi, index=df.index, name="ofi")
+
+    df = _to_dataframe_lists(data, ["bid_px", "bid_qty", "ask_px", "ask_qty"])
+    bid_px = np.stack(df["bid_px"].to_numpy())[:, :depth]
+    bid_qty = np.stack(df["bid_qty"].to_numpy())[:, :depth]
+    ask_px = np.stack(df["ask_px"].to_numpy())[:, :depth]
+    ask_qty = np.stack(df["ask_qty"].to_numpy())[:, :depth]
+
+    out = np.zeros(len(df))
+    for i in range(1, len(df)):
+        val = 0.0
+        for lvl in range(depth):
+            bp, bp_prev = bid_px[i, lvl], bid_px[i - 1, lvl]
+            bq, bq_prev = bid_qty[i, lvl], bid_qty[i - 1, lvl]
+            ap, ap_prev = ask_px[i, lvl], ask_px[i - 1, lvl]
+            aq, aq_prev = ask_qty[i, lvl], ask_qty[i - 1, lvl]
+
+            if bp > bp_prev:
+                val += bq
+            elif bp < bp_prev:
+                val -= bq_prev
+            else:
+                val += bq - bq_prev
+
+            if ap < ap_prev:
+                val -= aq
+            elif ap > ap_prev:
+                val += aq_prev
+            else:
+                val -= aq - aq_prev
+        out[i] = val
+    return pd.Series(out, index=df.index, name="ofi")
 
 
-def depth_imbalance(data: DataLike) -> pd.Series:
+def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
     """Depth imbalance between bid and ask queues.
 
     Parameters
     ----------
     data:
         Input exposing ``bid_qty`` and ``ask_qty`` fields.
+    depth:
+        Number of levels to aggregate when quantities are provided as lists.
+        Defaults to ``1`` (top of book).
 
     Returns
     -------
@@ -187,10 +263,22 @@ def depth_imbalance(data: DataLike) -> pd.Series:
         depth on the bid side.
     """
 
-    df = _to_dataframe(data, ["bid_qty", "ask_qty"])
-    bid = df["bid_qty"].to_numpy(np.float64)
-    ask = df["ask_qty"].to_numpy(np.float64)
-    di = _depth_jit(bid, ask)
+    if depth < 1:
+        raise ValueError("depth must be at least 1")
+
+    df = _to_dataframe_lists(data, ["bid_qty", "ask_qty"])
+
+    first = df["bid_qty"].iloc[0]
+    if isinstance(first, (list, tuple, np.ndarray, pd.Series)):
+        bid_mat = np.stack(df["bid_qty"].to_numpy())[:, :depth]
+        ask_mat = np.stack(df["ask_qty"].to_numpy())[:, :depth]
+        bid = bid_mat.sum(axis=1)
+        ask = ask_mat.sum(axis=1)
+    else:
+        bid = df["bid_qty"].to_numpy(np.float64)
+        ask = df["ask_qty"].to_numpy(np.float64)
+
+    di = _depth_jit(bid.astype(np.float64), ask.astype(np.float64))
     return pd.Series(di, index=df.index, name="depth_imbalance")
 
 
