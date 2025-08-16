@@ -130,3 +130,58 @@ async def test_stream_trades(connector_cls, messages, monkeypatch):
     assert trade2.price == 3.0
     await gen.aclose()
     assert ws.sent[0] == c._ws_trades_subscribe("BTCUSDT")
+
+
+class DummyOrderRest:
+    """Minimal REST client mocking order and balance endpoints."""
+
+    def __init__(self) -> None:
+        self.last_create = None
+        self.last_cancel = None
+
+    async def create_order(self, symbol, type_, side, amount, price=None, params=None):
+        self.last_create = (symbol, type_, side, amount, price, params)
+        return {
+            "id": "1",
+            "status": "open",
+            "symbol": symbol,
+            "side": side,
+            "price": price,
+            "amount": amount,
+        }
+
+    async def cancel_order(self, order_id, symbol=None):
+        self.last_cancel = (order_id, symbol)
+        return {"id": order_id, "status": "canceled"}
+
+    async def fetch_balance(self):
+        return {"BTC": {"total": "1"}, "USDT": {"total": "2"}}
+
+
+@pytest.mark.parametrize("connector_cls", [BybitConnector, OKXConnector])
+@pytest.mark.asyncio
+async def test_order_and_balance_parsing(connector_cls):
+    c = connector_cls()
+    rest = DummyOrderRest()
+    c.rest = rest
+
+    res = await c.place_order(
+        "BTC/USDT",
+        "buy",
+        "limit",
+        1,
+        price=10,
+        post_only=True,
+        time_in_force="GTC",
+    )
+    assert res["id"] == "1"
+    assert res["price"] == 10.0
+    assert rest.last_create[5]["postOnly"] is True
+    assert rest.last_create[5]["timeInForce"] == "GTC"
+
+    cancel = await c.cancel_order("1", "BTC/USDT")
+    assert cancel["status"] == "canceled"
+    assert rest.last_cancel == ("1", "BTC/USDT")
+
+    bal = await c.fetch_balance()
+    assert bal == {"BTC": 1.0, "USDT": 2.0}
