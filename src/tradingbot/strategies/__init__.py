@@ -5,6 +5,7 @@ from .mean_reversion import MeanReversion
 from .arbitrage_triangular import TriangularArb
 from .cash_and_carry import CashAndCarry
 from .order_flow import OrderFlow
+from .triple_barrier import TripleBarrier
 
 # Registry of available strategies, useful for CLI/backtests
 STRATEGIES = {
@@ -15,6 +16,7 @@ STRATEGIES = {
     TriangularArb.name: TriangularArb,
     CashAndCarry.name: CashAndCarry,
     OrderFlow.name: OrderFlow,
+    TripleBarrier.name: TripleBarrier,
 }
 
 __all__ = [
@@ -25,5 +27,6 @@ __all__ = [
     "TriangularArb",
     "CashAndCarry",
     "OrderFlow",
+    "TripleBarrier",
     "STRATEGIES",
 ]
