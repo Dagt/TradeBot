@@ -222,3 +222,37 @@ async def test_poll_open_interest_inserts(monkeypatch):
     assert inserted
     assert inserted[0]["oi"] == 123.0
     assert inserted[0]["ts"] == datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_poll_basis_inserts(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_basis(self, symbol: str):
+            return {"ts": ts, "basis": 5.0}
+
+    inserted = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_basis(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    task = asyncio.create_task(
+        ingestion.poll_basis(DummyAdapter(), "BTC/USDT", interval=0)
+    )
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert inserted
+    assert inserted[0]["basis"] == 5.0
+    assert inserted[0]["ts"] == ts

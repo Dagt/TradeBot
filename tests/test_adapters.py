@@ -5,6 +5,7 @@ from tradingbot.adapters import (
     BybitFuturesAdapter,
     OKXSpotAdapter,
     OKXFuturesAdapter,
+    DeribitAdapter,
 )
 from tradingbot.adapters.base import ExchangeAdapter
 from tradingbot.adapters.binance_spot import BinanceSpotAdapter
@@ -221,3 +222,33 @@ async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
     oi_res = await adapter.fetch_oi("BTC/USDT")
     assert oi_res["oi"] == oi
     assert oi_res["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+
+class _DummyDeribitRest:
+    def public_get_get_funding_rate(self, params):
+        return {"result": {"funding_rate": "0.01", "timestamp": 1000}}
+
+    def public_get_ticker(self, params):
+        return {"result": {"index_price": "100", "mark_price": "105", "timestamp": 1000}}
+
+    def public_get_get_open_interest(self, params):
+        return {"result": {"open_interest": "200", "timestamp": 1000}}
+
+
+@pytest.mark.asyncio
+async def test_deribit_fetch_methods():
+    adapter = DeribitAdapter.__new__(DeribitAdapter)
+    adapter.rest = _DummyDeribitRest()
+
+    async def _req(fn, *a, **k):
+        return fn(*a, **k)
+
+    adapter._request = _req
+
+    funding = await adapter.fetch_funding("BTC-PERPETUAL")
+    assert funding["rate"] == 0.01
+    basis = await adapter.fetch_basis("BTC-PERPETUAL")
+    assert basis["basis"] == 5.0
+    oi = await adapter.fetch_oi("BTC-PERPETUAL")
+    assert oi["oi"] == 200.0
+    assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
