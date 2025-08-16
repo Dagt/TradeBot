@@ -69,6 +69,51 @@ def run_bot(symbol: str = "BTC/USDT") -> None:
     asyncio.run(run_live_binance(symbol=symbol))
 
 
+@app.command("daemon")
+def run_daemon(config: str = "config/config.yaml") -> None:
+    """Launch the :class:`TradeBotDaemon` using a Hydra configuration."""
+
+    from pathlib import Path
+
+    import hydra
+    from omegaconf import OmegaConf
+
+    setup_logging()
+
+    # Register dataclasses and Hydra config
+    from ..config import hydra_conf as _  # noqa: F401
+
+    cfg_path = Path(config)
+    rel_path = os.path.relpath(cfg_path.parent, Path(__file__).parent)
+
+    @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
+    def _run(cfg) -> None:  # type: ignore[override]
+        from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
+        from ..bus import EventBus
+        from ..live.daemon import TradeBotDaemon
+        from ..risk.manager import RiskManager
+        from ..strategies.breakout_atr import BreakoutATR
+        from ..execution.router import ExecutionRouter
+
+        adapter = BinanceSpotWSAdapter()
+        bus = EventBus()
+        risk = RiskManager(bus=bus)
+        strat = BreakoutATR()
+        router = ExecutionRouter(adapters=[adapter])
+
+        bot = TradeBotDaemon({"binance": adapter}, [strat], risk, router, [cfg.backtest.symbol])
+
+        typer.echo(OmegaConf.to_yaml(cfg))
+        asyncio.run(bot.run())
+
+    old = sys.argv
+    sys.argv = [sys.argv[0]]
+    try:
+        _run()
+    finally:
+        sys.argv = old
+
+
 @app.command("run-bybit-spot-testnet")
 def run_bybit_spot_testnet(
     symbol: str = "BTC/USDT",
