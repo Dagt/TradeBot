@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Dict
+from collections import defaultdict
+from typing import Dict, List, Tuple
 
-from tradingbot.utils.metrics import RISK_EVENTS
+import numpy as np
+
+from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 
 
@@ -72,6 +75,10 @@ class RiskManager:
 
         self.enabled = True
         self.pos = Position()
+        # Multi-exchange position book: {exchange: {symbol: qty}}
+        self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
+        # Flag metric for kill switch status
+        KILL_SWITCH_ACTIVE.set(0)
         # Variables internas para cálculo de SL/DD
         self._entry_price: float | None = None
         self._peak_price: float | None = None  # máximo a favor (long) / mínimo a favor (short)
@@ -103,6 +110,59 @@ class RiskManager:
         # Si se cerró o se invirtió la posición, reinicia trackers de precio
         if prev == 0 or prev * self.pos.qty <= 0:
             self._reset_price_trackers()
+
+    # ------------------------------------------------------------------
+    # Multi-exchange position helpers
+    def update_position(self, exchange: str, symbol: str, qty: float) -> None:
+        """Actualizar posición por exchange y símbolo."""
+        book = self.positions_multi.setdefault(exchange, {})
+        book[symbol] = float(qty)
+
+    def aggregate_positions(self) -> Dict[str, float]:
+        """Agrega posiciones de todos los exchanges por símbolo."""
+        agg: Dict[str, float] = {}
+        for book in self.positions_multi.values():
+            for sym, qty in book.items():
+                agg[sym] = agg.get(sym, 0.0) + float(qty)
+        return agg
+
+    def close_all_positions(self) -> None:
+        """Resetea todas las posiciones (locales y agregadas)."""
+        self.pos.qty = 0.0
+        for exch in list(self.positions_multi.keys()):
+            for sym in list(self.positions_multi[exch].keys()):
+                self.positions_multi[exch][sym] = 0.0
+
+    def covariance_matrix(self, returns: Dict[str, List[float]]) -> Dict[Tuple[str, str], float]:
+        """Calcula matriz de covarianza a partir de retornos por símbolo."""
+        if not returns:
+            return {}
+        syms = list(returns.keys())
+        arrays = [np.array(returns[s], dtype=float) for s in syms]
+        n = min((len(a) for a in arrays), default=0)
+        if n == 0:
+            return {}
+        data = np.stack([a[-n:] for a in arrays])
+        cov = np.cov(data)
+        mat: Dict[Tuple[str, str], float] = {}
+        for i, a in enumerate(syms):
+            for j, b in enumerate(syms):
+                mat[(a, b)] = float(cov[i, j])
+        return mat
+
+    def adjust_size_for_correlation(
+        self,
+        symbol: str,
+        base_size: float,
+        correlations: Dict[Tuple[str, str], float],
+        threshold: float,
+    ) -> float:
+        """Reduce tamaño de orden si hay correlaciones altas con otras posiciones."""
+        for (a, b), corr in correlations.items():
+            if symbol in (a, b) and abs(corr) >= threshold:
+                RISK_EVENTS.labels(event_type="correlated_size_cut").inc()
+                return base_size * 0.5
+        return base_size
 
     # ------------------------------------------------------------------
     # Event bus callbacks
@@ -163,7 +223,7 @@ class RiskManager:
     def update_covariance(
         self, cov_matrix: Dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Aplica un límite de correlación a partir de una matriz de covarianzas.
+        r"""Aplica un límite de correlación a partir de una matriz de covarianzas.
 
         Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
         para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
@@ -225,7 +285,10 @@ class RiskManager:
         """Deshabilita completamente el gestor de riesgo."""
         self.enabled = False
         self.last_kill_reason = reason
+        # close any tracked positions
+        self.close_all_positions()
         RISK_EVENTS.labels(event_type="kill_switch").inc()
+        KILL_SWITCH_ACTIVE.set(1)
         if self.bus is not None:
             # dispatch asynchronously without awaiting
             asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
