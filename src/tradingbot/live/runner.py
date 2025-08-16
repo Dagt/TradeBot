@@ -169,6 +169,10 @@ async def run_live_binance(
 
         delta = risk.size(signal.side, signal.strength)
         if abs(delta) > 1e-9:
+            # Verifica límites de riesgo antes de enviar cualquier orden
+            if not risk.check_limits(closed.c):
+                log.warning("RiskManager disabled; kill switch activated")
+                continue
             side = "buy" if delta > 0 else "sell"
             action, reason, metrics = guard.soft_cap_decision(symbol, side, abs(delta), closed.c)
             if action == "block":

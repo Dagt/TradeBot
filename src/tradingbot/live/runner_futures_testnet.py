@@ -119,6 +119,10 @@ async def run_live_binance_futures_testnet(
 
         side = "buy" if delta > 0 else "sell"
 
+        if not risk.check_limits(closed.c):
+            log.warning("RiskManager disabled; kill switch activated")
+            continue
+
         action, reason, metrics = guard.soft_cap_decision(symbol, side, abs(trade_qty), closed.c)
         if action == "block":
             log.warning("[PG] Bloqueado %s: %s", symbol, reason)
