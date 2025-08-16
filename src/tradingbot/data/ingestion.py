@@ -42,7 +42,7 @@ async def run_orderbook_stream(
 ) -> None:
     """Publish and persist order book snapshots."""
     storage = _get_storage(backend)
-    async for d in adapter.stream_orderbook(symbol, depth):
+    async for d in adapter.stream_order_book(symbol, depth):
         ob = OrderBook(
             ts=d.get("ts", datetime.now(timezone.utc)),
             exchange=getattr(adapter, "name", "unknown"),
@@ -93,7 +93,7 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
     """Stream L2 orderbook snapshots and persist them."""
     storage = _get_storage(backend)
     engine = storage.get_engine()
-    async for d in adapter.stream_orderbook(symbol, depth):
+    async for d in adapter.stream_order_book(symbol, depth):
         data = {
             "ts": d.get("ts", datetime.now(timezone.utc)),
             "exchange": getattr(adapter, "name", "unknown"),
