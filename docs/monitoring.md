@@ -19,6 +19,8 @@ Available endpoints:
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
 - `GET /health` – basic liveness probe.
+- `GET /dashboards` – list of Grafana dashboards with direct URLs.
+- `GET /dashboards/{name}` – redirect to a specific Grafana dashboard.
 
 Static assets are served from `monitoring/static/` for a quick HTML view.
 
@@ -39,6 +41,19 @@ monitoring panel. Grafana is provisioned from files under
 * `datasources/datasource.yml` – Prometheus data source
 * `dashboards/dashboard.yml` – automatic dashboard loading
 * `dashboards/core.json` and `dashboards/tradebot.json` – example panels
+
+To build a standalone Grafana image with these files baked in:
+
+```bash
+docker build -t tradebot-grafana monitoring/grafana
+docker run -p 3000:3000 tradebot-grafana
+```
+
+Set `GRAFANA_URL` to point the FastAPI panel to a remote Grafana instance
+if it is not running on `localhost:3000`.
+
+Customize the panel by editing `datasources/datasource.yml` or adding new
+JSON dashboards under `monitoring/grafana/dashboards/`.
 
 The `core.json` dashboard provides panels for:
 

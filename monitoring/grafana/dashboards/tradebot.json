@@ -127,5 +127,6 @@
   ],
   "schemaVersion": 16,
   "title": "TradeBot Metrics",
+  "uid": "tradebot",
   "version": 3
 }

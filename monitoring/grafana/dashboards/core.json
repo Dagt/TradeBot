@@ -4,6 +4,7 @@
   },
   "editable": true,
   "title": "Core Metrics",
+  "uid": "core",
   "schemaVersion": 16,
   "version": 1,
   "panels": [
