@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class OKXFuturesAdapter(ExchangeAdapter):
             raise RuntimeError("ccxt no está instalado")
         # "swap" cubre contratos perpetuos
         self.rest = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "swap"}})
+        # Validar permisos disponibles
+        validate_scopes(self.rest, log)
 
     async def _to_thread(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
