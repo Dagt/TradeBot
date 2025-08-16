@@ -96,6 +96,7 @@ class PaperAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ) -> dict:
         order_id = self._next_order_id()
         last = self.state.last_px.get(symbol)
@@ -107,17 +108,35 @@ class PaperAdapter(ExchangeAdapter):
         if type_.lower() == "market":
             px_exec = last
         elif type_.lower() == "limit":
+            if post_only and (
+                (side == "buy" and price and price >= last)
+                or (side == "sell" and price and price <= last)
+            ):
+                return {"status": "rejected", "reason": "post_only_would_cross", "order_id": order_id}
             if side == "buy" and price is not None and price >= last:
                 px_exec = last
             elif side == "sell" and price is not None and price <= last:
                 px_exec = last
             else:
+                if time_in_force and time_in_force.upper() in {"IOC", "FOK"}:
+                    return {"status": "canceled", "order_id": order_id, "note": "limit not filled"}
                 return {"status": "new", "order_id": order_id, "note": "limit no cruzó; no simulo book"}
         else:
             return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
 
-        fill = self._apply_fill(symbol, side, qty, px_exec)
-        return {"status": "filled", "order_id": order_id, "symbol": symbol, "side": side, "qty": qty, "price": px_exec, **fill}
+        exec_qty = iceberg_qty if iceberg_qty and iceberg_qty < qty else qty
+        fill = self._apply_fill(symbol, side, exec_qty, px_exec)
+        remaining = qty - exec_qty
+        return {
+            "status": "filled" if remaining == 0 else "partial",
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": exec_qty,
+            "price": px_exec,
+            "remaining": remaining,
+            **fill,
+        }
 
     async def cancel_order(self, order_id: str) -> dict:
         # Este simulador no mantiene colas pendientes (limit no cruzado = no entra al libro)

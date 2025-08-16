@@ -1,4 +1,4 @@
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # Latency of HTTP requests by method and endpoint
 REQUEST_LATENCY = Histogram(
@@ -33,6 +33,20 @@ SLIPPAGE = Histogram(
     "order_slippage_bps",
     "Distribution of order execution slippage in basis points",
     ["symbol", "side"],
+)
+
+# Latency of order execution by venue
+ORDER_LATENCY = Histogram(
+    "order_execution_latency_seconds",
+    "Latency of routed order execution in seconds",
+    ["venue"],
+)
+
+# Maker to taker order ratio by venue
+MAKER_TAKER_RATIO = Gauge(
+    "maker_taker_ratio",
+    "Ratio of maker to taker orders",
+    ["venue"],
 )
 
 # Risk management events triggered

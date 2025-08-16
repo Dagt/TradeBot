@@ -26,6 +26,7 @@ class DummyAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ):
         return {"status": "placed", "symbol": symbol, "side": side, "qty": qty, "price": price}
 

@@ -84,6 +84,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -104,6 +105,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                     "quantity": qty,
                     "newClientOrderId": cid,
                 }
+                if iceberg_qty:
+                    params["icebergQty"] = float(iceberg_qty)
                 if reduce_only:
                     params["reduceOnly"] = True
                 if send_type == "LIMIT":

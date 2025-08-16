@@ -75,8 +75,17 @@ class OKXSpotAdapter(ExchangeAdapter):
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None) -> dict:
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
+    ) -> dict:
         return await self._to_thread(self.rest.create_order, symbol, type_, side, qty, price)
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:

@@ -63,6 +63,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ):
         """
         Envía orden con idempotencia (NEW CLIENT ORDER ID) + retries.
@@ -86,6 +87,8 @@ class BinanceSpotAdapter(ExchangeAdapter):
                     "quantity": qty,
                     "newClientOrderId": cid,
                 }
+                if iceberg_qty:
+                    params["icebergQty"] = float(iceberg_qty)
                 if send_type in {"LIMIT", "LIMIT_MAKER"}:
                     if price is None:
                         raise ValueError("LIMIT requiere price")
