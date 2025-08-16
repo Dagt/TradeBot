@@ -47,6 +47,9 @@ def generate_report(result: Dict) -> Dict[str, float]:
     total_filled = sum(o.get("filled", 0.0) for o in orders)
     fill_rate = total_filled / total_qty if total_qty else 0.0
 
+    latencies = [o.get("latency") for o in orders if o.get("latency") is not None]
+    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+
     total_slip = 0.0
     for o in orders:
         filled = o.get("filled", 0.0)
@@ -59,7 +62,12 @@ def generate_report(result: Dict) -> Dict[str, float]:
         total_slip += slip
     avg_slippage = total_slip / total_filled if total_filled else 0.0
 
-    stats = {"pnl": equity, "fill_rate": fill_rate, "slippage": avg_slippage}
+    stats = {
+        "pnl": equity,
+        "fill_rate": fill_rate,
+        "slippage": avg_slippage,
+        "avg_latency": avg_latency,
+    }
 
     eq_curve = result.get("equity_curve")
     if eq_curve and len(eq_curve) > 1:

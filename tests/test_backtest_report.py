@@ -44,6 +44,7 @@ def test_generate_report_basic():
     assert report["pnl"] == 10.5
     assert report["fill_rate"] == 1.5 / 2.0
     assert abs(report["slippage"] - 1.0) < 1e-9
+    assert report["avg_latency"] == 0.0
     assert pytest.approx(report["sharpe"], rel=1e-9) == 4.523813861160344
     assert pytest.approx(report["sortino"], rel=1e-9) == 24.0067220169515
     assert pytest.approx(report["deflated_sharpe_ratio"], rel=1e-9) == 0.7784159008283134

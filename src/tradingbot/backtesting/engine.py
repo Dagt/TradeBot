@@ -22,6 +22,7 @@ class Order:
     """Representation of a pending order in the backtest queue."""
 
     execute_index: int
+    place_index: int = field(compare=False)
     strategy: str = field(compare=False)
     symbol: str = field(compare=False)
     side: str = field(compare=False)  # "buy" or "sell"
@@ -32,6 +33,7 @@ class Order:
     filled_qty: float = field(default=0.0, compare=False)
     total_cost: float = field(default=0.0, compare=False)
     queue_pos: float = field(default=0.0, compare=False)
+    latency: int | None = field(default=None, compare=False)
 
 
 class SlippageModel:
@@ -124,11 +126,14 @@ class EventDrivenBacktestEngine:
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
         self.exchange_fees: Dict[str, FeeModel] = {}
+        self.exchange_depth: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
+            self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
         self.default_fee = FeeModel(0.0)
+        self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}
         self.risk: Dict[Tuple[str, str], RiskManager] = {}
@@ -191,6 +196,12 @@ class EventDrivenBacktestEngine:
                 if i >= len(df):
                     continue
                 bar = df.iloc[i]
+                vol_key = "ask_size" if order.side == "buy" else "bid_size"
+                if self.use_l2:
+                    depth = self.exchange_depth.get(order.exchange, self.default_depth)
+                    order.queue_pos = min(
+                        order.queue_pos + float(bar.get(vol_key, 0.0)), depth
+                    )
                 if "bid" in bar and "ask" in bar:
                     price = float(bar["ask"] if order.side == "buy" else bar["bid"])
                 else:
@@ -206,7 +217,6 @@ class EventDrivenBacktestEngine:
                         self.partial_fills,
                     )
                 else:
-                    vol_key = "ask_size" if order.side == "buy" else "bid_size"
                     avail = float(bar.get(vol_key, order.remaining_qty))
                     if self.use_l2:
                         eff_avail = max(0.0, avail - order.queue_pos)
@@ -249,6 +259,8 @@ class EventDrivenBacktestEngine:
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty
+                if order.remaining_qty <= 1e-9 and order.latency is None:
+                    order.latency = i - order.place_index
                 fills.append(
                     (
                         bar.get("timestamp", i),
@@ -287,9 +299,11 @@ class EventDrivenBacktestEngine:
                 queue_pos = 0.0
                 if self.use_l2:
                     vol_key = "ask_size" if side == "buy" else "bid_size"
-                    queue_pos = float(df.iloc[i].get(vol_key, 0.0))
+                    depth = self.exchange_depth.get(exchange, self.default_depth)
+                    queue_pos = min(float(df.iloc[i].get(vol_key, 0.0)), depth)
                 order = Order(
                     exec_index,
+                    i,
                     strat_name,
                     symbol,
                     side,
@@ -336,6 +350,7 @@ class EventDrivenBacktestEngine:
                 "place_price": o.place_price,
                 "avg_price": o.total_cost / o.filled_qty if o.filled_qty else 0.0,
                 "exchange": o.exchange,
+                "latency": o.latency,
             }
             for o in orders
         ]

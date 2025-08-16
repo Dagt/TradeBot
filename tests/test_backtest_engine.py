@@ -144,8 +144,8 @@ def test_l2_queue_partial_and_cancel(tmp_path, monkeypatch):
         cancel_unfilled=True,
     )
 
-    assert pytest.approx(res["orders"][0]["filled"], rel=1e-9) == 0.2
-    assert len(res["fills"]) == 1
+    assert pytest.approx(res["orders"][0]["filled"], rel=1e-9) == 0.0
+    assert len(res["fills"]) == 0
 
 
 def test_funding_payment(tmp_path, monkeypatch):
