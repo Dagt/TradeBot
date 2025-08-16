@@ -19,6 +19,24 @@ async def test_paper_adapter_execution(paper_adapter, mock_order):
 
 
 @pytest.mark.asyncio
+async def test_paper_stream_updates_price(paper_adapter):
+    trades = [
+        {"ts": 1, "price": 100.0, "qty": 1.0, "side": "buy"},
+        {"ts": 2, "price": 101.0, "qty": 1.0, "side": "sell"},
+    ]
+
+    gen = paper_adapter.stream_trades("BTCUSDT", trades)
+    first = await gen.__anext__()
+
+    assert first["price"] == 100.0
+    assert paper_adapter.state.last_px["BTCUSDT"] == 100.0
+
+    res = await paper_adapter.place_order("BTCUSDT", "buy", "market", 0.5)
+    assert res["status"] == "filled"
+    assert res["price"] == 100.0
+
+
+@pytest.mark.asyncio
 async def test_twap_splits_orders(paper_adapter):
     paper_adapter.update_last_price("BTCUSDT", 100.0)
     router = ExecutionRouter(paper_adapter)

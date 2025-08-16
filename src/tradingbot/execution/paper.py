@@ -2,8 +2,9 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Iterable, AsyncIterator, AsyncIterable
 from datetime import datetime
+import csv
 
 from ..adapters.base import ExchangeAdapter
 from .order_types import Order
@@ -37,9 +38,41 @@ class PaperAdapter(ExchangeAdapter):
     def update_last_price(self, symbol: str, px: float):
         self.state.last_px[symbol] = px
 
-    async def stream_trades(self, symbol: str):
-        # PaperAdapter no produce stream: úsalo con un adapter WS externo y llama update_last_price()
-        raise NotImplementedError("PaperAdapter no genera stream; úsalo como broker simulado")
+    async def stream_trades(
+        self,
+        symbol: str,
+        source: str | Iterable[dict] | AsyncIterable[dict] | None = None,
+    ) -> AsyncIterator[dict]:
+        """Reproduce trades desde ``source`` y actualiza ``last_px``.
+
+        ``source`` puede ser un path a CSV, una secuencia in-memory
+        (lista/generador) o un ``async`` generator. Cada item debe contener
+        al menos ``price`` y ``qty``; ``ts`` y ``side`` son opcionales.
+        """
+
+        if source is None:
+            raise ValueError("source es requerido para PaperAdapter.stream_trades")
+
+        def _prep(trade_dict):
+            ts = trade_dict.get("ts")
+            price = float(trade_dict["price"])
+            qty = float(trade_dict.get("qty", 0.0))
+            side = trade_dict.get("side", "buy")
+            norm = self.normalize_trade(symbol, ts, price, qty, side)
+            self.update_last_price(symbol, price)
+            return norm
+
+        if isinstance(source, str):
+            with open(source, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    yield _prep(row)
+        elif hasattr(source, "__aiter__"):
+            async for trade in source:  # type: ignore[operator]
+                yield _prep(trade)
+        else:
+            for trade in source:  # type: ignore[operator]
+                yield _prep(trade)
 
     def _next_order_id(self) -> str:
         self.state.order_id_seq += 1
