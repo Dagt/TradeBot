@@ -10,24 +10,10 @@ from tradingbot.utils.metrics import (
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
-)
-
-# Trading metrics
-TRADING_PNL = Gauge(
-    "trading_pnl",
-    "Current trading profit and loss in USD",
-)
-
-# Market metrics
-MARKET_LATENCY = Histogram(
-    "market_latency_seconds",
-    "Latency of market data processing in seconds",
-)
-
-# End-to-end latency metrics
-E2E_LATENCY = Histogram(
-    "e2e_latency_seconds",
-    "End-to-end order processing latency in seconds",
+    TRADING_PNL,
+    OPEN_POSITIONS,
+    MARKET_LATENCY,
+    E2E_LATENCY,
 )
 
 # System metrics
@@ -95,6 +81,18 @@ def metrics_summary() -> dict:
     )
     avg_latency = latency_sum / latency_count if latency_count else 0.0
 
+    # Compute average market data latency
+    market_samples = [
+        sample
+        for metric in MARKET_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    market_sum = sum(s.value for s in market_samples if s.name.endswith("_sum"))
+    market_count = sum(
+        s.value for s in market_samples if s.name.endswith("_count")
+    )
+    avg_market_latency = market_sum / market_count if market_count else 0.0
+
     # Compute average maker/taker ratio across venues
     ratio_samples = [
         sample.value
@@ -132,13 +130,22 @@ def metrics_summary() -> dict:
         if sample.name == "strategy_state"
     }
 
+    positions = {
+        sample.labels["symbol"]: sample.value
+        for metric in OPEN_POSITIONS.collect()
+        for sample in metric.samples
+        if sample.name == "open_position"
+    }
+
     return {
         "pnl": TRADING_PNL._value.get(),
+        "positions": positions,
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
         "kill_switch_active": KILL_SWITCH_ACTIVE._value.get(),
         "avg_slippage_bps": avg_slippage,
+        "avg_market_latency_seconds": avg_market_latency,
         "avg_order_latency_seconds": avg_latency,
         "avg_maker_taker_ratio": avg_ratio,
         "avg_e2e_latency_seconds": avg_e2e,

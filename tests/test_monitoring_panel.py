@@ -10,6 +10,7 @@ from monitoring.metrics import (
     E2E_LATENCY,
     WS_FAILURES,
     STRATEGY_STATE,
+    OPEN_POSITIONS,
 )
 
 
@@ -19,6 +20,8 @@ def test_panel_endpoints_and_metrics():
     TRADING_PNL.set(100)
     SYSTEM_DISCONNECTS.inc()
     MARKET_LATENCY.observe(0.5)
+    OPEN_POSITIONS.clear()
+    OPEN_POSITIONS.labels(symbol="BTCUSD").set(2)
     ORDER_LATENCY.clear()
     MAKER_TAKER_RATIO.clear()
     WS_FAILURES.clear()
@@ -40,7 +43,9 @@ def test_panel_endpoints_and_metrics():
     resp = client.get("/metrics/summary")
     data = resp.json()
     assert data["pnl"] == 100.0
+    assert data["positions"] == {"BTCUSD": 2.0}
     assert data["disconnects"] == 1.0
+    assert data["avg_market_latency_seconds"] == 0.5
     assert data["avg_order_latency_seconds"] == 0.2
     assert data["avg_maker_taker_ratio"] == 1.5
     assert data["avg_e2e_latency_seconds"] == 0.7
