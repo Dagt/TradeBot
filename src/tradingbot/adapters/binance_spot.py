@@ -196,11 +196,24 @@ class BinanceSpotAdapter(ExchangeAdapter):
         return await self._request(method, sym)
 
     async def fetch_oi(self, symbol: str):
+        """Fetch futures open interest for the given spot ``symbol``.
+
+        Binance only exposes open interest on the futures API.  We therefore
+        call the ``fapiPublicGetOpenInterest`` endpoint and normalise the
+        result into ``{"ts": datetime, "oi": float}`` so downstream code can
+        store it directly.
+        """
+
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchOpenInterest", None)
-        if method:
-            return await self._request(method, sym)
-        raise NotImplementedError("Open interest no soportado")
+        method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
+        if method is None:
+            raise NotImplementedError("Open interest no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        oi = float(data.get("openInterest", 0.0))
+        return {"ts": ts, "oi": oi}
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
         symbol_ex = symbol and self.normalize_symbol(symbol)
