@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import logging, time, uuid
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
@@ -54,7 +55,16 @@ class BinanceSpotAdapter(ExchangeAdapter):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("Usa SpotWSAdapter o pasa mark_price manual")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            trades = await self._request(self.rest.fetch_trades, sym, limit=1)
+            for t in trades or []:
+                ts = datetime.fromtimestamp(t.get("timestamp", 0) / 1000, tz=timezone.utc)
+                price = float(t.get("price"))
+                qty = float(t.get("amount", 0))
+                side = t.get("side") or ""
+                yield self.normalize_trade(symbol, ts, price, qty, side)
+            await asyncio.sleep(1)
 
     async def place_order(
         self,
@@ -168,7 +178,15 @@ class BinanceSpotAdapter(ExchangeAdapter):
                 }
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("Usa BinanceSpotWSAdapter para order book")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            ob = await self._request(self.rest.fetch_order_book, sym)
+            ts_ms = ob.get("timestamp")
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+            bids = [[float(b[0]), float(b[1])] for b in ob.get("bids", [])]
+            asks = [[float(a[0]), float(a[1])] for a in ob.get("asks", [])]
+            yield self.normalize_order_book(symbol, ts, bids, asks)
+            await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
         sym = self.normalize_symbol(symbol)
@@ -183,3 +201,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         if method:
             return await self._request(method, sym)
         raise NotImplementedError("Open interest no soportado")
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        symbol_ex = symbol and self.normalize_symbol(symbol)
+        return await self._request(self.rest.cancel_order, order_id, symbol_ex)
