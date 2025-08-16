@@ -10,6 +10,21 @@ from statistics import NormalDist
 import pandas as pd
 
 
+def _stress_tests(returns: pd.Series, initial: float) -> Dict[str, float]:
+    """Apply simple percentage shocks to each return and report final equity.
+
+    The shocks are expressed as absolute percentage drops applied to every
+    period.  For instance a ``-0.05`` shock represents a uniform 5% drop on all
+    returns.
+    """
+
+    scenarios = {"drop_5": -0.05, "drop_10": -0.10}
+    results: Dict[str, float] = {}
+    for name, shock in scenarios.items():
+        stressed = (1 + returns + shock).cumprod() * initial
+        results[name] = float(stressed.iloc[-1])
+    return results
+
 def generate_report(result: Dict) -> Dict[str, float]:
     """Generate a basic backtest report.
 
@@ -77,6 +92,7 @@ def generate_report(result: Dict) -> Dict[str, float]:
                     "sharpe": sharpe,
                     "sortino": sortino,
                     "deflated_sharpe_ratio": float(dsr),
+                    "stress_tests": _stress_tests(returns, curve[0]),
                 }
             )
 

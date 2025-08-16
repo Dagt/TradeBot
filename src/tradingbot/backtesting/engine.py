@@ -450,3 +450,69 @@ def optimize_strategy_optuna(
     return study
 
 
+def walk_forward_optimize(
+    csv_path: str,
+    symbol: str,
+    strategy_name: str,
+    param_grid: List[Dict[str, Any]],
+    train_size: int,
+    test_size: int,
+    latency: int = 1,
+    window: int = 120,
+) -> List[Dict[str, Any]]:
+    """Perform a simple walk-forward optimization.
+
+    For each sequential train/test split a grid search over ``param_grid`` is
+    performed on the training slice.  The best parameters are then evaluated on
+    the following test slice.  A list of results is returned and also logged.
+    """
+
+    df = pd.read_csv(Path(csv_path))
+    strat_cls = STRATEGIES.get(strategy_name)
+    if strat_cls is None:
+        raise ValueError(f"unknown strategy: {strategy_name}")
+
+    results: List[Dict[str, Any]] = []
+    start = 0
+    split = 0
+    while start + train_size + test_size <= len(df):
+        train_df = df.iloc[start : start + train_size].reset_index(drop=True)
+        test_df = df.iloc[start + train_size : start + train_size + test_size].reset_index(drop=True)
+
+        best_params: Dict[str, Any] | None = None
+        best_equity = -float("inf")
+        for params in param_grid:
+            strat = strat_cls(**params)
+            engine = EventDrivenBacktestEngine(
+                {symbol: train_df}, [(strategy_name, symbol)], latency=latency, window=window
+            )
+            engine.strategies[(strategy_name, symbol)] = strat
+            res = engine.run()
+            eq = float(res.get("equity", 0.0))
+            if eq > best_equity:
+                best_equity = eq
+                best_params = params
+
+        # Evaluate best params on test data
+        strat = strat_cls(**(best_params or {}))
+        engine = EventDrivenBacktestEngine(
+            {symbol: test_df}, [(strategy_name, symbol)], latency=latency, window=window
+        )
+        engine.strategies[(strategy_name, symbol)] = strat
+        test_res = engine.run()
+
+        rec = {
+            "split": split,
+            "params": best_params,
+            "train_equity": best_equity,
+            "test_equity": float(test_res.get("equity", 0.0)),
+        }
+        log.info("walk-forward split %s: %s", split, rec)
+        results.append(rec)
+
+        start += test_size
+        split += 1
+
+    return results
+
+

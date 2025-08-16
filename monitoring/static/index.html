@@ -6,9 +6,10 @@
 </head>
 <body>
   <h1>TradeBot Monitoring</h1>
-  <div id="summary">Loading...</div>
+  <div id="summary">Loading metrics...</div>
+  <div id="strategies">Loading strategies...</div>
   <script>
-    async function load() {
+    async function loadMetrics() {
       try {
         const resp = await fetch('/metrics/summary');
         const data = await resp.json();
@@ -18,7 +19,22 @@
         document.getElementById('summary').innerText = 'Error loading metrics';
       }
     }
-    load();
+
+    async function loadStrategies() {
+      try {
+        const resp = await fetch('/strategies/status');
+        const data = await resp.json();
+        const entries = Object.entries(data.strategies || {})
+          .map(([k,v]) => `${k}: ${v}`)
+          .join(', ');
+        document.getElementById('strategies').innerText = entries || 'No strategies';
+      } catch (err) {
+        document.getElementById('strategies').innerText = 'Error loading strategies';
+      }
+    }
+
+    loadMetrics();
+    loadStrategies();
   </script>
 </body>
 </html>

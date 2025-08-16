@@ -12,7 +12,9 @@ python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
 ```
 Al finalizar se imprimirá un resumen con estadísticas adicionales como
 ``sharpe``, ``sortino`` y ``deflated_sharpe_ratio`` junto con ``pnl``,
-``fill_rate`` y ``slippage``.
+``fill_rate`` y ``slippage``.  También se calculan pruebas de estrés básicas
+que estiman el capital final ante caídas uniformes del 5% y 10% en cada
+período.
 
 ## Estrategia Triple Barrier
 Requiere ``scikit-learn`` para entrenar el modelo de gradient boosting.
@@ -25,6 +27,9 @@ python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
 ```bash
 uvicorn tradingbot.apps.api.main:app --reload --port 8000
 ```
+
+Un dashboard estático en `monitoring/static/index.html` consulta estos
+endpoints para mostrar métricas y estado de las estrategias.
 
 ## Notebook
 Consulta el notebook [docs/notebooks/breakout_atr.ipynb](notebooks/breakout_atr.ipynb)
@@ -52,4 +57,21 @@ params = {"fast": [5, 10], "slow": [20]}
 
 stats = run_parameter_sweep(data, ma_signal, params)
 print(stats)
+```
+
+## Walk-forward
+
+```python
+from tradingbot.backtesting.engine import walk_forward_optimize
+
+grid = [{"rsi_n": 10, "rsi_threshold": 55}, {"rsi_n": 14, "rsi_threshold": 60}]
+wf_results = walk_forward_optimize(
+    "data/examples/btcusdt_1m.csv",
+    "BTC/USDT",
+    "momentum",
+    grid,
+    train_size=1000,
+    test_size=250,
+)
+print(wf_results)
 ```
