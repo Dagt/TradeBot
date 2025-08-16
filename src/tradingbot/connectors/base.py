@@ -35,6 +35,20 @@ class Funding(BaseModel):
     rate: float
 
 
+class Basis(BaseModel):
+    timestamp: datetime
+    exchange: str
+    symbol: str
+    basis: float
+
+
+class OpenInterest(BaseModel):
+    timestamp: datetime
+    exchange: str
+    symbol: str
+    oi: float
+
+
 class ExchangeConnector:
     """Base connector implementing REST helpers and WS streaming."""
 
@@ -86,6 +100,34 @@ class ExchangeConnector:
                 or 0.0
             ),
         )
+
+    async def fetch_basis(self, symbol: str) -> Basis:
+        data = await self._rest_call(self.rest.fetch_basis, symbol)
+        ts = data.get("timestamp") or data.get("time") or 0
+        if ts > 1e12:
+            ts /= 1000
+        return Basis(
+            timestamp=datetime.fromtimestamp(ts),
+            exchange=self.name,
+            symbol=symbol,
+            basis=float(data.get("basis") or data.get("value") or 0.0),
+        )
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        data = await self._rest_call(self.rest.fetch_open_interest, symbol)
+        ts = data.get("timestamp") or data.get("time") or 0
+        if ts > 1e12:
+            ts /= 1000
+        return OpenInterest(
+            timestamp=datetime.fromtimestamp(ts),
+            exchange=self.name,
+            symbol=symbol,
+            oi=float(data.get("openInterest") or data.get("oi") or data.get("value") or 0.0),
+        )
+
+    async def fetch_oi(self, symbol: str) -> OpenInterest:
+        """Alias for :meth:`fetch_open_interest` to maintain backwards compatibility."""
+        return await self.fetch_open_interest(symbol)
 
     async def stream_order_book(self, symbol: str):
         url = self._ws_url(symbol)

@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS market.open_interest (
 );
 SELECT create_hypertable('market.open_interest', by_range('ts'), if_not_exists => TRUE);
 
+-- Basis (perps vs spot)
+CREATE TABLE IF NOT EXISTS market.basis (
+  ts timestamptz NOT NULL,
+  exchange text NOT NULL,
+  symbol text NOT NULL,
+  basis numeric NOT NULL
+);
+SELECT create_hypertable('market.basis', by_range('ts'), if_not_exists => TRUE);
+
 -- Orders/Executions (paper & live tracking)
 CREATE TABLE IF NOT EXISTS market.orders (
   id bigserial PRIMARY KEY,

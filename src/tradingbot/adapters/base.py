@@ -110,12 +110,23 @@ class ExchangeAdapter(ABC):
         """
         raise NotImplementedError
 
+    async def fetch_basis(self, symbol: str):
+        """Return basis information for ``symbol``.
+
+        Adapters may override this; by default it is unsupported.
+        """
+        raise NotImplementedError
+
     async def fetch_oi(self, symbol: str):
         """Return open interest information for ``symbol``.
 
         Adapters may override this; by default it is unsupported.
         """
         raise NotImplementedError
+
+    async def fetch_open_interest(self, symbol: str):
+        """Alias of :meth:`fetch_oi` for clarity."""
+        return await self.fetch_oi(symbol)
 
     @abstractmethod
     async def place_order(

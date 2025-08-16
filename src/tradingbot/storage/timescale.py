@@ -55,6 +55,20 @@ def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
             dict(ts=ts, exchange=exchange, symbol=symbol, oi=oi),
         )
 
+
+def insert_basis(engine, *, ts, exchange: str, symbol: str, basis: float):
+    """Persist basis readings."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.basis (ts, exchange, symbol, basis)
+            VALUES (:ts, :exchange, :symbol, :basis)
+        '''
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, basis=basis),
+        )
+
 def insert_orderbook(engine, *, ts, exchange: str, symbol: str,
                      bid_px: list[float], bid_qty: list[float],
                      ask_px: list[float], ask_qty: list[float]):

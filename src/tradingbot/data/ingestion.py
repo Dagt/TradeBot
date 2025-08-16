@@ -157,6 +157,33 @@ async def poll_open_interest(
             log.debug("Open interest poll failed: %s", exc)
         await asyncio.sleep(interval)
 
+
+async def poll_basis(
+    adapter: Any,
+    symbol: str,
+    *,
+    interval: int = 60,
+    backend: Backends = "timescale",
+):
+    """Poll periodic basis and persist it."""
+    storage = _get_storage(backend)
+    engine = storage.get_engine()
+    while True:
+        try:
+            info: Any = await adapter.fetch_basis(symbol)
+            ts = info.get("ts", datetime.now(timezone.utc))
+            basis = float(info.get("basis") or 0.0)
+            storage.insert_basis(
+                engine,
+                ts=ts,
+                exchange=getattr(adapter, "name", "unknown"),
+                symbol=symbol,
+                basis=basis,
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Basis poll failed: %s", exc)
+        await asyncio.sleep(interval)
+
 async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "1m", backend: Backends = "timescale", sleep_s: int = 60):
     """Periodically fetch OHLCV bars and persist them."""
     storage = _get_storage(backend)
