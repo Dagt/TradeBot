@@ -45,6 +45,7 @@ class TWAP:
                 price=order.price,
                 post_only=order.post_only,
                 time_in_force=order.time_in_force,
+                iceberg_qty=order.iceberg_qty,
             )
             res = await self.router.execute(child)
             results.append(res)
@@ -78,6 +79,7 @@ class VWAP:
                 price=order.price,
                 post_only=order.post_only,
                 time_in_force=order.time_in_force,
+                iceberg_qty=order.iceberg_qty,
             )
             res = await self.router.execute(child)
             results.append(res)
@@ -114,6 +116,7 @@ class POV:
                 price=order.price,
                 post_only=order.post_only,
                 time_in_force=order.time_in_force,
+                iceberg_qty=order.iceberg_qty,
             )
             res = await self.router.execute(child)
             results.append(res)
