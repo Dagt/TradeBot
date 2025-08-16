@@ -214,6 +214,16 @@ class BinanceSpotAdapter(ExchangeAdapter):
         rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
         return {"ts": ts_dt, "rate": rate}
 
+    async def fetch_basis(self, symbol: str):
+        """Spot markets no tienen *basis* definida.
+
+        Se implementa únicamente para cumplir la interfaz del adaptador y
+        lanzar un ``NotImplementedError`` claro indicando que Binance Spot no
+        ofrece este dato.
+        """
+
+        raise NotImplementedError("Basis no soportado en spot")
+
     async def fetch_oi(self, symbol: str):
         """Fetch futures open interest for the given spot ``symbol``.
 

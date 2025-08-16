@@ -102,6 +102,15 @@ class OKXSpotAdapter(ExchangeAdapter):
         rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
         return {"ts": ts_dt, "rate": rate}
 
+    async def fetch_basis(self, symbol: str):
+        """Spot en OKX no ofrece una métrica de *basis*.
+
+        La función existe únicamente para cumplir con la interfaz y dejar
+        explícito que este dato no está disponible en el venue.
+        """
+
+        raise NotImplementedError("Basis not supported in spot markets")
+
     async def fetch_oi(self, symbol: str):
         """Fetch open interest for the corresponding instrument.
 

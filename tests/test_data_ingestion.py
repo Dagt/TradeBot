@@ -152,7 +152,8 @@ async def test_run_trades_stream_publishes():
 
 
 @pytest.mark.asyncio
-async def test_poll_funding_inserts(monkeypatch):
+@pytest.mark.parametrize("backend", ["timescale", "quest"])
+async def test_poll_funding_inserts(monkeypatch, backend):
     ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
     class DummyAdapter:
@@ -162,6 +163,7 @@ async def test_poll_funding_inserts(monkeypatch):
             return {"ts": ts, "rate": 0.01, "interval_sec": 60}
 
     inserted = []
+    requested_backends: list[str] = []
 
     class DummyStorage:
         def get_engine(self):
@@ -170,10 +172,14 @@ async def test_poll_funding_inserts(monkeypatch):
         def insert_funding(self, engine, **data):
             inserted.append(data)
 
-    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+    def fake_get_storage(b):
+        requested_backends.append(b)
+        return DummyStorage()
+
+    monkeypatch.setattr(ingestion, "_get_storage", fake_get_storage)
 
     task = asyncio.create_task(
-        ingestion.poll_funding(DummyAdapter(), "BTC/USDT", interval=0)
+        ingestion.poll_funding(DummyAdapter(), "BTC/USDT", interval=0, backend=backend)
     )
     await asyncio.sleep(0.01)
     task.cancel()
@@ -182,6 +188,7 @@ async def test_poll_funding_inserts(monkeypatch):
 
     assert inserted
     assert inserted[0]["rate"] == 0.01
+    assert requested_backends == [backend]
 
 
 @pytest.mark.asyncio
@@ -225,7 +232,8 @@ async def test_poll_open_interest_inserts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_poll_basis_inserts(monkeypatch):
+@pytest.mark.parametrize("backend", ["timescale", "quest"])
+async def test_poll_basis_inserts(monkeypatch, backend):
     ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
     class DummyAdapter:
@@ -235,6 +243,7 @@ async def test_poll_basis_inserts(monkeypatch):
             return {"ts": ts, "basis": 5.0}
 
     inserted = []
+    requested_backends: list[str] = []
 
     class DummyStorage:
         def get_engine(self):
@@ -243,10 +252,14 @@ async def test_poll_basis_inserts(monkeypatch):
         def insert_basis(self, engine, **data):
             inserted.append(data)
 
-    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+    def fake_get_storage(b):
+        requested_backends.append(b)
+        return DummyStorage()
+
+    monkeypatch.setattr(ingestion, "_get_storage", fake_get_storage)
 
     task = asyncio.create_task(
-        ingestion.poll_basis(DummyAdapter(), "BTC/USDT", interval=0)
+        ingestion.poll_basis(DummyAdapter(), "BTC/USDT", interval=0, backend=backend)
     )
     await asyncio.sleep(0.01)
     task.cancel()
@@ -256,3 +269,4 @@ async def test_poll_basis_inserts(monkeypatch):
     assert inserted
     assert inserted[0]["basis"] == 5.0
     assert inserted[0]["ts"] == ts
+    assert requested_backends == [backend]

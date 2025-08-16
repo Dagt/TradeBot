@@ -128,6 +128,36 @@ class BinanceWSAdapter(ExchangeAdapter):
         )
         return {"ts": ts_dt, "rate": rate}
 
+    async def fetch_basis(self, symbol: str):
+        """Calcula la *basis* actual para ``symbol``.
+
+        Binance expone el precio de referencia (*indexPrice*) y el precio
+        marcado (*markPrice*) mediante el endpoint ``premiumIndex`` de su API
+        de futuros.  La diferencia entre ambos representa el basis
+        implícito del contrato perpetuo.  Si no se dispone de un adaptador
+        REST, se lanza ``NotImplementedError`` para dejar claro que el venue
+        no está soportado.
+        """
+
+        if not self.rest:
+            raise NotImplementedError("Se requiere adaptador REST para basis")
+
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fapiPublicGetPremiumIndex", None)
+        if method is None:  # pragma: no cover - depende de ccxt
+            raise NotImplementedError("Basis no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts = data.get("time") or data.get("timestamp") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts //= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        basis = mark_px - index_px
+        return {"ts": ts_dt, "basis": basis}
+
     async def fetch_oi(self, symbol: str):
         """Obtiene el *open interest* actual para ``symbol``."""
 

@@ -127,6 +127,43 @@ class OKXFuturesAdapter(ExchangeAdapter):
         rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
         return {"ts": ts_dt, "rate": rate}
 
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        OKX proporciona tanto el ``markPx`` como el ``indexPx`` en el ticker
+        público.  Se consulta vía ``fetchTicker`` y se calcula la diferencia
+        entre ambos valores.  Si la API o el adaptador REST no están
+        disponibles se lanza ``NotImplementedError`` para dejar claro que el
+        venue no soporta esta métrica.
+        """
+
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchTicker", None)
+        if method is None:
+            raise NotImplementedError("Basis not supported")
+
+        data = await self._request(method, sym)
+        ts = data.get("timestamp") or data.get("ts") or data.get("time") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts //= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        mark_px = float(
+            data.get("markPrice")
+            or data.get("markPx")
+            or data.get("mark_price")
+            or data.get("last")
+            or 0.0
+        )
+        index_px = float(
+            data.get("indexPrice")
+            or data.get("indexPx")
+            or data.get("index_price")
+            or 0.0
+        )
+        basis = mark_px - index_px
+        return {"ts": ts_dt, "basis": basis}
+
     async def fetch_oi(self, symbol: str):
         """Fetch open interest for the given contract ``symbol``.
 
