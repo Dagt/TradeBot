@@ -68,3 +68,30 @@ MAKER_TAKER_RATIO = Gauge(
     "Ratio of maker to taker orders",
     ["venue"],
 )
+
+# --- Additional high level trading metrics ---
+
+# Current profit and loss in USD
+TRADING_PNL = Gauge(
+    "trading_pnl",
+    "Current trading profit and loss in USD",
+)
+
+# Open position size per symbol
+OPEN_POSITIONS = Gauge(
+    "open_position",
+    "Current open position size",
+    ["symbol"],
+)
+
+# Latency of market data processing
+MARKET_LATENCY = Histogram(
+    "market_latency_seconds",
+    "Latency of market data processing in seconds",
+)
+
+# End-to-end order processing latency
+E2E_LATENCY = Histogram(
+    "e2e_latency_seconds",
+    "End-to-end order processing latency in seconds",
+)

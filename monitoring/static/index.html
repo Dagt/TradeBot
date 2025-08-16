@@ -19,8 +19,11 @@
     <div v-if="!metrics">Loading...</div>
     <div v-else>
       PnL: {{ metrics.pnl }} |
+      Positions: {{ Object.entries(metrics.positions || {}).map(([s,v]) => s + ':' + v).join(', ') }} |
       Disconnects: {{ metrics.disconnects }} |
+      Avg Market Latency: {{ metrics.avg_market_latency_seconds }} |
       Avg Order Latency: {{ metrics.avg_order_latency_seconds }} |
+      E2E Latency: {{ metrics.avg_e2e_latency_seconds }} |
       Maker/Taker Ratio: {{ metrics.avg_maker_taker_ratio }}
     </div>
   </section>

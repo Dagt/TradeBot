@@ -24,16 +24,28 @@ Static assets are served from `monitoring/static/` for a quick HTML view.
 
 ## Grafana dashboards
 
-Provisioning files live under `monitoring/grafana/`. A new dashboard
-`core.json` provides panels for:
+The monitoring stack ships with ready‑to‑use Grafana and Prometheus
+configuration. To launch both services with the provided dashboards and
+data source, run:
+
+```bash
+docker-compose up -d prometheus grafana
+```
+
+Prometheus uses `monitoring/prometheus.yml` to scrape the API and
+monitoring panel. Grafana is provisioned from files under
+`monitoring/grafana/` which includes:
+
+* `datasources/datasource.yml` – Prometheus data source
+* `dashboards/dashboard.yml` – automatic dashboard loading
+* `dashboards/core.json` and `dashboards/tradebot.json` – example panels
+
+The `core.json` dashboard provides panels for:
 
 - Trading PnL
 - End‑to‑end latency (95th percentile)
 - Websocket failures per adapter
 - Kill‑switch status
-
-Place the JSON files in Grafana's dashboards directory or mount the
-folder when running the official container.
 
 ## Alerts
 
