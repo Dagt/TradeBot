@@ -70,6 +70,8 @@ corresponden al atributo ``name`` de cada clase.
 | Cash & Carry      | ``cash_and_carry`` | ``threshold`` (float)               |
 
 
+La estrategia Cash & Carry genera señales ``buy`` cuando el funding es positivo y la base supera el umbral indicado, o ``sell`` cuando el funding es negativo y la base cae por debajo de dicho umbral.
+
 ## API
 
 ```
