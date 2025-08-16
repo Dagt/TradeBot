@@ -23,6 +23,7 @@ asyncpg>=0.29
 
 # Monitoring
 prometheus-client>=0.20
+sentry-sdk>=1.40
 
 # Testing
 pytest-asyncio>=0.23

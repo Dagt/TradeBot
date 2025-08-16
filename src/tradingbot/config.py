@@ -4,6 +4,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
+    sentry_dsn: str | None = None
 
     # DB
     pg_host: str = "localhost"

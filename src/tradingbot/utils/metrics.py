@@ -20,3 +20,24 @@ WS_FAILURES = Counter(
     "Total websocket connection failures",
     ["adapter"],
 )
+
+# Order fills by symbol and side
+FILL_COUNT = Counter(
+    "order_fills",
+    "Total order fills",
+    ["symbol", "side"],
+)
+
+# Slippage observed in order execution (basis points)
+SLIPPAGE = Histogram(
+    "order_slippage_bps",
+    "Distribution of order execution slippage in basis points",
+    ["symbol", "side"],
+)
+
+# Risk management events triggered
+RISK_EVENTS = Counter(
+    "risk_events",
+    "Total risk management events",
+    ["event_type"],
+)
