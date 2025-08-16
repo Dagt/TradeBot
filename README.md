@@ -25,7 +25,7 @@ tradingbot-mvp/
 │  │  └─ binance.py
 │  ├─ data/
 │  │  ├─ __init__.py
-│  │  ├─ ingest.py
+│  │  ├─ ingestion.py
 │  │  └─ features.py
 │  ├─ storage/
 │  │  ├─ __init__.py
