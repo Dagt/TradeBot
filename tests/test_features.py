@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pytest
 
 from tradingbot.data.features import (
@@ -6,6 +7,7 @@ from tradingbot.data.features import (
     depth_imbalance,
     rsi,
     atr,
+    returns,
 )
 
 
@@ -44,6 +46,16 @@ def close_df():
 @pytest.fixture
 def close_snapshots(close_df):
     return close_df.to_dict(orient="records")
+
+
+@pytest.fixture
+def price_df():
+    return pd.DataFrame({"close": [100, 101, 102, 101]})
+
+
+@pytest.fixture
+def price_snapshots(price_df):
+    return price_df.to_dict(orient="records")
 
 
 @pytest.fixture
@@ -124,5 +136,18 @@ def test_atr_snapshots(ohlc_df, ohlc_snapshots):
     atr_df = atr(ohlc_df, n=3)
     atr_snaps = atr(ohlc_snapshots, n=3)
     pd.testing.assert_series_equal(atr_df, atr_snaps)
+
+
+def test_returns_df(price_df):
+    ret = returns(price_df)
+    expected = np.log(price_df.close / price_df.close.shift(1))
+    expected.name = "returns"
+    pd.testing.assert_series_equal(ret, expected)
+
+
+def test_returns_snapshots(price_df, price_snapshots):
+    ret_df = returns(price_df)
+    ret_snaps = returns(price_snapshots)
+    pd.testing.assert_series_equal(ret_df, ret_snaps)
 
 
