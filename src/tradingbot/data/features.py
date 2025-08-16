@@ -14,6 +14,17 @@ from typing import Iterable, Mapping, Sequence, Any, Union
 import numpy as np
 import pandas as pd
 
+try:  # pragma: no cover - numba is optional at runtime
+    from numba import njit
+except Exception:  # pragma: no cover - fall back to pure Python
+    def njit(*args, **kwargs):
+        def wrapper(func):
+            return func
+
+        if args:
+            return args[0]
+        return wrapper
+
 
 DataLike = Union[pd.DataFrame, Iterable[Mapping[str, Any]]]
 
@@ -48,10 +59,56 @@ def _to_dataframe(data: DataLike, columns: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+@njit
+def _ofi_jit(bid: np.ndarray, ask: np.ndarray) -> np.ndarray:
+    """Numba implementation of Order Flow Imbalance."""
+
+    out = np.empty(bid.size)
+    out[0] = 0.0
+    for i in range(1, bid.size):
+        out[i] = (bid[i] - bid[i - 1]) - (ask[i] - ask[i - 1])
+    return out
+
+
+@njit
+def _depth_jit(bid: np.ndarray, ask: np.ndarray) -> np.ndarray:
+    """Numba implementation of depth imbalance."""
+
+    out = np.empty(bid.size)
+    for i in range(bid.size):
+        denom = bid[i] + ask[i]
+        out[i] = (bid[i] - ask[i]) / denom if denom != 0 else np.nan
+    return out
+
+
+@njit
+def _returns_jit(close: np.ndarray, log: bool) -> np.ndarray:
+    """Numba implementation of returns calculation."""
+
+    out = np.empty(close.size)
+    out[0] = np.nan
+    for i in range(1, close.size):
+        if log:
+            out[i] = np.log(close[i] / close[i - 1])
+        else:
+            out[i] = close[i] / close[i - 1] - 1.0
+    return out
+
+
 def atr(data: DataLike, n: int = 14) -> pd.Series:
     """Average True Range.
 
-    ``data`` must provide ``high``, ``low`` and ``close`` fields.
+    Parameters
+    ----------
+    data:
+        Source data containing ``high``, ``low`` and ``close`` columns.
+    n:
+        Lookback window for the rolling mean of true ranges.
+
+    Returns
+    -------
+    pandas.Series
+        The ATR values.
     """
 
     df = _to_dataframe(data, ["high", "low", "close"])
@@ -67,7 +124,19 @@ def rsi(data: DataLike, n: int = 14) -> pd.Series:
     """Relative Strength Index of the ``close`` column.
 
     Uses an exponential moving average formulation which closely follows the
-    original indicator.  Values are bounded between 0 and 100.
+    original indicator. Values are bounded between 0 and 100.
+
+    Parameters
+    ----------
+    data:
+        Source data containing a ``close`` column.
+    n:
+        Window used for the exponential averages.
+
+    Returns
+    -------
+    pandas.Series
+        RSI values.
     """
 
     df = _to_dataframe(data, ["close"])
@@ -82,32 +151,70 @@ def rsi(data: DataLike, n: int = 14) -> pd.Series:
 
 
 def order_flow_imbalance(data: DataLike) -> pd.Series:
-    """Compute Order Flow Imbalance (OFI) using top of book changes.
+    """Order Flow Imbalance based on top of book changes.
 
-    ``data`` must expose ``bid_qty`` and ``ask_qty`` fields representing the
-    top of book queue sizes.
+    Parameters
+    ----------
+    data:
+        Input exposing ``bid_qty`` and ``ask_qty`` fields.
+
+    Returns
+    -------
+    pandas.Series
+        Sequence of OFI values where positive numbers indicate buying
+        pressure.
     """
 
     df = _to_dataframe(data, ["bid_qty", "ask_qty"])
-    bid_delta = df["bid_qty"].diff().fillna(0)
-    ask_delta = df["ask_qty"].diff().fillna(0)
-    return bid_delta - ask_delta
+    bid = df["bid_qty"].to_numpy(np.float64)
+    ask = df["ask_qty"].to_numpy(np.float64)
+    ofi = _ofi_jit(bid, ask)
+    return pd.Series(ofi, index=df.index, name="ofi")
 
 
 def depth_imbalance(data: DataLike) -> pd.Series:
     """Depth imbalance between bid and ask queues.
 
-    Defined as ``(bid_qty - ask_qty) / (bid_qty + ask_qty)``.  Values are
-    bounded between -1 and 1 where positive numbers indicate a larger bid queue
-    (buy side) and negative numbers indicate a larger ask queue (sell side).
+    Parameters
+    ----------
+    data:
+        Input exposing ``bid_qty`` and ``ask_qty`` fields.
+
+    Returns
+    -------
+    pandas.Series
+        Values in the ``[-1, 1]`` range where positive numbers signal more
+        depth on the bid side.
     """
 
     df = _to_dataframe(data, ["bid_qty", "ask_qty"])
-    bid_qty = df["bid_qty"]
-    ask_qty = df["ask_qty"]
-    denom = bid_qty + ask_qty
-    denom = denom.replace(0, np.nan)  # avoid division by zero
-    return (bid_qty - ask_qty) / denom
+    bid = df["bid_qty"].to_numpy(np.float64)
+    ask = df["ask_qty"].to_numpy(np.float64)
+    di = _depth_jit(bid, ask)
+    return pd.Series(di, index=df.index, name="depth_imbalance")
+
+
+def returns(data: DataLike, log: bool = True) -> pd.Series:
+    """Compute sequential returns from ``close`` prices.
+
+    Parameters
+    ----------
+    data:
+        Input containing a ``close`` column.
+    log:
+        When ``True`` compute log returns, otherwise simple percentage
+        returns.
+
+    Returns
+    -------
+    pandas.Series
+        Series of returns with ``NaN`` as the first element.
+    """
+
+    df = _to_dataframe(data, ["close"])
+    close = df["close"].to_numpy(np.float64)
+    out = _returns_jit(close, log)
+    return pd.Series(out, index=df.index, name="returns")
 
 
 def keltner_channels(
@@ -131,6 +238,7 @@ __all__ = [
     "rsi",
     "order_flow_imbalance",
     "depth_imbalance",
+    "returns",
     "keltner_channels",
 ]
 
