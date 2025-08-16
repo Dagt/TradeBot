@@ -108,3 +108,9 @@ insert_orderbook(
     bid_px=[...], bid_qty=[...], ask_px=[...], ask_qty=[...],
 )
 ```
+
+## Monitoreo y alertas
+
+Este proyecto expone métricas Prometheus para latencia de APIs, errores de websockets, fills de órdenes, slippage y eventos de riesgo. Los dashboards de ejemplo para Grafana se encuentran en `monitoring/grafana`.
+
+Para reportar excepciones a Sentry, define `SENTRY_DSN` en tu archivo `.env`. La configuración de logging inicializará Sentry automáticamente cuando este valor esté presente.

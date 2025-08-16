@@ -23,6 +23,7 @@ asyncpg>=0.29
 
 # Monitoring
 prometheus-client>=0.20
+sentry-sdk>=1.40
 
 # Backtesting helpers
 vectorbtpro==0.0.0; python_version == "0"  # placeholder si se usa luego
