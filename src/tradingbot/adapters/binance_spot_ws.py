@@ -11,8 +11,9 @@ from ..utils.metrics import WS_FAILURES
 
 log = logging.getLogger(__name__)
 
-def _stream_name(symbol: str) -> str:
-    return symbol.replace("/", "").lower() + "@trade"
+
+def _stream_name(symbol: str, channel: str = "trade") -> str:
+    return symbol.replace("/", "").lower() + f"@{channel}"
 
 class BinanceSpotWSAdapter(ExchangeAdapter):
     """
@@ -94,6 +95,44 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS spot testnet multi desconectado (%s). Reintento en %.1fs ...", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+
+    async def stream_orderbook(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        stream = _stream_name(symbol, f"depth{depth}@100ms")
+        url = self.ws_base + stream
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                    log.info("Conectado WS Spot testnet orderbook: %s", url)
+                    backoff = 1.0
+                    async for raw in ws:
+                        msg = json.loads(raw)
+                        d = msg.get("data") or msg
+                        ts_ms = d.get("T") or d.get("E")
+                        bids = d.get("bids") or d.get("b") or []
+                        asks = d.get("asks") or d.get("a") or []
+                        bid_px = [float(b[0]) for b in bids]
+                        bid_qty = [float(b[1]) for b in bids]
+                        ask_px = [float(a[0]) for a in asks]
+                        ask_qty = [float(a[1]) for a in asks]
+                        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        yield {
+                            "symbol": symbol,
+                            "ts": ts,
+                            "bid_px": bid_px,
+                            "bid_qty": bid_qty,
+                            "ask_px": ask_px,
+                            "ask_qty": ask_qty,
+                        }
+            except Exception as e:
+                WS_FAILURES.labels(adapter=self.name).inc()
+                log.warning(
+                    "WS spot testnet orderbook desconectado (%s). Reintento en %.1fs ...",
+                    e,
+                    backoff,
+                )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 

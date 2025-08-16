@@ -21,3 +21,14 @@ class Bar:
     l: float
     c: float
     v: float
+
+
+@dataclass
+class OrderBook:
+    ts: datetime
+    exchange: str
+    symbol: str
+    bid_px: list[float]
+    bid_qty: list[float]
+    ask_px: list[float]
+    ask_qty: list[float]
