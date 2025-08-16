@@ -3,7 +3,7 @@ import typer, logging, time
 import pandas as pd
 
 from ..logging_conf import setup_logging
-from ..backtest.event_engine import run_backtest_csv
+from ..backtest.event_engine import run_backtest_csv, run_backtest_mlflow
 from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager
 from ..execution.paper import PaperAdapter
@@ -32,7 +32,45 @@ def backtest(
 ):
     """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)"""
     setup_logging()
-    res = run_backtest_csv(data, symbol=symbol, strategy=strategy)
+    res = run_backtest_csv({symbol: data}, [(strategy, symbol)])
+    typer.echo(res)
+
+
+@app.command()
+def backtest_cfg(cfg_path: str):
+    """Backtest usando configuración YAML con Hydra."""
+    setup_logging()
+    from pathlib import Path
+    from hydra import compose, initialize
+
+    cfg_file = Path(cfg_path)
+    with initialize(version_base=None, config_path=str(cfg_file.parent)):
+        cfg = compose(config_name=cfg_file.stem)
+
+    csv_paths = {
+        sym: str((cfg_file.parent / Path(path)).resolve())
+        for sym, path in cfg.csv_paths.items()
+    }
+    strategies = [tuple(item) for item in cfg.strategies]
+    latency = int(cfg.get("latency", 1))
+    window = int(cfg.get("window", 120))
+
+    if getattr(cfg, "mlflow", None):
+        run_name = cfg.mlflow.get("run_name", "backtest")
+        res = run_backtest_mlflow(
+            csv_paths,
+            strategies,
+            latency=latency,
+            window=window,
+            run_name=run_name,
+        )
+    else:
+        res = run_backtest_csv(
+            csv_paths,
+            strategies,
+            latency=latency,
+            window=window,
+        )
     typer.echo(res)
 
 @app.command()

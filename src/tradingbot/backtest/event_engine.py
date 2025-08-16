@@ -6,7 +6,7 @@ import heapq
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Any
 
 import pandas as pd
 
@@ -147,4 +147,98 @@ def run_backtest_csv(
         data, strategies, latency=latency, window=window, slippage=slippage
     )
     return engine.run()
+
+
+def run_backtest_mlflow(
+    csv_paths: Dict[str, str],
+    strategies: Iterable[Tuple[str, str]],
+    latency: int = 1,
+    window: int = 120,
+    slippage: SlippageModel | None = None,
+    run_name: str = "backtest",
+    params: Dict[str, Any] | None = None,
+) -> dict:
+    """Run the backtest and log results to an MLflow run.
+
+    Parameters
+    ----------
+    csv_paths: mapping of symbol to CSV path.
+    strategies: iterable of ``(strategy_name, symbol)`` pairs.
+    latency, window, slippage: same as :func:`run_backtest_csv`.
+    run_name: optional MLflow run name.
+    params: extra parameters to log to MLflow.
+    """
+
+    import mlflow  # type: ignore
+
+    with mlflow.start_run(run_name=run_name):
+        mlflow.log_params({"latency": latency, "window": window})
+        if params:
+            mlflow.log_params(params)
+        result = run_backtest_csv(
+            csv_paths,
+            strategies,
+            latency=latency,
+            window=window,
+            slippage=slippage,
+        )
+        mlflow.log_metric("equity", result.get("equity", 0.0))
+        mlflow.log_metric("fills", len(result.get("fills", [])))
+    return result
+
+
+def optimize_strategy_optuna(
+    csv_path: str,
+    symbol: str,
+    strategy_name: str,
+    param_space: Dict[str, Dict[str, Any]],
+    n_trials: int = 20,
+    latency: int = 1,
+    window: int = 120,
+) -> "optuna.study.Study":
+    """Optimize strategy hyperparameters using Optuna.
+
+    Parameters
+    ----------
+    csv_path: path to the CSV data for the symbol.
+    symbol: market symbol (e.g. ``"BTC/USDT"``).
+    strategy_name: name of the strategy present in ``STRATEGIES``.
+    param_space: mapping of parameter names to Optuna suggestion
+        dictionaries. Each value must specify ``type`` (``"int"`` or
+        ``"float"``) and ``low``/``high`` bounds.
+    n_trials: number of optimization trials.
+    latency, window: engine parameters.
+    """
+
+    import optuna  # type: ignore
+
+    df = pd.read_csv(Path(csv_path))
+    strat_cls = STRATEGIES.get(strategy_name)
+    if strat_cls is None:
+        raise ValueError(f"unknown strategy: {strategy_name}")
+
+    def objective(trial: "optuna.trial.Trial") -> float:
+        params: Dict[str, Any] = {}
+        for name, space in param_space.items():
+            t = space.get("type")
+            low, high = space.get("low"), space.get("high")
+            if t == "int":
+                params[name] = trial.suggest_int(name, int(low), int(high))
+            elif t == "float":
+                params[name] = trial.suggest_float(name, float(low), float(high))
+            else:
+                raise ValueError(f"unsupported param type: {t}")
+
+        strat = strat_cls(**params)
+        engine = EventDrivenBacktestEngine(
+            {symbol: df}, [(strategy_name, symbol)], latency=latency, window=window
+        )
+        engine.strategies[(strategy_name, symbol)] = strat
+        res = engine.run()
+        return float(res.get("equity", 0.0))
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=n_trials)
+    return study
+
 
