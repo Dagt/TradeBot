@@ -14,6 +14,13 @@ Al finalizar se imprimirá un resumen con estadísticas adicionales como
 ``sharpe``, ``sortino`` y ``deflated_sharpe_ratio`` junto con ``pnl``,
 ``fill_rate`` y ``slippage``.
 
+## Estrategia Triple Barrier
+Requiere ``scikit-learn`` para entrenar el modelo de gradient boosting.
+```bash
+python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
+    --symbol BTC/USDT --strategy triple_barrier
+```
+
 ## API
 ```bash
 uvicorn tradingbot.apps.api.main:app --reload --port 8000
