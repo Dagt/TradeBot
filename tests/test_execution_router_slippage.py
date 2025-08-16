@@ -6,10 +6,20 @@ from tradingbot.utils.metrics import SLIPPAGE
 
 
 class MockAdapter:
-    def __init__(self, name, order_book=None, fee_bps=0.0, latency=0.0, last_px=None, fill_price=None):
+    def __init__(
+        self,
+        name,
+        order_book=None,
+        maker_fee_bps: float = 0.0,
+        taker_fee_bps: float = 0.0,
+        latency: float = 0.0,
+        last_px=None,
+        fill_price=None,
+    ):
         self.name = name
         self.state = type("S", (), {"order_book": order_book or {}, "last_px": last_px or {}})
-        self.fee_bps = fee_bps
+        self.maker_fee_bps = maker_fee_bps
+        self.taker_fee_bps = taker_fee_bps
         self.latency = latency
         self.fill_price = fill_price
 
@@ -22,12 +32,31 @@ class MockAdapter:
 async def test_router_selects_lowest_cost_venue():
     ob1 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(101.0, 1.0)]}}
     ob2 = {"XYZ": {"bids": [(99.5, 1.0)], "asks": [(100.5, 1.0)]}}
-    a1 = MockAdapter("a1", order_book=ob1, fee_bps=10.0, latency=5.0)
-    a2 = MockAdapter("a2", order_book=ob2, fee_bps=0.0, latency=20.0)
+    a1 = MockAdapter("a1", order_book=ob1, taker_fee_bps=10.0, latency=5.0)
+    a2 = MockAdapter("a2", order_book=ob2, taker_fee_bps=0.0, latency=20.0)
     router = ExecutionRouter([a1, a2])
     order = Order(symbol="XYZ", side="buy", type_="market", qty=1.0)
     selected = await router.best_venue(order)
     assert selected is a2
+
+
+@pytest.mark.asyncio
+async def test_router_selects_lowest_cost_venue_maker():
+    ob1 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(101.0, 1.0)]}}
+    ob2 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(101.0, 1.0)]}}
+    a1 = MockAdapter("a1", order_book=ob1, maker_fee_bps=0.0)
+    a2 = MockAdapter("a2", order_book=ob2, maker_fee_bps=5.0)
+    router = ExecutionRouter([a1, a2])
+    order = Order(
+        symbol="XYZ",
+        side="buy",
+        type_="limit",
+        qty=1.0,
+        price=100.0,
+        post_only=True,
+    )
+    selected = await router.best_venue(order)
+    assert selected is a1
 
 
 @pytest.mark.asyncio
