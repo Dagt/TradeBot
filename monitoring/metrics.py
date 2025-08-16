@@ -1,5 +1,11 @@
 from fastapi import APIRouter, Response
-from prometheus_client import Gauge, Histogram, Counter, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 # Reuse detailed execution metrics
 from tradingbot.utils.metrics import (
@@ -8,6 +14,7 @@ from tradingbot.utils.metrics import (
     RISK_EVENTS,
     ORDER_LATENCY,
     MAKER_TAKER_RATIO,
+    WS_FAILURES,
 )
 
 # Trading metrics
@@ -20,6 +27,19 @@ TRADING_PNL = Gauge(
 MARKET_LATENCY = Histogram(
     "market_latency_seconds",
     "Latency of market data processing in seconds",
+)
+
+# End-to-end metrics
+E2E_LATENCY = Histogram(
+    "e2e_latency_seconds",
+    "End-to-end latency of the trading pipeline in seconds",
+    labelnames=["strategy"],
+)
+
+STRATEGY_UP = Gauge(
+    "strategy_up",
+    "Whether a trading strategy is running (1) or not (0)",
+    labelnames=["strategy"],
 )
 
 # System metrics
@@ -90,6 +110,32 @@ def metrics_summary() -> dict:
     ]
     avg_ratio = sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
 
+    # Aggregate websocket failures across adapters
+    ws_total = sum(
+        sample.value
+        for metric in WS_FAILURES.collect()
+        for sample in metric.samples
+        if sample.name.endswith("_total")
+    )
+
+    # Compute average end-to-end latency across strategies
+    e2e_samples = [
+        sample
+        for metric in E2E_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
+    e2e_count = sum(s.value for s in e2e_samples if s.name.endswith("_count"))
+    avg_e2e_latency = e2e_sum / e2e_count if e2e_count else 0.0
+
+    # Capture strategy status
+    strategy_status = {
+        sample.labels.get("strategy"): sample.value
+        for metric in STRATEGY_UP.collect()
+        for sample in metric.samples
+        if sample.name == "strategy_up"
+    }
+
     return {
         "pnl": TRADING_PNL._value.get(),
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
@@ -98,4 +144,7 @@ def metrics_summary() -> dict:
         "avg_slippage_bps": avg_slippage,
         "avg_order_latency_seconds": avg_latency,
         "avg_maker_taker_ratio": avg_ratio,
+        "ws_failures": ws_total,
+        "avg_e2e_latency_seconds": avg_e2e_latency,
+        "strategies": strategy_status,
     }

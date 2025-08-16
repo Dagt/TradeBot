@@ -27,3 +27,30 @@ groups:
         annotations:
           summary: System disconnections detected
           description: Disconnections occurred in the last 5m
+
+      - alert: HighE2ELatency
+        expr: histogram_quantile(0.95, sum(rate(e2e_latency_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High end-to-end latency
+          description: 95th percentile E2E latency above 1s for 5m
+
+      - alert: WebsocketFailures
+        expr: increase(ws_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Websocket failures detected
+          description: WS failures occurred in the last 5m
+
+      - alert: StrategyDown
+        expr: avg_over_time(strategy_up[5m]) < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Strategy is down
+          description: One or more strategies reported as not running
