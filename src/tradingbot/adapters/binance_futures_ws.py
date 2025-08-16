@@ -27,7 +27,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         self.ws_base = ws_base or "wss://stream.binancefuture.com/stream?streams="
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
-        streams = "/".join(_stream_name(s, channel) for s in symbols)
+        streams = "/".join(_stream_name(self.normalize_symbol(s), channel) for s in symbols)
         url = self.ws_base + streams
         backoff = 1.0
         while True:
@@ -54,15 +54,15 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if d.get("m") else "buy"
-                        yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
+                        yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS futures testnet desconectado (%s). Reintento en %.1fs ...", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
-    async def stream_orderbook(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _stream_name(symbol, f"depth{depth}@100ms")
+    async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         backoff = 1.0
         while True:
@@ -76,19 +76,10 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                         bids = d.get("b") or d.get("bids") or []
                         asks = d.get("a") or d.get("asks") or []
                         ts_ms = d.get("T") or d.get("E")
-                        bid_px = [float(b[0]) for b in bids]
-                        bid_qty = [float(b[1]) for b in bids]
-                        ask_px = [float(a[0]) for a in asks]
-                        ask_qty = [float(a[1]) for a in asks]
+                        bids_n = [[float(b[0]), float(b[1])] for b in bids]
+                        asks_n = [[float(a[0]), float(a[1])] for a in asks]
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
-                        yield {
-                            "symbol": symbol,
-                            "ts": ts,
-                            "bid_px": bid_px,
-                            "bid_qty": bid_qty,
-                            "ask_px": ask_px,
-                            "ask_qty": ask_qty,
-                        }
+                        yield self.normalize_order_book(symbol, ts, bids_n, asks_n)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning(
@@ -98,6 +89,14 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
+
+    stream_orderbook = stream_order_book
+
+    async def fetch_funding(self, symbol: str):
+        raise NotImplementedError("WS adapter no soporta fetch_funding")
+
+    async def fetch_oi(self, symbol: str):
+        raise NotImplementedError("WS adapter no soporta fetch_oi")
 
     # interfaz ExchangeAdapter (no aplica envío por WS)
     async def place_order(self, *args, **kwargs):

@@ -178,3 +178,32 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                     "fill_price": None,
                     "raw": {"error": "reconcile_failed"},
                 }
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        symbol_ex = symbol and self.normalize_symbol(symbol)
+        try:
+            return await self._request(self.rest.futures_cancel_order, symbol_ex, orderId=order_id)
+        except Exception as e:  # pragma: no cover - logging only
+            log.error("[FUT] cancel_order error: %s", e)
+            raise
+
+    async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+        raise NotImplementedError("Usa BinanceFuturesWSAdapter para order book")
+
+    async def fetch_funding(self, symbol: str):
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchFundingRate", None)
+        if method is None:
+            raise NotImplementedError("Funding no soportado")
+        return await self._request(method, sym)
+
+    async def fetch_oi(self, symbol: str):
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchOpenInterest", None)
+        if method:
+            return await self._request(method, sym)
+        hist = getattr(self.rest, "fetchOpenInterestHistory", None)
+        if hist:
+            data = await self._request(hist, sym)
+            return data[-1] if isinstance(data, list) and data else data
+        raise NotImplementedError("Open interest no soportado")

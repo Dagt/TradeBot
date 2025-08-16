@@ -26,7 +26,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         self.ws_base = ws_base or "wss://testnet.binance.vision/stream?streams="
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        stream = _stream_name(symbol)
+        stream = _stream_name(self.normalize_symbol(symbol))
         url = self.ws_base + stream
         backoff = 1.0
         while True:
@@ -46,7 +46,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if d.get("m") else "buy"
-                        yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
+                        yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS spot testnet desconectado (%s). Reintento en %.1fs ...", e, backoff)
@@ -58,7 +58,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         Un solo socket con múltiples streams. Yields:
         {"symbol": <sym>, "ts": datetime, "price": float, "qty": float, "side": "buy"/"sell"}
         """
-        streams = "/".join(_stream_name(s) for s in symbols)
+        streams = "/".join(_stream_name(self.normalize_symbol(s)) for s in symbols)
         url = self.ws_base + streams
         backoff = 1.0
         while True:
@@ -76,13 +76,10 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         if price is None:
                             continue
                         symbol_key = stream.split("@")[0].upper()
-                        # re‑insertamos la barra (BTCUSDT -> BTC/USDT)
                         if symbol_key.endswith("USDT"):
                             base = symbol_key[:-4]
                             symbol = f"{base}/USDT"
                         else:
-                            # fallback simple (si hay otros quotes)
-                            # intenta separar último 3/4 chars como quote comunes
                             candidates = ("USDT","BUSD","BTC","ETH","BNB","FDUSD","TUSD")
                             match = next((q for q in candidates if symbol_key.endswith(q)), None)
                             symbol = f"{symbol_key[:-len(match)]}/{match}" if match else symbol_key
@@ -91,15 +88,15 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if data.get("m") else "buy"
-                        yield {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
+                        yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning("WS spot testnet multi desconectado (%s). Reintento en %.1fs ...", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
-    async def stream_orderbook(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _stream_name(symbol, f"depth{depth}@100ms")
+    async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         backoff = 1.0
         while True:
@@ -113,19 +110,10 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         ts_ms = d.get("T") or d.get("E")
                         bids = d.get("bids") or d.get("b") or []
                         asks = d.get("asks") or d.get("a") or []
-                        bid_px = [float(b[0]) for b in bids]
-                        bid_qty = [float(b[1]) for b in bids]
-                        ask_px = [float(a[0]) for a in asks]
-                        ask_qty = [float(a[1]) for a in asks]
+                        bids_n = [[float(b[0]), float(b[1])] for b in bids]
+                        asks_n = [[float(a[0]), float(a[1])] for a in asks]
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
-                        yield {
-                            "symbol": symbol,
-                            "ts": ts,
-                            "bid_px": bid_px,
-                            "bid_qty": bid_qty,
-                            "ask_px": ask_px,
-                            "ask_qty": ask_qty,
-                        }
+                        yield self.normalize_order_book(symbol, ts, bids_n, asks_n)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 log.warning(
@@ -135,6 +123,14 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
+
+    stream_orderbook = stream_order_book
+
+    async def fetch_funding(self, symbol: str):
+        raise NotImplementedError("WS adapter no soporta fetch_funding")
+
+    async def fetch_oi(self, symbol: str):
+        raise NotImplementedError("WS adapter no soporta fetch_oi")
 
     async def place_order(self, *args, **kwargs) -> dict:
         raise NotImplementedError("solo streaming")
