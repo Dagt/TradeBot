@@ -16,7 +16,7 @@ import sys
 import typer
 
 from ..logging_conf import setup_logging
-from analysis.backtest_report import generate_report
+from tradingbot.analysis.backtest_report import generate_report
 
 
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")

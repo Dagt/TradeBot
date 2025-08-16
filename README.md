@@ -45,6 +45,9 @@ tradingbot-mvp/
 │  ├─ backtest/
 │  │  ├─ __init__.py
 │  │  └─ event_engine.py
+│  ├─ analysis/
+│  │  ├─ __init__.py
+│  │  └─ backtest_report.py
 │  ├─ apps/
 │  │  ├─ __init__.py
 │  │  └─ api/
