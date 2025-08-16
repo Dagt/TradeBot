@@ -72,9 +72,19 @@ class BinanceFuturesAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         raise NotImplementedError("usa BinanceWSAdapter para stream de trades")
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None, mark_price: float | None = None,
-                          reduce_only: bool = False, client_order_id: str | None = None):
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        mark_price: float | None = None,
+        reduce_only: bool = False,
+        client_order_id: str | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ):
         """
         UM Futures: idempotencia + retries + reconciliación.
         """
@@ -86,20 +96,24 @@ class BinanceFuturesAdapter(ExchangeAdapter):
 
         async def _send():
             try:
+                send_type = type_u
                 params = {
                     "symbol": symbol_ex,
                     "side": side_u,
-                    "type": type_u,
+                    "type": send_type,
                     "quantity": qty,
                     "newClientOrderId": cid,
                 }
                 if reduce_only:
                     params["reduceOnly"] = True
-                if type_u == "LIMIT":
+                if send_type == "LIMIT":
                     if price is None:
                         raise ValueError("LIMIT requiere price")
                     params["price"] = float(price)
-                    params["timeInForce"] = "GTC"
+                    tif = time_in_force or ("GTX" if post_only else "GTC")
+                    params["timeInForce"] = tif
+                if post_only and send_type != "LIMIT":
+                    params["timeInForce"] = "GTX"
 
                 resp = await self.rest.futures_order_new(**params)
                 return {

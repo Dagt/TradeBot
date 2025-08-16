@@ -17,7 +17,16 @@ class DummyAdapter(ExchangeAdapter):
         for trade in self._trades:
             yield trade
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None):
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ):
         return {"status": "placed", "symbol": symbol, "side": side, "qty": qty, "price": price}
 
     async def cancel_order(self, order_id: str):

@@ -52,9 +52,18 @@ class BinanceSpotAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         raise NotImplementedError("Usa SpotWSAdapter o pasa mark_price manual")
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None, mark_price: float | None = None,
-                          client_order_id: str | None = None):
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        mark_price: float | None = None,
+        client_order_id: str | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ):
         """
         Envía orden con idempotencia (NEW CLIENT ORDER ID) + retries.
         Reconciliación posterior si el error es ambiguo (timeout / desconexión).
@@ -69,18 +78,19 @@ class BinanceSpotAdapter(ExchangeAdapter):
 
         async def _send():
             try:
+                send_type = "LIMIT_MAKER" if post_only and type_u == "LIMIT" else type_u
                 params = {
                     "symbol": symbol_ex,
                     "side": side_u,
-                    "type": type_u,
+                    "type": send_type,
                     "quantity": qty,
                     "newClientOrderId": cid,
                 }
-                if type_u == "LIMIT":
+                if send_type in {"LIMIT", "LIMIT_MAKER"}:
                     if price is None:
                         raise ValueError("LIMIT requiere price")
                     params["price"] = float(price)
-                    params["timeInForce"] = "GTC"
+                    params["timeInForce"] = time_in_force or "GTC"
                 # Llamada REST real
                 resp = await self.rest.order_new(**params)
                 return {

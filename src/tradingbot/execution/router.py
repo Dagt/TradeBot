@@ -15,5 +15,7 @@ class ExecutionRouter:
             side=order.side,
             type_=order.type_,
             qty=order.qty,
-            price=order.price
+            price=order.price,
+            post_only=order.post_only,
+            time_in_force=order.time_in_force
         )

@@ -9,7 +9,16 @@ class ExchangeAdapter(ABC):
         """Yield dicts with ts, price, qty, side."""
 
     @abstractmethod
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None) -> dict:
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ) -> dict:
         """Return provider response (paper/live)."""
 
     @abstractmethod

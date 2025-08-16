@@ -7,6 +7,9 @@ from ..backtest.event_engine import run_backtest_csv
 from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager
 from ..execution.paper import PaperAdapter
+from ..execution.order_types import Order
+from ..execution.router import ExecutionRouter
+from ..execution.algos import TWAP, VWAP, POV
 from ..live.runner import run_live_binance
 from ..live.runner_futures_testnet import run_live_binance_futures_testnet
 from ..live.runner_triangular import run_triangular_binance, TriConfig, TriRoute
@@ -86,6 +89,41 @@ def run_csv_paper(
 
     eq = broker.equity()
     typer.echo({"fills": len(fills), "equity": eq, "last_px": float(df['close'].iloc[-1])})
+
+
+@app.command()
+def demo_algos(symbol: str = "BTC/USDT", qty: float = 1.0):
+    """Demuestra TWAP, VWAP y POV usando el broker de papel."""
+    setup_logging()
+    import asyncio
+
+    async def _run():
+        broker = PaperAdapter()
+        broker.update_last_price(symbol, 100.0)
+        router = ExecutionRouter(broker)
+        order = Order(symbol=symbol, side="buy", type_="market", qty=qty)
+        twap = await TWAP(router, slices=4).execute(order)
+
+        broker2 = PaperAdapter()
+        broker2.update_last_price(symbol, 100.0)
+        router2 = ExecutionRouter(broker2)
+        order2 = Order(symbol=symbol, side="buy", type_="market", qty=qty)
+        vwap = await VWAP(router2, volumes=[1, 2, 1]).execute(order2)
+
+        broker3 = PaperAdapter()
+        broker3.update_last_price(symbol, 100.0)
+        router3 = ExecutionRouter(broker3)
+        order3 = Order(symbol=symbol, side="buy", type_="market", qty=qty)
+
+        async def trades():
+            for _ in range(8):
+                yield {"ts": 0, "price": 100.0, "qty": qty, "side": "buy"}
+
+        pov = await POV(router3, participation_rate=0.5).execute(order3, trades())
+        return {"twap": len(twap), "vwap": len(vwap), "pov": len(pov)}
+
+    res = asyncio.run(_run())
+    typer.echo(res)
 
 @app.command()
 def run_live_binance_cli(symbol: str = "BTC/USDT", fee_bps: float = 1.5, persist_pg: bool = False):
