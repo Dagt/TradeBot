@@ -102,7 +102,7 @@ async def run_live_okx_spot_testnet(
                                       kind=f"HALT_{reason}", message=f"SPOT halt: {reason}", details={})
                 except Exception:
                     log.exception("SPOT persist failure: risk_event HALT")
-            continue
+            break
 
         # Persistir barra 1m (opcional)
         persist_bar_and_snapshot(engine, venue="okx_spot_testnet", symbol=symbol, bar=closed, cur_pos=None)
@@ -167,6 +167,7 @@ async def run_live_okx_spot_testnet(
                 )
                 continue
 
+            prev_rpnl = 0.0
             resp = await exec_adapter.place_order(symbol, side, "market", adj_qty, mark_price=adj_price)
             log.info("SPOT TESTNET FILL %s", resp)
 
@@ -174,8 +175,19 @@ async def run_live_okx_spot_testnet(
             try:
                 risk.add_fill(side, adj_qty)
                 guard.update_position_on_order(symbol, side, float(adj_qty))
-                # Marca pérdida realizada si fue negativa (en spot no llevamos PnL exacto aquí;
-                # puedes calcular delta aproximado si decides llevarlo. Por ahora sólo registramos INFO)
+                delta_rpnl = resp.get("realized_pnl", 0.0) - prev_rpnl
+                dguard.on_realized_delta(delta_rpnl)
+                dguard.on_mark(datetime.now(timezone.utc), equity_now=0.0)
+                halted, reason = dguard.check_halt()
+                if halted:
+                    log.error("[HALT SPOT] motivo=%s", reason)
+                    if engine is not None:
+                        try:
+                            insert_risk_event(engine, venue="okx_spot_testnet", symbol=symbol,
+                                              kind=f"HALT_{reason}", message=f"SPOT halt: {reason}", details={})
+                        except Exception:
+                            log.exception("SPOT persist failure: risk_event HALT")
+                    break
                 try:
                     if engine is not None:
                         insert_risk_event(engine, venue="okx_spot_testnet", symbol=symbol,

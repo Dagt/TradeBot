@@ -102,6 +102,29 @@ async def test_daily_loss_limit_via_bus():
     assert events and events[0]["reason"] == "daily_loss"
 
 
+@pytest.mark.asyncio
+async def test_daily_guard_halts_on_loss():
+    from datetime import datetime, timezone
+    from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
+    from tradingbot.execution.paper import PaperAdapter
+
+    broker = PaperAdapter()
+    symbol = "BTC/USDT"
+    guard = DailyGuard(GuardLimits(daily_max_loss_usdt=5.0), venue="paper")
+
+    broker.update_last_price(symbol, 100.0)
+    guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 100.0}))
+    buy = await broker.place_order(symbol, "buy", "market", 1)
+
+    broker.update_last_price(symbol, 90.0)
+    guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 90.0}))
+    sell = await broker.place_order(symbol, "sell", "market", 1)
+    delta = (sell["price"] - buy["price"]) * 1
+    guard.on_realized_delta(delta)
+    halted, reason = guard.check_halt()
+    assert halted and reason == "daily_max_loss"
+
+
 def test_covariance_limit_triggers_kill():
     from tradingbot.risk.manager import RiskManager
 

@@ -138,7 +138,7 @@ async def run_live_binance(
                                       kind=f"HALT_{reason}", message=f"HALT: {reason}", details={})
                 except Exception:
                     log.exception("Persist failure: risk_event HALT")
-            continue
+            break
 
         # Persistencia opcional: guardar trade crudo
         if pg_engine is not None:
@@ -190,11 +190,26 @@ async def run_live_binance(
                                       kind="INFO", message=reason, details=metrics)
                 except Exception:
                     log.exception("Persist failure: risk_event INFO")
+            prev_rpnl = broker.state.realized_pnl
             resp = await broker.place_order(symbol, side, "market", abs(delta))
             fills += 1
             log.info("FILL live %s", resp)
             risk.add_fill(side, abs(delta))
             guard.update_position_on_order(symbol, side, abs(delta))
+            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+            if abs(delta_rpnl) > 0:
+                dguard.on_realized_delta(delta_rpnl)
+                dguard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: px}))
+                halted, reason = dguard.check_halt()
+                if halted:
+                    log.error("[HALT] motivo=%s", reason)
+                    if pg_engine is not None:
+                        try:
+                            insert_risk_event(pg_engine, venue="binance", symbol=symbol,
+                                              kind=f"HALT_{reason}", message=f"HALT: {reason}", details={})
+                        except Exception:
+                            log.exception("Persist failure: risk_event HALT")
+                    break
 
         # Persistir barra 1m si quieres (opcional; requiere tabla market.bars creada)
         # Puedes descomentar y ampliar con INSERT a bars.
