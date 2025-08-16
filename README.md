@@ -57,6 +57,49 @@ tradingbot-mvp/
    └─ test_smoke.py
 ```
 
+## Setup local
+
+```bash
+# Crear y activar entorno virtual (Python 3.11+)
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+
+# Copiar variables de entorno
+cp .env.example .env  # editar con tus credenciales
+
+# Ejecutar pruebas para verificar la instalación
+pytest
+```
+
+## Despliegue con Docker
+
+Para levantar toda la pila de servicios (API, bases de datos, monitoreo):
+
+```bash
+docker compose up -d
+```
+
+Si solo necesitas las bases de datos puedes utilizar los archivos en `sql/`:
+
+```bash
+# TimescaleDB
+docker compose -f sql/docker-compose.timescale.yml up -d
+
+# QuestDB
+docker compose -f sql/docker-compose.questdb.yml up -d
+```
+
+## Variables de entorno
+
+Copia `.env.example` a `.env` y completa las claves según corresponda. Variables principales:
+
+- `BINANCE_API_KEY`, `BINANCE_API_SECRET`: credenciales de Binance Spot.
+- `BYBIT_API_KEY`, `BYBIT_API_SECRET`: credenciales de Bybit Spot.
+- `BINANCE_FUTURES_API_KEY`, `BINANCE_FUTURES_API_SECRET`, `BINANCE_FUTURES_TESTNET`, `BINANCE_FUTURES_LEVERAGE`: acceso a futuros.
+- `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DB`: conexión a la base de datos.
+- `ENV`, `LOG_LEVEL`: parámetros de ejecución.
+- `SENTRY_DSN`: opcional para reportar errores a Sentry.
+
 ## Uso rápido
 
 ```bash
@@ -179,3 +222,17 @@ insert_orderbook(
 Este proyecto expone métricas Prometheus para latencia de APIs, errores de websockets, fills de órdenes, slippage y eventos de riesgo. Los dashboards de ejemplo para Grafana se encuentran en `monitoring/grafana`.
 
 Para reportar excepciones a Sentry, define `SENTRY_DSN` en tu archivo `.env`. La configuración de logging inicializará Sentry automáticamente cuando este valor esté presente.
+
+## CI/CD
+
+El flujo de integración continua se ejecuta con GitHub Actions mediante `.github/workflows/ci.yml`. En cada `push` o `pull_request` se instala Python 3.11, las dependencias del proyecto y se ejecutan las pruebas con `pytest`.
+
+## Scripts de inicio rápido
+
+Algunos comandos útiles para comenzar a experimentar con el proyecto:
+
+```bash
+python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
+python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml
+uvicorn tradingbot.apps.api.main:app --reload --port 8080
+```
