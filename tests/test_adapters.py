@@ -154,3 +154,47 @@ async def test_ws_delegates_orders_to_rest():
     ws = BinanceSpotWSAdapter(rest=rest)
     assert await ws.place_order("BTC/USDT", "buy", "market", 1) == {"status": "ok"}
     assert await ws.cancel_order("1") == {"status": "cancel"}
+
+
+class _DummyBybitRest:
+    def fetchFundingRate(self, symbol):
+        return {"fundingRate": "0.01", "timestamp": 1000}
+
+    def publicGetV5MarketOpenInterest(self, params):
+        return {"result": {"list": [{"timestamp": 1000, "openInterest": "100"}]}}
+
+
+class _DummyOKXRest:
+    def fetchFundingRate(self, symbol):
+        return {"fundingRate": "0.02", "ts": 1000}
+
+    def publicGetPublicOpenInterest(self, params):
+        return {"data": [{"ts": 1000, "oi": "200"}]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter_cls, rest_cls, rate, oi",
+    [
+        (BybitSpotAdapter, _DummyBybitRest, 0.01, 100.0),
+        (BybitFuturesAdapter, _DummyBybitRest, 0.01, 100.0),
+        (OKXSpotAdapter, _DummyOKXRest, 0.02, 200.0),
+        (OKXFuturesAdapter, _DummyOKXRest, 0.02, 200.0),
+    ],
+)
+async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
+    adapter = adapter_cls.__new__(adapter_cls)
+    adapter.rest = rest_cls()
+
+    async def _req(fn, *a, **k):
+        return fn(*a, **k)
+
+    adapter._request = _req
+
+    funding = await adapter.fetch_funding("BTC/USDT")
+    assert funding["rate"] == rate
+    assert funding["ts"] == datetime.fromtimestamp(1000, tz=timezone.utc)
+
+    oi_res = await adapter.fetch_oi("BTC/USDT")
+    assert oi_res["oi"] == oi
+    assert oi_res["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
