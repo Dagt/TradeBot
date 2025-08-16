@@ -103,6 +103,23 @@ class ExchangeConnector:
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
                 await asyncio.sleep(self.reconnect_delay)
 
+    async def stream_trades(self, symbol: str):
+        """Stream trades for the given symbol."""
+        url = self._ws_trades_url(symbol)
+        subscribe = self._ws_trades_subscribe(symbol)
+        while True:
+            try:
+                async with websockets.connect(url) as ws:
+                    await ws.send(subscribe)
+                    while True:
+                        msg = await ws.recv()
+                        yield self._parse_trade(msg, symbol)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # pragma: no cover - network/streaming
+                self.log.warning("ws_reconnect", extra={"err": str(e)})
+                await asyncio.sleep(self.reconnect_delay)
+
     # --- methods to be implemented by subclasses ---
     def _ws_url(self, symbol: str) -> str:  # pragma: no cover - abstract
         raise NotImplementedError
@@ -111,4 +128,13 @@ class ExchangeConnector:
         raise NotImplementedError
 
     def _parse_order_book(self, msg: str, symbol: str) -> OrderBook:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+    def _ws_trades_url(self, symbol: str) -> str:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+    def _ws_trades_subscribe(self, symbol: str) -> str:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+    def _parse_trade(self, msg: str, symbol: str) -> Trade:  # pragma: no cover - abstract
         raise NotImplementedError
