@@ -77,7 +77,45 @@ class ExecutionRouter:
         return selected
 
     # ------------------------------------------------------------------
-    async def execute(self, order: Order) -> dict:
+    async def execute(self, order: Order, algo: str | None = None, **algo_kwargs) -> dict | list[dict]:
+        """Execute an order using optional execution algorithms.
+
+        Parameters
+        ----------
+        order:
+            Order to be routed.
+        algo:
+            Optional execution algorithm name (``twap``, ``vwap`` or ``pov``).
+        **algo_kwargs:
+            Additional parameters forwarded to the chosen algorithm.
+
+        Returns
+        -------
+        dict | list[dict]
+            Result(s) from the adapter or algorithm.
+        """
+
+        if algo:
+            a = algo.lower()
+            if a == "twap":
+                from .algos import TWAP
+
+                slices = int(algo_kwargs.get("slices", 1))
+                delay = float(algo_kwargs.get("delay", 0.0))
+                return await TWAP(self, slices=slices, delay=delay).execute(order)
+            if a == "vwap":
+                from .algos import VWAP
+
+                volumes = algo_kwargs.get("volumes", [])
+                delay = float(algo_kwargs.get("delay", 0.0))
+                return await VWAP(self, volumes=volumes, delay=delay).execute(order)
+            if a == "pov":
+                from .algos import POV
+
+                participation_rate = float(algo_kwargs["participation_rate"])
+                trades = algo_kwargs["trades"]
+                return await POV(self, participation_rate=participation_rate).execute(order, trades)
+
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
         log.info("Routing order %s via %s", order, venue)
