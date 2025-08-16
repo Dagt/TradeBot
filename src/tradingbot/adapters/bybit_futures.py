@@ -26,6 +26,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
     name = "bybit_futures"
 
     def __init__(self):
+        super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
         self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "swap"}})
@@ -52,6 +53,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
                             qty = float(t.get("v", 0))
                             side = t.get("S", "").lower()
                             ts = datetime.fromtimestamp(int(t.get("T", 0)) / 1000, tz=timezone.utc)
+                            self.state.last_px[symbol] = price
                             yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:  # pragma: no cover - network paths
                 log.warning("Bybit futures trade WS error %s, retrying in %.1fs", e, backoff)
@@ -76,6 +78,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
                         bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
                         asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
                         ts = datetime.fromtimestamp(int(data.get("ts", 0)) / 1000, tz=timezone.utc)
+                        self.state.order_book[symbol] = {"bids": bids, "asks": asks}
                         yield self.normalize_order_book(symbol, ts, bids, asks)
             except Exception as e:  # pragma: no cover - network paths
                 log.warning("Bybit futures book WS error %s, retrying in %.1fs", e, backoff)

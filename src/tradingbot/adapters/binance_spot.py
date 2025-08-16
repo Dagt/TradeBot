@@ -28,6 +28,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
     name = "binance_spot_testnet"
 
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, testnet: bool = True):
+        super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
         self.rest = ccxt.binance({
@@ -63,6 +64,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
                 price = float(t.get("price"))
                 qty = float(t.get("amount", 0))
                 side = t.get("side") or ""
+                self.state.last_px[symbol] = price
                 yield self.normalize_trade(symbol, ts, price, qty, side)
             await asyncio.sleep(1)
 
@@ -185,6 +187,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
             bids = [[float(b[0]), float(b[1])] for b in ob.get("bids", [])]
             asks = [[float(a[0]), float(a[1])] for a in ob.get("asks", [])]
+            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
             yield self.normalize_order_book(symbol, ts, bids, asks)
             await asyncio.sleep(1)
 

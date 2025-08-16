@@ -22,6 +22,7 @@ class BinanceWSAdapter(ExchangeAdapter):
     name = "binance"
 
     def __init__(self, ws_base: str | None = None):
+        super().__init__()
         # Mainnet: wss://stream.binance.com:9443/stream?streams=
         # (Si usas testnet de futures, configura desde settings; lo dejamos parametrizable)
         self.ws_base = ws_base or "wss://stream.binance.com:9443/stream?streams="
@@ -44,6 +45,8 @@ class BinanceWSAdapter(ExchangeAdapter):
                         ts_ms = d.get("T")
                         side = "sell" if d.get("m") else "buy"  # buyer is maker -> aggressive sell
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        if price is not None:
+                            self.state.last_px[symbol] = price
                         yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
@@ -69,6 +72,7 @@ class BinanceWSAdapter(ExchangeAdapter):
                         asks_n = [[float(a[0]), float(a[1])] for a in asks]
                         ts_ms = d.get("E") or d.get("T")
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        self.state.order_book[symbol] = {"bids": bids_n, "asks": asks_n}
                         yield self.normalize_order_book(symbol, ts, bids_n, asks_n)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()

@@ -5,6 +5,14 @@ import logging
 import time
 
 
+class AdapterState:
+    """Lightweight container tracking market state for an adapter."""
+
+    def __init__(self) -> None:
+        self.order_book: dict[str, dict] = {}
+        self.last_px: dict[str, float] = {}
+
+
 class ExchangeAdapter(ABC):
     """Base class for all exchange adapters.
 
@@ -19,6 +27,8 @@ class ExchangeAdapter(ABC):
         self._lock = asyncio.Lock()
         self._last_request = 0.0
         self.log = logging.getLogger(getattr(self, "name", self.__class__.__name__))
+        # live market data populated by streaming helpers
+        self.state = AdapterState()
 
     # ------------------------------------------------------------------
     # Rate limiting helpers
