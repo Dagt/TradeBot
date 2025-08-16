@@ -1,5 +1,5 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, Response
+from fastapi import FastAPI, Query, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -169,3 +169,38 @@ def oco_active(venue: str, symbols: str):
     from ...storage.timescale import load_active_oco_by_symbols
     lst = [s.strip().upper().replace("-", "/") for s in symbols.split(",") if s.strip()]
     return load_active_oco_by_symbols(_ENGINE, venue=venue, symbols=lst)
+
+
+# --- Strategy control endpoints -------------------------------------------------
+_strategies_state: dict[str, str] = {}
+
+
+@app.post("/strategies/{name}/start")
+def start_strategy(name: str):
+    """Mark a strategy as running."""
+
+    from ...strategies import STRATEGIES
+
+    if name not in STRATEGIES:
+        raise HTTPException(status_code=404, detail="unknown strategy")
+    _strategies_state[name] = "running"
+    return {"strategy": name, "status": "running"}
+
+
+@app.post("/strategies/{name}/stop")
+def stop_strategy(name: str):
+    """Mark a strategy as stopped."""
+
+    from ...strategies import STRATEGIES
+
+    if name not in STRATEGIES:
+        raise HTTPException(status_code=404, detail="unknown strategy")
+    _strategies_state[name] = "stopped"
+    return {"strategy": name, "status": "stopped"}
+
+
+@app.get("/strategies/status")
+def strategies_status():
+    """Return the status of all known strategies."""
+
+    return {"strategies": _strategies_state}
