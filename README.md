@@ -53,9 +53,17 @@ tradingbot-mvp/
 │  └─ cli/
 │     ├─ __init__.py
 │     └─ main.py
-└─ tests/
+   └─ tests/
    └─ test_smoke.py
 ```
+
+## Documentación
+
+La carpeta `docs/` contiene material adicional:
+
+- [Arquitectura](docs/architecture.md)
+- [Guía de setup](docs/setup.md)
+- [Ejemplos de uso](docs/examples.md)
 
 ## Setup local
 
@@ -77,6 +85,14 @@ Para levantar toda la pila de servicios (API, bases de datos, monitoreo):
 
 ```bash
 docker compose up -d
+```
+
+También puedes utilizar los scripts de ayuda en `bin/`:
+
+```bash
+./bin/start_timescale.sh   # sólo TimescaleDB
+./bin/start_questdb.sh     # sólo QuestDB
+./bin/start_stack.sh       # stack completo
 ```
 
 Si solo necesitas las bases de datos puedes utilizar los archivos en `sql/`:
