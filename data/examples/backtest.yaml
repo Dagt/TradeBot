@@ -1,0 +1,8 @@
+csv_paths:
+  BTC/USDT: data/examples/btcusdt_1m.csv
+strategies:
+  - [breakout_atr, BTC/USDT]
+latency: 1
+window: 120
+mlflow:
+  run_name: example_backtest

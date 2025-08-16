@@ -78,6 +78,52 @@ python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
 uvicorn tradingbot.apps.api.main:app --reload --port 8080
 ```
 
+## Configuración desde YAML con Hydra
+
+Puedes definir configuraciones complejas en un archivo YAML y ejecutarlas con Hydra.
+
+```yaml
+# data/examples/backtest.yaml
+csv_paths:
+  BTC/USDT: data/examples/btcusdt_1m.csv
+strategies:
+  - [breakout_atr, BTC/USDT]
+latency: 1
+window: 120
+mlflow:
+  run_name: example_backtest
+```
+
+Ejecuta el backtest:
+
+```bash
+python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml
+```
+
+## Registro de resultados con MLflow
+
+Si la configuración YAML incluye la sección `mlflow`, los resultados del backtest
+se registrarán automáticamente en un experimento de MLflow (equity final y número de fills).
+
+## Optimización de hiperparámetros con Optuna
+
+```python
+from tradingbot.backtest.event_engine import optimize_strategy_optuna
+
+study = optimize_strategy_optuna(
+    csv_path="data/examples/btcusdt_1m.csv",
+    symbol="BTC/USDT",
+    strategy_name="breakout_atr",
+    param_space={
+        "ema_n": {"type": "int", "low": 10, "high": 40},
+        "atr_n": {"type": "int", "low": 5, "high": 30},
+        "mult": {"type": "float", "low": 1.0, "high": 3.0},
+    },
+    n_trials=20,
+)
+print("Mejores parámetros:", study.best_params)
+```
+
 > **Nota**: este repo es un esqueleto funcional. Los adaptadores WS/REST y ejecución están stubs listos para ser implementados paso a paso.
 
 ## Esquema de datos y carga
