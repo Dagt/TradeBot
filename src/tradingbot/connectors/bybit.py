@@ -51,3 +51,60 @@ class BybitConnector(ExchangeConnector):
             amount=float(trade_data.get("v", 0.0)),
             side=(trade_data.get("S") or trade_data.get("side", "")).lower(),
         )
+
+    # ------------------------------------------------------------------
+    # Trading helpers
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        *,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ) -> dict:
+        """Submit an order through the CCXT Bybit client."""
+
+        params: dict[str, object] = {}
+        if time_in_force:
+            params["timeInForce"] = time_in_force
+        if post_only:
+            params["postOnly"] = True
+
+        data = await self._rest_call(
+            self.rest.create_order, symbol, type_, side, qty, price, params
+        )
+        return {
+            "id": data.get("id") or data.get("orderId"),
+            "status": data.get("status"),
+            "symbol": data.get("symbol", symbol),
+            "side": data.get("side", side),
+            "price": float(data.get("price") or data.get("avgPrice") or 0.0),
+            "amount": float(data.get("amount") or data.get("qty") or 0.0),
+            "raw": data,
+        }
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        """Cancel an existing order."""
+
+        data = await self._rest_call(self.rest.cancel_order, order_id, symbol)
+        return {
+            "id": data.get("id") or data.get("orderId") or order_id,
+            "status": data.get("status") or data.get("result"),
+            "raw": data,
+        }
+
+    async def fetch_balance(self) -> dict:
+        """Fetch balances normalising totals to floats."""
+
+        data = await self._rest_call(self.rest.fetch_balance)
+        balances: dict[str, float] = {}
+        for asset, info in (data or {}).items():
+            if isinstance(info, dict) and "total" in info:
+                try:
+                    balances[asset] = float(info["total"])
+                except (TypeError, ValueError):
+                    continue
+        return balances

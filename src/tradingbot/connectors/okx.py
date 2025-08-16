@@ -51,3 +51,72 @@ class OKXConnector(ExchangeConnector):
             amount=float(trade.get("sz", 0.0)),
             side=trade.get("side", ""),
         )
+
+    # ------------------------------------------------------------------
+    # Trading helpers
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        *,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ) -> dict:
+        """Place an order via the underlying CCXT client.
+
+        Parameters are normalised to the exchange requirements before being
+        forwarded.  ``time_in_force`` and ``post_only`` are mapped to the
+        respective CCXT parameters when provided.
+        """
+
+        params: dict[str, object] = {}
+        if time_in_force:
+            params["timeInForce"] = time_in_force
+        if post_only:
+            # CCXT para OKX soporta ``postOnly`` booleano
+            params["postOnly"] = True
+
+        data = await self._rest_call(
+            self.rest.create_order, symbol, type_, side, qty, price, params
+        )
+        return {
+            "id": data.get("id") or data.get("orderId"),
+            "status": data.get("status"),
+            "symbol": data.get("symbol", symbol),
+            "side": data.get("side", side),
+            "price": float(data.get("price") or data.get("avgPx") or data.get("px") or 0.0),
+            "amount": float(
+                data.get("amount")
+                or data.get("filled")
+                or data.get("size")
+                or data.get("sz")
+                or 0.0
+            ),
+            "raw": data,
+        }
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        """Cancel an order and return a minimal normalised response."""
+
+        data = await self._rest_call(self.rest.cancel_order, order_id, symbol)
+        return {
+            "id": data.get("id") or data.get("orderId") or order_id,
+            "status": data.get("status") or data.get("result"),
+            "raw": data,
+        }
+
+    async def fetch_balance(self) -> dict:
+        """Fetch account balances normalising numeric fields to floats."""
+
+        data = await self._rest_call(self.rest.fetch_balance)
+        balances: dict[str, float] = {}
+        for asset, info in (data or {}).items():
+            if isinstance(info, dict) and "total" in info:
+                try:
+                    balances[asset] = float(info["total"])
+                except (TypeError, ValueError):
+                    continue
+        return balances
