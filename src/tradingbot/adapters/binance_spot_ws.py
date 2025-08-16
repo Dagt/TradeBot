@@ -22,6 +22,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     name = "binance_spot_testnet_ws"
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
+        super().__init__()
         # Spot testnet: wss://testnet.binance.vision/stream?streams=
         self.ws_base = ws_base or "wss://testnet.binance.vision/stream?streams="
         self.rest = rest
@@ -47,6 +48,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if d.get("m") else "buy"
+                        self.state.last_px[symbol] = price
                         yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
@@ -89,6 +91,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         qty = float(qty or 0.0)
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
                         side = "sell" if data.get("m") else "buy"
+                        self.state.last_px[symbol] = price
                         yield self.normalize_trade(symbol, ts, price, qty, side)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
@@ -114,6 +117,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         bids_n = [[float(b[0]), float(b[1])] for b in bids]
                         asks_n = [[float(a[0]), float(a[1])] for a in asks]
                         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+                        self.state.order_book[symbol] = {"bids": bids_n, "asks": asks_n}
                         yield self.normalize_order_book(symbol, ts, bids_n, asks_n)
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
