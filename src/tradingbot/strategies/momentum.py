@@ -1,5 +1,5 @@
 import pandas as pd
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, order_flow_imbalance
 
 class Momentum(Strategy):
@@ -23,6 +23,7 @@ class Momentum(Strategy):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 60.0)
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:

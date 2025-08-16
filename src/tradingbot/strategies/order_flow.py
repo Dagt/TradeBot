@@ -1,5 +1,5 @@
 import pandas as pd
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import order_flow_imbalance
 
 
@@ -17,6 +17,7 @@ class OrderFlow(Strategy):
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         needed = {"bid_qty", "ask_qty"}

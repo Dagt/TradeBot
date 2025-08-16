@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Dict
 
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 
 @dataclass
 class TriRoute:
@@ -122,6 +122,7 @@ class TriangularArb(Strategy):
         self.buffer_bps = kwargs.get("buffer_bps", 0.0)
         self.min_edge = kwargs.get("min_edge", 0.0)
 
+    @record_signal_metrics
     def on_bar(self, bar: Dict[str, Dict[str, float]]) -> Optional[Signal]:
         prices = bar.get("prices") if isinstance(bar, dict) else None
         if not prices:

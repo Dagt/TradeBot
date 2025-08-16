@@ -1,5 +1,5 @@
 import pandas as pd
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, order_flow_imbalance
 
 class MeanReversion(Strategy):
@@ -26,6 +26,7 @@ class MeanReversion(Strategy):
         self.upper = kwargs.get("upper", 70.0)
         self.lower = kwargs.get("lower", 30.0)
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:
