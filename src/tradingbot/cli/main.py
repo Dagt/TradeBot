@@ -6,6 +6,18 @@ high level commands used throughout the project.  The commands
 are intentionally lightweight so importing the module does not
 require heavy third party dependencies until a command is
 executed.
+
+Examples
+--------
+The execution router supports simple algorithms directly from the
+CLI by passing ``--algo`` and its parameters.  For instance::
+
+    tradingbot run-bot --algo twap --slices 4
+    tradingbot run-bot --algo vwap --volumes 1 2 3
+    tradingbot run-bot --algo pov --participation-rate 0.5
+
+These examples illustrate how an order could be executed using
+TWAP, VWAP or POV strategies.
 """
 
 from __future__ import annotations
