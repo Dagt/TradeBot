@@ -5,10 +5,16 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List, Tuple
 
 from .order_types import Order
-from ..utils.metrics import SLIPPAGE, ORDER_LATENCY, MAKER_TAKER_RATIO, FILL_COUNT
+from ..utils.metrics import (
+    SLIPPAGE,
+    ORDER_LATENCY,
+    MAKER_TAKER_RATIO,
+    FILL_COUNT,
+    QUEUE_POSITION,
+)
 from ..storage import timescale
 
 log = logging.getLogger(__name__)
@@ -33,21 +39,39 @@ class ExecutionRouter:
 
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
-        """Select venue with best last price for the order side."""
-        selected = None
-        best_px = None
-        for adapter in self.adapters.values():
-            price = getattr(getattr(adapter, "state", None), "last_px", {}).get(order.symbol)
-            if price is None:
-                continue
-            if order.side == "buy":
-                if best_px is None or price < best_px:
-                    best_px = price
-                    selected = adapter
+        """Select venue based on spread, fees and latency."""
+
+        def venue_score(adapter) -> float | None:
+            state = getattr(adapter, "state", None)
+            book = getattr(state, "order_book", {}).get(order.symbol) if state else None
+            last = getattr(state, "last_px", {}).get(order.symbol) if state else None
+            if book and book.get("bids") and book.get("asks"):
+                bid = book["bids"][0][0]
+                ask = book["asks"][0][0]
+                spread = ask - bid
+                price = ask if order.side == "buy" else bid
+            elif last is not None:
+                price = last
+                spread = float("inf")
             else:
-                if best_px is None or price > best_px:
-                    best_px = price
-                    selected = adapter
+                return None
+
+            fee_bps = getattr(adapter, "fee_bps", 0.0)
+            fee = price * fee_bps / 10000.0
+            latency = getattr(adapter, "latency", 0.0)
+            direction = 1 if order.side == "buy" else -1
+            score = direction * price + fee + spread / 2 + latency * 1e-6
+            return score
+
+        selected = None
+        best_score = None
+        for adapter in self.adapters.values():
+            score = venue_score(adapter)
+            if score is None:
+                continue
+            if best_score is None or score < best_score:
+                best_score = score
+                selected = adapter
         if selected is None:
             selected = next(iter(self.adapters.values()))
         return selected
@@ -57,6 +81,30 @@ class ExecutionRouter:
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
         log.info("Routing order %s via %s", order, venue)
+
+        state = getattr(adapter, "state", None)
+        book = getattr(state, "order_book", {}).get(order.symbol) if state else None
+        est_slippage = None
+        queue_pos = None
+        if book and book.get("bids") and book.get("asks"):
+            levels: List[Tuple[float, float]] = (
+                book["asks"] if order.side == "buy" else book["bids"]
+            )
+            top_px, top_qty = levels[0]
+            # queue position relative to existing size at best level
+            queue_pos = top_qty / (top_qty + order.qty) if top_qty else 0.0
+            remaining = order.qty
+            cost = 0.0
+            for px, qty in levels:
+                take = min(remaining, qty)
+                cost += px * take
+                remaining -= take
+                if remaining <= 0:
+                    break
+            if remaining == 0:
+                avg_px = cost / order.qty
+                est_slippage = (avg_px - top_px) / top_px * 10000
+                QUEUE_POSITION.labels(symbol=order.symbol, side=order.side).observe(queue_pos)
 
         start = time.monotonic()
         kwargs = dict(
@@ -74,6 +122,10 @@ class ExecutionRouter:
         res = await adapter.place_order(**kwargs)
         latency = time.monotonic() - start
         ORDER_LATENCY.labels(venue=venue).observe(latency)
+        if est_slippage is not None:
+            res.setdefault("est_slippage_bps", est_slippage)
+        if queue_pos is not None:
+            res.setdefault("queue_position", queue_pos)
         if res.get("status") == "filled":
             FILL_COUNT.labels(symbol=order.symbol, side=order.side).inc()
             if self._engine is not None:

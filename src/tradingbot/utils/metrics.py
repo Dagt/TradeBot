@@ -35,6 +35,13 @@ SLIPPAGE = Histogram(
     ["symbol", "side"],
 )
 
+# Position in queue at top of book as ratio (0-1)
+QUEUE_POSITION = Histogram(
+    "order_queue_position_ratio",
+    "Fraction of existing liquidity ahead of the order at best price level",
+    ["symbol", "side"],
+)
+
 # Risk management events triggered
 RISK_EVENTS = Counter(
     "risk_events",
