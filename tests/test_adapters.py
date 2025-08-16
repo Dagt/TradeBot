@@ -1,4 +1,5 @@
 import pytest
+import pytest
 from tradingbot.adapters import (
     BybitSpotAdapter,
     BybitFuturesAdapter,
@@ -9,6 +10,7 @@ from tradingbot.adapters.base import ExchangeAdapter
 from tradingbot.adapters.binance_spot import BinanceSpotAdapter
 from tradingbot.adapters.binance_futures import BinanceFuturesAdapter
 from tradingbot.adapters.binance_spot_ws import BinanceSpotWSAdapter
+from tradingbot.adapters.binance_futures_ws import BinanceFuturesWSAdapter
 
 
 async def collect_trades(adapter):
@@ -58,12 +60,6 @@ class _DummyFuturesRest:
 
 
 class _DummyDelegate:
-    async def fetch_funding(self, symbol):
-        return {"rate": 1}
-
-    async def fetch_oi(self, symbol):
-        return {"oi": 2}
-
     async def place_order(self, *a, **k):
         return {"status": "ok"}
 
@@ -109,10 +105,50 @@ async def test_binance_futures_rest_fetch():
 
 
 @pytest.mark.asyncio
-async def test_ws_delegates_to_rest():
+async def test_binance_futures_ws_fetch_ok():
+    ws = BinanceFuturesWSAdapter()
+
+    async def _req_funding(fn, *a, **k):
+        return {"lastFundingRate": "0.05"}
+
+    ws._request = _req_funding
+    funding = await ws.fetch_funding("BTC/USDT")
+    assert funding["lastFundingRate"] == "0.05"
+
+    async def _req_oi(fn, *a, **k):
+        return {"openInterest": "10"}
+
+    ws._request = _req_oi
+    oi = await ws.fetch_oi("BTC/USDT")
+    assert oi["openInterest"] == "10"
+
+
+@pytest.mark.asyncio
+async def test_binance_futures_ws_fetch_error():
+    ws = BinanceFuturesWSAdapter()
+
+    async def _err(*a, **k):
+        raise RuntimeError("boom")
+
+    ws._request = _err
+    with pytest.raises(RuntimeError):
+        await ws.fetch_funding("BTC/USDT")
+    with pytest.raises(RuntimeError):
+        await ws.fetch_oi("BTC/USDT")
+
+
+@pytest.mark.asyncio
+async def test_binance_spot_ws_not_supported():
+    ws = BinanceSpotWSAdapter()
+    with pytest.raises(NotImplementedError):
+        await ws.fetch_funding("BTC/USDT")
+    with pytest.raises(NotImplementedError):
+        await ws.fetch_oi("BTC/USDT")
+
+
+@pytest.mark.asyncio
+async def test_ws_delegates_orders_to_rest():
     rest = _DummyDelegate()
     ws = BinanceSpotWSAdapter(rest=rest)
-    assert await ws.fetch_funding("BTC/USDT") == {"rate": 1}
-    assert await ws.fetch_oi("BTC/USDT") == {"oi": 2}
     assert await ws.place_order("BTC/USDT", "buy", "market", 1) == {"status": "ok"}
     assert await ws.cancel_order("1") == {"status": "cancel"}

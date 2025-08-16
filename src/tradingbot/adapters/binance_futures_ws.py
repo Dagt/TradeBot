@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import urllib.request
 import websockets
 from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
@@ -100,12 +101,26 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
-        raise NotImplementedError("WS adapter no soporta fetch_funding")
+        sym = self.normalize_symbol(symbol)
+        url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
+
+        def _fetch():
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return json.loads(resp.read())
+
+        return await self._request(_fetch)
 
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)
-        raise NotImplementedError("WS adapter no soporta fetch_oi")
+        sym = self.normalize_symbol(symbol)
+        url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={sym}"
+
+        def _fetch():
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return json.loads(resp.read())
+
+        return await self._request(_fetch)
 
     # interfaz ExchangeAdapter (no aplica envío por WS)
     async def place_order(self, *args, **kwargs):

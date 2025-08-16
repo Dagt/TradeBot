@@ -100,6 +100,15 @@ Copia `.env.example` a `.env` y completa las claves según corresponda. Variable
 - `ENV`, `LOG_LEVEL`: parámetros de ejecución.
 - `SENTRY_DSN`: opcional para reportar errores a Sentry.
 
+## Límites de consulta por exchange
+
+| Exchange | Límite aproximado | Notas |
+|----------|------------------|-------|
+| Binance Spot | 1200 weight/min (≈20 req/s) | REST público |
+| Binance Futures | 1200 weight/min (≈20 req/s) | USDⓈ-M |
+| Bybit | 50 req/s público, 10 req/s privado | compartir entre endpoints |
+| OKX | 60 req/2s | límite global REST |
+
 ## Uso rápido
 
 ```bash
