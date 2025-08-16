@@ -87,7 +87,16 @@ class PaperAdapter(ExchangeAdapter):
             "ts": (ts.isoformat() if ts else None),
         }
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float, price: float | None = None) -> dict:
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+    ) -> dict:
         order_id = self._next_order_id()
         last = self.state.last_px.get(symbol)
         if last is None:
