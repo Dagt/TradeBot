@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import defaultdict, deque
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Iterable
+
+import pandas as pd
+from ..data.features import returns
 
 from ..bus import EventBus
 from ..connectors.base import ExchangeConnector
@@ -69,6 +73,7 @@ class TradeBotDaemon:
         self._tasks: List[asyncio.Task] = []
         self._stop = asyncio.Event()
         self.balances: Dict[str, dict] = {}
+        self.price_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
 
         # Bus subscriptions
         self.bus.subscribe("trade", self._dispatch_trade)
@@ -227,8 +232,38 @@ class TradeBotDaemon:
         price = getattr(trade, "price", None)
         side = getattr(signal, "side", "")
         strength = getattr(signal, "strength", 1.0)
+        symbol_vol = 0.0
+        if symbol and price is not None:
+            hist = self.price_history[symbol]
+            hist.append(float(price))
+            if len(hist) >= 2:
+                df_hist = pd.DataFrame({"close": list(hist)})
+                rets = returns(df_hist).dropna()
+                symbol_vol = float(rets.std()) if not rets.empty else 0.0
+        returns_dict: Dict[str, List[float]] = {}
+        for sym, hist in self.price_history.items():
+            if len(hist) >= 2:
+                df_hist = pd.DataFrame({"close": list(hist)})
+                rets_list = returns(df_hist).dropna().tolist()
+                if rets_list:
+                    returns_dict[sym] = rets_list
+        if returns_dict:
+            cov_matrix = self.risk.covariance_matrix(returns_dict)
+            rets_df = pd.DataFrame(returns_dict)
+            corr_pairs: Dict[tuple[str, str], float] = {}
+            cols = list(rets_df.columns)
+            for a_idx in range(len(cols)):
+                for b_idx in range(a_idx + 1, len(cols)):
+                    a = cols[a_idx]
+                    b = cols[b_idx]
+                    corr = rets_df[a].corr(rets_df[b])
+                    if not pd.isna(corr):
+                        corr_pairs[(a, b)] = float(corr)
+            self.risk.update_correlation(corr_pairs, 0.8)
+            self.risk.update_covariance(cov_matrix, 0.8)
 
         delta = self.risk.size(side, strength)
+        delta += self.risk.size_with_volatility(symbol_vol)
         if abs(delta) <= 0:
             return
         if price is not None and not self.risk.check_limits(price):
