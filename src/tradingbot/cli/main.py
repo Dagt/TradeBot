@@ -57,6 +57,62 @@ def run_bot(symbol: str = "BTC/USDT") -> None:
     asyncio.run(run_live_binance(symbol=symbol))
 
 
+@app.command("run-bybit-spot-testnet")
+def run_bybit_spot_testnet(
+    symbol: str = "BTC/USDT",
+    trade_qty: float = 0.001,
+    persist_pg: bool = False,
+    total_cap_usdt: float = 1000.0,
+    per_symbol_cap_usdt: float = 500.0,
+    soft_cap_pct: float = 0.10,
+    soft_cap_grace_sec: int = 30,
+) -> None:
+    """Run the live trading bot on Bybit spot testnet."""
+
+    setup_logging()
+    from ..live.runner_spot_testnet_bybit import run_live_bybit_spot_testnet
+
+    asyncio.run(
+        run_live_bybit_spot_testnet(
+            symbol=symbol,
+            trade_qty=trade_qty,
+            persist_pg=persist_pg,
+            total_cap_usdt=total_cap_usdt,
+            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec,
+        )
+    )
+
+
+@app.command("run-okx-spot-testnet")
+def run_okx_spot_testnet(
+    symbol: str = "BTC/USDT",
+    trade_qty: float = 0.001,
+    persist_pg: bool = False,
+    total_cap_usdt: float = 1000.0,
+    per_symbol_cap_usdt: float = 500.0,
+    soft_cap_pct: float = 0.10,
+    soft_cap_grace_sec: int = 30,
+) -> None:
+    """Run the live trading bot on OKX spot testnet."""
+
+    setup_logging()
+    from ..live.runner_spot_testnet_okx import run_live_okx_spot_testnet
+
+    asyncio.run(
+        run_live_okx_spot_testnet(
+            symbol=symbol,
+            trade_qty=trade_qty,
+            persist_pg=persist_pg,
+            total_cap_usdt=total_cap_usdt,
+            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec,
+        )
+    )
+
+
 @app.command()
 def backtest(
     data: str,
