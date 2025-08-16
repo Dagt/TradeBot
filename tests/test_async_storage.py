@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
+import os
 
 import pytest
 import pytest_asyncio
@@ -11,6 +12,11 @@ from sqlalchemy import text
 from tradingbot.storage import AsyncDBClient
 
 SCHEMA_SQL = Path("db/schema.sql").read_text()
+
+pytestmark = pytest.mark.integration
+
+if not os.environ.get("PG_TEST", ""):
+    pytest.skip("PostgreSQL not available", allow_module_level=True)
 
 
 @pytest_asyncio.fixture(scope="module")
