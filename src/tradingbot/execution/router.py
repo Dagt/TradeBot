@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Callable, Iterable as It
 
 from .order_types import Order
+from . import algos as algo_mod
 from ..utils.metrics import (
     SLIPPAGE,
     ORDER_LATENCY,
@@ -77,7 +79,37 @@ class ExecutionRouter:
         return selected
 
     # ------------------------------------------------------------------
-    async def execute(self, order: Order) -> dict:
+    async def execute(
+        self,
+        order: Order,
+        algo: str | Callable[..., It[Tuple[Order, float]]] | None = None,
+        **algo_kwargs,
+    ) -> dict | List[dict]:
+        """Execute ``order`` optionally using an execution algorithm.
+
+        When ``algo`` is provided it can be either the name of an algorithm in
+        :mod:`tradingbot.execution.algos` or a callable returning an iterable of
+        ``(Order, delay)`` tuples. Orders are sent sequentially respecting the
+        specified delays.
+        """
+
+        if algo is not None:
+            if isinstance(algo, str):
+                algo_fn = getattr(algo_mod, algo)
+            else:
+                algo_fn = algo
+            slices = algo_fn(order, **algo_kwargs)
+            results: List[dict] = []
+            for child, delay in slices:
+                if delay:
+                    await asyncio.sleep(delay)
+                results.append(await self._send(child))
+            return results
+
+        return await self._send(order)
+
+    # ------------------------------------------------------------------
+    async def _send(self, order: Order) -> dict:
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
         log.info("Routing order %s via %s", order, venue)
