@@ -22,7 +22,14 @@ from ..live.runner_futures_testnet_multi import run_live_binance_futures_testnet
 app = typer.Typer(add_completion=False)
 
 @app.command()
-def backtest(data: str, symbol: str = "BTC/USDT", strategy: str = "breakout_atr"):
+def backtest(
+    data: str,
+    symbol: str = "BTC/USDT",
+    strategy: str = typer.Option(
+        "breakout_atr",
+        help="Estrategia a usar, e.g. breakout_atr, momentum, order_flow",
+    ),
+):
     """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)"""
     setup_logging()
     res = run_backtest_csv(data, symbol=symbol, strategy=strategy)
@@ -32,7 +39,10 @@ def backtest(data: str, symbol: str = "BTC/USDT", strategy: str = "breakout_atr"
 def run_csv_paper(
     data: str,
     symbol: str = "BTC/USDT",
-    strategy: str = "breakout_atr",
+    strategy: str = typer.Option(
+        "breakout_atr",
+        help="Estrategia, e.g. breakout_atr, order_flow",
+    ),
     sleep_ms: int = 50,
     max_bars: int = 0,
 ):

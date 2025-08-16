@@ -74,11 +74,30 @@ cp .env.example .env
 # 4) Probar backtest de ejemplo (simulado, CSV)
 python -m tradingbot.cli backtest --data ./data/examples/btcusdt_1m.csv
 
+# 4b) Estrategia Order Flow (CSV con `bid_qty` y `ask_qty`)
+python -m tradingbot.cli backtest --data /path/to/orderbook.csv --strategy order_flow
+
 # 5) Iniciar API de control/monitoreo
 uvicorn tradingbot.apps.api.main:app --reload --port 8080
 ```
 
 > **Nota**: este repo es un esqueleto funcional. Los adaptadores WS/REST y ejecución están stubs listos para ser implementados paso a paso.
+
+## Estrategias
+
+### Order Flow
+
+Estrategia basada en el indicador *Order Flow Imbalance* (OFI). Calcula el
+promedio del OFI en una ventana configurable y genera señales de compra o venta
+cuando supera los umbrales definidos (`buy_threshold`, `sell_threshold`).
+
+Ejemplo de uso con el CLI:
+
+```bash
+python -m tradingbot.cli backtest --data /path/to/orderbook.csv --strategy order_flow
+```
+
+El CSV debe contener las columnas `bid_qty` y `ask_qty`.
 
 ## Esquema de datos y carga
 
