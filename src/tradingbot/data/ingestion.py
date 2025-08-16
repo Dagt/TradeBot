@@ -3,7 +3,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from ..types import Tick, Bar
+from ..bus import EventBus
+from ..types import Tick, Bar, OrderBook
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 
@@ -14,6 +15,54 @@ Backends = Literal["timescale", "quest"]
 def _get_storage(backend: Backends):
     """Return storage module depending on backend name."""
     return ts_storage if backend == "timescale" else qs_storage
+
+
+async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
+    """Publish trades from *adapter* to an :class:`EventBus`."""
+    async for d in adapter.stream_trades(symbol):
+        tick = Tick(
+            ts=d.get("ts", datetime.now(timezone.utc)),
+            exchange=getattr(adapter, "name", "unknown"),
+            symbol=symbol,
+            price=float(d.get("price") or d.get("px") or 0.0),
+            qty=float(d.get("qty") or d.get("size") or 0.0),
+            side=d.get("side"),
+        )
+        await bus.publish("trades", tick)
+
+
+async def run_orderbook_stream(
+    adapter: Any,
+    symbol: str,
+    depth: int,
+    bus: EventBus,
+    engine: Any,
+    *,
+    backend: Backends = "timescale",
+) -> None:
+    """Publish and persist order book snapshots."""
+    storage = _get_storage(backend)
+    async for d in adapter.stream_orderbook(symbol, depth):
+        ob = OrderBook(
+            ts=d.get("ts", datetime.now(timezone.utc)),
+            exchange=getattr(adapter, "name", "unknown"),
+            symbol=symbol,
+            bid_px=d.get("bid_px") or [],
+            bid_qty=d.get("bid_qty") or [],
+            ask_px=d.get("ask_px") or [],
+            ask_qty=d.get("ask_qty") or [],
+        )
+        await bus.publish("orderbook", ob)
+        storage.insert_orderbook(
+            engine,
+            ts=ob.ts,
+            exchange=ob.exchange,
+            symbol=ob.symbol,
+            bid_px=ob.bid_px,
+            bid_qty=ob.bid_qty,
+            ask_px=ob.ask_px,
+            ask_qty=ob.ask_qty,
+        )
 
 async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "timescale"):
     """Stream trades from *adapter* and persist each tick.

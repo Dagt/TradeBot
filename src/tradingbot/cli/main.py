@@ -32,7 +32,7 @@ def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
     setup_logging()
     from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
     from ..bus import EventBus
-    from ..data.ingest import run_orderbook_stream
+    from ..data.ingestion import run_orderbook_stream
     from ..storage.timescale import get_engine
 
     adapter = BinanceSpotWSAdapter()
