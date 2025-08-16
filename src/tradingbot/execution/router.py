@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import defaultdict
@@ -96,25 +97,30 @@ class ExecutionRouter:
         """
 
         if algo:
+            from . import algos
+
             a = algo.lower()
+            delay = float(algo_kwargs.get("delay", 0.0))
             if a == "twap":
-                from .algos import TWAP
-
                 slices = int(algo_kwargs.get("slices", 1))
-                delay = float(algo_kwargs.get("delay", 0.0))
-                return await TWAP(self, slices=slices, delay=delay).execute(order)
-            if a == "vwap":
-                from .algos import VWAP
-
+                children = algos.twap(order, slices)
+            elif a == "vwap":
                 volumes = algo_kwargs.get("volumes", [])
-                delay = float(algo_kwargs.get("delay", 0.0))
-                return await VWAP(self, volumes=volumes, delay=delay).execute(order)
-            if a == "pov":
-                from .algos import POV
-
+                children = algos.vwap(order, volumes)
+            elif a == "pov":
                 participation_rate = float(algo_kwargs["participation_rate"])
-                trades = algo_kwargs["trades"]
-                return await POV(self, participation_rate=participation_rate).execute(order, trades)
+                trades = algo_kwargs.get("trades", [])
+                children = algos.pov(order, trades, participation_rate)
+            else:
+                raise ValueError(f"unknown algo: {algo}")
+
+            results: List[dict] = []
+            for i, child in enumerate(children):
+                res = await self.execute(child)
+                results.append(res)
+                if delay and i < len(children) - 1:
+                    await asyncio.sleep(delay)
+            return results
 
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
