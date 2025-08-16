@@ -30,6 +30,7 @@ class Order:
     remaining_qty: float = field(default=0.0, compare=False)
     filled_qty: float = field(default=0.0, compare=False)
     total_cost: float = field(default=0.0, compare=False)
+    queue_pos: float = field(default=0.0, compare=False)
 
 
 class SlippageModel:
@@ -37,6 +38,9 @@ class SlippageModel:
 
     The fill price is adjusted by half the bar spread plus an additional
     component proportional to the order size divided by the bar volume.
+    It also supports level-2 order book queue modelling by exposing
+    :meth:`fill`, which returns the adjusted price, the filled quantity and
+    the updated queue position.
     """
 
     def __init__(self, volume_impact: float = 0.1) -> None:
@@ -48,6 +52,39 @@ class SlippageModel:
         impact = self.volume_impact * qty / max(vol, 1e-9)
         slip = spread / 2 + impact
         return price + slip if side == "buy" else price - slip
+
+    # ------------------------------------------------------------------
+    def fill(
+        self,
+        side: str,
+        qty: float,
+        price: float,
+        bar: pd.Series,
+        queue_pos: float = 0.0,
+        partial: bool = True,
+    ) -> tuple[float, float, float]:
+        """Return adjusted price, executed quantity and new queue position.
+
+        Parameters
+        ----------
+        side: "buy" or "sell".
+        qty: remaining order quantity.
+        price: base execution price before slippage.
+        bar: current market bar with optional L2 fields ``bid_size``/``ask_size``.
+        queue_pos: volume ahead in the order book queue.
+        partial: whether partial fills are allowed.
+        """
+
+        vol_key = "ask_size" if side == "buy" else "bid_size"
+        avail = float(bar.get(vol_key, qty))
+        eff_avail = max(0.0, avail - queue_pos)
+        new_queue = max(0.0, queue_pos - avail)
+        if partial:
+            fill_qty = min(qty, eff_avail)
+        else:
+            fill_qty = qty if eff_avail >= qty else 0.0
+        adj_price = self.adjust(side, fill_qty, price, bar)
+        return adj_price, fill_qty, new_queue
 
 
 class FeeModel:
@@ -71,11 +108,17 @@ class EventDrivenBacktestEngine:
         window: int = 120,
         slippage: SlippageModel | None = None,
         exchange_configs: Dict[str, Dict[str, float]] | None = None,
+        use_l2: bool = False,
+        partial_fills: bool = True,
+        cancel_unfilled: bool = False,
     ) -> None:
         self.data = data
         self.latency = int(latency)
         self.window = int(window)
         self.slippage = slippage
+        self.use_l2 = bool(use_l2)
+        self.partial_fills = bool(partial_fills)
+        self.cancel_unfilled = bool(cancel_unfilled)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -122,18 +165,43 @@ class EventDrivenBacktestEngine:
                 if i >= len(df):
                     continue
                 bar = df.iloc[i]
-
                 if "bid" in bar and "ask" in bar:
                     price = float(bar["ask"] if order.side == "buy" else bar["bid"])
-                    vol_key = "ask_size" if order.side == "buy" else "bid_size"
-                    avail = float(bar.get(vol_key, order.remaining_qty))
-                    fill_qty = min(order.remaining_qty, avail)
                 else:
                     price = float(bar["close"])
-                    fill_qty = order.remaining_qty
 
                 if self.slippage:
-                    price = self.slippage.adjust(order.side, fill_qty, price, bar)
+                    price, fill_qty, order.queue_pos = self.slippage.fill(
+                        order.side,
+                        order.remaining_qty,
+                        price,
+                        bar,
+                        order.queue_pos,
+                        self.partial_fills,
+                    )
+                else:
+                    vol_key = "ask_size" if order.side == "buy" else "bid_size"
+                    avail = float(bar.get(vol_key, order.remaining_qty))
+                    if self.use_l2:
+                        eff_avail = max(0.0, avail - order.queue_pos)
+                        order.queue_pos = max(0.0, order.queue_pos - avail)
+                    else:
+                        eff_avail = avail
+                        order.queue_pos = 0.0
+                    if self.partial_fills:
+                        fill_qty = min(order.remaining_qty, eff_avail)
+                    else:
+                        fill_qty = (
+                            order.remaining_qty
+                            if eff_avail >= order.remaining_qty
+                            else 0.0
+                        )
+
+                if fill_qty <= 0:
+                    if not self.cancel_unfilled:
+                        order.execute_index = i + 1
+                        heapq.heappush(order_queue, order)
+                    continue
 
                 slip = (
                     price - order.place_price
@@ -165,7 +233,7 @@ class EventDrivenBacktestEngine:
                         order.exchange,
                     )
                 )
-                if order.remaining_qty > 1e-9:
+                if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
 
@@ -186,6 +254,10 @@ class EventDrivenBacktestEngine:
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 exec_index = i + self.exchange_latency.get(exchange, self.latency)
                 place_price = float(df["close"].iloc[i])
+                queue_pos = 0.0
+                if self.use_l2:
+                    vol_key = "ask_size" if side == "buy" else "bid_size"
+                    queue_pos = float(df.iloc[i].get(vol_key, 0.0))
                 order = Order(
                     exec_index,
                     strat_name,
@@ -197,6 +269,7 @@ class EventDrivenBacktestEngine:
                     qty,
                     0.0,
                     0.0,
+                    queue_pos,
                 )
                 orders.append(order)
                 heapq.heappush(order_queue, order)
@@ -238,6 +311,9 @@ def run_backtest_csv(
     window: int = 120,
     slippage: SlippageModel | None = None,
     exchange_configs: Dict[str, Dict[str, float]] | None = None,
+    use_l2: bool = False,
+    partial_fills: bool = True,
+    cancel_unfilled: bool = False,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -249,6 +325,9 @@ def run_backtest_csv(
         window=window,
         slippage=slippage,
         exchange_configs=exchange_configs,
+        use_l2=use_l2,
+        partial_fills=partial_fills,
+        cancel_unfilled=cancel_unfilled,
     )
     return engine.run()
 
@@ -260,6 +339,9 @@ def run_backtest_mlflow(
     window: int = 120,
     slippage: SlippageModel | None = None,
     exchange_configs: Dict[str, Dict[str, float]] | None = None,
+    use_l2: bool = False,
+    partial_fills: bool = True,
+    cancel_unfilled: bool = False,
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
 ) -> dict:
@@ -287,6 +369,9 @@ def run_backtest_mlflow(
             window=window,
             slippage=slippage,
             exchange_configs=exchange_configs,
+            use_l2=use_l2,
+            partial_fills=partial_fills,
+            cancel_unfilled=cancel_unfilled,
         )
         mlflow.log_metric("equity", result.get("equity", 0.0))
         mlflow.log_metric("fills", len(result.get("fills", [])))
