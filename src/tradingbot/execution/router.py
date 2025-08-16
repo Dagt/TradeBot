@@ -8,7 +8,8 @@ from collections import defaultdict
 from typing import Dict, Iterable
 
 from .order_types import Order
-from ..utils.metrics import SLIPPAGE, ORDER_LATENCY, MAKER_TAKER_RATIO
+from ..utils.metrics import SLIPPAGE, ORDER_LATENCY, MAKER_TAKER_RATIO, FILL_COUNT
+from ..storage import timescale
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ log = logging.getLogger(__name__)
 class ExecutionRouter:
     """Route orders to the best venue and track execution metrics."""
 
-    def __init__(self, adapters: Iterable):
+    def __init__(self, adapters: Iterable, storage_engine=None):
         if isinstance(adapters, dict):
             self.adapters: Dict[str, object] = adapters  # type: ignore[assignment]
         elif isinstance(adapters, (list, tuple, set)):
@@ -28,6 +29,7 @@ class ExecutionRouter:
 
         self._maker_counts = defaultdict(int)
         self._taker_counts = defaultdict(int)
+        self._engine = storage_engine
 
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
@@ -72,6 +74,25 @@ class ExecutionRouter:
         res = await adapter.place_order(**kwargs)
         latency = time.monotonic() - start
         ORDER_LATENCY.labels(venue=venue).observe(latency)
+        if res.get("status") == "filled":
+            FILL_COUNT.labels(symbol=order.symbol, side=order.side).inc()
+            if self._engine is not None:
+                try:
+                    timescale.insert_order(
+                        self._engine,
+                        strategy="router",
+                        exchange=venue,
+                        symbol=order.symbol,
+                        side=order.side,
+                        type_=order.type_,
+                        qty=float(order.qty),
+                        px=res.get("price"),
+                        status=res.get("status", "unknown"),
+                        ext_order_id=res.get("order_id"),
+                        notes=None,
+                    )
+                except Exception:
+                    pass
 
         exec_price = res.get("price")
         expected = order.price

@@ -47,6 +47,47 @@ def _setup_engine():
     return engine
 
 
+def _setup_ts_engine():
+    """SQLite engine with schemas for Timescale-style functions."""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ATTACH DATABASE ':memory:' AS market")
+        conn.execute(
+            text(
+                """
+                CREATE TABLE market.orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strategy TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    side TEXT,
+                    type TEXT,
+                    qty REAL,
+                    px REAL,
+                    status TEXT,
+                    ext_order_id TEXT,
+                    notes TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE market.risk_events (
+                    ts TEXT,
+                    venue TEXT,
+                    symbol TEXT,
+                    kind TEXT,
+                    message TEXT,
+                    details TEXT
+                )
+                """
+            )
+        )
+    return engine
+
+
 def _reload_storage_backend(backend: str):
     settings.db_backend = backend
     import tradingbot.storage as storage
@@ -93,4 +134,60 @@ def test_insert_and_read_orderbook():
     assert json.loads(row[1]) == [1.0, 0.5]
     assert json.loads(row[2]) == [100.5, 101.0]
     assert json.loads(row[3]) == [0.8, 1.2]
+
+
+def test_insert_order_timescale():
+    from tradingbot.storage import timescale
+
+    engine = _setup_ts_engine()
+    timescale.insert_order(
+        engine,
+        strategy="s",
+        exchange="binance",
+        symbol="BTCUSDT",
+        side="buy",
+        type_="limit",
+        qty=1.0,
+        px=100.0,
+        status="filled",
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT strategy, exchange, symbol, side, type, qty, px, status FROM market.orders"
+            )
+        ).fetchone()
+
+    assert row == (
+        "s",
+        "binance",
+        "BTCUSDT",
+        "buy",
+        "limit",
+        1.0,
+        100.0,
+        "filled",
+    )
+
+
+def test_insert_risk_event_timescale():
+    from tradingbot.storage import timescale
+
+    engine = _setup_ts_engine()
+    timescale.insert_risk_event(
+        engine,
+        venue="binance",
+        symbol="",
+        kind="daily_max_loss",
+        message="",
+        details="{}",
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT venue, kind FROM market.risk_events")
+        ).fetchone()
+
+    assert row == ("binance", "daily_max_loss")
 

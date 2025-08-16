@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_cross_signal
@@ -57,6 +57,7 @@ class CashAndCarry(Strategy):
         self.cfg = cfg or CashCarryConfig(**kwargs)
         self.engine = get_engine() if (self.cfg.persist_pg and _CAN_PG) else None
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Optional[Signal]:
         spot = bar.get("spot")
         perp = bar.get("perp")
