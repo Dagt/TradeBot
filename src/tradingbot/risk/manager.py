@@ -229,6 +229,12 @@ class RiskManager:
         if exceeded:
             self.max_pos *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
+            if self.bus is not None:
+                asyncio.create_task(
+                    self.bus.publish(
+                        "risk:paused", {"reason": "correlation", "pairs": exceeded}
+                    )
+                )
         return exceeded
 
     def update_covariance(
@@ -258,6 +264,12 @@ class RiskManager:
         if exceeded:
             self.max_pos *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
+            if self.bus is not None:
+                asyncio.create_task(
+                    self.bus.publish(
+                        "risk:paused", {"reason": "covariance", "pairs": exceeded}
+                    )
+                )
         return exceeded
 
     def check_portfolio_risk(

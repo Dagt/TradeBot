@@ -1,3 +1,7 @@
+import asyncio
+import pytest
+
+from tradingbot.bus import EventBus
 from tradingbot.risk.manager import RiskManager
 
 
@@ -40,3 +44,34 @@ def test_daily_loss_limit_triggers_kill_switch():
     assert rm.enabled is False
     assert rm.last_kill_reason == "daily_loss"
     assert rm.pos.qty == 0
+
+
+@pytest.mark.asyncio
+async def test_update_correlation_emits_pause():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:paused", lambda e: events.append(e))
+    rm = RiskManager(max_pos=8, bus=bus)
+    pairs = {("BTC", "ETH"): 0.9}
+    exceeded = rm.update_correlation(pairs, 0.8)
+    await asyncio.sleep(0)
+    assert exceeded == [("BTC", "ETH")]
+    assert events and events[0]["reason"] == "correlation"
+
+
+@pytest.mark.asyncio
+async def test_update_covariance_emits_pause():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:paused", lambda e: events.append(e))
+    rm = RiskManager(max_pos=8, bus=bus)
+    cov = {
+        ("BTC", "BTC"): 0.04,
+        ("ETH", "ETH"): 0.04,
+        ("BTC", "ETH"): 0.039,
+    }
+    exceeded = rm.update_covariance(cov, 0.8)
+    await asyncio.sleep(0)
+    assert exceeded == [("BTC", "ETH")]
+    assert events and events[0]["reason"] == "covariance"
+

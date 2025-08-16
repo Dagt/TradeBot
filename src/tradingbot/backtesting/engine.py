@@ -12,6 +12,7 @@ import pandas as pd
 
 from ..risk.manager import RiskManager
 from ..strategies import STRATEGIES
+from ..data.features import returns
 
 log = logging.getLogger(__name__)
 
@@ -159,6 +160,30 @@ class EventDrivenBacktestEngine:
 
         max_len = max(len(df) for df in self.data.values())
         for i in range(max_len):
+            # Actualiza límites por correlación/covarianza con retornos recientes
+            if i >= self.window:
+                returns_dict: Dict[str, List[float]] = {}
+                for sym, df_sym in self.data.items():
+                    window_df_sym = df_sym.iloc[i - self.window : i]
+                    rets = returns(window_df_sym).dropna().tolist()
+                    if rets:
+                        returns_dict[sym] = rets
+                if returns_dict:
+                    rets_df = pd.DataFrame(returns_dict)
+                    corr_pairs: Dict[tuple[str, str], float] = {}
+                    cols = list(rets_df.columns)
+                    for a_idx in range(len(cols)):
+                        for b_idx in range(a_idx + 1, len(cols)):
+                            a = cols[a_idx]
+                            b = cols[b_idx]
+                            corr = rets_df[a].corr(rets_df[b])
+                            if not pd.isna(corr):
+                                corr_pairs[(a, b)] = float(corr)
+                    any_rm = next(iter(self.risk.values()))
+                    cov_matrix = any_rm.covariance_matrix(returns_dict)
+                    for rm in self.risk.values():
+                        rm.update_correlation(corr_pairs, 0.8)
+                        rm.update_covariance(cov_matrix, 0.8)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
@@ -247,7 +272,11 @@ class EventDrivenBacktestEngine:
                 sig = strat.on_bar({"window": window_df})
                 if sig is None or sig.side == "flat":
                     continue
-                delta = self.risk[(strat_name, symbol)].size(sig.side, sig.strength)
+                risk = self.risk[(strat_name, symbol)]
+                delta = risk.size(sig.side, sig.strength)
+                rets = returns(window_df).dropna()
+                symbol_vol = float(rets.std()) if not rets.empty else 0.0
+                delta += risk.size_with_volatility(symbol_vol)
                 if abs(delta) < 1e-9:
                     continue
                 side = "buy" if delta > 0 else "sell"
