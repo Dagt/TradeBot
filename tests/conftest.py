@@ -2,6 +2,9 @@ import sys
 import pathlib
 import pytest
 
+sys.path.append(str(pathlib.Path(__file__).parent))
+from fixtures.market import synthetic_trades, synthetic_l2  # noqa: F401
+
 # Ensure the src package is importable
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 

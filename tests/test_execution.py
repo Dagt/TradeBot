@@ -1,4 +1,5 @@
 import pytest
+from hypothesis import given, strategies as st
 
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
@@ -53,3 +54,33 @@ async def test_pov_participates(paper_adapter):
     res = await algo.execute(order, trades())
     assert paper_adapter.state.pos["BTCUSDT"].qty == pytest.approx(5.0)
     assert len(res) >= 2
+
+
+class DummyExecAdapter:
+    def __init__(self):
+        self.args = None
+
+    async def place_order(self, **kwargs):
+        self.args = kwargs
+        return kwargs
+
+
+@given(
+    st.builds(
+        Order,
+        symbol=st.sampled_from(["BTCUSDT", "ETHUSDT"]),
+        side=st.sampled_from(["buy", "sell"]),
+        type_=st.sampled_from(["market", "limit"]),
+        qty=st.floats(min_value=0.1, max_value=5.0),
+        price=st.one_of(st.none(), st.floats(min_value=10, max_value=1000)),
+        post_only=st.booleans(),
+        time_in_force=st.one_of(st.none(), st.sampled_from(["GTC", "IOC"])),
+    )
+)
+@pytest.mark.asyncio
+async def test_execution_router_property(order):
+    adapter = DummyExecAdapter()
+    router = ExecutionRouter(adapter)
+    res = await router.execute(order)
+    assert adapter.args["symbol"] == order.symbol
+    assert res["side"] == order.side
