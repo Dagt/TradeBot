@@ -146,11 +146,155 @@ def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, inter
         )
 
 
+def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
+    """Persist an open interest record into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO open_interest (ts, exchange, symbol, oi)
+                VALUES (:ts, :exchange, :symbol, :oi)
+                """
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, oi=oi),
+        )
+
+
+def insert_basis(engine, *, ts, exchange: str, symbol: str, basis: float):
+    """Persist a basis record into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO basis (ts, exchange, symbol, basis)
+                VALUES (:ts, :exchange, :symbol, :basis)
+                """
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, basis=basis),
+        )
+
+
+def insert_order(
+    engine,
+    *,
+    strategy: str,
+    exchange: str,
+    symbol: str,
+    side: str,
+    type_: str,
+    qty: float,
+    px: float | None,
+    status: str,
+    ext_order_id: str | None = None,
+    notes: dict | None = None,
+):
+    """Persist an order record into QuestDB."""
+    payload = dict(
+        strategy=strategy,
+        exchange=exchange,
+        symbol=symbol,
+        side=side,
+        type=type_,
+        qty=qty,
+        px=px,
+        status=status,
+        ext_order_id=ext_order_id,
+        notes=json.dumps(notes) if notes is not None else None,
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO orders (strategy, exchange, symbol, side, type, qty, px, status, ext_order_id, notes)
+                VALUES (:strategy, :exchange, :symbol, :side, :type, :qty, :px, :status, :ext_order_id, :notes)
+                """
+            ),
+            payload,
+        )
+
+
+def insert_tri_signal(
+    engine,
+    *,
+    exchange: str,
+    base: str,
+    mid: str,
+    quote: str,
+    direction: str,
+    edge: float,
+    notional_quote: float,
+    taker_fee_bps: float,
+    buffer_bps: float,
+    bq: float,
+    mq: float,
+    mb: float,
+):
+    """Persist a triangular arbitrage signal into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO tri_signals (exchange, base, mid, quote, direction, edge, notional_quote, taker_fee_bps, buffer_bps, bq, mq, mb)
+                VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional_quote, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
+                """
+            ),
+            dict(
+                exchange=exchange,
+                base=base,
+                mid=mid,
+                quote=quote,
+                direction=direction,
+                edge=edge,
+                notional_quote=notional_quote,
+                taker_fee_bps=taker_fee_bps,
+                buffer_bps=buffer_bps,
+                bq=bq,
+                mq=mq,
+                mb=mb,
+            ),
+        )
+
+
+def insert_cross_signal(
+    engine,
+    *,
+    symbol: str,
+    spot_exchange: str,
+    perp_exchange: str,
+    spot_px: float,
+    perp_px: float,
+    edge: float,
+):
+    """Persist a cross-exchange arbitrage signal into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO cross_signals (symbol, spot_exchange, perp_exchange, spot_px, perp_px, edge)
+                VALUES (:symbol, :spot_exchange, :perp_exchange, :spot_px, :perp_px, :edge)
+                """
+            ),
+            dict(
+                symbol=symbol,
+                spot_exchange=spot_exchange,
+                perp_exchange=perp_exchange,
+                spot_px=spot_px,
+                perp_px=perp_px,
+                edge=edge,
+            ),
+        )
+
+
 __all__ = [
     "get_engine",
     "insert_trade",
     "insert_orderbook",
     "insert_bar_1m",
     "insert_funding",
+    "insert_open_interest",
+    "insert_basis",
+    "insert_order",
+    "insert_tri_signal",
+    "insert_cross_signal",
 ]
 
