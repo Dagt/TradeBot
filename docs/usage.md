@@ -10,7 +10,14 @@ python -m tradingbot.cli ingest --symbol BTC/USDT
 python -m tradingbot.cli run-bot --symbol BTC/USDT
 python -m tradingbot.cli backtest data/btcusdt_1m.csv --symbol BTC/USDT --strategy breakout_atr
 python -m tradingbot.cli report --venue binance_spot_testnet
+python -m tradingbot.cli tri-arb --route BTC-ETH-USDT --notional 200
+python -m tradingbot.cli cross-arb --symbol BTC/USDT --spot binance_spot --perp bybit_futures
 ```
+
+El comando ``tri-arb`` monitorea una ruta triangular especificada en formato
+``BASE-MID-QUOTE`` y ejecuta las tres patas en modo *paper* con el notional
+indicado.  ``cross-arb`` permite arbitrar diferencias entre un mercado spot y
+uno perp dado un par de adaptadores.
 
 ## Estrategias disponibles
 

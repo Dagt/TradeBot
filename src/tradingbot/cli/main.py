@@ -89,6 +89,74 @@ def report(venue: str = "binance_spot_testnet") -> None:
     typer.echo(summary)
 
 
+@app.command("tri-arb")
+def tri_arb(
+    route: str = typer.Option(..., help="Ruta BASE-MID-QUOTE, p.ej. BTC-ETH-USDT"),
+    notional: float = typer.Option(100.0, help="Notional en QUOTE por ciclo"),
+) -> None:
+    """Ejecutar arbitraje triangular simple sobre Binance."""
+
+    setup_logging()
+    from ..live.runner_triangular import TriConfig, TriRoute, run_triangular_binance
+
+    try:
+        base, mid, quote = route.split("-")
+    except ValueError as exc:  # pragma: no cover - validation
+        raise typer.BadParameter("route debe tener formato BASE-MID-QUOTE") from exc
+
+    cfg = TriConfig(route=TriRoute(base=base, mid=mid, quote=quote), notional_quote=notional)
+    asyncio.run(run_triangular_binance(cfg))
+
+
+@app.command("cross-arb")
+def cross_arb(
+    symbol: str = "BTC/USDT",
+    spot: str = typer.Option(..., help="Adapter spot, e.g. binance_spot"),
+    perp: str = typer.Option(..., help="Adapter perp, e.g. bybit_futures"),
+    threshold: float = typer.Option(0.001, help="Umbral premium como decimal"),
+    notional: float = typer.Option(100.0, help="Notional en QUOTE por pata"),
+) -> None:
+    """Arbitraje simple spot/perp entre dos exchanges."""
+
+    setup_logging()
+    from ..strategies.cross_exchange_arbitrage import (
+        CrossArbConfig,
+        run_cross_exchange_arbitrage,
+    )
+    from ..adapters import (
+        BinanceSpotAdapter,
+        BinanceFuturesAdapter,
+        BybitSpotAdapter,
+        BybitFuturesAdapter,
+        OKXSpotAdapter,
+        OKXFuturesAdapter,
+    )
+
+    adapters = {
+        "binance_spot": BinanceSpotAdapter,
+        "binance_futures": BinanceFuturesAdapter,
+        "bybit_spot": BybitSpotAdapter,
+        "bybit_futures": BybitFuturesAdapter,
+        "okx_spot": OKXSpotAdapter,
+        "okx_futures": OKXFuturesAdapter,
+    }
+
+    try:
+        spot_adapter = adapters[spot.lower()]()
+        perp_adapter = adapters[perp.lower()]()
+    except KeyError as e:  # pragma: no cover - validation
+        raise typer.BadParameter(f"adapter desconocido: {e.args[0]}")
+
+    cfg = CrossArbConfig(
+        symbol=symbol,
+        spot=spot_adapter,
+        perp=perp_adapter,
+        threshold=threshold,
+        notional=notional,
+    )
+    asyncio.run(run_cross_exchange_arbitrage(cfg))
+
+
 def main() -> None:
     """Entry point used by ``python -m tradingbot.cli``."""
 
