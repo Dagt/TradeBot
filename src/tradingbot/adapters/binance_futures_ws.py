@@ -21,10 +21,11 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     """
     name = "binance_futures_um_testnet_ws"
 
-    def __init__(self, ws_base: str | None = None):
+    def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
         # UM testnet combined streams:
         #   wss://stream.binancefuture.com/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade
         self.ws_base = ws_base or "wss://stream.binancefuture.com/stream?streams="
+        self.rest = rest
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
         streams = "/".join(_stream_name(self.normalize_symbol(s), channel) for s in symbols)
@@ -61,6 +62,10 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
+    async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
+        async for t in self.stream_trades_multi([symbol]):
+            yield t
+
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
@@ -93,13 +98,22 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def fetch_funding(self, symbol: str):
+        if self.rest:
+            return await self.rest.fetch_funding(symbol)
         raise NotImplementedError("WS adapter no soporta fetch_funding")
 
     async def fetch_oi(self, symbol: str):
+        if self.rest:
+            return await self.rest.fetch_oi(symbol)
         raise NotImplementedError("WS adapter no soporta fetch_oi")
 
     # interfaz ExchangeAdapter (no aplica envío por WS)
     async def place_order(self, *args, **kwargs):
+        if self.rest:
+            return await self.rest.place_order(*args, **kwargs)
         raise NotImplementedError
-    async def cancel_order(self, order_id: str):
+
+    async def cancel_order(self, order_id: str, *args, **kwargs):
+        if self.rest:
+            return await self.rest.cancel_order(order_id, *args, **kwargs)
         raise NotImplementedError

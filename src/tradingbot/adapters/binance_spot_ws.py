@@ -21,9 +21,10 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     """
     name = "binance_spot_testnet_ws"
 
-    def __init__(self, ws_base: str | None = None):
+    def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
         # Spot testnet: wss://testnet.binance.vision/stream?streams=
         self.ws_base = ws_base or "wss://testnet.binance.vision/stream?streams="
+        self.rest = rest
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _stream_name(self.normalize_symbol(symbol))
@@ -127,13 +128,21 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def fetch_funding(self, symbol: str):
+        if self.rest:
+            return await self.rest.fetch_funding(symbol)
         raise NotImplementedError("WS adapter no soporta fetch_funding")
 
     async def fetch_oi(self, symbol: str):
+        if self.rest:
+            return await self.rest.fetch_oi(symbol)
         raise NotImplementedError("WS adapter no soporta fetch_oi")
 
     async def place_order(self, *args, **kwargs) -> dict:
+        if self.rest:
+            return await self.rest.place_order(*args, **kwargs)
         raise NotImplementedError("solo streaming")
 
-    async def cancel_order(self, order_id: str) -> dict:
+    async def cancel_order(self, order_id: str, *args, **kwargs) -> dict:
+        if self.rest:
+            return await self.rest.cancel_order(order_id, *args, **kwargs)
         raise NotImplementedError("no aplica en WS")
