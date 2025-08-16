@@ -9,6 +9,7 @@ from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
 from ..utils.metrics import WS_FAILURES
+from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -22,12 +23,34 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     """
     name = "binance_futures_um_testnet_ws"
 
-    def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
+    def __init__(
+        self,
+        ws_base: str | None = None,
+        rest: ExchangeAdapter | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        testnet: bool | None = None,
+    ):
         super().__init__()
         # UM testnet combined streams:
         #   wss://stream.binancefuture.com/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade
         self.ws_base = ws_base or "wss://stream.binancefuture.com/stream?streams="
         self.rest = rest
+        self._api_key = api_key
+        self._api_secret = api_secret
+        self._testnet = testnet
+
+    def _ensure_rest(self):
+        if self.rest is None:
+            from .binance_futures import BinanceFuturesAdapter
+
+            self.rest = BinanceFuturesAdapter(
+                api_key=self._api_key or settings.binance_futures_api_key,
+                api_secret=self._api_secret or settings.binance_futures_api_secret,
+                testnet=self._testnet
+                if self._testnet is not None
+                else settings.binance_futures_testnet,
+            )
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
         streams = "/".join(_stream_name(self.normalize_symbol(s), channel) for s in symbols)
@@ -127,11 +150,9 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
 
     # interfaz ExchangeAdapter (no aplica envío por WS)
     async def place_order(self, *args, **kwargs):
-        if self.rest:
-            return await self.rest.place_order(*args, **kwargs)
-        raise NotImplementedError
+        self._ensure_rest()
+        return await self.rest.place_order(*args, **kwargs)
 
     async def cancel_order(self, order_id: str, *args, **kwargs):
-        if self.rest:
-            return await self.rest.cancel_order(order_id, *args, **kwargs)
-        raise NotImplementedError
+        self._ensure_rest()
+        return await self.rest.cancel_order(order_id, *args, **kwargs)
