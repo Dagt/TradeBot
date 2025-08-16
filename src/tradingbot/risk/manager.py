@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from tradingbot.utils.metrics import RISK_EVENTS
 
 
 @dataclass
@@ -20,10 +21,12 @@ class RiskManager:
         max_pos: float = 1.0,
         stop_loss_pct: float = 0.0,
         max_drawdown_pct: float = 0.0,
+        vol_target: float = 0.0,
     ):
         self.max_pos = max_pos
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
+        self.vol_target = abs(vol_target)
         self.enabled = True
         self.pos = Position()
         # Variables internas para cálculo de SL/DD
@@ -58,6 +61,42 @@ class RiskManager:
         """
         target = self.max_pos * (1 if signal_side == "buy" else -1 if signal_side == "sell" else 0)
         return target - self.pos.qty
+
+    def size_with_volatility(self, symbol_vol: float) -> float:
+        """Dimensiona la posición basada en un objetivo de volatilidad.
+
+        Si ``vol_target`` o ``symbol_vol`` no son positivos, no se ajusta tamaño.
+        Devuelve el delta necesario para alcanzar el objetivo.
+        """
+        if self.vol_target <= 0 or symbol_vol <= 0:
+            return 0.0
+        scale = self.vol_target / symbol_vol
+        target_abs = min(self.max_pos, self.max_pos * scale)
+        sign = 1 if self.pos.qty >= 0 else -1
+        target = sign * target_abs
+        RISK_EVENTS.labels(event_type="volatility_sizing").inc()
+        return target - self.pos.qty
+
+    def update_correlation(
+        self, symbol_pairs: dict[tuple[str, str], float], threshold: float
+    ) -> list[tuple[str, str]]:
+        """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
+
+        Devuelve la lista de pares que excedieron ``threshold``.
+        """
+        exceeded: list[tuple[str, str]] = [
+            pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
+        ]
+        if exceeded:
+            self.max_pos *= 0.5
+            RISK_EVENTS.labels(event_type="correlation_limit").inc()
+        return exceeded
+
+    def kill_switch(self, reason: str) -> None:
+        """Deshabilita completamente el gestor de riesgo."""
+        self.enabled = False
+        self.last_kill_reason = reason
+        RISK_EVENTS.labels(event_type="kill_switch").inc()
 
     def check_limits(self, price: float) -> bool:
         """Verifica stop loss y drawdown.
