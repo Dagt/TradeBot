@@ -1,7 +1,7 @@
 csv_paths:
   BTC/USDT: data/examples/btcusdt_1m.csv
 strategies:
-  - [breakout_atr, BTC/USDT]
+  - [breakout_vol, BTC/USDT]
 latency: 1
 window: 120
 mlflow:

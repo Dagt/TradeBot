@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS market.fills (
   id bigserial PRIMARY KEY,
   ts timestamptz NOT NULL DEFAULT now(),
   venue text NOT NULL,             -- ej: binance_spot_testnet / binance_futures_um_testnet
-  strategy text NOT NULL,          -- ej: breakout_atr_spot
+  strategy text NOT NULL,          -- ej: breakout_vol_spot
   symbol text NOT NULL,            -- BTC/USDT
   side text NOT NULL,              -- buy/sell
   type text NOT NULL,              -- market/limit

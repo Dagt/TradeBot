@@ -7,7 +7,7 @@ import pandas as pd
 from .runner import BarAggregator
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies.breakout_vol import BreakoutVol
 from ..risk.manager import RiskManager
 from ..execution.balance import fetch_spot_balances, cap_qty_by_balance_spot
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -49,7 +49,7 @@ async def run_live_binance_spot_testnet_multi(
     """
     Spot TESTNET multi-símbolo:
       - WS multi-stream -> barras 1m
-      - BreakoutATR + Risk por símbolo
+      - BreakoutVol + Risk por símbolo
       - Hard/Soft caps + auto-close
       - Rehidratación de posiciones + PnL
       - OCO simulado (SL/TP) + cooldown post-SL
@@ -61,7 +61,7 @@ async def run_live_binance_spot_testnet_multi(
     exec_adapter = BinanceSpotAdapter()
 
     aggs = {s: BarAggregator() for s in symbols}
-    strats = {s: BreakoutATR() for s in symbols}
+    strats = {s: BreakoutVol() for s in symbols}
     risks = {s: RiskManager(max_pos=1.0) for s in symbols}
 
     guard = PortfolioGuard(GuardConfig(
@@ -205,7 +205,7 @@ async def run_live_binance_spot_testnet_multi(
                 try:
                     # Orden + Fill
                     insert_order(engine,
-                                 strategy="breakout_atr_spot",
+                                 strategy="breakout_vol_spot",
                                  exchange=venue,
                                  symbol=sym,
                                  side="sell",
@@ -216,7 +216,7 @@ async def run_live_binance_spot_testnet_multi(
                                  ext_order_id=str(resp.get("ext_order_id") or None),
                                  notes=resp)
                     insert_fill(engine,
-                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_vol_spot",
                         symbol=sym, side="sell", type_="market",
                         qty=float(qty_to_close),
                         price=float(resp.get("fill_price") or now_price),
@@ -367,7 +367,7 @@ async def run_live_binance_spot_testnet_multi(
                             if engine is not None:
                                 try:
                                     insert_order(engine,
-                                                 strategy="breakout_atr_spot",
+                                                 strategy="breakout_vol_spot",
                                                  exchange=venue,
                                                  symbol=sym,
                                                  side="sell",
@@ -378,7 +378,7 @@ async def run_live_binance_spot_testnet_multi(
                                                  ext_order_id=str(resp.get("ext_order_id") or None),
                                                  notes=resp)
                                     insert_fill(engine,
-                                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_vol_spot",
                                         symbol=sym, side="sell", type_="market",
                                         qty=float(capped_qty_close),
                                         price=float(resp.get("fill_price") or closed.c),
@@ -441,7 +441,7 @@ async def run_live_binance_spot_testnet_multi(
             if engine is not None:
                 try:
                     insert_order(engine,
-                                 strategy="breakout_atr_spot",
+                                 strategy="breakout_vol_spot",
                                  exchange=venue,
                                  symbol=sym,
                                  side=side,
@@ -452,7 +452,7 @@ async def run_live_binance_spot_testnet_multi(
                                  ext_order_id=str(resp.get("ext_order_id") or None),
                                  notes=resp)
                     insert_fill(engine,
-                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_atr_spot",
+                        ts=datetime.now(timezone.utc), venue=venue, strategy="breakout_vol_spot",
                         symbol=sym, side=side, type_="market",
                         qty=float(capped_qty),
                         price=float(resp.get("fill_price") or closed.c),

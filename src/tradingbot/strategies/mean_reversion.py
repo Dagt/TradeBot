@@ -3,12 +3,23 @@ from .base import Strategy, Signal
 from ..data.features import rsi, order_flow_imbalance
 
 class MeanReversion(Strategy):
+    """RSI mean-reversion strategy.
+
+    Parameters are supplied via ``**kwargs`` to allow dynamic
+    construction from configuration sources.
+
+    Args:
+        rsi_n (int): Window for RSI calculation. Default ``14``.
+        upper (float): RSI level considered overbought. Default ``70``.
+        lower (float): RSI level considered oversold. Default ``30``.
+    """
+
     name = "mean_reversion"
 
-    def __init__(self, rsi_n: int = 14, upper: float = 70.0, lower: float = 30.0):
-        self.rsi_n = rsi_n
-        self.upper = upper
-        self.lower = lower
+    def __init__(self, **kwargs):
+        self.rsi_n = int(kwargs.get("rsi_n", 14))
+        self.upper = float(kwargs.get("upper", 70.0))
+        self.lower = float(kwargs.get("lower", 30.0))
 
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]

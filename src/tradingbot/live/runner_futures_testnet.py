@@ -11,7 +11,7 @@ import pandas as pd
 from .runner import BarAggregator  # reutilizamos el agregador 1m
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..adapters.binance_futures import BinanceFuturesAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies.breakout_vol import BreakoutVol
 from ..risk.manager import RiskManager
 from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter  # para equity mark si no quieres consultar mark price
@@ -50,7 +50,7 @@ async def run_live_binance_futures_testnet(
     """
     ws = BinanceWSAdapter()
     agg = BarAggregator()
-    strat = BreakoutATR()
+    strat = BreakoutVol()
     risk = RiskManager(max_pos=1.0)
     state = LiveState()
     guard = PortfolioGuard(GuardConfig(

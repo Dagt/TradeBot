@@ -3,7 +3,7 @@ import pytest
 
 from tradingbot.bus import EventBus
 from tradingbot.data.funding import poll_funding
-from tradingbot.strategies.cash_and_carry import CashAndCarry, CashCarryConfig
+from tradingbot.strategies.cash_and_carry import CashAndCarry
 
 
 class DummyAdapter:
@@ -32,8 +32,7 @@ async def test_poll_funding_publishes_events():
 
 
 def test_cash_and_carry_strategy():
-    cfg = CashCarryConfig(symbol="BTCUSDT", threshold=0.0001)
-    strat = CashAndCarry(cfg)
+    strat = CashAndCarry(symbol="BTCUSDT", threshold=0.0001)
     sig_long = strat.on_bar({"spot": 100.0, "perp": 101.0, "funding": 0.001})
     assert sig_long and sig_long.side == "long"
     sig_short = strat.on_bar({"spot": 100.0, "perp": 99.0, "funding": -0.001})

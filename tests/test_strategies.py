@@ -1,16 +1,23 @@
 import pandas as pd
-from tradingbot.strategies.breakout_atr import BreakoutATR
+from tradingbot.strategies.breakout_vol import BreakoutVol
+from tradingbot.strategies.triangular_arb import TriangularArb
 from tradingbot.strategies.order_flow import OrderFlow
 
 
-def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0)
+def test_breakout_vol_signals(breakout_df_buy, breakout_df_sell):
+    strat = BreakoutVol(ema_n=2, atr_n=2, mult=1.0)
 
     sig_buy = strat.on_bar({"window": breakout_df_buy})
     assert sig_buy.side == "buy"
 
     sig_sell = strat.on_bar({"window": breakout_df_sell})
     assert sig_sell.side == "sell"
+
+
+def test_triangular_arb_signals():
+    strat = TriangularArb(threshold=0.01)
+    sig = strat.on_bar({"prices": {"bq": 10.0, "mq": 20.0, "mb": 1.8}})
+    assert sig and sig.side == "b->m"
 
 
 def test_order_flow_signals():

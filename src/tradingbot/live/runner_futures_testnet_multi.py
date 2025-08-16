@@ -7,7 +7,7 @@ import pandas as pd
 from .runner import BarAggregator
 from ..adapters.binance_futures_ws import BinanceFuturesWSAdapter
 from ..adapters.binance_futures import BinanceFuturesAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies.breakout_vol import BreakoutVol
 from ..risk.manager import RiskManager
 from ..execution.balance import fetch_futures_usdt_free, cap_qty_by_balance_futures
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -51,7 +51,7 @@ async def run_live_binance_futures_testnet_multi(
     """
     Futures UM TESTNET multi-símbolo:
       - WS multi-stream -> barras 1m
-      - BreakoutATR + Risk por símbolo
+      - BreakoutVol + Risk por símbolo
       - Hard/Soft caps + auto-close reduce-only
       - Rehidratación de posiciones + PnL
       - Stop-Loss / Take-Profit (OCO simulado) + cooldown post-stop
@@ -63,7 +63,7 @@ async def run_live_binance_futures_testnet_multi(
     exec_adapter = BinanceFuturesAdapter(leverage=leverage, testnet=True)
 
     aggs = {s: BarAggregator() for s in symbols}
-    strats = {s: BreakoutATR() for s in symbols}
+    strats = {s: BreakoutVol() for s in symbols}
     risks = {s: RiskManager(max_pos=1.0) for s in symbols}
 
     guard = PortfolioGuard(GuardConfig(
@@ -214,7 +214,7 @@ async def run_live_binance_futures_testnet_multi(
                     persist_after_order(
                         engine,
                         venue=venue,
-                        strategy="breakout_atr_futures",
+                        strategy="breakout_vol_futures",
                         symbol=sym,
                         side=close_side,
                         type_="market",
@@ -401,7 +401,7 @@ async def run_live_binance_futures_testnet_multi(
                                 persist_after_order(
                                     engine,
                                     venue=venue,
-                                    strategy="breakout_atr_futures",
+                                    strategy="breakout_vol_futures",
                                     symbol=sym,
                                     side=close_side,
                                     type_="market",
@@ -470,7 +470,7 @@ async def run_live_binance_futures_testnet_multi(
                     persist_after_order(
                         engine,
                         venue=venue,
-                        strategy="breakout_atr_futures",
+                        strategy="breakout_vol_futures",
                         symbol=sym,
                         side=side,
                         type_="market",

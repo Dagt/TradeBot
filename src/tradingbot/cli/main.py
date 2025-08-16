@@ -26,8 +26,8 @@ def backtest(
     data: str,
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option(
-        "breakout_atr",
-        help="Estrategia a usar, e.g. breakout_atr, momentum, order_flow",
+        "breakout_vol",
+        help="Estrategia a usar, e.g. breakout_vol, momentum, order_flow",
     ),
 ):
     """Backtest vectorizado simple desde CSV (columnas: timestamp, open, high, low, close, volume)"""
@@ -78,8 +78,8 @@ def run_csv_paper(
     data: str,
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option(
-        "breakout_atr",
-        help="Estrategia, e.g. breakout_atr, order_flow",
+        "breakout_vol",
+        help="Estrategia, e.g. breakout_vol, order_flow",
     ),
     sleep_ms: int = 50,
     max_bars: int = 0,
@@ -289,7 +289,7 @@ def run_live_binance_spot_testnet_cli(
     persist_pg: bool = False
 ):
     """
-    Ejecuta la estrategia BreakoutATR en Binance SPOT Testnet con validación de tamaños.
+    Ejecuta la estrategia BreakoutVol en Binance SPOT Testnet con validación de tamaños.
     """
     setup_logging()
     import asyncio

@@ -9,7 +9,7 @@ from ..execution.normalize import adjust_order
 from .runner import BarAggregator  # el mismo agregador de 1m
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies.breakout_vol import BreakoutVol
 from ..risk.manager import RiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -35,12 +35,12 @@ async def run_live_binance_spot_testnet(
     soft_cap_grace_sec: int = 30
 ):
     """
-    WS spot testnet -> barras 1m -> BreakoutATR -> Risk -> BinanceSpotAdapter (orden real testnet)
+    WS spot testnet -> barras 1m -> BreakoutVol -> Risk -> BinanceSpotAdapter (orden real testnet)
     """
     ws = BinanceSpotWSAdapter()
     exec_adapter = BinanceSpotAdapter()
     agg = BarAggregator()
-    strat = BreakoutATR()
+    strat = BreakoutVol()
     risk = RiskManager(max_pos=1.0)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
@@ -195,7 +195,7 @@ async def run_live_binance_spot_testnet(
         persist_after_order(
             engine,
             venue="binance_spot_testnet",
-            strategy="breakout_atr_spot",
+            strategy="breakout_vol_spot",
             symbol=symbol,
             side=side,
             type_="market",

@@ -11,7 +11,7 @@ import pandas as pd
 
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies.breakout_vol import BreakoutVol
 from ..risk.manager import RiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -95,12 +95,12 @@ async def run_live_binance(
 ):
     """
     Pipeline en vivo:
-      WS Binance -> agregador 1m -> BreakoutATR -> Risk -> PaperAdapter
+      WS Binance -> agregador 1m -> BreakoutVol -> Risk -> PaperAdapter
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     risk = RiskManager(max_pos=1.0)
-    strat = BreakoutATR()
+    strat = BreakoutVol()
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,

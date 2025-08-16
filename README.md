@@ -34,7 +34,7 @@ tradingbot-mvp/
 │  ├─ strategies/
 │  │  ├─ __init__.py
 │  │  ├─ base.py
-│  │  └─ breakout_atr.py
+│  │  └─ breakout_vol.py
 │  ├─ risk/
 │  │  ├─ __init__.py
 │  │  └─ manager.py
@@ -90,7 +90,7 @@ Puedes definir configuraciones complejas en un archivo YAML y ejecutarlas con Hy
 csv_paths:
   BTC/USDT: data/examples/btcusdt_1m.csv
 strategies:
-  - [breakout_atr, BTC/USDT]
+  - [breakout_vol, BTC/USDT]
 latency: 1
 window: 120
 mlflow:
@@ -116,7 +116,7 @@ from tradingbot.backtest.event_engine import optimize_strategy_optuna
 study = optimize_strategy_optuna(
     csv_path="data/examples/btcusdt_1m.csv",
     symbol="BTC/USDT",
-    strategy_name="breakout_atr",
+    strategy_name="breakout_vol",
     param_space={
         "ema_n": {"type": "int", "low": 10, "high": 40},
         "atr_n": {"type": "int", "low": 5, "high": 30},

@@ -2,13 +2,25 @@ import pandas as pd
 from .base import Strategy, Signal
 from ..data.features import keltner_channels
 
-class BreakoutATR(Strategy):
-    name = "breakout_atr"
+class BreakoutVol(Strategy):
+    """Volatility breakout strategy using Keltner Channels.
 
-    def __init__(self, ema_n: int = 20, atr_n: int = 14, mult: float = 1.5):
-        self.ema_n = ema_n
-        self.atr_n = atr_n
-        self.mult = mult
+    Parameters are provided via ``**kwargs`` making the class easy to
+    configure programmatically.
+
+    Args:
+        ema_n (int): Period for the EMA used in the middle of the
+            Keltner Channel. Default ``20``.
+        atr_n (int): Period for the ATR. Default ``14``.
+        mult (float): Multiplier for the ATR band width. Default ``1.5``.
+    """
+
+    name = "breakout_vol"
+
+    def __init__(self, **kwargs):
+        self.ema_n = int(kwargs.get("ema_n", 20))
+        self.atr_n = int(kwargs.get("atr_n", 14))
+        self.mult = float(kwargs.get("mult", 1.5))
 
     def on_bar(self, bar: dict) -> Signal | None:
         # bar should include a small rolling window (as dict of lists) or a pandas row with context
