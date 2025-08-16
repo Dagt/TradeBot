@@ -130,12 +130,12 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
-        raise NotImplementedError("WS adapter no soporta fetch_funding")
+        raise NotImplementedError("Funding no disponible para mercados Spot")
 
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)
-        raise NotImplementedError("WS adapter no soporta fetch_oi")
+        raise NotImplementedError("Open interest no disponible para Spot")
 
     async def place_order(self, *args, **kwargs) -> dict:
         if self.rest:
