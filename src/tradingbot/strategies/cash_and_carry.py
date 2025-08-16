@@ -16,7 +16,14 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class CashCarryConfig:
-    symbol: str
+    """Configuration parameters for :class:`CashAndCarry`.
+
+    The dataclass is kept for optional persistence features, but the strategy
+    itself accepts parameters via ``**kwargs`` and will build this config
+    internally.
+    """
+
+    symbol: str = ""
     spot_exchange: str = "spot"
     perp_exchange: str = "perp"
     threshold: float = 0.0  # minimum basis to act
@@ -25,19 +32,30 @@ class CashCarryConfig:
 class CashAndCarry(Strategy):
     """Simple cash-and-carry strategy using spot vs perpetual futures funding.
 
-    The strategy looks at the price basis between spot and perpetual markets
-    together with the current funding rate.  When funding is positive and the
-    perp trades at a premium greater than ``threshold`` the strategy issues a
-    ``long`` signal (long spot/short perp).  When funding is negative and the
-    perp trades at a discount beyond the threshold a ``short`` signal is
-    produced (short spot/long perp).
+    Parameters are supplied via ``**kwargs`` and mapped to
+    :class:`CashCarryConfig`.  Only ``threshold`` is relevant for the basic
+    strategy logic, while the rest of the fields are used for optional signal
+    persistence.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Minimum basis required to trigger a trade, by default ``0.0``.
+    symbol, spot_exchange, perp_exchange, persist_pg : optional
+        Passed through to :class:`CashCarryConfig` for persistence.
     """
 
     name = "cash_and_carry"
 
-    def __init__(self, cfg: CashCarryConfig):
-        self.cfg = cfg
-        self.engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
+    def __init__(self, cfg: CashCarryConfig | None = None, **kwargs):
+        """Crear la estrategia.
+
+        Puede pasarse una instancia de :class:`CashCarryConfig` como primer
+        argumento o, alternativamente, los parámetros vía ``**kwargs``.
+        """
+
+        self.cfg = cfg or CashCarryConfig(**kwargs)
+        self.engine = get_engine() if (self.cfg.persist_pg and _CAN_PG) else None
 
     def on_bar(self, bar: dict) -> Optional[Signal]:
         spot = bar.get("spot")

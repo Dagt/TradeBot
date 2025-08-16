@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Dict
 
+from .base import Strategy, Signal
+
 @dataclass
 class TriRoute:
     base: str   # p.ej. "BTC"
@@ -99,3 +101,33 @@ def compute_qtys_for_route(
         # BASE -> QUOTE (SELL BASE/QUOTE)
         quote_out = base_qty * bq * f * buf
         return {"base_qty": base_qty, "mid_qty": mid_qty, "quote_out": quote_out}
+
+
+class TriangularArb(Strategy):
+    """Naive triangular arbitrage strategy based on three market prices.
+
+    The strategy expects the incoming ``bar`` to contain a ``prices`` mapping
+    with the keys ``bq`` (base/quote), ``mq`` (mid/quote) and ``mb`` (mid/base).
+    ``taker_fee_bps`` and ``buffer_bps`` can be supplied via ``**kwargs`` to
+    account for trading fees and a safety buffer.
+
+    A ``buy`` signal represents traversing the markets in the ``b->m``
+    direction, while ``sell`` corresponds to ``m->b``.
+    """
+
+    name = "triangular_arb"
+
+    def __init__(self, **kwargs):
+        self.taker_fee_bps = kwargs.get("taker_fee_bps", 0.0)
+        self.buffer_bps = kwargs.get("buffer_bps", 0.0)
+        self.min_edge = kwargs.get("min_edge", 0.0)
+
+    def on_bar(self, bar: Dict[str, Dict[str, float]]) -> Optional[Signal]:
+        prices = bar.get("prices") if isinstance(bar, dict) else None
+        if not prices:
+            return None
+        edge = compute_edge(prices, self.taker_fee_bps, self.buffer_bps)
+        if edge and edge.net > self.min_edge:
+            side = "buy" if edge.direction == "b->m" else "sell"
+            return Signal(side, edge.net)
+        return Signal("flat", 0.0)

@@ -3,11 +3,25 @@ from .base import Strategy, Signal
 from ..data.features import rsi, order_flow_imbalance
 
 class Momentum(Strategy):
+    """Simple momentum strategy using the Relative Strength Index (RSI).
+
+    Parameters are provided via ``**kwargs`` so the class can be easily
+    instantiated from configuration dictionaries.
+
+    Parameters
+    ----------
+    rsi_n : int, optional
+        Lookback window for the RSI calculation, by default ``14``.
+    rsi_threshold : float, optional
+        Level above which a ``buy`` signal is produced (and mirrored for
+        ``sell``), by default ``60``.
+    """
+
     name = "momentum"
 
-    def __init__(self, rsi_n: int = 14, rsi_threshold: float = 60.0):
-        self.rsi_n = rsi_n
-        self.threshold = rsi_threshold
+    def __init__(self, **kwargs):
+        self.rsi_n = kwargs.get("rsi_n", 14)
+        self.threshold = kwargs.get("rsi_threshold", 60.0)
 
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
