@@ -1,38 +1,41 @@
-import numpy as np
+import sys
 import pandas as pd
-import pytest
+import pathlib
 
-vbt_local = pytest.importorskip("vectorbt")
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 
-from tradingbot.backtest.vectorbt_engine import walk_forward, optimize_vectorbt_optuna
-
-
-class MAStrategy:
-    @staticmethod
-    def signal(close, fast, slow):
-        fast_ma = vbt_local.MA.run(close, fast)
-        slow_ma = vbt_local.MA.run(close, slow)
-        entries = fast_ma.ma_crossed_above(slow_ma)
-        exits = fast_ma.ma_crossed_below(slow_ma)
-        return entries, exits
+from tradingbot.backtesting.engine import walk_forward_optimize
 
 
-def _make_data():
-    price = pd.Series(np.sin(np.linspace(0, 6, 60)) + 10)
-    return pd.DataFrame({"close": price})
+def test_walk_forward_optimize(tmp_path):
+    # Create simple increasing price data
+    n = 30
+    df = pd.DataFrame(
+        {
+            "close": [float(i) for i in range(1, n + 1)],
+            "high": [float(i) + 0.5 for i in range(1, n + 1)],
+            "low": [float(i) - 0.5 for i in range(1, n + 1)],
+            "volume": [100.0] * n,
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
 
+    params = [{"rsi_n": 2, "rsi_threshold": 55}, {"rsi_n": 2, "rsi_threshold": 65}]
 
-def test_walk_forward_basic():
-    data = _make_data()
-    params = {"fast": [2, 4], "slow": [8]}
-    res = walk_forward(data, MAStrategy, params, train_size=20, test_size=10)
-    assert not res.empty
-    assert {"sharpe_ratio", "max_drawdown", "total_return", "dsr"} <= set(res.columns)
-    assert res["dsr"].between(0, 1).all()
+    results = walk_forward_optimize(
+        str(csv_path),
+        "FOO/USDT",
+        "momentum",
+        params,
+        train_size=10,
+        test_size=5,
+    )
 
-
-def test_optimize_vectorbt_optuna():
-    data = _make_data()
-    space = {"fast": {"type": "int", "low": 2, "high": 4}, "slow": {"type": "int", "low": 8, "high": 8}}
-    study = optimize_vectorbt_optuna(data, MAStrategy, space, n_trials=2)
-    assert len(study.trials) == 2
+    assert len(results) == 4
+    for i, rec in enumerate(results):
+        assert rec["split"] == i
+        assert "train_equity" in rec and "test_equity" in rec
+        assert rec["params"] is not None

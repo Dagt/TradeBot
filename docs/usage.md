@@ -95,3 +95,37 @@ Una vez levantados los servicios:
 * Prometheus: <http://localhost:9090>
 * Grafana: <http://localhost:3000> (usuario `admin`, contraseña `admin`)
 
+## Optimización walk-forward
+
+El módulo de backtesting incluye una función de optimización **walk-forward**
+que realiza una búsqueda en rejilla sobre distintos parámetros y evalúa cada
+combinación en ventanas secuenciales de entrenamiento/prueba.  Se registran los
+resultados de cada split en el log y la función retorna un listado con los
+detalles:
+
+```python
+from tradingbot.backtesting.engine import walk_forward_optimize
+
+param_grid = [
+    {"rsi_n": 10, "rsi_threshold": 55},
+    {"rsi_n": 14, "rsi_threshold": 60},
+]
+
+results = walk_forward_optimize(
+    "data/examples/btcusdt_1m.csv",
+    "BTC/USDT",
+    "momentum",
+    param_grid,
+    train_size=1000,
+    test_size=250,
+)
+print(results)
+```
+
+## Interfaz mínima de monitoreo
+
+`monitoring/panel.py` levanta una aplicación FastAPI que expone las métricas en
+`/metrics` y el estado de las estrategias en `/strategies/status`.  Al montar el
+directorio estático se incluye un `index.html` sencillo que consulta ambos
+endpoints para mostrar un resumen rápido.
+
