@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from ..types import Tick, OrderBook, Bar
+from ..types import Tick, Bar
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 
@@ -45,26 +45,17 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
     storage = _get_storage(backend)
     engine = storage.get_engine()
     async for d in adapter.stream_orderbook(symbol, depth):
-        ob = OrderBook(
-            ts=d.get("ts", datetime.now(timezone.utc)),
-            exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
-            bid_px=d.get("bid_px") or [],
-            bid_qty=d.get("bid_qty") or [],
-            ask_px=d.get("ask_px") or [],
-            ask_qty=d.get("ask_qty") or [],
-        )
+        data = {
+            "ts": d.get("ts", datetime.now(timezone.utc)),
+            "exchange": getattr(adapter, "name", "unknown"),
+            "symbol": symbol,
+            "bid_px": d.get("bid_px") or [],
+            "bid_qty": d.get("bid_qty") or [],
+            "ask_px": d.get("ask_px") or [],
+            "ask_qty": d.get("ask_qty") or [],
+        }
         try:
-            storage.insert_orderbook(
-                engine,
-                ts=ob.ts,
-                exchange=ob.exchange,
-                symbol=ob.symbol,
-                bid_px=ob.bid_px,
-                bid_qty=ob.bid_qty,
-                ask_px=ob.ask_px,
-                ask_qty=ob.ask_qty,
-            )
+            storage.insert_orderbook(engine, **data)
         except Exception as exc:  # pragma: no cover - logging only
             log.debug("Orderbook insert failed: %s", exc)
 

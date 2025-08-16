@@ -50,7 +50,34 @@ class ExchangeAdapter(ABC):
         return {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
 
     def normalize_order_book(self, symbol, ts, bids, asks) -> dict:
-        return {"symbol": symbol, "ts": ts, "bids": bids, "asks": asks}
+        """Return a flattened order book snapshot.
+
+        Parameters
+        ----------
+        symbol: str
+            Market symbol of the snapshot.
+        ts: datetime
+            Timestamp of the book.
+        bids, asks: list[list[float, float]]
+            Price/quantity tuples as provided by the venue.
+
+        The result splits the price and quantity levels into separate lists
+        so downstream code can persist them without additional conversions.
+        """
+
+        bid_px = [float(p) for p, _ in bids]
+        bid_qty = [float(q) for _, q in bids]
+        ask_px = [float(p) for p, _ in asks]
+        ask_qty = [float(q) for _, q in asks]
+
+        return {
+            "symbol": symbol,
+            "ts": ts,
+            "bid_px": bid_px,
+            "bid_qty": bid_qty,
+            "ask_px": ask_px,
+            "ask_qty": ask_qty,
+        }
 
     # ------------------------------------------------------------------
     # Abstract API

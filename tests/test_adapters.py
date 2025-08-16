@@ -85,7 +85,8 @@ async def test_binance_spot_rest_streams():
     gen2 = adapter.stream_order_book("BTC/USDT")
     book = await gen2.__anext__()
     await gen2.aclose()
-    assert book["bids"][0][0] == 1.0
+    assert book["bid_px"][0] == 1.0
+    assert book["bid_qty"][0] == 2.0
 
 
 @pytest.mark.asyncio
