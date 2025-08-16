@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: tradingbot-mvp
+Version: 0.1.0
+Summary: MVP de bot de trading intradía/scalping/arbitraje (local)
+Author-email: Tu Nombre <you@example.com>
+Requires-Python: >=3.11

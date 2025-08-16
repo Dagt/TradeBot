@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  questdb:
+    image: questdb/questdb:latest
+    ports:
+      - "9000:9000"   # REST API
+      - "8812:8812"   # PostgreSQL wire protocol
+    volumes:
+      - questdb-data:/root/.questdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+volumes:
+  questdb-data:

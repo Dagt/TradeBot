@@ -1,0 +1,71 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "panels": [
+    {
+      "type": "graph",
+      "title": "API latency (95th)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_request_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "95th percentile"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 1
+    },
+    {
+      "type": "graph",
+      "title": "WS failures",
+      "targets": [
+        {
+          "expr": "increase(ws_failures_total[5m])",
+          "legendFormat": "{{adapter}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 2
+    },
+    {
+      "type": "graph",
+      "title": "Order fills",
+      "targets": [
+        {
+          "expr": "increase(order_fills_total[5m])",
+          "legendFormat": "{{symbol}} {{side}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 3
+    },
+    {
+      "type": "graph",
+      "title": "Slippage (bps 95th)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(order_slippage_bps_bucket[5m])) by (le))",
+          "legendFormat": "95th percentile"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 4
+    },
+    {
+      "type": "graph",
+      "title": "Risk events",
+      "targets": [
+        {
+          "expr": "increase(risk_events_total[5m])",
+          "legendFormat": "{{event_type}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 5
+    }
+  ],
+  "schemaVersion": 16,
+  "title": "TradeBot Metrics",
+  "version": 2
+}

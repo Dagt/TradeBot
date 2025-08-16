@@ -1,0 +1,74 @@
+version: "3.9"
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - tsdb-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    ports:
+      - "8081:8080"
+    depends_on:
+      - timescaledb
+
+  api:
+    build: .
+    command: uvicorn tradingbot.apps.api.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./src:/app/src
+    ports:
+      - "8000:8000"
+    depends_on:
+      - timescaledb
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+  questdb:
+    image: questdb/questdb:latest
+    ports:
+      - "9000:9000"   # REST API
+      - "8812:8812"   # PostgreSQL wire protocol
+    volumes:
+      - questdb-data:/root/.questdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tsdb-data:
+  questdb-data:
