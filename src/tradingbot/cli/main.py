@@ -256,6 +256,51 @@ def cross_arb(
     asyncio.run(run_cross_exchange_arbitrage(cfg))
 
 
+@app.command("run-cross-arb")
+def run_cross_arb(
+    symbol: str = typer.Argument("BTC/USDT", help="Símbolo a arbitrar"),
+    spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
+    perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
+    threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
+    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
+) -> None:
+    """Ejecuta el runner de arbitraje spot/perp con ``ExecutionRouter``."""
+
+    setup_logging()
+    from ..adapters import (
+        BinanceFuturesAdapter,
+        BinanceSpotAdapter,
+        BybitFuturesAdapter,
+        BybitSpotAdapter,
+        OKXFuturesAdapter,
+        OKXSpotAdapter,
+    )
+    from ..strategies.cross_exchange_arbitrage import CrossArbConfig
+    from ..live.runner_cross_exchange import run_cross_exchange
+
+    adapters = {
+        "binance_spot": BinanceSpotAdapter,
+        "binance_futures": BinanceFuturesAdapter,
+        "bybit_spot": BybitSpotAdapter,
+        "bybit_futures": BybitFuturesAdapter,
+        "okx_spot": OKXSpotAdapter,
+        "okx_futures": OKXFuturesAdapter,
+    }
+
+    if spot not in adapters or perp not in adapters:
+        choices = ", ".join(sorted(adapters))
+        raise typer.BadParameter(f"Adapters válidos: {choices}")
+
+    cfg = CrossArbConfig(
+        symbol=symbol,
+        spot=adapters[spot](),
+        perp=adapters[perp](),
+        threshold=threshold,
+        notional=notional,
+    )
+    asyncio.run(run_cross_exchange(cfg))
+
+
 def main() -> None:
     """Entry point used by ``python -m tradingbot.cli``."""
 
