@@ -193,7 +193,14 @@ class BinanceSpotAdapter(ExchangeAdapter):
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado en spot")
-        return await self._request(method, sym)
+        data = await self._request(method, sym)
+        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts /= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
+        return {"ts": ts_dt, "rate": rate}
 
     async def fetch_oi(self, symbol: str):
         """Fetch futures open interest for the given spot ``symbol``.
