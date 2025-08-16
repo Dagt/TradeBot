@@ -99,6 +99,30 @@
       ],
       "datasource": "Prometheus",
       "id": 8
+    },
+    {
+      "type": "graph",
+      "title": "E2E latency (95th)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(e2e_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "95th percentile"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 9
+    },
+    {
+      "type": "stat",
+      "title": "Strategy states",
+      "targets": [
+        {
+          "expr": "strategy_state",
+          "legendFormat": "{{strategy}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 10
     }
   ],
   "schemaVersion": 16,

@@ -9,6 +9,7 @@ from tradingbot.utils.metrics import (
     ORDER_LATENCY,
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
+    WS_FAILURES,
 )
 
 # Trading metrics
@@ -23,10 +24,22 @@ MARKET_LATENCY = Histogram(
     "Latency of market data processing in seconds",
 )
 
+# End-to-end latency metrics
+E2E_LATENCY = Histogram(
+    "e2e_latency_seconds",
+    "End-to-end order processing latency in seconds",
+)
+
 # System metrics
 SYSTEM_DISCONNECTS = Counter(
     "system_disconnections_total",
     "Total number of system disconnections",
+)
+
+STRATEGY_STATE = Gauge(
+    "strategy_state",
+    "Current state of strategies (0=stopped,1=running,2=error)",
+    ["strategy"],
 )
 
 router = APIRouter()
@@ -91,6 +104,34 @@ def metrics_summary() -> dict:
     ]
     avg_ratio = sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
 
+    # Compute average end-to-end latency
+    e2e_samples = [
+        sample
+        for metric in E2E_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
+    e2e_count = sum(
+        s.value for s in e2e_samples if s.name.endswith("_count")
+    )
+    avg_e2e = e2e_sum / e2e_count if e2e_count else 0.0
+
+    # Aggregate websocket failures across adapters
+    ws_failures_total = sum(
+        sample.value
+        for metric in WS_FAILURES.collect()
+        for sample in metric.samples
+        if sample.name.endswith("_total")
+    )
+
+    # Capture current strategy states
+    strategy_states = {
+        sample.labels["strategy"]: sample.value
+        for metric in STRATEGY_STATE.collect()
+        for sample in metric.samples
+        if sample.name == "strategy_state"
+    }
+
     return {
         "pnl": TRADING_PNL._value.get(),
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
@@ -100,4 +141,7 @@ def metrics_summary() -> dict:
         "avg_slippage_bps": avg_slippage,
         "avg_order_latency_seconds": avg_latency,
         "avg_maker_taker_ratio": avg_ratio,
+        "avg_e2e_latency_seconds": avg_e2e,
+        "ws_failures": ws_failures_total,
+        "strategy_states": strategy_states,
     }

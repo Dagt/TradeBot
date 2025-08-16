@@ -37,3 +37,10 @@ Para el stack completo (API, TimescaleDB, QuestDB, Prometheus y Grafana):
 
 Los archivos de configuración y esquemas se encuentran en `sql/` y
 `monitoring/`.
+
+## Dashboards de Grafana
+Los dashboards listos para usar están en `monitoring/grafana/dashboards/`.
+Al ejecutar `./bin/start_stack.sh` se provisionan automáticamente.
+Para una instancia de Grafana existente copia `tradebot.json` al
+directorio de dashboards (`/var/lib/grafana/dashboards`) y `dashboard.yml`
+al directorio de provisioning (`/etc/grafana/provisioning/dashboards/`).
