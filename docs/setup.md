@@ -17,6 +17,21 @@ pytest
 ```
 El módulo de análisis ahora forma parte del paquete `tradingbot` y se importa como `tradingbot.analysis`.
 
+## Descarga de datos
+Puedes descargar históricos de barras, trades o snapshots de libro L2 con
+`bin/download_history.py`.  Los datos se normalizan y pueden guardarse en
+archivos CSV dentro de `db/` o directamente en TimescaleDB/QuestDB:
+
+```bash
+# Descargar trades a CSV
+./bin/download_history.py trades binance BTC/USDT 2024-01-01 2024-01-02 --backend csv
+
+# Guardar snapshots L2 en TimescaleDB
+./bin/download_history.py l2 binance BTC/USDT --snapshots 5 --backend timescale
+```
+
+La persistencia se realiza mediante utilidades de `tradingbot.data.ingestion`.
+
 ## Servicios con Docker
 Puedes levantar únicamente las bases de datos con los scripts del
 repositorio:
