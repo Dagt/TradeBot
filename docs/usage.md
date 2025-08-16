@@ -35,3 +35,18 @@ POST /strategies/{name}/stop
 GET  /strategies/status
 ```
 
+## Panel y monitoreo
+
+El repositorio incluye un `docker-compose.yml` que levanta la API junto con
+TimescaleDB, Prometheus y Grafana para visualización.
+
+```bash
+docker compose up
+```
+
+Una vez levantados los servicios:
+
+* API y dashboard estático: <http://localhost:8000> (`/metrics` expone métricas de Prometheus)
+* Prometheus: <http://localhost:9090>
+* Grafana: <http://localhost:3000> (usuario `admin`, contraseña `admin`)
+
