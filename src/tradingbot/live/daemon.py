@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict, deque
+from importlib import import_module
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Iterable
+from typing import Dict, List, Optional
 
 import pandas as pd
 from ..data.features import returns
@@ -18,6 +19,13 @@ from ..risk.portfolio_guard import PortfolioGuard
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 
 log = logging.getLogger(__name__)
+
+
+def _load_obj(path: str):
+    """Import and return an object given ``module.object`` path."""
+    module, _, name = path.rpartition(".")
+    mod = import_module(module)
+    return getattr(mod, name)
 
 
 class TradeBotDaemon:
@@ -45,7 +53,7 @@ class TradeBotDaemon:
     def __init__(
         self,
         adapters: Dict[str, ExchangeConnector],
-        strategies: Iterable,
+        strategies: Iterable | None,
         risk_manager: RiskManager,
         router: ExecutionRouter,
         symbols: Iterable[str],
@@ -53,17 +61,44 @@ class TradeBotDaemon:
         *,
         guard: PortfolioGuard | None = None,
         cross_arbs: Iterable[CrossArbConfig] | None = None,
+        strategy_paths: Iterable[str] | None = None,
+        arb_runners: Iterable[tuple[str, dict]] | None = None,
         balance_interval: float = 60.0,
     ) -> None:
         self.adapters = adapters
-        self.strategies = list(strategies)
+        self.strategies: List[object] = []
+        if strategies:
+            self.strategies.extend(strategies)
+        for path in strategy_paths or []:
+            try:
+                cls = _load_obj(path)
+                self.strategies.append(cls())
+            except Exception as exc:
+                log.warning("strategy_load_error", extra={"path": path, "err": str(exc)})
         self.risk = risk_manager
         self.router = router
+        # ensure router knows about all adapters (paper/live)
+        for name, ad in adapters.items():
+            self.router.adapters.setdefault(name, ad)
         self.symbols = list(symbols)
         self.accounts = accounts or adapters
         self.guard = guard
         self.cross_arbs = list(cross_arbs or [])
+        self.arb_runners: List[tuple] = []
+        for path, kwargs in arb_runners or []:
+            try:
+                fn = _load_obj(path)
+                self.arb_runners.append((fn, kwargs or {}))
+            except Exception as exc:
+                log.warning("runner_load_error", extra={"path": path, "err": str(exc)})
         self.balance_interval = balance_interval
+
+        # initialize position books for all venues/symbols
+        for venue in self.adapters:
+            for sym in self.symbols:
+                self.risk.update_position(venue, sym, 0.0)
+                if self.guard:
+                    self.guard.set_position(venue, sym, 0.0)
 
         # Event bus used across components
         self.bus = risk_manager.bus or EventBus()
@@ -79,6 +114,8 @@ class TradeBotDaemon:
         self.bus.subscribe("trade", self._dispatch_trade)
         self.bus.subscribe("signal", self._on_signal)
         self.bus.subscribe("risk:halted", self._on_halt)
+        self.bus.subscribe("control:halt", self._on_external_halt)
+        self.bus.subscribe("capital:update", self._on_capital_update)
 
     # ------------------------------------------------------------------
     async def refresh_balances(self) -> None:
@@ -277,6 +314,24 @@ class TradeBotDaemon:
             self.guard.update_position_on_order(symbol, order.side, order.qty, venue)
 
     # ------------------------------------------------------------------
+    async def _on_external_halt(self, evt: dict) -> None:
+        """Receive external kill-switch and propagate through bus."""
+        reason = evt.get("reason", "external")
+        await self.bus.publish("risk:halted", {"reason": reason})
+
+    # ------------------------------------------------------------------
+    async def _on_capital_update(self, evt: dict) -> None:
+        """Adjust portfolio guard limits from external controller."""
+        if not self.guard:
+            return
+        tot = evt.get("total_cap_usdt")
+        per = evt.get("per_symbol_cap_usdt")
+        if tot is not None:
+            self.guard.cfg.total_cap_usdt = float(tot)
+        if per is not None:
+            self.guard.cfg.per_symbol_cap_usdt = float(per)
+
+    # ------------------------------------------------------------------
     async def _on_halt(self, _evt: dict) -> None:
         """Stop the daemon when risk manager triggers a halt."""
         self._stop.set()
@@ -292,6 +347,10 @@ class TradeBotDaemon:
         # cross exchange arbitrage loops
         for cfg in self.cross_arbs:
             task = asyncio.create_task(self._cross_arbitrage(cfg))
+            self._tasks.append(task)
+        # dynamic arbitrage runners
+        for func, kwargs in self.arb_runners:
+            task = asyncio.create_task(func(**kwargs))
             self._tasks.append(task)
         # market data streams
         for name, adapter in self.adapters.items():
