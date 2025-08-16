@@ -162,3 +162,20 @@ class BinanceSpotAdapter(ExchangeAdapter):
                     "fill_price": None,
                     "raw": {"error": "reconcile_failed"},
                 }
+
+    async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+        raise NotImplementedError("Usa BinanceSpotWSAdapter para order book")
+
+    async def fetch_funding(self, symbol: str):
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchFundingRate", None)
+        if method is None:
+            raise NotImplementedError("Funding no soportado en spot")
+        return await self._request(method, sym)
+
+    async def fetch_oi(self, symbol: str):
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchOpenInterest", None)
+        if method:
+            return await self._request(method, sym)
+        raise NotImplementedError("Open interest no soportado")

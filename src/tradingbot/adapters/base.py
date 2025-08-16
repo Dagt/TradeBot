@@ -1,12 +1,84 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
+import asyncio
+import logging
+import time
+
 
 class ExchangeAdapter(ABC):
+    """Base class for all exchange adapters.
+
+    Provides basic request rate limiting, error logging and payload
+    normalization helpers so individual adapters can remain small.
+    """
+
     name: str
 
+    def __init__(self, rate_limit_per_sec: float = 5.0) -> None:
+        self._rate_limit_per_sec = rate_limit_per_sec
+        self._lock = asyncio.Lock()
+        self._last_request = 0.0
+        self.log = logging.getLogger(getattr(self, "name", self.__class__.__name__))
+
+    # ------------------------------------------------------------------
+    # Rate limiting helpers
+    async def _throttle(self) -> None:
+        """Ensure a minimum delay between REST requests."""
+        async with self._lock:
+            now = time.monotonic()
+            wait = 1.0 / self._rate_limit_per_sec - (now - self._last_request)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request = time.monotonic()
+
+    async def _request(self, fn, *args, **kwargs):
+        """Run ``fn`` in a thread respecting rate limits and logging errors."""
+        await self._throttle()
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        except Exception as e:  # pragma: no cover - logging only
+            self.log.error("%s request failed: %s", self.name, e)
+            raise
+
+    # ------------------------------------------------------------------
+    # Normalization helpers
+    def normalize_symbol(self, symbol: str) -> str:
+        """Default symbol normalisation removing separators."""
+        return symbol.replace("/", "")
+
+    def normalize_trade(self, symbol, ts, price, qty, side) -> dict:
+        return {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
+
+    def normalize_order_book(self, symbol, ts, bids, asks) -> dict:
+        return {"symbol": symbol, "ts": ts, "bids": bids, "asks": asks}
+
+    # ------------------------------------------------------------------
+    # Abstract API
     @abstractmethod
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Yield dicts with ts, price, qty, side."""
+
+    async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+        """Yield order book snapshots.
+
+        Default implementation raises ``NotImplementedError`` to keep the
+        interface optional for adapters that do not support order book data.
+        """
+        raise NotImplementedError
+
+    async def fetch_funding(self, symbol: str):
+        """Return funding information for ``symbol``.
+
+        Adapters may override this; by default it is unsupported.
+        """
+        raise NotImplementedError
+
+    async def fetch_oi(self, symbol: str):
+        """Return open interest information for ``symbol``.
+
+        Adapters may override this; by default it is unsupported.
+        """
+        raise NotImplementedError
 
     @abstractmethod
     async def place_order(
