@@ -116,6 +116,8 @@ Copia `.env.example` a `.env` y completa las claves según corresponda. Variable
 - `ENV`, `LOG_LEVEL`: parámetros de ejecución.
 - `SENTRY_DSN`: opcional para reportar errores a Sentry.
 
+Consulta [docs/security.md](docs/security.md) para buenas prácticas de gestión de claves API.
+
 ## Límites de consulta por exchange
 
 | Exchange | Límite aproximado | Notas |
