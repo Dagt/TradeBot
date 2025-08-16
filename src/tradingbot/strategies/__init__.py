@@ -6,6 +6,7 @@ from .arbitrage_triangular import TriangularArb
 from .cash_and_carry import CashAndCarry
 from .order_flow import OrderFlow
 from .triple_barrier import TripleBarrier
+from .ml_models import MLStrategy
 
 # Registry of available strategies, useful for CLI/backtests
 STRATEGIES = {
@@ -17,6 +18,7 @@ STRATEGIES = {
     CashAndCarry.name: CashAndCarry,
     OrderFlow.name: OrderFlow,
     TripleBarrier.name: TripleBarrier,
+    MLStrategy.name: MLStrategy,
 }
 
 __all__ = [
@@ -28,5 +30,6 @@ __all__ = [
     "CashAndCarry",
     "OrderFlow",
     "TripleBarrier",
+    "MLStrategy",
     "STRATEGIES",
 ]
