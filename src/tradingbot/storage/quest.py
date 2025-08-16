@@ -117,5 +117,40 @@ def insert_orderbook(
         )
 
 
-__all__ = ["get_engine", "insert_trade", "insert_orderbook"]
+def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
+                  l: float, c: float, v: float):
+    """Insert a 1-minute bar into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
+                VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
+                """
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=l, c=c, v=v),
+        )
+
+
+def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, interval_sec: int):
+    """Persist a funding rate record into QuestDB."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO funding (ts, exchange, symbol, rate, interval_sec)
+                VALUES (:ts, :exchange, :symbol, :rate, :interval_sec)
+                """
+            ),
+            dict(ts=ts, exchange=exchange, symbol=symbol, rate=rate, interval_sec=interval_sec),
+        )
+
+
+__all__ = [
+    "get_engine",
+    "insert_trade",
+    "insert_orderbook",
+    "insert_bar_1m",
+    "insert_funding",
+]
 
