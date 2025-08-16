@@ -15,6 +15,7 @@ Ejecuta las pruebas para verificar la instalación:
 ```bash
 pytest
 ```
+El módulo de análisis ahora forma parte del paquete `tradingbot` y se importa como `tradingbot.analysis`.
 
 ## Servicios con Docker
 Puedes levantar únicamente las bases de datos con los scripts del

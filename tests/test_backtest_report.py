@@ -7,7 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from analysis.backtest_report import generate_report
+from tradingbot.analysis.backtest_report import generate_report
 
 
 def test_generate_report_basic():
