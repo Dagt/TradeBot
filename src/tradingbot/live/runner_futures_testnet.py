@@ -98,7 +98,7 @@ async def run_live_binance_futures_testnet(
                                       kind=f"HALT_{reason}", message=f"FUTURES halt: {reason}", details={})
                 except Exception:
                     log.exception("FUTURES persist failure: risk_event HALT")
-            continue
+            break
 
         closed = agg.on_trade(ts, px, qty)
         if closed is None:
@@ -154,12 +154,27 @@ async def run_live_binance_futures_testnet(
             capped_qty = abs(trade_qty)
 
         try:
+            prev_rpnl = broker.state.realized_pnl
             resp = await exec_adapter.place_order(symbol, side, "market", capped_qty, mark_price=closed.c)
             state.fills += 1
             log.info("LIVE FILL (dry_run=%s) %s", dry_run, resp)
             # Actualizar RiskManager con el fill ejecutado
             risk.add_fill(side, capped_qty)
             guard.update_position_on_order(symbol, side, float(capped_qty))
+            delta_rpnl = broker.state.realized_pnl - prev_rpnl
+            if abs(delta_rpnl) > 0:
+                dguard.on_realized_delta(delta_rpnl)
+                dguard.on_mark(datetime.now(timezone.utc), equity_now=0.0)
+                halted, reason = dguard.check_halt()
+                if halted:
+                    log.error("[HALT FUTURES] motivo=%s", reason)
+                    if engine is not None:
+                        try:
+                            insert_risk_event(engine, venue="binance_futures_testnet", symbol=symbol,
+                                              kind=f"HALT_{reason}", message=f"FUTURES halt: {reason}", details={})
+                        except Exception:
+                            log.exception("FUTURES persist failure: risk_event HALT")
+                    break
         except Exception as e:
             log.error("Error enviando orden: %s", e)
 
