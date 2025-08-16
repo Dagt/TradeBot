@@ -1,5 +1,5 @@
 import pytest
-import pytest
+from datetime import datetime, timezone
 from tradingbot.adapters import (
     BybitSpotAdapter,
     BybitFuturesAdapter,
@@ -55,8 +55,8 @@ class _DummyFuturesRest:
     def fetchFundingRate(self, symbol):
         return {"rate": 0.01}
 
-    def fetchOpenInterest(self, symbol):
-        return {"oi": 100}
+    def fapiPublicGetOpenInterest(self, params):
+        return {"symbol": params.get("symbol"), "openInterest": "100", "time": 1000}
 
 
 class _DummyDelegate:
@@ -102,7 +102,8 @@ async def test_binance_futures_rest_fetch():
     funding = await adapter.fetch_funding("BTC/USDT")
     oi = await adapter.fetch_oi("BTC/USDT")
     assert funding["rate"] == 0.01
-    assert oi["oi"] == 100
+    assert oi["oi"] == 100.0
+    assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
 
 
 @pytest.mark.asyncio

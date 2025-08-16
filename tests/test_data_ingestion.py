@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from tradingbot.adapters.base import ExchangeAdapter
+from tradingbot.adapters.binance_futures import BinanceFuturesAdapter
 from tradingbot.bus import EventBus
 from tradingbot.data.ingestion import run_orderbook_stream, run_trades_stream
 from tradingbot.data import ingestion
@@ -179,13 +180,19 @@ async def test_poll_funding_inserts(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_poll_open_interest_inserts(monkeypatch):
-    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    ts_ms = 1_672_569_600_000  # 2023-01-01T00:00:00Z
 
-    class DummyAdapter:
-        name = "dummy"
+    class DummyRest:
+        def fapiPublicGetOpenInterest(self, params):
+            return {"symbol": params.get("symbol"), "openInterest": "123.0", "time": ts_ms}
 
-        async def fetch_oi(self, symbol: str):
-            return {"ts": ts, "oi": 123.0}
+    adapter = BinanceFuturesAdapter.__new__(BinanceFuturesAdapter)
+    adapter.rest = DummyRest()
+
+    async def _req(fn, *a, **k):
+        return fn(*a, **k)
+
+    adapter._request = _req
 
     inserted = []
 
@@ -199,7 +206,7 @@ async def test_poll_open_interest_inserts(monkeypatch):
     monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
 
     task = asyncio.create_task(
-        ingestion.poll_open_interest(DummyAdapter(), "BTC/USDT", interval=0)
+        ingestion.poll_open_interest(adapter, "BTC/USDT", interval=0)
     )
     await asyncio.sleep(0.01)
     task.cancel()
@@ -208,3 +215,4 @@ async def test_poll_open_interest_inserts(monkeypatch):
 
     assert inserted
     assert inserted[0]["oi"] == 123.0
+    assert inserted[0]["ts"] == datetime.fromtimestamp(ts_ms / 1000, timezone.utc)

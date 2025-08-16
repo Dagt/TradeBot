@@ -91,15 +91,26 @@ class OKXFuturesAdapter(ExchangeAdapter):
         return await self._request(method, sym)
 
     async def fetch_oi(self, symbol: str):
+        """Fetch open interest for the given contract ``symbol``.
+
+        OKX exposes the value through the ``/public/open-interest`` endpoint.
+        The result is a list under ``data`` with the current open interest and
+        timestamp in milliseconds.  We normalise this into
+        ``{"ts": datetime, "oi": float}``.
+        """
+
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchOpenInterest", None)
-        if method:
-            return await self._request(method, sym)
-        hist = getattr(self.rest, "fetchOpenInterestHistory", None)
-        if hist:
-            data = await self._request(hist, sym)
-            return data[-1] if isinstance(data, list) and data else data
-        raise NotImplementedError("Open interest not supported")
+        method = getattr(self.rest, "publicGetPublicOpenInterest", None)
+        if method is None:
+            raise NotImplementedError("Open interest not supported")
+
+        data = await self._request(method, {"instId": sym})
+        lst = data.get("data") or []
+        item = lst[0] if lst else {}
+        ts_ms = int(item.get("ts", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        oi = float(item.get("oi", 0.0))
+        return {"ts": ts, "oi": oi}
 
     async def place_order(self, symbol: str, side: str, type_: str, qty: float,
                           price: float | None = None) -> dict:

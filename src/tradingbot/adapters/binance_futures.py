@@ -220,12 +220,22 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         return await self._request(method, sym)
 
     async def fetch_oi(self, symbol: str):
+        """Fetch current open interest for ``symbol``.
+
+        Binance exposes the open interest via the futures REST API.  Even for
+        the futures testnet this endpoint lives under ``fapiPublic``.  The
+        response contains the current open interest value and a millisecond
+        timestamp.  We normalise it into ``{"ts": datetime, "oi": float}`` so
+        callers can persist it without further transformation.
+        """
+
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchOpenInterest", None)
-        if method:
-            return await self._request(method, sym)
-        hist = getattr(self.rest, "fetchOpenInterestHistory", None)
-        if hist:
-            data = await self._request(hist, sym)
-            return data[-1] if isinstance(data, list) and data else data
-        raise NotImplementedError("Open interest no soportado")
+        method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
+        if method is None:
+            raise NotImplementedError("Open interest no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        oi = float(data.get("openInterest", 0.0))
+        return {"ts": ts, "oi": oi}
