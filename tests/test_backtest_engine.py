@@ -79,6 +79,25 @@ def test_run_vectorbt_basic():
     assert list(stats.index.names) == ["fast", "slow"]
 
 
+@pytest.mark.optional
+def test_vectorbt_wrapper_param_sweep():
+    vbt_local = pytest.importorskip("vectorbt")
+    from tradingbot.backtesting.vectorbt_wrapper import run_parameter_sweep
+
+    def ma_signal(close, window):
+        ma = vbt_local.MA.run(close, window).ma
+        entries = close > ma
+        exits = close < ma
+        return entries, exits
+
+    price = pd.Series(np.linspace(1, 2, 50))
+    data = pd.DataFrame({"close": price})
+    params = {"window": [2, 4]}
+    stats = run_parameter_sweep(data, ma_signal, params)
+    assert not stats.empty
+    assert list(stats.index.names) == ["window"]
+
+
 class OneShotStrategy:
     name = "oneshot"
 
