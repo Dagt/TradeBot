@@ -1,40 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>TradeBot Monitoring</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    section { margin-bottom: 1.5rem; }
+    input { padding: 4px; margin-bottom: 8px; }
+  </style>
 </head>
 <body>
+<div id="app">
   <h1>TradeBot Monitoring</h1>
-  <div id="summary">Loading metrics...</div>
-  <div id="strategies">Loading strategies...</div>
-  <script>
-    async function loadMetrics() {
-      try {
-        const resp = await fetch('/metrics/summary');
-        const data = await resp.json();
-        document.getElementById('summary').innerText =
-          `PnL: ${data.pnl} | Disconnects: ${data.disconnects} | Avg Order Latency: ${data.avg_order_latency_seconds} | Maker/Taker Ratio: ${data.avg_maker_taker_ratio}`;
-      } catch (err) {
-        document.getElementById('summary').innerText = 'Error loading metrics';
-      }
-    }
 
-    async function loadStrategies() {
-      try {
-        const resp = await fetch('/strategies/status');
-        const data = await resp.json();
-        const entries = Object.entries(data.strategies || {})
-          .map(([k,v]) => `${k}: ${v}`)
-          .join(', ');
-        document.getElementById('strategies').innerText = entries || 'No strategies';
-      } catch (err) {
-        document.getElementById('strategies').innerText = 'Error loading strategies';
-      }
-    }
+  <section>
+    <h2>Metrics Summary</h2>
+    <div v-if="!metrics">Loading...</div>
+    <div v-else>
+      PnL: {{ metrics.pnl }} |
+      Disconnects: {{ metrics.disconnects }} |
+      Avg Order Latency: {{ metrics.avg_order_latency_seconds }} |
+      Maker/Taker Ratio: {{ metrics.avg_maker_taker_ratio }}
+    </div>
+  </section>
 
-    loadMetrics();
-    loadStrategies();
-  </script>
+  <section>
+    <h2>Strategies</h2>
+    <div v-if="!strategies">Loading...</div>
+    <ul v-else>
+      <li v-for="(status, name) in strategies" :key="name">{{ name }}: {{ status }}</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Slippage (last 24h)</h2>
+    <input v-model="slipSymbol" placeholder="symbol e.g. BTC/USDT" />
+    <div v-if="!slippage">Loading...</div>
+    <div v-else>
+      Mean: {{ slippage.global?.mean?.toFixed(4) ?? 0 }}
+    </div>
+  </section>
+
+  <section>
+    <h2>Intraday PnL</h2>
+    <div v-if="!intraday">Loading...</div>
+    <div v-else>
+      Net: {{ intraday.net.toFixed(2) }}
+    </div>
+  </section>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      metrics: null,
+      strategies: null,
+      slippage: null,
+      intraday: null,
+      slipSymbol: ''
+    };
+  },
+  methods: {
+    async fetchMetrics() {
+      this.metrics = await fetch('/metrics/summary').then(r => r.json());
+    },
+    async fetchStrategies() {
+      const data = await fetch('/strategies/status').then(r => r.json());
+      this.strategies = data.strategies || {};
+    },
+    async fetchSlippage() {
+      const url = '/fills/slippage' + (this.slipSymbol ? '?symbol=' + encodeURIComponent(this.slipSymbol) : '');
+      this.slippage = await fetch(url).then(r => r.json());
+    },
+    async fetchIntraday() {
+      this.intraday = await fetch('/pnl/intraday').then(r => r.json());
+    },
+    refresh() {
+      this.fetchMetrics();
+      this.fetchStrategies();
+      this.fetchSlippage();
+      this.fetchIntraday();
+    }
+  },
+  watch: {
+    slipSymbol() { this.fetchSlippage(); }
+  },
+  mounted() {
+    this.refresh();
+    setInterval(this.refresh, 5000);
+  }
+}).mount('#app');
+</script>
 </body>
 </html>
