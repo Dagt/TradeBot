@@ -26,8 +26,20 @@ class Settings(BaseSettings):
     # Exchanges Spot (por si los usas luego)
     binance_api_key: str | None = None
     binance_api_secret: str | None = None
+    binance_testnet_api_key: str | None = None
+    binance_testnet_api_secret: str | None = None
+
     bybit_api_key: str | None = None
     bybit_api_secret: str | None = None
+    bybit_testnet_api_key: str | None = None
+    bybit_testnet_api_secret: str | None = None
+
+    okx_api_key: str | None = None
+    okx_api_secret: str | None = None
+    okx_api_passphrase: str | None = None
+    okx_testnet_api_key: str | None = None
+    okx_testnet_api_secret: str | None = None
+    okx_testnet_api_passphrase: str | None = None
 
     # Binance Futures (USDT-M) - TESTNET
     binance_futures_api_key: str | None = None

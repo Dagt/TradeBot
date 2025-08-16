@@ -43,6 +43,27 @@ def test_registered_adapters_are_subclasses():
         assert issubclass(cls, ExchangeAdapter)
 
 
+def test_adapter_testnet_selection():
+    b_test = BinanceSpotAdapter(testnet=True)
+    assert "testnet" in b_test.rest.urls["api"]["public"]
+    b_main = BinanceSpotAdapter(testnet=False)
+    assert "testnet" not in b_main.rest.urls["api"]["public"]
+
+    bybit_test = BybitFuturesAdapter(testnet=True)
+    assert "testnet" in bybit_test.rest.urls["api"]["public"]
+    assert "testnet" in bybit_test.ws_public_url
+    bybit_main = BybitFuturesAdapter(testnet=False)
+    assert "testnet" not in bybit_main.rest.urls["api"]["public"]
+    assert "testnet" not in bybit_main.ws_public_url
+
+    okx_test = OKXFuturesAdapter(testnet=True)
+    assert okx_test.rest.headers.get("x-simulated-trading") == "1"
+    assert "wspap" in okx_test.ws_public_url
+    okx_main = OKXFuturesAdapter(testnet=False)
+    assert "x-simulated-trading" not in okx_main.rest.headers
+    assert "wspap" not in okx_main.ws_public_url
+
+
 class _DummyRest:
     def fetch_trades(self, symbol, limit=1):
         return [{"timestamp": 1000, "price": "1", "amount": "2", "side": "buy"}]
@@ -72,6 +93,7 @@ async def test_binance_spot_rest_streams():
     adapter = BinanceSpotAdapter.__new__(BinanceSpotAdapter)
     ExchangeAdapter.__init__(adapter)
     adapter.rest = _DummyRest()
+    adapter.state = type("S", (), {"order_book": {}, "last_px": {}})()
 
     async def _req(fn, *a, **k):
         return fn(*a, **k)
