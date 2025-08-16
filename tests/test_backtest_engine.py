@@ -128,3 +128,28 @@ def test_l2_queue_partial_and_cancel(tmp_path, monkeypatch):
     assert pytest.approx(res["orders"][0]["filled"], rel=1e-9) == 0.2
     assert len(res["fills"]) == 1
 
+
+def test_funding_payment(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=3, freq="H")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.0,
+            "volume": 1000,
+            "funding_rate": [0.0, 0.0, 0.01],
+        }
+    )
+    path = tmp_path / "fund.csv"
+    df.to_csv(path, index=False)
+
+    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
+    strategies = [("oneshot", "SYM")]
+    data = {"SYM": str(path)}
+
+    res = run_backtest_csv(data, strategies, latency=1, window=1)
+    assert pytest.approx(res["funding"], rel=1e-9) == 1.0
+    assert pytest.approx(res["equity"], rel=1e-9) == -1.0
+
