@@ -43,14 +43,16 @@ class SlippageModel:
     component proportional to the order size divided by the bar volume.
     It also supports level-2 order book queue modelling by exposing
     :meth:`fill`, which returns the adjusted price, the filled quantity and
-    the updated queue position.
+    the updated queue position.  A ``spread_mult`` parameter allows stressing
+    the bid/ask spread.
     """
 
-    def __init__(self, volume_impact: float = 0.1) -> None:
+    def __init__(self, volume_impact: float = 0.1, spread_mult: float = 1.0) -> None:
         self.volume_impact = float(volume_impact)
+        self.spread_mult = float(spread_mult)
 
     def adjust(self, side: str, qty: float, price: float, bar: pd.Series) -> float:
-        spread = float(bar["high"] - bar["low"])
+        spread = float(bar["high"] - bar["low"]) * self.spread_mult
         vol = float(bar.get("volume", 0.0))
         impact = self.volume_impact * qty / max(vol, 1e-9)
         slip = spread / 2 + impact
@@ -100,6 +102,14 @@ class FeeModel:
         return abs(cash) * self.fee
 
 
+@dataclass
+class StressConfig:
+    """Multipliers to apply stress scenarios to the engine."""
+
+    latency: float = 1.0
+    spread: float = 1.0
+
+
 class EventDrivenBacktestEngine:
     """Backtest engine supporting multiple symbols/strategies and order latency."""
 
@@ -114,6 +124,7 @@ class EventDrivenBacktestEngine:
         use_l2: bool = False,
         partial_fills: bool = True,
         cancel_unfilled: bool = False,
+        stress: StressConfig | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -122,6 +133,11 @@ class EventDrivenBacktestEngine:
         self.use_l2 = bool(use_l2)
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
+        self.stress = stress or StressConfig()
+
+        # Apply spread multiplier to slippage model if provided
+        if self.slippage and hasattr(self.slippage, "spread_mult"):
+            self.slippage.spread_mult *= self.stress.spread
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -294,7 +310,8 @@ class EventDrivenBacktestEngine:
                 side = "buy" if delta > 0 else "sell"
                 qty = abs(delta)
                 exchange = self.strategy_exchange[(strat_name, symbol)]
-                exec_index = i + self.exchange_latency.get(exchange, self.latency)
+                base_latency = self.exchange_latency.get(exchange, self.latency)
+                exec_index = i + int(base_latency * self.stress.latency)
                 place_price = float(df["close"].iloc[i])
                 queue_pos = 0.0
                 if self.use_l2:
@@ -375,6 +392,7 @@ def run_backtest_csv(
     use_l2: bool = False,
     partial_fills: bool = True,
     cancel_unfilled: bool = False,
+    stress: StressConfig | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -389,6 +407,7 @@ def run_backtest_csv(
         use_l2=use_l2,
         partial_fills=partial_fills,
         cancel_unfilled=cancel_unfilled,
+        stress=stress,
     )
     return engine.run()
 
@@ -405,6 +424,7 @@ def run_backtest_mlflow(
     cancel_unfilled: bool = False,
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
+    stress: StressConfig | None = None,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -433,6 +453,7 @@ def run_backtest_mlflow(
             use_l2=use_l2,
             partial_fills=partial_fills,
             cancel_unfilled=cancel_unfilled,
+            stress=stress,
         )
         mlflow.log_metric("equity", result.get("equity", 0.0))
         mlflow.log_metric("fills", len(result.get("fills", [])))

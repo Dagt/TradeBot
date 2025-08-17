@@ -107,4 +107,26 @@ def generate_report(result: Dict) -> Dict[str, float]:
     return stats
 
 
-__all__ = ["generate_report"]
+def generate_comparative_report(base: Dict, stressed: Dict) -> Dict[str, Dict[str, float]]:
+    """Generate reports for baseline and stressed results and compare them.
+
+    Parameters
+    ----------
+    base: result dictionary for the baseline scenario.
+    stressed: result dictionary for the stressed scenario.
+
+    Returns
+    -------
+    Mapping containing ``base`` and ``stressed`` reports plus ``delta``
+    differences (``stressed - base``) for each metric present in either
+    report.
+    """
+
+    base_report = generate_report(base)
+    stressed_report = generate_report(stressed)
+    keys = set(base_report) | set(stressed_report)
+    delta = {k: stressed_report.get(k, 0.0) - base_report.get(k, 0.0) for k in keys}
+    return {"base": base_report, "stressed": stressed_report, "delta": delta}
+
+
+__all__ = ["generate_report", "generate_comparative_report"]

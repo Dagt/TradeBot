@@ -7,7 +7,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from tradingbot.analysis.backtest_report import generate_report
+from tradingbot.analysis.backtest_report import (
+    generate_comparative_report,
+    generate_report,
+)
 
 
 def test_generate_report_basic():
@@ -52,3 +55,12 @@ def test_generate_report_basic():
     st = report["stress_tests"]
     assert pytest.approx(st["drop_5"], rel=1e-9) == 7.350414198231491
     assert pytest.approx(st["drop_10"], rel=1e-9) == 5.047917222317952
+
+
+def test_generate_comparative_report():
+    base = {"equity": 100.0, "orders": []}
+    stressed = {"equity": 80.0, "orders": []}
+    comp = generate_comparative_report(base, stressed)
+    assert comp["base"]["pnl"] == 100.0
+    assert comp["stressed"]["pnl"] == 80.0
+    assert comp["delta"]["pnl"] == -20.0
