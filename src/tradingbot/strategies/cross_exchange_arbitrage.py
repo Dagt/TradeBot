@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from ..adapters.base import ExchangeAdapter
+from ..adapters.deribit import DeribitAdapter
+from ..adapters.deribit_ws import DeribitWSAdapter
 
 try:
     from ..storage.timescale import get_engine, insert_cross_signal, insert_fill
@@ -37,6 +39,10 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     offsetting market orders on each venue and persists the opportunity and
     resulting fills into TimescaleDB (if available).
     """
+    if isinstance(cfg.spot, DeribitAdapter):
+        cfg.spot = DeribitWSAdapter(rest=cfg.spot)
+    if isinstance(cfg.perp, DeribitAdapter):
+        cfg.perp = DeribitWSAdapter(rest=cfg.perp)
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
     balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}

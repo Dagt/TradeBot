@@ -27,6 +27,8 @@ from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
 from ..utils.metrics import BASIS, FUNDING_RATE, OPEN_INTEREST
+from ..adapters.deribit import DeribitAdapter
+from ..adapters.deribit_ws import DeribitWSAdapter
 
 log = logging.getLogger(__name__)
 
@@ -127,7 +129,7 @@ class TradeBotDaemon:
         rebalance_interval: float | None = None,
         rebalance_enabled: bool = False,
     ) -> None:
-        self.adapters = adapters
+        self.adapters: Dict[str, ExchangeConnector] = {}
         self.strategies: List[object] = []
         if strategies:
             self.strategies.extend(strategies)
@@ -141,11 +143,27 @@ class TradeBotDaemon:
         self.router = router
         # ensure router knows about all adapters (paper/live)
         for name, ad in adapters.items():
+            if isinstance(ad, DeribitAdapter):
+                ad = DeribitWSAdapter(rest=ad)
+            self.adapters[name] = ad
             self.router.adapters.setdefault(name, ad)
         self.symbols = list(symbols)
-        self.accounts = accounts or adapters
+        if accounts:
+            self.accounts = {}
+            for name, ac in accounts.items():
+                if isinstance(ac, DeribitAdapter):
+                    ac = DeribitWSAdapter(rest=ac)
+                self.accounts[name] = ac
+        else:
+            self.accounts = self.adapters
         self.guard = guard
-        self.cross_arbs = list(cross_arbs or [])
+        self.cross_arbs: List[CrossArbConfig] = []
+        for cfg in cross_arbs or []:
+            if isinstance(cfg.spot, DeribitAdapter):
+                cfg.spot = DeribitWSAdapter(rest=cfg.spot)
+            if isinstance(cfg.perp, DeribitAdapter):
+                cfg.perp = DeribitWSAdapter(rest=cfg.perp)
+            self.cross_arbs.append(cfg)
         self.arb_runners: List[tuple] = []
         for path, kwargs in arb_runners or []:
             try:

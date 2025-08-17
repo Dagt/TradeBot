@@ -16,6 +16,8 @@ from ..data.basis import poll_basis
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..adapters.deribit import DeribitAdapter
+from ..adapters.deribit_ws import DeribitWSAdapter
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,10 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     cfg:
         Configuration with symbol, adapters and trading params.
     """
+    if isinstance(cfg.spot, DeribitAdapter):
+        cfg.spot = DeribitWSAdapter(rest=cfg.spot)
+    if isinstance(cfg.perp, DeribitAdapter):
+        cfg.perp = DeribitWSAdapter(rest=cfg.perp)
 
     router = ExecutionRouter([cfg.spot, cfg.perp])
     bus = EventBus()

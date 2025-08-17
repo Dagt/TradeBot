@@ -171,3 +171,39 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
     assert ob["bid_px"][0] == 100.0
     assert ob["ask_qty"][0] == 2.0
     await ogen.aclose()
+
+
+class DummyRestDelegates:
+    def __init__(self):
+        self.calls = []
+
+    async def fetch_funding(self, symbol):
+        self.calls.append(("funding", symbol))
+        return {"rate": 0.01}
+
+    async def fetch_basis(self, symbol):
+        self.calls.append(("basis", symbol))
+        return {"basis": 5.0}
+
+    async def fetch_oi(self, symbol):
+        self.calls.append(("oi", symbol))
+        return {"oi": 200.0}
+
+
+@pytest.mark.asyncio
+async def test_deribit_ws_adapter_delegates_rest_calls():
+    rest = DummyRestDelegates()
+    adapter = DeribitWSAdapter(rest=rest)
+
+    res_funding = await adapter.fetch_funding("BTC-PERPETUAL")
+    res_basis = await adapter.fetch_basis("BTC-PERPETUAL")
+    res_oi = await adapter.fetch_oi("BTC-PERPETUAL")
+
+    assert res_funding["rate"] == 0.01
+    assert res_basis["basis"] == 5.0
+    assert res_oi["oi"] == 200.0
+    assert rest.calls == [
+        ("funding", "BTC-PERPETUAL"),
+        ("basis", "BTC-PERPETUAL"),
+        ("oi", "BTC-PERPETUAL"),
+    ]
