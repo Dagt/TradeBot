@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Any
 
 try:  # pragma: no cover - ccxt es opcional en tests
-    import ccxt  # type: ignore
+    import ccxt.async_support as ccxt  # type: ignore
 except Exception:  # pragma: no cover - si falta ccxt
     ccxt = None
 

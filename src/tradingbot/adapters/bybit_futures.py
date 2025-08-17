@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 try:  # pragma: no cover - optional during tests
-    import ccxt
+    import ccxt.async_support as ccxt
     NetworkError = getattr(ccxt, "NetworkError", Exception)
     ExchangeError = getattr(ccxt, "ExchangeError", Exception)
-except Exception:  # pragma: no cover - ccxt optional during tests
+except Exception:  # pragma: no cover - ccxt optional durante tests
     ccxt = None
     NetworkError = ExchangeError = Exception
 
@@ -56,9 +56,6 @@ class BybitFuturesAdapter(ExchangeAdapter):
             else "wss://stream.bybit.com/v5/public/linear"
         )
         self.name = "bybit_futures_testnet" if testnet else "bybit_futures"
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url

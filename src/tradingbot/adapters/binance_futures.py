@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:
     ccxt = None
 
@@ -61,19 +61,9 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             log.warning("load_markets falló: %s", e)
 
         try:
-            self.rest.set_position_mode(False)
+            asyncio.get_event_loop().create_task(self.rest.set_position_mode(False))
         except Exception as e:
             log.debug("No se pudo fijar position_mode (one-way): %s", e)
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
-
-    async def _ensure_leverage(self, symbol: str):
-        try:
-            market = self.rest.market(symbol)
-            await self._to_thread(self.rest.set_leverage, self.leverage, market["symbol"])
-        except Exception as e:
-            log.debug("set_leverage falló: %s", e)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         sym = self.normalize_symbol(symbol)

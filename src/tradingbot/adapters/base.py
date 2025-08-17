@@ -48,13 +48,36 @@ class ExchangeAdapter(ABC):
             self._last_request = time.monotonic()
 
     async def _request(self, fn, *args, **kwargs):
-        """Run ``fn`` in a thread respecting rate limits and logging errors."""
+        """Execute ``fn`` respecting rate limits and awaiting coroutines.
+
+        ``ccxt.async_support`` exposes coroutine based HTTP methods.  The
+        previous implementation offloaded synchronous calls to a thread via
+        :func:`asyncio.to_thread`.  After migrating adapters to the async
+        variant we simply await the result if it is awaitable, falling back to
+        returning the value directly for backwards compatibility (used in
+        tests with dummy synchronous functions).
+        """
+
         await self._throttle()
         try:
-            return await asyncio.to_thread(fn, *args, **kwargs)
+            res = fn(*args, **kwargs)
+            if asyncio.iscoroutine(res):
+                return await res
+            return res
         except Exception as e:  # pragma: no cover - logging only
             self.log.error("%s request failed: %s", self.name, e)
             raise
+
+    async def close(self) -> None:
+        """Close underlying REST client if it exposes ``close``."""
+        rest = getattr(self, "rest", None)
+        if rest and hasattr(rest, "close"):
+            try:
+                res = rest.close()
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception as e:  # pragma: no cover - best effort
+                self.log.warning("%s close failed: %s", self.name, e)
 
     # ------------------------------------------------------------------
     # Normalization helpers

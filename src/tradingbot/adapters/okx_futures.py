@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:  # pragma: no cover
     ccxt = None
 
@@ -57,9 +57,6 @@ class OKXFuturesAdapter(ExchangeAdapter):
             else "wss://ws.okx.com:8443/ws/v5/public"
         )
         self.name = "okx_futures_testnet" if testnet else "okx_futures"
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
@@ -175,9 +172,9 @@ class OKXFuturesAdapter(ExchangeAdapter):
         params = {}
         if iceberg_qty is not None:
             params["iceberg"] = iceberg_qty
-        return await self._to_thread(
+        return await self._request(
             self.rest.create_order, symbol, type_, side, qty, price, params
         )
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        return await self._to_thread(self.rest.cancel_order, order_id, symbol)
+        return await self._request(self.rest.cancel_order, order_id, symbol)

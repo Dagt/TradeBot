@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:
     ccxt = None
 
@@ -60,9 +60,6 @@ class BinanceSpotAdapter(ExchangeAdapter):
             log.warning("load_markets spot falló: %s", e)
 
         self.name = "binance_spot_testnet" if testnet else "binance_spot"
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         sym = self.normalize_symbol(symbol)
