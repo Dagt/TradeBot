@@ -3,6 +3,10 @@ import pytest
 
 from tradingbot.bus import EventBus
 from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
+from tradingbot.risk.service import RiskService
+from tradingbot.storage import timescale
 
 
 def test_stop_loss_sets_reason():
@@ -44,6 +48,22 @@ def test_daily_loss_limit_triggers_kill_switch():
     assert rm.enabled is False
     assert rm.last_kill_reason == "daily_loss"
     assert rm.pos.qty == 0
+
+
+def test_risk_service_updates_and_persists(monkeypatch):
+    rm = RiskManager()
+    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1.0, per_symbol_cap_usdt=1.0, venue="X"))
+    daily = DailyGuard(GuardLimits(), venue="X")
+    events: list = []
+    monkeypatch.setattr(timescale, "insert_risk_event", lambda engine, **kw: events.append(kw))
+    svc = RiskService(rm, guard, daily, engine=object())
+    svc.update_position("ex1", "BTC", 1.0)
+    svc.update_position("ex2", "BTC", -0.4)
+    agg = svc.aggregate_positions()
+    assert agg["BTC"] == pytest.approx(0.6)
+    allowed, _ = svc.check_order("BTC", "buy", 2.0, 1.0)
+    assert not allowed
+    assert events and events[0]["kind"] == "VIOLATION"
 
 
 @pytest.mark.asyncio
