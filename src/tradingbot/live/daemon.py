@@ -179,6 +179,8 @@ class TradeBotDaemon:
         self.price_history: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=returns_window)
         )
+        # Últimos precios conocidos por símbolo/asset
+        self.last_prices: Dict[str, float] = {}
 
         # Bus subscriptions
         self.bus.subscribe("trade", self._dispatch_trade)
@@ -189,6 +191,8 @@ class TradeBotDaemon:
         self.bus.subscribe("funding", self._dispatch_funding)
         self.bus.subscribe("basis", self._dispatch_basis)
         self.bus.subscribe("open_interest", self._dispatch_open_interest)
+        # Mantén marca de precios desde el bus
+        self.bus.subscribe("price", self._on_price_event)
 
     # ------------------------------------------------------------------
     async def refresh_balances(self) -> None:
@@ -230,6 +234,22 @@ class TradeBotDaemon:
                 log.info("balance_reconcile", extra={"asset": asset, "balances": vals})
 
     # ------------------------------------------------------------------
+    async def _on_price_event(self, evt: dict) -> None:
+        """Store latest price marks coming from the bus."""
+        symbol = evt.get("symbol") or evt.get("asset")
+        price = evt.get("price")
+        if symbol and price is not None:
+            try:
+                self.last_prices[symbol] = float(price)
+            except (TypeError, ValueError):
+                return
+            if self.guard:
+                try:
+                    self.guard.mark_price(symbol, float(price))
+                except Exception:  # pragma: no cover - defensive
+                    pass
+
+    # ------------------------------------------------------------------
     async def _balance_worker(self) -> None:
         while not self._stop.is_set():
             await self.refresh_balances()
@@ -241,9 +261,20 @@ class TradeBotDaemon:
         while not self._stop.is_set():
             for asset in self.rebalance_assets:
                 try:
+                    # Fetch reference price from available sources
+                    price: float | None = None
+                    risk_prices = getattr(self.risk, "prices", None)
+                    if price is None and isinstance(risk_prices, dict):
+                        price = risk_prices.get(asset)
+                    if price is None and self.guard is not None:
+                        price = self.guard.st.prices.get(asset)
+                    if price is None:
+                        price = self.last_prices.get(asset)
+                    if price is None:
+                        price = 1.0
                     await rebalance_between_exchanges(
                         asset,
-                        price=1.0,
+                        price=float(price),
                         venues=self.accounts,
                         risk=self.risk,
                         engine=engine,
