@@ -75,6 +75,11 @@ python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
     --symbol BTC/USDT --strategy triple_barrier
 ```
 
+## Entrenar modelo ML
+```bash
+python -m tradingbot.cli train-ml datos.csv objetivo modelo.joblib
+```
+
 ## API
 ```bash
 uvicorn tradingbot.apps.api.main:app --reload --port 8000
