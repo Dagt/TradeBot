@@ -83,6 +83,16 @@ class PortfolioGuard:
                     result[(syms[i], syms[j])] = corr
         return result
 
+    def volatility(self, symbol: str) -> float:
+        """Desviación estándar anualizada de los retornos de ``symbol``.
+
+        Si no hay suficientes datos de retornos, retorna ``0.0``.
+        """
+        rets = np.array(self.st.returns.get(symbol, []), dtype=float)
+        if len(rets) < 2:
+            return 0.0
+        return float(np.std(rets) * np.sqrt(365))
+
     # ---- hard caps (como antes) ----
     def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:
         cur_pos = self.st.positions.get(symbol, 0.0)
