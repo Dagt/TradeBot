@@ -7,9 +7,16 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from ..adapters.base import ExchangeAdapter
+from ..execution.balance import rebalance_between_exchanges
+from ..risk.manager import RiskManager
 
 try:
-    from ..storage.timescale import get_engine, insert_cross_signal, insert_fill
+    from ..storage.timescale import (
+        get_engine,
+        insert_cross_signal,
+        insert_fill,
+        insert_portfolio_snapshot,
+    )
     _CAN_PG = True
 except Exception:  # pragma: no cover - Timescale optional
     _CAN_PG = False
@@ -27,6 +34,8 @@ class CrossArbConfig:
     threshold: float = 0.001  # premium threshold as decimal (0.001 = 0.1%)
     notional: float = 100.0  # quote currency notional per leg
     persist_pg: bool = False
+    rebalance_assets: tuple[str, ...] = ()
+    rebalance_threshold: float = 0.0
 
 
 async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
@@ -45,6 +54,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
+    risk = RiskManager()
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:
@@ -120,8 +130,24 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                         fee_usdt=None,
                         raw=resp_perp,
                     )
+                    insert_portfolio_snapshot(
+                        engine,
+                        venue=cfg.spot.name,
+                        symbol=cfg.symbol,
+                        position=balances[cfg.spot.name],
+                        price=last["spot"],
+                        notional_usd=balances[cfg.spot.name] * last["spot"],
+                    )
+                    insert_portfolio_snapshot(
+                        engine,
+                        venue=cfg.perp.name,
+                        symbol=cfg.symbol,
+                        position=balances[cfg.perp.name],
+                        price=last["perp"],
+                        notional_usd=balances[cfg.perp.name] * last["perp"],
+                    )
                 except Exception as e:  # pragma: no cover - logging only
-                    log.debug("No se pudo insertar fills: %s", e)
+                    log.debug("No se pudo insertar fills/snapshot: %s", e)
 
             log.info(
                 "CROSS ARB edge=%.4f%% spot=%.2f perp=%.2f qty=%.6f pos_spot=%.6f pos_perp=%.6f",
@@ -132,6 +158,28 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 balances[cfg.spot.name],
                 balances[cfg.perp.name],
             )
+
+            if engine is not None and cfg.rebalance_assets:
+                venues = {cfg.spot.name: cfg.spot, cfg.perp.name: cfg.perp}
+                base, quote = cfg.symbol.split("/")
+                for asset in cfg.rebalance_assets:
+                    if asset == base:
+                        price_ref = last["spot"]
+                    elif asset == quote:
+                        price_ref = 1.0
+                    else:
+                        price_ref = last["spot"]
+                    try:
+                        await rebalance_between_exchanges(
+                            asset,
+                            price=float(price_ref),
+                            venues=venues,
+                            risk=risk,
+                            engine=engine,
+                            threshold=cfg.rebalance_threshold,
+                        )
+                    except Exception as e:  # pragma: no cover - logging only
+                        log.debug("No se pudo rebalancear %s: %s", asset, e)
 
     async def listen_spot():
         async for t in cfg.spot.stream_trades(cfg.symbol):
