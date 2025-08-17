@@ -30,3 +30,15 @@ def test_adjust_size_and_portfolio_risk():
     assert not rm.check_portfolio_risk({"BTC": 0.5}, cov, 0.001)
     assert rm.enabled is False
     assert rm.last_kill_reason == "covariance_limit"
+
+
+def test_de_risk_reduces_exposure():
+    rm = RiskManager(max_pos=10, vol_target=1.0)
+    rm.update_pnl(100)
+    assert rm.max_pos == pytest.approx(10)
+    rm.update_pnl(-30)  # drawdown 30%
+    assert rm.max_pos == pytest.approx(5)
+    assert rm.vol_target == pytest.approx(0.5)
+    rm.update_pnl(-25)  # drawdown 55%
+    assert rm.max_pos == pytest.approx(2.5)
+    assert rm.vol_target == pytest.approx(0.25)
