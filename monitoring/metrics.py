@@ -189,14 +189,14 @@ def metrics_summary() -> dict:
         if sample.name == "open_position"
     }
 
-    funding_rates = {
+    funding_rates: dict[str, float] = {
         sample.labels["symbol"]: sample.value
         for metric in FUNDING_RATE.collect()
         for sample in metric.samples
         if sample.name == "funding_rate"
     }
 
-    open_interest = {
+    open_interest: dict[str, float] = {
         sample.labels["symbol"]: sample.value
         for metric in OPEN_INTEREST.collect()
         for sample in metric.samples
