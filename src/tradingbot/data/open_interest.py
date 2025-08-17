@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..bus import EventBus
+from ..utils.metrics import OPEN_INTEREST, OPEN_INTEREST_HIST
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_open_interest
@@ -52,6 +53,8 @@ async def poll_open_interest(
                 "symbol": symbol,
                 "oi": info["oi"],
             }
+            OPEN_INTEREST.labels(symbol=symbol).set(info["oi"])
+            OPEN_INTEREST_HIST.labels(symbol=symbol).observe(info["oi"])
             await bus.publish("open_interest", event)
             if engine is not None:
                 try:

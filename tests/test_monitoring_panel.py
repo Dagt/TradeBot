@@ -20,6 +20,8 @@ from monitoring.metrics import (
     OPEN_POSITIONS,
     STRATEGY_ACTIONS,
     KILL_SWITCH_ACTIVE,
+    FUNDING_RATE,
+    OPEN_INTEREST,
 )
 from tradingbot.apps.api.main import app as api_app
 
@@ -42,6 +44,10 @@ def test_panel_endpoints_and_metrics():
     WS_FAILURES.labels(adapter="test").inc()
     STRATEGY_STATE.labels(strategy="alpha").set(1)
     KILL_SWITCH_ACTIVE.set(1)
+    FUNDING_RATE.clear()
+    FUNDING_RATE.labels(symbol="BTCUSD").set(0.01)
+    OPEN_INTEREST.clear()
+    OPEN_INTEREST.labels(symbol="BTCUSD").set(1000)
 
     resp = client.get("/")
     assert resp.status_code == 200
@@ -50,11 +56,15 @@ def test_panel_endpoints_and_metrics():
     resp = client.get("/metrics")
     assert resp.status_code == 200
     assert "trading_pnl" in resp.text
+    assert "funding_rate" in resp.text
+    assert "open_interest" in resp.text
 
     resp = client.get("/metrics/summary")
     data = resp.json()
     assert data["pnl"] == 100.0
     assert data["positions"] == {"BTCUSD": 2.0}
+    assert data["funding_rates"] == {"BTCUSD": 0.01}
+    assert data["open_interest"] == {"BTCUSD": 1000.0}
     assert data["disconnects"] == 1.0
     assert data["avg_market_latency_seconds"] == 0.5
     assert data["avg_order_latency_seconds"] == 0.2
