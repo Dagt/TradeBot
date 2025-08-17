@@ -270,6 +270,9 @@ class _DummyOKXRest:
     async def publicGetPublicOpenInterest(self, params):
         return {"data": [{"ts": 1000, "oi": "200"}]}
 
+    async def fetchTicker(self, symbol):
+        return {"timestamp": 1000, "markPrice": "105", "indexPrice": "100"}
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -296,10 +299,19 @@ async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
 
 
 @pytest.mark.asyncio
-async def test_bybit_futures_fetch_basis():
-    adapter = BybitFuturesAdapter.__new__(BybitFuturesAdapter)
+@pytest.mark.parametrize(
+    "adapter_cls, rest_cls",
+    [
+        (BybitSpotAdapter, _DummyBybitRest),
+        (BybitFuturesAdapter, _DummyBybitRest),
+        (OKXSpotAdapter, _DummyOKXRest),
+        (OKXFuturesAdapter, _DummyOKXRest),
+    ],
+)
+async def test_fetch_basis(adapter_cls, rest_cls):
+    adapter = adapter_cls.__new__(adapter_cls)
     ExchangeAdapter.__init__(adapter)
-    adapter.rest = _DummyBybitRest()
+    adapter.rest = rest_cls()
 
     basis = await adapter.fetch_basis("BTC/USDT")
     assert basis["basis"] == 5.0
