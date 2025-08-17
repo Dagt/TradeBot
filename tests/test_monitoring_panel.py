@@ -133,6 +133,21 @@ def test_alerts_endpoint(monkeypatch):
     assert data["alerts"] == alerts_list
 
 
+def test_websocket_summary(monkeypatch):
+    client = TestClient(app)
+
+    async def fake_risk():
+        return {"exposure": {"BTCUSD": 1}, "events": []}
+
+    monkeypatch.setattr(panel, "fetch_risk", fake_risk)
+    TRADING_PNL.set(42)
+
+    with client.websocket_connect("/ws/summary") as ws:
+        data = ws.receive_json()
+        assert data["pnl"]["pnl"] == 42
+        assert data["risk"]["exposure"] == {"BTCUSD": 1}
+
+
 def test_api_funding_basis_and_params():
     """Verify funding, basis and strategy param endpoints in the API app."""
 
