@@ -1,5 +1,12 @@
 from fastapi import APIRouter, Response
-from prometheus_client import Gauge, Histogram, Counter, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import (
+    Gauge,
+    Counter,
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
+import psutil
+import time
 
 # Reuse detailed execution metrics
 from tradingbot.utils.metrics import (
@@ -10,12 +17,10 @@ from tradingbot.utils.metrics import (
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
-    WS_RECONNECTS,
     TRADING_PNL,
     OPEN_POSITIONS,
     MARKET_LATENCY,
     E2E_LATENCY,
-    ORDER_BOOK_MIN_DEPTH,
 )
 
 # System metrics
@@ -23,6 +28,31 @@ SYSTEM_DISCONNECTS = Counter(
     "system_disconnections_total",
     "Total number of system disconnections",
 )
+
+# Process gauges
+PROCESS_CPU = Gauge(
+    "process_cpu_percent",
+    "Process CPU usage percent",
+)
+PROCESS_MEMORY = Gauge(
+    "process_memory_bytes",
+    "Process memory usage in bytes",
+)
+PROCESS_UPTIME = Gauge(
+    "process_uptime_seconds",
+    "Process uptime in seconds",
+)
+
+_process = psutil.Process()
+
+
+def update_process_metrics() -> None:
+    """Update process-level system metrics."""
+    with _process.oneshot():
+        PROCESS_CPU.set(_process.cpu_percent(interval=None))
+        PROCESS_MEMORY.set(_process.memory_info().rss)
+        PROCESS_UPTIME.set(time.time() - _process.create_time())
+
 
 STRATEGY_STATE = Gauge(
     "strategy_state",
@@ -42,12 +72,15 @@ router = APIRouter()
 @router.get("/metrics")
 def metrics() -> Response:
     """Expose Prometheus metrics."""
+    update_process_metrics()
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics/summary")
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
+
+    update_process_metrics()
 
     # Aggregate fills across all symbols/sides
     fill_total = sum(
@@ -71,7 +104,9 @@ def metrics_summary() -> dict:
         for metric in SLIPPAGE.collect()
         for sample in metric.samples
     ]
-    slippage_sum = sum(s.value for s in slippage_samples if s.name.endswith("_sum"))
+    slippage_sum = sum(
+        s.value for s in slippage_samples if s.name.endswith("_sum")
+    )
     slippage_count = sum(
         s.value for s in slippage_samples if s.name.endswith("_count")
     )
@@ -83,7 +118,9 @@ def metrics_summary() -> dict:
         for metric in ORDER_LATENCY.collect()
         for sample in metric.samples
     ]
-    latency_sum = sum(s.value for s in latency_samples if s.name.endswith("_sum"))
+    latency_sum = sum(
+        s.value for s in latency_samples if s.name.endswith("_sum")
+    )
     latency_count = sum(
         s.value for s in latency_samples if s.name.endswith("_count")
     )
@@ -95,7 +132,9 @@ def metrics_summary() -> dict:
         for metric in MARKET_LATENCY.collect()
         for sample in metric.samples
     ]
-    market_sum = sum(s.value for s in market_samples if s.name.endswith("_sum"))
+    market_sum = sum(
+        s.value for s in market_samples if s.name.endswith("_sum")
+    )
     market_count = sum(
         s.value for s in market_samples if s.name.endswith("_count")
     )
@@ -108,7 +147,9 @@ def metrics_summary() -> dict:
         for sample in metric.samples
         if sample.name == "maker_taker_ratio"
     ]
-    avg_ratio = sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
+    avg_ratio = (
+        sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
+    )
 
     # Compute average end-to-end latency
     e2e_samples = [
@@ -159,4 +200,7 @@ def metrics_summary() -> dict:
         "avg_e2e_latency_seconds": avg_e2e,
         "ws_failures": ws_failures_total,
         "strategy_states": strategy_states,
+        "cpu_percent": PROCESS_CPU._value.get(),
+        "memory_bytes": PROCESS_MEMORY._value.get(),
+        "process_uptime_seconds": PROCESS_UPTIME._value.get(),
     }

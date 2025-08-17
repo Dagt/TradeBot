@@ -59,6 +59,45 @@
       "datasource": "Prometheus",
       "id": 4,
       "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "CPU Usage",
+      "targets": [
+        {
+          "expr": "process_cpu_percent",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 5,
+      "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Memory Usage",
+      "targets": [
+        {
+          "expr": "process_memory_bytes",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 6,
+      "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8}
+    },
+    {
+      "type": "stat",
+      "title": "Process Uptime",
+      "targets": [
+        {
+          "expr": "process_uptime_seconds",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 7,
+      "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8}
     }
   ]
 }
