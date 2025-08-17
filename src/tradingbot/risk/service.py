@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import Dict
+from typing import Dict, Tuple
 
 from .manager import RiskManager
 from .portfolio_guard import PortfolioGuard
@@ -51,21 +51,47 @@ class RiskService:
     def mark_price(self, symbol: str, price: float) -> None:
         self.guard.mark_price(symbol, price)
 
-    def check_order(self, symbol: str, side: str, qty: float, price: float) -> tuple[bool, str]:
-        """Check limits before submitting an order.
+    def check_order(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        strength: float = 1.0,
+        *,
+        symbol_vol: float = 0.0,
+        correlations: Dict[Tuple[str, str], float] | None = None,
+        corr_threshold: float = 0.0,
+    ) -> tuple[bool, str, float]:
+        """Check limits and compute sized order before submitting.
 
-        Returns ``(allowed, reason)``.
+        Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
+        proposed after volatility and correlation adjustments.
         """
+
+        delta = self.rm.size(
+            side,
+            strength,
+            symbol=symbol,
+            symbol_vol=symbol_vol,
+            correlations=correlations or {},
+            threshold=corr_threshold,
+        )
+        qty = abs(delta)
+
+        if qty <= 0:
+            return False, "zero_size", 0.0
+
         if not self.rm.check_limits(price):
             self._persist("VIOLATION", symbol, "kill_switch", {})
-            return False, "kill_switch"
+            return False, "kill_switch", 0.0
+
         action, reason, metrics = self.guard.soft_cap_decision(symbol, side, qty, price)
         if action == "block":
             self._persist("VIOLATION", symbol, reason, metrics)
-            return False, reason
+            return False, reason, delta
         if action == "soft_allow":
             self._persist("INFO", symbol, reason, metrics)
-        return True, reason
+        return True, reason, delta
 
     # ------------------------------------------------------------------
     # Fill / PnL updates

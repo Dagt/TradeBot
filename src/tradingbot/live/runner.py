@@ -161,26 +161,32 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        delta = risk.rm.size(signal.side, signal.strength)
-        # Ajuste por correlaciones intraportafolio
         corr_pairs = guard.correlations()
-        delta = risk.rm.adjust_size_for_correlation(symbol, delta, corr_pairs, threshold=0.8)
-        if abs(delta) > 1e-9:
-            side = "buy" if delta > 0 else "sell"
-            allowed, reason = risk.check_order(symbol, side, abs(delta), closed.c)
+        allowed, reason, delta = risk.check_order(
+            symbol,
+            signal.side,
+            closed.c,
+            strength=signal.strength,
+            symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
+            correlations=corr_pairs,
+            corr_threshold=0.8,
+        )
+        if not allowed or abs(delta) <= 1e-9:
             if not allowed:
                 log.warning("[RISK] Bloqueado %s: %s", symbol, reason)
-                continue
-            prev_rpnl = broker.state.realized_pnl
-            resp = await broker.place_order(symbol, side, "market", abs(delta))
-            fills += 1
-            log.info("FILL live %s", resp)
-            risk.on_fill(symbol, side, abs(delta), venue="binance")
-            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-            halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
-            if halted:
-                log.error("[HALT] motivo=%s", reason)
-                break
+            continue
+
+        side = "buy" if delta > 0 else "sell"
+        prev_rpnl = broker.state.realized_pnl
+        resp = await broker.place_order(symbol, side, "market", abs(delta))
+        fills += 1
+        log.info("FILL live %s", resp)
+        risk.on_fill(symbol, side, abs(delta), venue="binance")
+        delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+        halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+        if halted:
+            log.error("[HALT] motivo=%s", reason)
+            break
 
         # Persistir barra 1m si quieres (opcional; requiere tabla market.bars creada)
         # Puedes descomentar y ampliar con INSERT a bars.

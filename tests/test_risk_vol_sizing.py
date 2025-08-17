@@ -1,24 +1,29 @@
 import pytest
 
 from tradingbot.risk.manager import RiskManager
-from tradingbot.strategies.base import Strategy, Signal, record_signal_metrics
-
-
-class DummyStrategy(Strategy):
-    name = "dummy"
-
-    def __init__(self, risk):
-        self.risk = risk
-
-    @record_signal_metrics
-    def on_bar(self, bar):
-        return Signal("buy")
 
 
 def test_risk_vol_sizing(synthetic_volatility):
     rm = RiskManager(max_pos=10, vol_target=0.02)
-    strat = DummyStrategy(rm)
-    bar = {"volatility": synthetic_volatility}
-    sig = strat.on_bar(bar)
-    expected = rm.max_pos + min(rm.max_pos, rm.max_pos * rm.vol_target / synthetic_volatility)
-    assert sig.strength == pytest.approx(expected)
+    delta = rm.size("buy", symbol="BTC", symbol_vol=synthetic_volatility)
+    expected = rm.max_pos + min(
+        rm.max_pos, rm.max_pos * rm.vol_target / synthetic_volatility
+    )
+    assert delta == pytest.approx(expected)
+
+
+def test_risk_vol_sizing_with_correlation(synthetic_volatility):
+    rm = RiskManager(max_pos=10, vol_target=0.02)
+    corr = {("BTC", "ETH"): 0.9}
+    delta = rm.size(
+        "buy",
+        symbol="BTC",
+        symbol_vol=synthetic_volatility,
+        correlations=corr,
+        threshold=0.8,
+    )
+    expected = rm.max_pos + min(
+        rm.max_pos, rm.max_pos * rm.vol_target / synthetic_volatility
+    )
+    expected *= 0.5
+    assert delta == pytest.approx(expected)
