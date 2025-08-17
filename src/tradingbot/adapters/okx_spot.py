@@ -78,13 +78,37 @@ class OKXSpotAdapter(ExchangeAdapter):
         return {"ts": ts_dt, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
-        """Spot en OKX no ofrece una métrica de *basis*.
+        """Return the basis (mark - index) for ``symbol``.
 
-        La función existe únicamente para cumplir con la interfaz y dejar
-        explícito que este dato no está disponible en el venue.
+        OKX's spot ticker exposes both the last traded price and an index
+        price.  We call :meth:`fetchTicker` via CCXT and calculate the
+        difference, returning a normalised ``{"ts": datetime, "basis": float}``.
         """
 
-        raise NotImplementedError("Basis not supported in spot markets")
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fetchTicker", None)
+        if method is None:
+            raise NotImplementedError("Basis not supported")
+
+        data = await self._request(method, sym)
+        ts = data.get("timestamp") or data.get("ts") or data.get("time") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts //= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        mark_px = float(
+            data.get("markPrice")
+            or data.get("last")
+            or data.get("close")
+            or 0.0
+        )
+        index_px = float(
+            data.get("indexPrice")
+            or data.get("index")
+            or (data.get("info") or {}).get("idxPx", 0.0)
+        )
+        basis = mark_px - index_px
+        return {"ts": ts_dt, "basis": basis}
 
     async def fetch_oi(self, symbol: str):
         """Fetch open interest for the corresponding instrument.
