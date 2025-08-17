@@ -20,6 +20,10 @@ from .metrics import (
     TRADING_PNL,
     OPEN_POSITIONS,
     KILL_SWITCH_ACTIVE,
+    PROCESS_CPU,
+    PROCESS_MEMORY,
+    PROCESS_UPTIME,
+    update_process_metrics,
 )
 from .strategies import strategies_status, set_strategy_status
 
@@ -57,7 +61,10 @@ for path in dashboards_dir.glob("*.json"):
 def dashboards() -> dict[str, str]:
     """Return available Grafana dashboards with direct URLs."""
 
-    return {name: f"{GRAFANA_URL}/d/{uid}" for name, uid in GRAFANA_DASHBOARDS.items()}
+    return {
+        name: f"{GRAFANA_URL}/d/{uid}"
+        for name, uid in GRAFANA_DASHBOARDS.items()
+    }
 
 
 @app.get("/dashboards/{name}")
@@ -106,8 +113,16 @@ def health() -> dict[str, str]:
 def summary() -> dict:
     """Return key metrics and current strategy states."""
 
+    update_process_metrics()
+    system = {
+        "cpu_percent": PROCESS_CPU._value.get(),
+        "memory_bytes": PROCESS_MEMORY._value.get(),
+        "process_uptime_seconds": PROCESS_UPTIME._value.get(),
+    }
+
     return {
         "metrics": metrics_summary(),
+        "system": system,
         "strategies": strategies_status()["strategies"],
         "alerts": fetch_alerts(),
     }
@@ -178,6 +193,7 @@ def get_strategies_status() -> dict:
     """Return the status of all strategies."""
 
     return strategies_status()
+
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
