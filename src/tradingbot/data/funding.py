@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..bus import EventBus
+from ..utils.metrics import FUNDING_RATE, FUNDING_RATE_HIST
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_funding
@@ -53,6 +54,8 @@ async def poll_funding(adapter, symbol: str, bus: EventBus, interval: int = 60, 
                 "rate": info["rate"],
                 "interval_sec": info["interval_sec"],
             }
+            FUNDING_RATE.labels(symbol=symbol).set(info["rate"])
+            FUNDING_RATE_HIST.labels(symbol=symbol).observe(info["rate"])
             await bus.publish("funding", event)
             if engine is not None:
                 try:

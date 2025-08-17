@@ -98,6 +98,32 @@ OPEN_POSITIONS = Gauge(
     ["symbol"],
 )
 
+# Funding rate per symbol
+FUNDING_RATE = Gauge(
+    "funding_rate",
+    "Latest funding rate",
+    ["symbol"],
+)
+
+FUNDING_RATE_HIST = Histogram(
+    "funding_rate_distribution",
+    "Distribution of funding rate observations",
+    ["symbol"],
+)
+
+# Open interest per symbol
+OPEN_INTEREST = Gauge(
+    "open_interest",
+    "Current open interest",
+    ["symbol"],
+)
+
+OPEN_INTEREST_HIST = Histogram(
+    "open_interest_distribution",
+    "Distribution of open interest observations",
+    ["symbol"],
+)
+
 # Latency of market data processing
 MARKET_LATENCY = Histogram(
     "market_latency_seconds",

@@ -21,6 +21,8 @@ from tradingbot.utils.metrics import (
     OPEN_POSITIONS,
     MARKET_LATENCY,
     E2E_LATENCY,
+    FUNDING_RATE,
+    OPEN_INTEREST,
 )
 
 # System metrics
@@ -186,9 +188,25 @@ def metrics_summary() -> dict:
         if sample.name == "open_position"
     }
 
+    funding_rates = {
+        sample.labels["symbol"]: sample.value
+        for metric in FUNDING_RATE.collect()
+        for sample in metric.samples
+        if sample.name == "funding_rate"
+    }
+
+    open_interest = {
+        sample.labels["symbol"]: sample.value
+        for metric in OPEN_INTEREST.collect()
+        for sample in metric.samples
+        if sample.name == "open_interest"
+    }
+
     return {
         "pnl": TRADING_PNL._value.get(),
         "positions": positions,
+        "funding_rates": funding_rates,
+        "open_interest": open_interest,
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,

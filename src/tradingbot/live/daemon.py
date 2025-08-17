@@ -26,6 +26,7 @@ from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
+from ..utils.metrics import FUNDING_RATE, OPEN_INTEREST
 
 log = logging.getLogger(__name__)
 
@@ -358,6 +359,9 @@ class TradeBotDaemon:
 
     async def _dispatch_funding(self, evt: dict) -> None:
         """Forward funding events to strategies."""
+        rate = float(evt.get("rate") or 0.0)
+        symbol = evt.get("symbol", "")
+        FUNDING_RATE.labels(symbol=symbol).set(rate)
         for strat in self.strategies:
             handler = getattr(strat, "on_funding", None)
             if handler is None:
@@ -386,6 +390,9 @@ class TradeBotDaemon:
 
     async def _dispatch_open_interest(self, evt: dict) -> None:
         """Forward open interest events to strategies."""
+        oi = float(evt.get("oi") or 0.0)
+        symbol = evt.get("symbol", "")
+        OPEN_INTEREST.labels(symbol=symbol).set(oi)
         for strat in self.strategies:
             handler = getattr(strat, "on_open_interest", None)
             if handler is None:
