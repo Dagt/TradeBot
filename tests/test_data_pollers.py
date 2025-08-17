@@ -58,11 +58,12 @@ async def test_poll_basis_publishes_and_inserts(monkeypatch):
             return {"ts": ts, "basis": 5.0}
 
     events = []
+    inserted = []
     bus = EventBus()
     bus.subscribe("basis", lambda e: events.append(e))
 
     monkeypatch.setattr("tradingbot.data.basis.get_engine", lambda: "engine")
-    monkeypatch.setattr("tradingbot.data.basis.insert_basis", lambda *a, **k: events.append({"persist": k}))
+    monkeypatch.setattr("tradingbot.data.basis.insert_basis", lambda *a, **k: inserted.append(k))
     monkeypatch.setattr("tradingbot.data.basis._CAN_PG", True)
 
     task = asyncio.create_task(
@@ -73,5 +74,5 @@ async def test_poll_basis_publishes_and_inserts(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert events and any("basis" in e for e in events if "basis" in e)
-    assert any("persist" in e for e in events)
+    assert events and events[0]["basis"] == 5.0
+    assert inserted and inserted[0]["basis"] == 5.0
