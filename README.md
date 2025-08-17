@@ -82,6 +82,10 @@ cp .env.example .env  # editar con tus credenciales
 pytest
 ```
 
+> **Nota**: es necesario que el reloj del sistema esté sincronizado. Al iniciar la
+> CLI se consulta un servidor NTP y se muestra una advertencia si el desfase
+> supera el umbral definido en `NTP_OFFSET_THRESHOLD` (por defecto 1s).
+
 ## Despliegue con Docker
 
 Para levantar toda la pila de servicios (API, bases de datos, monitoreo):

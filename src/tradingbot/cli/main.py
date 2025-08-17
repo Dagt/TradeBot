@@ -23,6 +23,7 @@ TWAP, VWAP or POV strategies.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from typing import List
@@ -31,6 +32,21 @@ import typer
 
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
+from tradingbot.utils.time_sync import check_ntp_offset
+
+
+_OFFSET_THRESHOLD = float(os.getenv("NTP_OFFSET_THRESHOLD", "1.0"))
+try:
+    _offset = check_ntp_offset()
+    if abs(_offset) > _OFFSET_THRESHOLD:
+        logging.warning(
+            "System clock offset %.3fs exceeds threshold %.2fs."
+            " Please synchronize your clock.",
+            _offset,
+            _OFFSET_THRESHOLD,
+        )
+except Exception as exc:  # pragma: no cover - network failures
+    logging.debug("Failed to check NTP offset: %s", exc)
 
 
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
