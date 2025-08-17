@@ -34,7 +34,7 @@ async def test_router_selects_lowest_cost_venue():
     ob2 = {"XYZ": {"bids": [(99.5, 1.0)], "asks": [(100.5, 1.0)]}}
     a1 = MockAdapter("a1", order_book=ob1, taker_fee_bps=10.0, latency=5.0)
     a2 = MockAdapter("a2", order_book=ob2, taker_fee_bps=0.0, latency=20.0)
-    router = ExecutionRouter([a1, a2])
+    router = ExecutionRouter([a1, a2], prefer="taker")
     order = Order(symbol="XYZ", side="buy", type_="market", qty=1.0)
     selected = await router.best_venue(order)
     assert selected is a2
@@ -46,7 +46,7 @@ async def test_router_selects_lowest_cost_venue_maker():
     ob2 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(101.0, 1.0)]}}
     a1 = MockAdapter("a1", order_book=ob1, maker_fee_bps=0.0)
     a2 = MockAdapter("a2", order_book=ob2, maker_fee_bps=5.0)
-    router = ExecutionRouter([a1, a2])
+    router = ExecutionRouter([a1, a2], prefer="maker")
     order = Order(
         symbol="XYZ",
         side="buy",
@@ -85,3 +85,28 @@ async def test_router_records_slippage_metric():
     ][0]
     assert count_sample.value == 1.0
     assert sum_sample.value == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_est_slippage_and_queue_paths():
+    book = {
+        "XYZ": {
+            "bids": [(99.0, 2.0)],
+            "asks": [(100.0, 1.0), (101.0, 1.0)],
+        }
+    }
+    adapter = MockAdapter("m", order_book=book, last_px={"XYZ": 100.0})
+
+    # Taker path slippage
+    router_taker = ExecutionRouter(adapter, prefer="taker")
+    order_taker = Order(symbol="XYZ", side="buy", type_="market", qty=1.5)
+    res_taker = await router_taker.execute(order_taker)
+    assert res_taker["est_slippage_bps"] == pytest.approx(33.333, rel=1e-3)
+
+    # Maker path queue position
+    router_maker = ExecutionRouter(adapter, prefer="maker")
+    order_maker = Order(
+        symbol="XYZ", side="buy", type_="limit", qty=0.5, price=99.0, post_only=True
+    )
+    res_maker = await router_maker.execute(order_maker)
+    assert res_maker["queue_position"] == pytest.approx(0.8, rel=1e-3)

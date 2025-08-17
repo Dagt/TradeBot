@@ -31,9 +31,12 @@ class PaperAdapter(ExchangeAdapter):
     """
     name = "paper"
 
-    def __init__(self, fee_bps: float = 0.0):
+    def __init__(self, maker_fee_bps: float = 0.0, taker_fee_bps: float | None = None):
         self.state = PaperState()
-        self.fee_bps = fee_bps
+        self.maker_fee_bps = float(maker_fee_bps)
+        self.taker_fee_bps = float(
+            taker_fee_bps if taker_fee_bps is not None else maker_fee_bps
+        )
 
     def update_last_price(self, symbol: str, px: float):
         self.state.last_px[symbol] = px
@@ -78,9 +81,18 @@ class PaperAdapter(ExchangeAdapter):
         self.state.order_id_seq += 1
         return f"paper-{self.state.order_id_seq}"
 
-    def _apply_fill(self, symbol: str, side: str, qty: float, px: float, ts: Optional[datetime] = None) -> dict:
+    def _apply_fill(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        px: float,
+        maker: bool,
+        ts: Optional[datetime] = None,
+    ) -> dict:
         # fees
-        fee = abs(qty) * px * (self.fee_bps / 10000.0)
+        fee_bps = self.maker_fee_bps if maker else self.taker_fee_bps
+        fee = abs(qty) * px * (fee_bps / 10000.0)
         # cash/pnl y posición
         pos = self.state.pos.setdefault(symbol, PaperPosition())
         if side == "buy":
@@ -113,6 +125,9 @@ class PaperAdapter(ExchangeAdapter):
         return {
             "filled": True,
             "fee": fee,
+            "fee_usdt": fee,
+            "fee_type": "maker" if maker else "taker",
+            "fee_bps": fee_bps,
             "pos_qty": pos.qty,
             "pos_avg_px": pos.avg_px,
             "realized_pnl": self.state.realized_pnl,
@@ -136,10 +151,16 @@ class PaperAdapter(ExchangeAdapter):
         if last is None:
             return {"status": "rejected", "reason": "no_last_price", "order_id": order_id}
 
+        # Determine maker/taker
+        maker = post_only or (
+            type_.lower() == "limit" and time_in_force not in {"IOC", "FOK"}
+        )
+
         # Estrategia simple: market llena a last; limit solo llena si cruza inmediatamente
         px_exec = None
         if type_.lower() == "market":
             px_exec = last
+            maker = False
         elif type_.lower() == "limit":
             if side == "buy" and price is not None and price >= last:
                 px_exec = last
@@ -151,8 +172,16 @@ class PaperAdapter(ExchangeAdapter):
         else:
             return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
 
-        fill = self._apply_fill(symbol, side, qty, px_exec)
-        return {"status": "filled", "order_id": order_id, "symbol": symbol, "side": side, "qty": qty, "price": px_exec, **fill}
+        fill = self._apply_fill(symbol, side, qty, px_exec, maker)
+        return {
+            "status": "filled",
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": px_exec,
+            **fill,
+        }
 
     async def cancel_order(self, order_id: str) -> dict:
         # Este simulador no mantiene colas pendientes (limit no cruzado = no entra al libro)

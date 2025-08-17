@@ -73,6 +73,7 @@ def persist_after_order(
 
     # 1) Orden
     try:
+        notes = resp if isinstance(resp, dict) else {}
         insert_order(
             engine,
             strategy=strategy,
@@ -82,9 +83,9 @@ def persist_after_order(
             type_=type_,
             qty=float(qty),
             px=None,
-            status=(resp.get("status", "sent") if isinstance(resp, dict) else "sent"),
-            ext_order_id=(resp.get("ext_order_id") if isinstance(resp, dict) else None),
-            notes=resp,
+            status=(resp.get("status", "sent") if isinstance(notes, dict) else "sent"),
+            ext_order_id=(notes.get("ext_order_id") if isinstance(notes, dict) else None),
+            notes=notes,
         )
     except Exception:
         log.exception("[%s] persist failure: insert_order", symbol)
@@ -92,8 +93,12 @@ def persist_after_order(
     # 2) Fill
     try:
         fpx = None
+        fee_usdt = None
         if isinstance(resp, dict):
             fpx = resp.get("fill_price")
+            fee_usdt = resp.get("fee_usdt")
+            if fee_usdt is None and resp.get("fee_bps") is not None:
+                fee_usdt = abs(qty * mark_price) * float(resp["fee_bps"]) / 10000.0
         insert_fill(
             engine,
             ts=datetime.now(timezone.utc),
@@ -104,10 +109,10 @@ def persist_after_order(
             type_=type_,
             qty=float(qty),
             price=float(fpx if fpx is not None else mark_price),
-            fee_usdt=(resp.get("fee_usdt") if isinstance(resp, dict) and (resp.get("fee_usdt") is not None) else None),
+            fee_usdt=(fee_usdt if fee_usdt is not None else None),
             reduce_only=bool(reduce_only),
             ext_order_id=(resp.get("ext_order_id") if isinstance(resp, dict) else None),
-            raw=resp
+            raw=resp,
         )
     except Exception:
         log.exception("[%s] persist failure: insert_fill", symbol)

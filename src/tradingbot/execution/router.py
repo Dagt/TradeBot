@@ -23,9 +23,15 @@ log = logging.getLogger(__name__)
 
 
 class ExecutionRouter:
-    """Route orders to the best venue and track execution metrics."""
+    """Route orders to the best venue and track execution metrics.
 
-    def __init__(self, adapters: Iterable, storage_engine=None):
+    A ``prefer`` flag can force maker or taker routing regardless of the
+    order's ``post_only`` attribute.  When left as ``None`` the router keeps
+    the previous behaviour of inferring maker vs taker from the order type.
+    ``prefer`` accepts ``"maker"`` or ``"taker"``.
+    """
+
+    def __init__(self, adapters: Iterable, storage_engine=None, prefer: str | None = None):
         if isinstance(adapters, dict):
             self.adapters: Dict[str, object] = adapters  # type: ignore[assignment]
         elif isinstance(adapters, (list, tuple, set)):
@@ -38,15 +44,26 @@ class ExecutionRouter:
         self._maker_counts = defaultdict(int)
         self._taker_counts = defaultdict(int)
         self._engine = storage_engine
+        self._prefer = prefer
+        self._last_maker = False
+
+    # ------------------------------------------------------------------
+    def _is_maker(self, order: Order) -> bool:
+        maker = order.post_only or (
+            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
+        )
+        if self._prefer == "maker":
+            return True
+        if self._prefer == "taker":
+            return False
+        return maker
 
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
         """Select venue based on spread, fees and latency."""
-        maker = order.post_only or (
-            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
-        )
+        maker_pref = self._is_maker(order)
 
-        def venue_score(adapter) -> float | None:
+        def venue_score(adapter) -> tuple[float, bool] | None:
             state = getattr(adapter, "state", None)
             book = getattr(state, "order_book", {}).get(order.symbol) if state else None
             last = getattr(state, "last_px", {}).get(order.symbol) if state else None
@@ -61,25 +78,30 @@ class ExecutionRouter:
             else:
                 return None
 
+            maker = maker_pref
             fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
             fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
             fee = price * fee_bps / 10000.0
             latency = getattr(adapter, "latency", 0.0)
             direction = 1 if order.side == "buy" else -1
             score = direction * price + fee + spread / 2 + latency * 1e-6
-            return score
+            return score, maker
 
         selected = None
         best_score = None
+        selected_maker = maker_pref
         for adapter in self.adapters.values():
-            score = venue_score(adapter)
-            if score is None:
+            res = venue_score(adapter)
+            if res is None:
                 continue
+            score, maker = res
             if best_score is None or score < best_score:
                 best_score = score
                 selected = adapter
+                selected_maker = maker
         if selected is None:
             selected = next(iter(self.adapters.values()))
+        self._last_maker = selected_maker
         return selected
 
     # ------------------------------------------------------------------
@@ -131,29 +153,34 @@ class ExecutionRouter:
         venue = getattr(adapter, "name", "unknown")
         log.info("Routing order %s via %s", order, venue)
 
+        maker = getattr(self, "_last_maker", self._is_maker(order))
+
         state = getattr(adapter, "state", None)
         book = getattr(state, "order_book", {}).get(order.symbol) if state else None
         est_slippage = None
         queue_pos = None
         if book and book.get("bids") and book.get("asks"):
             levels: List[Tuple[float, float]] = (
+                book["bids"] if maker and order.side == "buy" else
+                book["asks"] if maker and order.side == "sell" else
                 book["asks"] if order.side == "buy" else book["bids"]
             )
             top_px, top_qty = levels[0]
-            # queue position relative to existing size at best level
-            queue_pos = top_qty / (top_qty + order.qty) if top_qty else 0.0
-            remaining = order.qty
-            cost = 0.0
-            for px, qty in levels:
-                take = min(remaining, qty)
-                cost += px * take
-                remaining -= take
-                if remaining <= 0:
-                    break
-            if remaining == 0:
-                avg_px = cost / order.qty
-                est_slippage = (avg_px - top_px) / top_px * 10000
+            if maker:
+                queue_pos = top_qty / (top_qty + order.qty) if top_qty else 0.0
                 QUEUE_POSITION.labels(symbol=order.symbol, side=order.side).observe(queue_pos)
+            else:
+                remaining = order.qty
+                cost = 0.0
+                for px, qty in levels:
+                    take = min(remaining, qty)
+                    cost += px * take
+                    remaining -= take
+                    if remaining <= 0:
+                        break
+                if remaining == 0:
+                    avg_px = cost / order.qty
+                    est_slippage = (avg_px - top_px) / top_px * 10000
 
         start = time.monotonic()
         kwargs = dict(
@@ -181,11 +208,10 @@ class ExecutionRouter:
             res.setdefault("est_slippage_bps", est_slippage)
         if queue_pos is not None:
             res.setdefault("queue_position", queue_pos)
-        maker = order.post_only or (
-            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
-        )
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
         fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
+        res.setdefault("fee_type", "maker" if maker else "taker")
+        res.setdefault("fee_bps", fee_bps)
         if res.get("status") == "filled":
             FILL_COUNT.labels(symbol=order.symbol, side=order.side).inc()
             if self._engine is not None:
