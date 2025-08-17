@@ -22,3 +22,11 @@ risk:
 balance:
   threshold: 0.0
   assets: []
+
+ingestion:
+  funding:
+    binance_futures:
+      BTC/USDT: 60
+  open_interest:
+    binance_futures:
+      BTC/USDT: 60

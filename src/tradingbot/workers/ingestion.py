@@ -56,3 +56,89 @@ class BatchIngestionWorker:
                     failed_batches.labels(self.table).inc()
                     raise
                 await asyncio.sleep(0.5 * 2 ** (attempt - 1))
+
+
+def _get_storage(backend: str):
+    """Return the storage module matching *backend*.
+
+    Parameters
+    ----------
+    backend:
+        Name of the backend.  Supported values are ``"timescale"`` and
+        ``"quest"``.  Any other value defaults to ``quest`` to keep the
+        function small and avoid raising additional errors in the workers.
+    """
+
+    if backend == "timescale":
+        from ..storage import timescale as storage
+    else:
+        from ..storage import quest as storage
+    return storage
+
+
+async def funding_worker(
+    adapter,
+    symbol: str,
+    *,
+    interval: int = 60,
+    backend: str = "timescale",
+):
+    """Periodically fetch funding rates and persist them.
+
+    The worker delegates the retrieval to :func:`data.funding.fetch_funding`
+    and stores the normalised result using the selected storage backend.
+    """
+
+    from ..data import funding as data_funding
+
+    storage = _get_storage(backend)
+    engine = storage.get_engine()
+
+    while True:
+        try:
+            info = await data_funding.fetch_funding(adapter, symbol)
+            storage.insert_funding(
+                engine,
+                ts=info["ts"],
+                exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
+                symbol=symbol,
+                rate=info.get("rate", 0.0),
+                interval_sec=info.get("interval_sec", 0),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - logging only
+            log.warning("funding_worker error: %s", exc)
+        await asyncio.sleep(interval)
+
+
+async def open_interest_worker(
+    adapter,
+    symbol: str,
+    *,
+    interval: int = 60,
+    backend: str = "timescale",
+):
+    """Periodically fetch open interest and persist it."""
+
+    from ..data import open_interest as data_oi
+
+    storage = _get_storage(backend)
+    engine = storage.get_engine()
+
+    while True:
+        try:
+            info = await data_oi.fetch_oi(adapter, symbol)
+            storage.insert_open_interest(
+                engine,
+                ts=info["ts"],
+                exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
+                symbol=symbol,
+                oi=info.get("oi", 0.0),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - logging only
+            log.warning("open_interest_worker error: %s", exc)
+        await asyncio.sleep(interval)
+
