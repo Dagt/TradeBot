@@ -53,7 +53,7 @@ class DummyDG:
     def on_mark(self, *a, **k):
         pass
 
-    def check_halt(self):
+    def check_halt(self, broker=None):
         return (False, "")
 
 

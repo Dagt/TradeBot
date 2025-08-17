@@ -88,7 +88,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
         broker.update_last_price(cfg.symbol, px)
         guard.mark_price(cfg.symbol, px)
         dguard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={cfg.symbol: px}))
-        halted, reason = dguard.check_halt()
+        halted, reason = dguard.check_halt(broker)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
