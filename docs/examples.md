@@ -5,6 +5,14 @@
 python -m tradingbot.cli ingest --symbol BTC/USDT
 ```
 
+### Ingesta histórica
+```bash
+# Trades desde Kaiko
+python -m tradingbot.cli ingest-historical kaiko BTC-USDT --exchange binance --kind trades
+# Order books desde CoinAPI
+python -m tradingbot.cli ingest-historical coinapi BTC/USD --kind orderbook --depth 20
+```
+
 ## Trading en vivo en Testnet
 ```bash
 python -m tradingbot.cli run-bot --exchange binance --market spot --symbol BTC/USDT

@@ -8,6 +8,8 @@ from typing import Any, Iterable, Literal
 from ..bus import EventBus
 from ..types import Tick, Bar, OrderBook
 from ..connectors import Trade as ConnTrade, OrderBook as ConnOrderBook
+from ..connectors.kaiko import KaikoConnector
+from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 
@@ -155,6 +157,102 @@ async def download_order_book(
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=getattr(connector, "name", "unknown"),
+        symbol=symbol,
+        bid_px=[p for p, _ in ob.bids],
+        bid_qty=[q for _, q in ob.bids],
+        ask_px=[p for p, _ in ob.asks],
+        ask_qty=[q for _, q in ob.asks],
+    )
+    persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_kaiko_trades(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch trades from Kaiko and persist them."""
+
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
+        exchange, pair, **params
+    )
+    ticks = [
+        Tick(
+            ts=t.timestamp,
+            exchange=exchange,
+            symbol=pair,
+            price=t.price,
+            qty=t.amount,
+            side=t.side,
+        )
+        for t in raw_trades
+    ]
+    persist_trades(ticks, backend=backend)
+
+
+async def download_kaiko_order_book(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch an order book snapshot from Kaiko and persist it."""
+
+    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    snapshot = OrderBook(
+        ts=ob.timestamp,
+        exchange=exchange,
+        symbol=pair,
+        bid_px=[p for p, _ in ob.bids],
+        bid_qty=[q for _, q in ob.bids],
+        ask_px=[p for p, _ in ob.asks],
+        ask_qty=[q for _, q in ob.asks],
+    )
+    persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_coinapi_trades(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch trades from CoinAPI and persist them."""
+
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    ticks = [
+        Tick(
+            ts=t.timestamp,
+            exchange=connector.name,
+            symbol=symbol,
+            price=t.price,
+            qty=t.amount,
+            side=t.side,
+        )
+        for t in raw_trades
+    ]
+    persist_trades(ticks, backend=backend)
+
+
+async def download_coinapi_order_book(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch an order book snapshot from CoinAPI and persist it."""
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    snapshot = OrderBook(
+        ts=ob.timestamp,
+        exchange=connector.name,
         symbol=symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],

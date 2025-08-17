@@ -61,6 +61,63 @@ def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
         typer.echo("stopped")
 
 
+@app.command("ingest-historical")
+def ingest_historical(
+    source: str = typer.Argument(..., help="Fuente de datos: kaiko o coinapi"),
+    symbol: str = typer.Argument(..., help="Símbolo o par"),
+    exchange: str = typer.Option("", help="Exchange para Kaiko"),
+    kind: str = typer.Option("trades", help="Tipo de dato: trades u orderbook"),
+    backend: str = typer.Option("timescale", help="Backend de storage"),
+    limit: int = typer.Option(100, help="Límite de trades"),
+    depth: int = typer.Option(10, help="Profundidad del order book"),
+) -> None:
+    """Descargar datos históricos usando Kaiko o CoinAPI."""
+
+    setup_logging()
+    if source.lower() == "kaiko":
+        from ..connectors.kaiko import KaikoConnector
+        from ..data.ingestion import (
+            download_kaiko_trades,
+            download_kaiko_order_book,
+        )
+
+        connector = KaikoConnector()
+        if kind == "orderbook":
+            asyncio.run(
+                download_kaiko_order_book(
+                    connector, exchange, symbol, backend=backend, depth=depth
+                )
+            )
+        else:
+            asyncio.run(
+                download_kaiko_trades(
+                    connector, exchange, symbol, backend=backend, limit=limit
+                )
+            )
+    elif source.lower() == "coinapi":
+        from ..connectors.coinapi import CoinAPIConnector
+        from ..data.ingestion import (
+            download_coinapi_trades,
+            download_coinapi_order_book,
+        )
+
+        connector = CoinAPIConnector()
+        if kind == "orderbook":
+            asyncio.run(
+                download_coinapi_order_book(
+                    connector, symbol, backend=backend, depth=depth
+                )
+            )
+        else:
+            asyncio.run(
+                download_coinapi_trades(
+                    connector, symbol, backend=backend, limit=limit
+                )
+            )
+    else:  # pragma: no cover - CLI validation
+        raise typer.BadParameter("Fuente inválida, usa kaiko o coinapi")
+
+
 @app.command("run-bot")
 def run_bot(
     exchange: str = typer.Option("binance", help="Exchange name"),
