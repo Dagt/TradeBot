@@ -10,7 +10,7 @@ parameters and storage options.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
@@ -60,6 +60,14 @@ class RiskConfig:
 
 
 @dataclass
+class BalanceConfig:
+    """Balance rebalancing parameters."""
+
+    threshold: float = 0.0
+    assets: List[str] = field(default_factory=list)
+
+
+@dataclass
 class AppConfig:
     """Top level application configuration."""
 
@@ -68,6 +76,7 @@ class AppConfig:
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    balance: BalanceConfig = field(default_factory=BalanceConfig)
 
 
 # Register configuration so Hydra validates the structure

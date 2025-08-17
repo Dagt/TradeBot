@@ -20,6 +20,7 @@ from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
+from ..execution.balance import rebalance_between_exchanges
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,8 @@ class TradeBotDaemon:
         balance_interval: float = 60.0,
         correlation_threshold: float = 0.8,
         returns_window: int = 100,
+        rebalance_assets: Iterable[str] | None = None,
+        rebalance_threshold: float = 0.0,
     ) -> None:
         self.adapters = adapters
         self.strategies: List[object] = []
@@ -98,6 +101,8 @@ class TradeBotDaemon:
                 log.warning("runner_load_error", extra={"path": path, "err": str(exc)})
         self.balance_interval = balance_interval
         self.corr_threshold = float(correlation_threshold)
+        self.rebalance_assets = list(rebalance_assets or [])
+        self.rebalance_threshold = float(rebalance_threshold)
 
         # initialize position books for all venues/symbols
         for venue in self.adapters:
@@ -170,6 +175,22 @@ class TradeBotDaemon:
     async def _balance_worker(self) -> None:
         while not self._stop.is_set():
             await self.refresh_balances()
+            if self.rebalance_assets:
+                engine = getattr(self.router, "_engine", None)
+                for asset in self.rebalance_assets:
+                    try:
+                        await rebalance_between_exchanges(
+                            asset,
+                            price=1.0,
+                            venues=self.accounts,
+                            risk=self.risk,
+                            engine=engine,
+                            threshold=self.rebalance_threshold,
+                        )
+                    except Exception as exc:  # pragma: no cover - network
+                        log.warning(
+                            "rebalance_error", extra={"asset": asset, "err": str(exc)}
+                        )
             await asyncio.sleep(self.balance_interval)
 
     # ------------------------------------------------------------------
