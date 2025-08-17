@@ -258,6 +258,66 @@ async def download_funding(
     persist_funding([record], backend=backend)
 
 
+# ---------------------------------------------------------------------------
+# Convenience helpers for common data sources
+# ---------------------------------------------------------------------------
+
+
+async def fetch_trades_kaiko(
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch trades from Kaiko and persist them.
+
+    The function instantiates :class:`KaikoConnector`, normalises the returned
+    trades into :class:`Tick` objects and delegates persistence to
+    :func:`persist_trades` using the selected backend or CSV file.
+    """
+
+    connector = KaikoConnector()
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
+        exchange, pair, **params
+    )
+    ticks = [
+        Tick(
+            ts=t.timestamp,
+            exchange=exchange,
+            symbol=pair,
+            price=t.price,
+            qty=t.amount,
+            side=t.side,
+        )
+        for t in raw_trades
+    ]
+    persist_trades(ticks, backend=backend)
+
+
+async def fetch_orderbook_kaiko(
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch an order book snapshot from Kaiko and persist it."""
+
+    connector = KaikoConnector()
+    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    snapshot = OrderBook(
+        ts=ob.timestamp,
+        exchange=exchange,
+        symbol=pair,
+        bid_px=[p for p, _ in ob.bids],
+        bid_qty=[q for _, q in ob.bids],
+        ask_px=[p for p, _ in ob.asks],
+        ask_qty=[q for _, q in ob.asks],
+    )
+    persist_orderbooks([snapshot], backend=backend)
+
+
 async def download_kaiko_trades(
     connector: KaikoConnector,
     exchange: str,
@@ -327,6 +387,57 @@ async def download_kaiko_open_interest(
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
         records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
     persist_open_interest(records, backend=backend)
+
+
+async def fetch_trades_coinapi(
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch trades from CoinAPI and persist them.
+
+    A :class:`CoinAPIConnector` is created internally, the returned trades are
+    mapped to :class:`Tick` objects and finally stored using
+    :func:`persist_trades`.
+    """
+
+    connector = CoinAPIConnector()
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    ticks = [
+        Tick(
+            ts=t.timestamp,
+            exchange=connector.name,
+            symbol=symbol,
+            price=t.price,
+            qty=t.amount,
+            side=t.side,
+        )
+        for t in raw_trades
+    ]
+    persist_trades(ticks, backend=backend)
+
+
+async def fetch_orderbook_coinapi(
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch an order book snapshot from CoinAPI and persist it."""
+
+    connector = CoinAPIConnector()
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    snapshot = OrderBook(
+        ts=ob.timestamp,
+        exchange=connector.name,
+        symbol=symbol,
+        bid_px=[p for p, _ in ob.bids],
+        bid_qty=[q for _, q in ob.bids],
+        ask_px=[p for p, _ in ob.asks],
+        ask_qty=[q for _, q in ob.asks],
+    )
+    persist_orderbooks([snapshot], backend=backend)
 
 
 async def download_coinapi_trades(
