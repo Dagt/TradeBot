@@ -5,6 +5,12 @@
 python -m tradingbot.cli ingest --symbol BTC/USDT
 ```
 
+## Trading en vivo en Testnet
+```bash
+python -m tradingbot.cli run-bot --exchange binance --market spot --symbol BTC/USDT
+python -m tradingbot.cli run-bot --exchange binance --market futures --symbol BTC/USDT --leverage 5
+```
+
 ## Backfill y backtesting vectorizado
 1. Levantar una base de datos Timescale o Quest:
 ```bash

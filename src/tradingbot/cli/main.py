@@ -25,6 +25,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from typing import List
+
 import typer
 
 from ..logging_conf import setup_logging
@@ -60,13 +62,35 @@ def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
 
 
 @app.command("run-bot")
-def run_bot(symbol: str = "BTC/USDT") -> None:
-    """Run the live trading bot on Binance testnet."""
+def run_bot(
+    exchange: str = typer.Option("binance", help="Exchange name"),
+    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
+    testnet: bool = typer.Option(True, help="Use testnet endpoints"),
+    trade_qty: float = typer.Option(0.001, help="Order size"),
+    leverage: int = typer.Option(1, help="Leverage for futures"),
+    dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
+) -> None:
+    """Run the live trading bot with configurable exchange and symbols."""
 
     setup_logging()
-    from ..live.runner import run_live_binance
+    if testnet:
+        from ..live.runner_testnet import run_live_testnet
 
-    asyncio.run(run_live_binance(symbol=symbol))
+        asyncio.run(
+            run_live_testnet(
+                exchange=exchange,
+                market=market,
+                symbols=symbols,
+                trade_qty=trade_qty,
+                leverage=leverage,
+                dry_run=dry_run,
+            )
+        )
+    else:
+        from ..live.runner import run_live_binance
+
+        asyncio.run(run_live_binance(symbol=symbols[0]))
 
 
 @app.command("daemon")
@@ -129,60 +153,6 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         sys.argv = old
 
 
-@app.command("run-bybit-spot-testnet")
-def run_bybit_spot_testnet(
-    symbol: str = "BTC/USDT",
-    trade_qty: float = 0.001,
-    persist_pg: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
-    soft_cap_pct: float = 0.10,
-    soft_cap_grace_sec: int = 30,
-) -> None:
-    """Run the live trading bot on Bybit spot testnet."""
-
-    setup_logging()
-    from ..live.runner_spot_testnet_bybit import run_live_bybit_spot_testnet
-
-    asyncio.run(
-        run_live_bybit_spot_testnet(
-            symbol=symbol,
-            trade_qty=trade_qty,
-            persist_pg=persist_pg,
-            total_cap_usdt=total_cap_usdt,
-            per_symbol_cap_usdt=per_symbol_cap_usdt,
-            soft_cap_pct=soft_cap_pct,
-            soft_cap_grace_sec=soft_cap_grace_sec,
-        )
-    )
-
-
-@app.command("run-okx-spot-testnet")
-def run_okx_spot_testnet(
-    symbol: str = "BTC/USDT",
-    trade_qty: float = 0.001,
-    persist_pg: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
-    soft_cap_pct: float = 0.10,
-    soft_cap_grace_sec: int = 30,
-) -> None:
-    """Run the live trading bot on OKX spot testnet."""
-
-    setup_logging()
-    from ..live.runner_spot_testnet_okx import run_live_okx_spot_testnet
-
-    asyncio.run(
-        run_live_okx_spot_testnet(
-            symbol=symbol,
-            trade_qty=trade_qty,
-            persist_pg=persist_pg,
-            total_cap_usdt=total_cap_usdt,
-            per_symbol_cap_usdt=per_symbol_cap_usdt,
-            soft_cap_pct=soft_cap_pct,
-            soft_cap_grace_sec=soft_cap_grace_sec,
-        )
-    )
 
 
 @app.command()
