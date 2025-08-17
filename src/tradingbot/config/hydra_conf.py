@@ -52,6 +52,14 @@ class StorageConfig:
 
 
 @dataclass
+class RiskConfig:
+    """Risk management parameters used by strategies/daemon."""
+
+    correlation_threshold: float = 0.8
+    returns_window: int = 100
+
+
+@dataclass
 class AppConfig:
     """Top level application configuration."""
 
@@ -59,6 +67,7 @@ class AppConfig:
     strategies: StrategiesConfig = field(default_factory=StrategiesConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)
 
 
 # Register configuration so Hydra validates the structure

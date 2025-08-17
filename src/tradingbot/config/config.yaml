@@ -16,3 +16,6 @@ backtest:
 storage:
   backend: sqlite
   url: "sqlite:///:memory:"
+risk:
+  correlation_threshold: 0.8
+  returns_window: 100

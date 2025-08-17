@@ -1,7 +1,6 @@
 import asyncio
 import pytest
 import asyncio
-import pytest
 
 from tradingbot.live.daemon import TradeBotDaemon
 from tradingbot.risk.manager import RiskManager
@@ -9,6 +8,7 @@ from tradingbot.execution.router import ExecutionRouter
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.strategies.base import Signal
 from tradingbot.bus import EventBus
+from collections import deque
 
 
 class FeedAdapter:
@@ -48,3 +48,34 @@ async def test_daemon_processes_trades():
     daemon._stop.set()
     await task
     assert risk.pos.qty > 0
+
+
+@pytest.mark.asyncio
+async def test_daemon_adjusts_size_for_correlation():
+    class DummyRisk(RiskManager):
+        def update_correlation(self, *args, **kwargs):
+            return []
+
+        def update_covariance(self, *args, **kwargs):
+            return []
+
+    class DummyRouter:
+        def __init__(self):
+            self.orders = []
+
+        async def execute(self, order):
+            self.orders.append(order)
+            return {"status": "filled"}
+
+    risk = DummyRisk(max_pos=1.0)
+    router = DummyRouter()
+    daemon = TradeBotDaemon({}, [], risk, router, ["AAA"], returns_window=10)
+    daemon.price_history["AAA"] = deque([1, 2, 3], maxlen=10)
+    daemon.price_history["BBB"] = deque([2, 4, 6, 8], maxlen=10)
+
+    trade = type("T", (), {"symbol": "AAA", "price": 4.0})
+    sig = Signal("buy", 1.0)
+
+    await daemon._on_signal({"signal": sig, "trade": trade})
+
+    assert router.orders and router.orders[0].qty == pytest.approx(0.5)
