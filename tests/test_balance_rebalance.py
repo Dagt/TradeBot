@@ -101,9 +101,11 @@ async def test_daemon_periodic_rebalance(monkeypatch):
         balance_interval=0.01,
         rebalance_assets=["USDT"],
         rebalance_threshold=1.0,
+        rebalance_interval=0.01,
+        rebalance_enabled=True,
     )
 
-    task = asyncio.create_task(daemon._balance_worker())
+    task = asyncio.create_task(daemon._rebalance_worker())
     await asyncio.sleep(0.05)
     daemon._stop.set()
     await task

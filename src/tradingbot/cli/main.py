@@ -200,8 +200,11 @@ def run_daemon(config: str = "config/config.yaml") -> None:
 
         corr_thr = getattr(getattr(cfg, "risk", {}), "correlation_threshold", 0.8)
         ret_win = getattr(getattr(cfg, "risk", {}), "returns_window", 100)
-        bal_assets = getattr(getattr(cfg, "balance", {}), "assets", [])
-        bal_thr = getattr(getattr(cfg, "balance", {}), "threshold", 0.0)
+        bal_cfg = getattr(cfg, "balance", {})
+        bal_assets = getattr(bal_cfg, "assets", [])
+        bal_thr = getattr(bal_cfg, "threshold", 0.0)
+        bal_interval = getattr(bal_cfg, "interval", 60.0)
+        bal_enabled = getattr(bal_cfg, "enabled", False)
 
         bot = TradeBotDaemon(
             {"binance": adapter},
@@ -213,6 +216,8 @@ def run_daemon(config: str = "config/config.yaml") -> None:
             returns_window=ret_win,
             rebalance_assets=bal_assets,
             rebalance_threshold=bal_thr,
+            rebalance_interval=bal_interval,
+            rebalance_enabled=bal_enabled,
         )
 
         typer.echo(OmegaConf.to_yaml(cfg))
