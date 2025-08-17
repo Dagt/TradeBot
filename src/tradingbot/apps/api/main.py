@@ -217,6 +217,9 @@ def oco_active(venue: str, symbols: str):
 
 # --- Strategy control endpoints -------------------------------------------------
 _strategies_state: dict[str, str] = {}
+_strategy_params: dict[str, dict] = {}
+_funding: dict[str, float] = {}
+_basis: dict[str, float] = {}
 
 
 @app.post("/strategies/{name}/start")
@@ -248,3 +251,54 @@ def strategies_status():
     """Return the status of all known strategies."""
 
     return {"strategies": _strategies_state}
+
+
+# --- Funding and basis endpoints ------------------------------------------------
+
+
+@app.get("/funding")
+def get_funding():
+    """Return latest funding rates by symbol."""
+
+    return {"funding": _funding}
+
+
+@app.post("/funding")
+def set_funding(data: dict[str, float]):
+    """Update funding rates for one or more symbols."""
+
+    _funding.update(data)
+    return {"funding": _funding}
+
+
+@app.get("/basis")
+def get_basis():
+    """Return latest basis values by symbol."""
+
+    return {"basis": _basis}
+
+
+@app.post("/basis")
+def set_basis(data: dict[str, float]):
+    """Update basis values for one or more symbols."""
+
+    _basis.update(data)
+    return {"basis": _basis}
+
+
+# --- Strategy parameters --------------------------------------------------------
+
+
+@app.get("/strategies/{name}/params")
+def get_strategy_params(name: str):
+    """Return stored parameters for a strategy."""
+
+    return {"strategy": name, "params": _strategy_params.get(name, {})}
+
+
+@app.post("/strategies/{name}/params")
+def update_strategy_params(name: str, params: dict):
+    """Persist parameters for a strategy."""
+
+    _strategy_params[name] = params
+    return {"strategy": name, "params": params}

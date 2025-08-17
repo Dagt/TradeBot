@@ -1,3 +1,10 @@
+import pathlib
+import sys
+
+root = pathlib.Path(__file__).resolve().parents[1]
+sys.path.append(str(root))
+sys.path.append(str(root / "src"))
+
 from fastapi.testclient import TestClient
 from monitoring.panel import app
 import monitoring.panel as panel
@@ -14,6 +21,7 @@ from monitoring.metrics import (
     STRATEGY_ACTIONS,
     KILL_SWITCH_ACTIVE,
 )
+from tradingbot.apps.api.main import app as api_app
 
 
 def test_panel_endpoints_and_metrics():
@@ -113,3 +121,35 @@ def test_alerts_endpoint(monkeypatch):
     assert data["kill_switch_active"] is True
     assert data["ws_disconnects"] is False
     assert data["alerts"] == alerts_list
+
+
+def test_api_funding_basis_and_params():
+    """Verify funding, basis and strategy param endpoints in the API app."""
+
+    client = TestClient(api_app)
+    auth = ("admin", "admin")
+
+    # Funding
+    resp = client.get("/funding", auth=auth)
+    assert resp.status_code == 200
+    assert resp.json()["funding"] == {}
+    resp = client.post("/funding", json={"BTC/USDT": 0.01}, auth=auth)
+    assert resp.status_code == 200
+    assert resp.json()["funding"]["BTC/USDT"] == 0.01
+    resp = client.get("/funding", auth=auth)
+    assert resp.json()["funding"]["BTC/USDT"] == 0.01
+
+    # Basis
+    resp = client.post("/basis", json={"BTC/USDT": 100.0}, auth=auth)
+    assert resp.status_code == 200
+    assert resp.json()["basis"]["BTC/USDT"] == 100.0
+    resp = client.get("/basis", auth=auth)
+    assert resp.json()["basis"]["BTC/USDT"] == 100.0
+
+    # Strategy params
+    resp = client.post("/strategies/foo/params", json={"window": 10}, auth=auth)
+    assert resp.status_code == 200
+    assert resp.json()["params"] == {"window": 10}
+    resp = client.get("/strategies/foo/params", auth=auth)
+    assert resp.status_code == 200
+    assert resp.json()["params"] == {"window": 10}
