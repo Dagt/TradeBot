@@ -494,21 +494,76 @@ def optimize_strategy_optuna(
     return study
 
 
+def purged_kfold(
+    n_samples: int, n_splits: int, embargo: float = 0.0
+) -> List[Tuple[List[int], List[int]]]:
+    """Generate K-fold partitions with an embargo to avoid look-ahead bias.
+
+    Parameters
+    ----------
+    n_samples: int
+        Total number of observations to split.
+    n_splits: int
+        Number of folds.
+    embargo: float, optional
+        Fraction of ``n_samples`` to exclude on each side of the test split
+        from the training set.  For example ``embargo=0.01`` will remove 1 % of
+        samples before and after the test window.
+
+    Returns
+    -------
+    list of tuple
+        Each tuple contains the training indices and the testing indices for
+        the fold.
+    """
+
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2")
+
+    indices = list(range(n_samples))
+    fold_sizes = [n_samples // n_splits] * n_splits
+    for i in range(n_samples % n_splits):
+        fold_sizes[i] += 1
+
+    embargo_size = int(n_samples * embargo)
+    current = 0
+    folds: List[Tuple[List[int], List[int]]] = []
+    for fold_size in fold_sizes:
+        start, stop = current, current + fold_size
+        test_idx = indices[start:stop]
+        train_idx: List[int] = []
+        left_end = max(0, start - embargo_size)
+        if left_end > 0:
+            train_idx.extend(indices[:left_end])
+        right_start = min(n_samples, stop + embargo_size)
+        if right_start < n_samples:
+            train_idx.extend(indices[right_start:])
+        folds.append((train_idx, test_idx))
+        current = stop
+    return folds
+
+
 def walk_forward_optimize(
     csv_path: str,
     symbol: str,
     strategy_name: str,
     param_grid: List[Dict[str, Any]],
-    train_size: int,
-    test_size: int,
+    train_size: int | None = None,
+    test_size: int | None = None,
     latency: int = 1,
     window: int = 120,
+    *,
+    splits: List[Tuple[List[int], List[int]]] | None = None,
+    n_splits: int | None = None,
+    embargo: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """Perform a simple walk-forward optimization.
 
-    For each sequential train/test split a grid search over ``param_grid`` is
-    performed on the training slice.  The best parameters are then evaluated on
-    the following test slice.  A list of results is returned and also logged.
+    Two modes are supported.  By default the function performs sequential
+    walk-forward splits using ``train_size`` and ``test_size`` windows.  When
+    ``splits`` or ``n_splits`` is provided the optimisation runs on the
+    partitions returned by :func:`purged_kfold`, applying the specified
+    ``embargo`` fraction to avoid look-ahead bias.
     """
 
     df = pd.read_csv(Path(csv_path))
@@ -516,7 +571,53 @@ def walk_forward_optimize(
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
 
+    if splits is None and n_splits is not None:
+        splits = purged_kfold(len(df), n_splits, embargo)
+
     results: List[Dict[str, Any]] = []
+
+    if splits is not None:
+        for split, (train_idx, test_idx) in enumerate(splits):
+            train_df = df.iloc[train_idx].reset_index(drop=True)
+            test_df = df.iloc[test_idx].reset_index(drop=True)
+
+            best_params: Dict[str, Any] | None = None
+            best_equity = -float("inf")
+            for params in param_grid:
+                strat = strat_cls(**params)
+                engine = EventDrivenBacktestEngine(
+                    {symbol: train_df},
+                    [(strategy_name, symbol)],
+                    latency=latency,
+                    window=window,
+                )
+                engine.strategies[(strategy_name, symbol)] = strat
+                res = engine.run()
+                eq = float(res.get("equity", 0.0))
+                if eq > best_equity:
+                    best_equity = eq
+                    best_params = params
+
+            strat = strat_cls(**(best_params or {}))
+            engine = EventDrivenBacktestEngine(
+                {symbol: test_df}, [(strategy_name, symbol)], latency=latency, window=window
+            )
+            engine.strategies[(strategy_name, symbol)] = strat
+            test_res = engine.run()
+
+            rec = {
+                "split": split,
+                "params": best_params,
+                "train_equity": best_equity,
+                "test_equity": float(test_res.get("equity", 0.0)),
+            }
+            log.info("walk-forward split %s: %s", split, rec)
+            results.append(rec)
+        return results
+
+    if train_size is None or test_size is None:
+        raise ValueError("train_size and test_size must be provided when splits is None")
+
     start = 0
     split = 0
     while start + train_size + test_size <= len(df):
@@ -537,7 +638,6 @@ def walk_forward_optimize(
                 best_equity = eq
                 best_params = params
 
-        # Evaluate best params on test data
         strat = strat_cls(**(best_params or {}))
         engine = EventDrivenBacktestEngine(
             {symbol: test_df}, [(strategy_name, symbol)], latency=latency, window=window

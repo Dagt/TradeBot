@@ -237,6 +237,47 @@ def backtest_cfg(config: str) -> None:
         sys.argv = old_argv
 
 
+@app.command("walk-forward")
+def walk_forward_cfg(config: str) -> None:
+    """Run walk-forward optimization from a Hydra configuration."""
+
+    from pathlib import Path
+
+    import hydra
+    from omegaconf import OmegaConf
+
+    setup_logging()
+    from ..config import hydra_conf as _  # noqa: F401
+
+    cfg_path = Path(config)
+    rel_path = os.path.relpath(cfg_path.parent, Path(__file__).parent)
+
+    @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
+    def _run(cfg) -> None:  # type: ignore[override]
+        from ..backtesting.engine import walk_forward_optimize
+
+        wf_cfg = cfg.walk_forward
+        results = walk_forward_optimize(
+            wf_cfg.data,
+            wf_cfg.symbol,
+            wf_cfg.strategy,
+            wf_cfg.param_grid,
+            latency=getattr(wf_cfg, "latency", 1),
+            window=getattr(wf_cfg, "window", 120),
+            n_splits=getattr(wf_cfg, "n_splits", 3),
+            embargo=getattr(wf_cfg, "embargo", 0.0),
+        )
+        typer.echo(OmegaConf.to_yaml(cfg))
+        typer.echo(results)
+
+    old_argv = sys.argv
+    sys.argv = [sys.argv[0]]
+    try:
+        _run()
+    finally:
+        sys.argv = old_argv
+
+
 @app.command()
 def report(venue: str = "binance_spot_testnet") -> None:
     """Display a simple PnL summary from TimescaleDB.
