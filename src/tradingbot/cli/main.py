@@ -153,6 +153,63 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         sys.argv = old
 
 
+@app.command("ingestion-workers")
+def run_ingestion_workers(
+    config: str = "config/config.yaml",
+    backend: str = typer.Option("timescale", help="Storage backend"),
+) -> None:
+    """Start funding and open-interest ingestion workers defined in a YAML config."""
+
+    import yaml
+    from importlib import import_module
+
+    from ..workers import funding_worker, open_interest_worker
+
+    setup_logging()
+
+    with open(config) as fh:
+        cfg = yaml.safe_load(fh)
+
+    ingestion_cfg = cfg.get("ingestion", {})
+    funding_cfg = ingestion_cfg.get("funding", {})
+    oi_cfg = ingestion_cfg.get("open_interest", {})
+
+    adapters: dict[str, object] = {}
+
+    def _load_adapter(name: str):
+        if name not in adapters:
+            module = import_module(f"tradingbot.adapters.{name}")
+            cls_name = "".join(part.capitalize() for part in name.split("_")) + "Adapter"
+            adapters[name] = getattr(module, cls_name)()
+        return adapters[name]
+
+    async def _run() -> None:
+        tasks = []
+        for exch, symbols in funding_cfg.items():
+            adapter = _load_adapter(exch)
+            for sym, interval in symbols.items():
+                tasks.append(
+                    asyncio.create_task(
+                        funding_worker(adapter, sym, interval=interval, backend=backend)
+                    )
+                )
+        for exch, symbols in oi_cfg.items():
+            adapter = _load_adapter(exch)
+            for sym, interval in symbols.items():
+                tasks.append(
+                    asyncio.create_task(
+                        open_interest_worker(adapter, sym, interval=interval, backend=backend)
+                    )
+                )
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:  # pragma: no cover - CLI convenience
+        typer.echo("stopped")
+
+
 
 
 @app.command()

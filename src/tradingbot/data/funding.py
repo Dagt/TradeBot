@@ -13,6 +13,26 @@ except Exception:  # pragma: no cover - optional dependency
 
 log = logging.getLogger(__name__)
 
+async def fetch_funding(adapter, symbol: str) -> dict[str, Any]:
+    """Fetch a funding rate using ``adapter`` and normalise the result.
+
+    The returned mapping includes ``ts`` (datetime), ``rate`` (float) and
+    ``interval_sec`` (int) fields.  Any missing values are substituted with
+    sane defaults so callers only need to handle the happy path.
+    """
+
+    info: Any = await adapter.fetch_funding(symbol)
+    ts = info.get("ts") or datetime.now(timezone.utc)
+    rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
+    interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
+    return {
+        "ts": ts,
+        "rate": rate,
+        "interval_sec": interval_sec,
+        "exchange": getattr(adapter, "name", "unknown"),
+    }
+
+
 async def poll_funding(adapter, symbol: str, bus: EventBus, interval: int = 60, persist_pg: bool = False) -> None:
     """Poll periodic funding rates and publish them on the event bus.
 
@@ -25,21 +45,25 @@ async def poll_funding(adapter, symbol: str, bus: EventBus, interval: int = 60, 
     engine = get_engine() if (persist_pg and _CAN_PG) else None
     while True:
         try:
-            info: Any = await adapter.fetch_funding(symbol)
-            rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
-            interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
-            ts = info.get("ts") or datetime.now(timezone.utc)
+            info = await fetch_funding(adapter, symbol)
             event = {
-                "ts": ts,
-                "exchange": getattr(adapter, "name", "unknown"),
+                "ts": info["ts"],
+                "exchange": info["exchange"],
                 "symbol": symbol,
-                "rate": rate,
-                "interval_sec": interval_sec,
+                "rate": info["rate"],
+                "interval_sec": info["interval_sec"],
             }
             await bus.publish("funding", event)
             if engine is not None:
                 try:
-                    insert_funding(engine, ts=ts, exchange=event["exchange"], symbol=symbol, rate=rate, interval_sec=interval_sec)
+                    insert_funding(
+                        engine,
+                        ts=info["ts"],
+                        exchange=event["exchange"],
+                        symbol=symbol,
+                        rate=info["rate"],
+                        interval_sec=info["interval_sec"],
+                    )
                 except Exception as e:  # pragma: no cover - logging only
                     log.debug("No se pudo insertar funding: %s", e)
         except asyncio.CancelledError:  # allow task cancellation
