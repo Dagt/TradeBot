@@ -13,10 +13,16 @@ def test_alerts_and_metrics_definitions():
     assert "LowOrderBookDepth" in rule_names
     assert "WebsocketReconnections" in rule_names
     assert "ExcessiveSlippage" in rule_names
+    assert "RiskEvents" in rule_names
+    assert "KillSwitchActive" in rule_names
+    assert "WebsocketDisconnects" in rule_names
 
     assert "order_book_min_depth" in rule_names["LowOrderBookDepth"]["expr"]
     assert "ws_reconnections_total" in rule_names["WebsocketReconnections"]["expr"]
     assert "order_slippage_bps" in rule_names["ExcessiveSlippage"]["expr"]
+    assert "risk_events_total" in rule_names["RiskEvents"]["expr"]
+    assert "kill_switch_active" in rule_names["KillSwitchActive"]["expr"]
+    assert "ws_failures_total" in rule_names["WebsocketDisconnects"]["expr"]
 
     ORDER_BOOK_MIN_DEPTH.clear()
     WS_RECONNECTS.clear()

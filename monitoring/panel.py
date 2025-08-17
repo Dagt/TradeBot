@@ -74,10 +74,17 @@ def fetch_alerts() -> list[dict]:
 
 
 @app.get("/alerts")
-def alerts() -> dict[str, list[dict]]:
-    """Expose current alert state."""
+def alerts() -> dict[str, bool | list[dict]]:
+    """Expose current alert state with flags for key alerts."""
 
-    return {"alerts": fetch_alerts()}
+    current = fetch_alerts()
+    active = {a.get("labels", {}).get("alertname") for a in current}
+    return {
+        "risk_events": "RiskEvents" in active,
+        "kill_switch_active": "KillSwitchActive" in active,
+        "ws_disconnects": "WebsocketDisconnects" in active,
+        "alerts": current,
+    }
 
 
 @app.get("/health")

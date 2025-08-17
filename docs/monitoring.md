@@ -19,7 +19,7 @@ Available endpoints:
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
 - `GET /health` – basic liveness probe.
-- `GET /alerts` – current firing and pending alerts.
+- `GET /alerts` – current firing and pending alerts with risk flags.
 - `GET /dashboards` – list of Grafana dashboards with direct URLs.
 - `GET /dashboards/{name}` – redirect to a specific Grafana dashboard.
 
@@ -69,10 +69,41 @@ The `core.json` dashboard provides panels for:
 ## Alerts
 
 Prometheus alerting rules are defined in `monitoring/alerts.yml`,
-covering negative PnL, high latencies, websocket failures and the
-kill‑switch being triggered. Prometheus loads this file and forwards
+covering negative PnL, high latencies, websocket issues, risk events and
+the kill‑switch being triggered. Prometheus loads this file and forwards
 firing alerts to Alertmanager, which is configured via
 `monitoring/alertmanager.yml`.
+
+Example rules for risk monitoring:
+
+```yaml
+- alert: RiskEvents
+  expr: increase(risk_events_total[5m]) > 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: Risk management events detected
+    description: Risk triggers fired in the last 5m
+
+- alert: KillSwitchActive
+  expr: kill_switch_active > 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: Kill switch engaged
+    description: Trading halted via kill switch for over a minute
+
+- alert: WebsocketDisconnects
+  expr: increase(ws_failures_total[5m]) > 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: Websocket disconnections detected
+    description: Websocket clients disconnected in the last 5m
+```
 
 Edit `alertmanager.yml` to integrate with your preferred notification
 service (Slack, email, webhooks, …). After changes, restart the stack so
