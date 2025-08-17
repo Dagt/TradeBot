@@ -3,6 +3,7 @@
 import os
 import json
 from pathlib import Path
+import logging
 
 import httpx
 import yaml
@@ -12,11 +13,8 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from .metrics import router as metrics_router, metrics_summary
-from .strategies import (
-    router as strategies_router,
-    strategies_status,
-)
+from .metrics import router as metrics_router, metrics_summary, STRATEGY_ACTIONS
+from .strategies import strategies_status, set_strategy_status
 
 config_path = Path(__file__).with_name("sentry.yml")
 if config_path.exists():
@@ -24,9 +22,12 @@ if config_path.exists():
         config = yaml.safe_load(f)
     sentry_sdk.init(integrations=[FastApiIntegration()], **config)
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="TradeBot Monitoring")
 app.include_router(metrics_router)
-app.include_router(strategies_router)
+
+_strategy_params: dict[str, dict] = {}
 
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
@@ -103,6 +104,46 @@ def summary() -> dict:
         "strategies": strategies_status()["strategies"],
         "alerts": fetch_alerts(),
     }
+
+
+@app.post("/strategies/{name}/enable")
+def enable_strategy(name: str, params: dict | None = None) -> dict:
+    """Enable a strategy and optionally update its parameters."""
+
+    logger.info("Enabling strategy %s", name)
+    res = set_strategy_status(name, "running")
+    if params:
+        _strategy_params[name] = params
+    STRATEGY_ACTIONS.labels(strategy=name, action="enable").inc()
+    res["params"] = _strategy_params.get(name, {})
+    return res
+
+
+@app.post("/strategies/{name}/disable")
+def disable_strategy(name: str) -> dict:
+    """Disable a strategy."""
+
+    logger.info("Disabling strategy %s", name)
+    res = set_strategy_status(name, "stopped")
+    STRATEGY_ACTIONS.labels(strategy=name, action="disable").inc()
+    return res
+
+
+@app.post("/strategies/{name}/params")
+def update_strategy_params(name: str, params: dict) -> dict:
+    """Update parameters for a strategy."""
+
+    logger.info("Updating params for %s: %s", name, params)
+    _strategy_params[name] = params
+    STRATEGY_ACTIONS.labels(strategy=name, action="params").inc()
+    return {"strategy": name, "params": params}
+
+
+@app.get("/strategies/status")
+def get_strategies_status() -> dict:
+    """Return the status of all strategies."""
+
+    return strategies_status()
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

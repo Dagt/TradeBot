@@ -32,7 +32,13 @@
     <h2>Strategies</h2>
     <div v-if="!strategies">Loading...</div>
     <ul v-else>
-      <li v-for="(status, name) in strategies" :key="name">{{ name }}: {{ status }}</li>
+      <li v-for="(status, name) in strategies" :key="name">
+        {{ name }}: {{ status }}
+        <button @click="enableStrategy(name)">Enable</button>
+        <button @click="disableStrategy(name)">Disable</button>
+        <input v-model="params[name]" placeholder="{\"key\":\"val\"}" />
+        <button @click="updateParams(name)">Set Params</button>
+      </li>
     </ul>
   </section>
 
@@ -64,7 +70,8 @@ createApp({
       strategies: null,
       slippage: null,
       intraday: null,
-      slipSymbol: ''
+      slipSymbol: '',
+      params: {}
     };
   },
   methods: {
@@ -81,6 +88,19 @@ createApp({
     },
     async fetchIntraday() {
       this.intraday = await fetch('/pnl/intraday').then(r => r.json());
+    },
+    async enableStrategy(name) {
+      await fetch(`/strategies/${name}/enable`, { method: 'POST' });
+      this.fetchStrategies();
+    },
+    async disableStrategy(name) {
+      await fetch(`/strategies/${name}/disable`, { method: 'POST' });
+      this.fetchStrategies();
+    },
+    async updateParams(name) {
+      const body = this.params[name] || '{}';
+      try { JSON.parse(body); } catch(e) { alert('Invalid JSON'); return; }
+      await fetch(`/strategies/${name}/params`, { method: 'POST', headers: {'Content-Type':'application/json'}, body });
     },
     refresh() {
       this.fetchMetrics();

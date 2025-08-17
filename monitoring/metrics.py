@@ -30,6 +30,12 @@ STRATEGY_STATE = Gauge(
     ["strategy"],
 )
 
+STRATEGY_ACTIONS = Counter(
+    "strategy_actions_total",
+    "Total number of strategy control actions",
+    ["strategy", "action"],
+)
+
 router = APIRouter()
 
 

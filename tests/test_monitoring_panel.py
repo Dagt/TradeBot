@@ -11,6 +11,7 @@ from monitoring.metrics import (
     WS_FAILURES,
     STRATEGY_STATE,
     OPEN_POSITIONS,
+    STRATEGY_ACTIONS,
 )
 
 
@@ -51,6 +52,36 @@ def test_panel_endpoints_and_metrics():
     assert data["avg_e2e_latency_seconds"] == 0.7
     assert data["ws_failures"] == 1.0
     assert data["strategy_states"] == {"alpha": 1.0}
+
+
+def test_strategy_control_endpoints():
+    client = TestClient(app)
+    STRATEGY_STATE.clear()
+    STRATEGY_ACTIONS.clear()
+
+    resp = client.post("/strategies/foo/enable")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "running"
+    assert STRATEGY_STATE.labels(strategy="foo")._value.get() == 1.0
+    assert (
+        STRATEGY_ACTIONS.labels(strategy="foo", action="enable")._value.get() == 1.0
+    )
+
+    resp = client.post("/strategies/foo/params", json={"window": 10})
+    assert resp.status_code == 200
+    assert resp.json()["params"] == {"window": 10}
+    assert (
+        STRATEGY_ACTIONS.labels(strategy="foo", action="params")._value.get() == 1.0
+    )
+
+    resp = client.post("/strategies/foo/disable")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "stopped"
+    assert STRATEGY_STATE.labels(strategy="foo")._value.get() == 0.0
+    assert (
+        STRATEGY_ACTIONS.labels(strategy="foo", action="disable")._value.get()
+        == 1.0
+    )
 
 
 def test_alerts_endpoint(monkeypatch):
