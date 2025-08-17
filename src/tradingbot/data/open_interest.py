@@ -17,16 +17,35 @@ log = logging.getLogger(__name__)
 async def fetch_oi(adapter, symbol: str) -> dict[str, Any]:
     """Fetch open interest using ``adapter`` and return a normalised mapping."""
 
-    fetch = getattr(adapter, "fetch_open_interest", None) or getattr(adapter, "fetch_oi", None)
+    fetch = getattr(adapter, "fetch_open_interest", None) or getattr(
+        adapter, "fetch_oi", None
+    )
     if fetch is None:
         raise AttributeError("adapter lacks fetch_open_interest")
     info: Any = await fetch(symbol)
-    ts_raw = info.get("ts") or info.get("time")
-    if isinstance(ts_raw, (int, float)):
-        ts = datetime.fromtimestamp(ts_raw / 1000, timezone.utc)
+    if hasattr(info, "model_dump"):
+        data = info.model_dump()
+    elif hasattr(info, "dict"):
+        data = info.dict()
+    elif isinstance(info, dict):
+        data = info
     else:
-        ts = ts_raw or datetime.now(timezone.utc)
-    oi = float(info.get("oi") or info.get("openInterest") or 0.0)
+        data = {}
+    ts_raw = data.get("ts") or data.get("timestamp") or data.get("time")
+    if isinstance(ts_raw, (int, float)):
+        ts = datetime.fromtimestamp(
+            ts_raw / 1000 if ts_raw > 1e12 else ts_raw, timezone.utc
+        )
+    elif ts_raw is not None:
+        ts = ts_raw
+    else:
+        ts = datetime.now(timezone.utc)
+    oi = float(
+        data.get("oi")
+        or data.get("openInterest")
+        or data.get("value")
+        or 0.0
+    )
     return {
         "ts": ts,
         "oi": oi,

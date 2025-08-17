@@ -4,7 +4,13 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .base import ExchangeConnector, OrderBook, Trade
+from .base import (
+    ExchangeConnector,
+    Funding,
+    OpenInterest,
+    OrderBook,
+    Trade,
+)
 
 
 class BinanceConnector(ExchangeConnector):
@@ -50,4 +56,59 @@ class BinanceConnector(ExchangeConnector):
             price=float(data.get("p", 0.0)),
             amount=float(data.get("q", 0.0)),
             side="sell" if data.get("m") else "buy",
+        )
+
+    async def fetch_funding(self, symbol: str) -> Funding:
+        """Fetch current funding rate for ``symbol``."""
+
+        method = getattr(self.rest, "fetch_funding_rate", None) or getattr(
+            self.rest, "fetchFundingRate", None
+        )
+        if method is None:
+            raise NotImplementedError("Funding not supported")
+        data = await self._rest_call(method, symbol)
+        ts = (
+            data.get("timestamp")
+            or data.get("fundingTime")
+            or data.get("time")
+            or data.get("ts")
+            or 0
+        )
+        if ts > 1e12:
+            ts /= 1000
+        return Funding(
+            timestamp=datetime.fromtimestamp(ts),
+            exchange=self.name,
+            symbol=symbol,
+            rate=float(
+                data.get("fundingRate")
+                or data.get("rate")
+                or data.get("value")
+                or 0.0
+            ),
+        )
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        """Fetch current open interest for ``symbol``."""
+
+        method = getattr(self.rest, "fapiPublic_get_open_interest", None) or getattr(
+            self.rest, "fapiPublicGetOpenInterest", None
+        )
+        if method is None:
+            raise NotImplementedError("Open interest not supported")
+        sym = symbol.replace("/", "")
+        data = await self._rest_call(method, {"symbol": sym})
+        ts = data.get("time") or data.get("timestamp") or data.get("ts") or 0
+        if ts > 1e12:
+            ts /= 1000
+        return OpenInterest(
+            timestamp=datetime.fromtimestamp(ts),
+            exchange=self.name,
+            symbol=symbol,
+            oi=float(
+                data.get("openInterest")
+                or data.get("oi")
+                or data.get("value")
+                or 0.0
+            ),
         )

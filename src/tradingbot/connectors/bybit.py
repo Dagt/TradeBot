@@ -4,7 +4,13 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .base import ExchangeConnector, OrderBook, Trade
+from .base import (
+    ExchangeConnector,
+    Funding,
+    OpenInterest,
+    OrderBook,
+    Trade,
+)
 
 
 class BybitConnector(ExchangeConnector):
@@ -50,6 +56,59 @@ class BybitConnector(ExchangeConnector):
             price=float(trade_data.get("p", 0.0)),
             amount=float(trade_data.get("v", 0.0)),
             side=(trade_data.get("S") or trade_data.get("side", "")).lower(),
+        )
+
+    async def fetch_funding(self, symbol: str) -> Funding:
+        """Fetch current funding rate for ``symbol``."""
+
+        method = getattr(self.rest, "fetch_funding_rate", None) or getattr(
+            self.rest, "fetchFundingRate", None
+        )
+        if method is None:
+            raise NotImplementedError("Funding not supported")
+        data = await self._rest_call(method, symbol)
+        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
+        if ts > 1e12:
+            ts /= 1000
+        return Funding(
+            timestamp=datetime.fromtimestamp(ts),
+            exchange=self.name,
+            symbol=symbol,
+            rate=float(
+                data.get("fundingRate")
+                or data.get("rate")
+                or data.get("value")
+                or 0.0
+            ),
+        )
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        """Fetch current open interest for ``symbol``."""
+
+        method = getattr(self.rest, "public_get_v5_market_open_interest", None) or getattr(
+            self.rest, "publicGetV5MarketOpenInterest", None
+        )
+        if method is None:
+            raise NotImplementedError("Open interest not supported")
+        sym = symbol.replace("/", "")
+        data = await self._rest_call(
+            method, {"category": "linear", "symbol": sym}
+        )
+        lst = (data.get("result") or {}).get("list") or []
+        item = lst[0] if lst else {}
+        ts_ms = int(item.get("timestamp") or item.get("ts") or data.get("time", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000 if ts_ms > 1e12 else ts_ms)
+        oi = float(
+            item.get("openInterest")
+            or item.get("oi")
+            or item.get("value")
+            or 0.0
+        )
+        return OpenInterest(
+            timestamp=ts,
+            exchange=self.name,
+            symbol=symbol,
+            oi=oi,
         )
 
     # ------------------------------------------------------------------

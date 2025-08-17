@@ -22,9 +22,30 @@ async def fetch_funding(adapter, symbol: str) -> dict[str, Any]:
     """
 
     info: Any = await adapter.fetch_funding(symbol)
-    ts = info.get("ts") or datetime.now(timezone.utc)
-    rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
-    interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
+    if hasattr(info, "model_dump"):
+        data = info.model_dump()
+    elif hasattr(info, "dict"):
+        data = info.dict()
+    elif isinstance(info, dict):
+        data = info
+    else:
+        data = {}
+    ts_raw = data.get("ts") or data.get("timestamp") or data.get("time")
+    if isinstance(ts_raw, (int, float)):
+        ts = datetime.fromtimestamp(
+            ts_raw / 1000 if ts_raw > 1e12 else ts_raw, timezone.utc
+        )
+    elif ts_raw is not None:
+        ts = ts_raw
+    else:
+        ts = datetime.now(timezone.utc)
+    rate = float(
+        data.get("rate")
+            or data.get("fundingRate")
+            or data.get("value")
+            or 0.0
+    )
+    interval_sec = int(data.get("interval_sec") or data.get("interval", 0))
     return {
         "ts": ts,
         "rate": rate,
