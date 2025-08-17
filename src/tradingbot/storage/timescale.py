@@ -34,12 +34,33 @@ def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
             dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v),
         )
 
-def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, interval_sec: int):
+def insert_funding(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    rate: float,
+    interval_sec: int,
+):
+    """Persist a funding rate observation."""
+
     with engine.begin() as conn:
-        conn.execute(text('''
+        conn.execute(
+            text(
+                '''
             INSERT INTO market.funding (ts, exchange, symbol, rate, interval_sec)
             VALUES (:ts, :exchange, :symbol, :rate, :interval_sec)
-        '''), dict(ts=ts, exchange=exchange, symbol=symbol, rate=rate, interval_sec=interval_sec))
+        '''
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=symbol,
+                rate=rate,
+                interval_sec=interval_sec,
+            ),
+        )
 
 
 def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):

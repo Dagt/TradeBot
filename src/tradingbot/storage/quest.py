@@ -147,7 +147,7 @@ def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, inter
 
 
 def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
-    """Persist an open interest record into QuestDB."""
+    """Persist an open interest observation into QuestDB."""
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -161,7 +161,7 @@ def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
 
 
 def insert_basis(engine, *, ts, exchange: str, symbol: str, basis: float):
-    """Persist a basis record into QuestDB."""
+    """Persist a basis observation into QuestDB."""
     with engine.begin() as conn:
         conn.execute(
             text(

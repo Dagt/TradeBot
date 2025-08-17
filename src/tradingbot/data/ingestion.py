@@ -345,3 +345,24 @@ async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "1m", backen
         except Exception as exc:  # pragma: no cover - logging only
             log.debug("Bar fetch failed: %s", exc)
         await asyncio.sleep(sleep_s)
+
+
+async def poll_perp_metrics(
+    adapter: Any,
+    symbol: str,
+    *,
+    interval: int = 60,
+    backend: Backends = "timescale",
+) -> None:
+    """Run perpetual data pollers concurrently.
+
+    This helper gathers :func:`poll_funding`, :func:`poll_basis` and
+    :func:`poll_open_interest` so that funding rates, basis and open interest
+    are fetched continuously.
+    """
+
+    await asyncio.gather(
+        poll_funding(adapter, symbol, interval=interval, backend=backend),
+        poll_basis(adapter, symbol, interval=interval, backend=backend),
+        poll_open_interest(adapter, symbol, interval=interval, backend=backend),
+    )
