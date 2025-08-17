@@ -1,7 +1,44 @@
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.base import ClassifierMixin
 
 from .base import Strategy, Signal, record_signal_metrics
+
+
+def apply_meta_labeling(
+    labels: pd.Series,
+    features: pd.DataFrame,
+    model: ClassifierMixin | None = None,
+) -> pd.Series:
+    """Train a secondary model to obtain meta labels from primary labels.
+
+    Parameters
+    ----------
+    labels : pd.Series
+        Primary labels containing values ``-1``, ``0`` or ``1``.
+    features : pd.DataFrame
+        Feature matrix aligned with ``labels``.
+    model : ClassifierMixin, optional
+        Model used for the meta labeling task. If ``None`` a
+        :class:`~sklearn.ensemble.GradientBoostingClassifier` is used.
+
+    Returns
+    -------
+    pd.Series
+        Predicted meta labels where ``1`` indicates the primary label
+        suggests taking a trade and ``0`` otherwise.
+    """
+
+    if model is None:
+        model = GradientBoostingClassifier()
+    # Meta labels are binary: take the trade when primary label is not 0
+    meta_y = (labels != 0).astype(int)
+    if len(features) != len(meta_y):
+        raise ValueError("features and labels must have the same length")
+    # Fit the provided model. Even if ``meta_y`` is constant the classifier
+    # will simply learn that constant mapping which is sufficient for tests.
+    model.fit(features, meta_y)
+    return pd.Series(model.predict(features), index=labels.index)
 
 
 def triple_barrier_labels(
@@ -62,13 +99,16 @@ class TripleBarrier(Strategy):
         upper_pct: float = 0.02,
         lower_pct: float = 0.02,
         training_window: int = 200,
+        meta_model: ClassifierMixin | None = None,
     ) -> None:
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
         self.lower_pct = float(lower_pct)
         self.training_window = int(training_window)
         self.model = GradientBoostingClassifier()
+        self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
+        self.meta_fitted = False
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         returns = df["close"].pct_change().fillna(0)
@@ -95,11 +135,20 @@ class TripleBarrier(Strategy):
             y = labels.iloc[:-1]
             if y.nunique() > 1:
                 self.model.fit(X, y)
+                # Fit meta model using the same features/labels
+                apply_meta_labeling(y, X, self.meta_model)
                 self.fitted = True
+                self.meta_fitted = True
             else:
                 return None
         x_last = features.iloc[[-1]]
         pred = self.model.predict(x_last)[0]
+        if pred == 0:
+            return Signal("flat", 0.0)
+        if self.meta_fitted:
+            meta_pred = self.meta_model.predict(x_last)[0]
+            if meta_pred == 0:
+                return Signal("flat", 0.0)
         if pred == 1:
             return Signal("buy", 1.0)
         if pred == -1:
