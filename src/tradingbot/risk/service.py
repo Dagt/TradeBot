@@ -114,7 +114,7 @@ class RiskService:
         self.daily.on_mark(now, equity_now=broker.equity(mark_prices={symbol: price}))
         if abs(delta_rpnl) > 0:
             self.daily.on_realized_delta(delta_rpnl)
-        halted, reason = self.daily.check_halt()
+        halted, reason = self.daily.check_halt(broker)
         if halted:
             self._persist(f"HALT_{reason}", symbol, f"HALT: {reason}", {})
         return halted, reason
