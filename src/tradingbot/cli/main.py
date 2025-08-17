@@ -402,6 +402,32 @@ def report(venue: str = "binance_spot_testnet") -> None:
     typer.echo(summary)
 
 
+@app.command("train-ml")
+def train_ml(
+    data: str = typer.Argument(..., help="Ruta al CSV con los datos de entrenamiento"),
+    target: str = typer.Argument(..., help="Nombre de la columna objetivo"),
+    output: str = typer.Argument(..., help="Ruta donde guardar el modelo entrenado"),
+) -> None:
+    """Entrena un modelo :class:`MLStrategy` y lo guarda en disco."""
+
+    setup_logging()
+    import pandas as pd
+    from ..strategies.ml_models import MLStrategy
+
+    df = pd.read_csv(data)
+    if target not in df.columns:
+        raise typer.BadParameter(
+            f"Columna objetivo '{target}' no encontrada en {data}"
+        )
+    y = df[target].to_numpy()
+    X = df.drop(columns=[target]).to_numpy()
+
+    strat = MLStrategy()
+    strat.train(X, y)
+    strat.save_model(output)
+    typer.echo(f"Modelo guardado en {output}")
+
+
 @app.command("tri-arb")
 def tri_arb(
     route: str = typer.Argument(..., help="Ruta BASE-MID-QUOTE, ej. BTC-ETH-USDT"),
