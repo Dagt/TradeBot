@@ -19,3 +19,6 @@ storage:
 risk:
   correlation_threshold: 0.8
   returns_window: 100
+balance:
+  threshold: 0.0
+  assets: []
