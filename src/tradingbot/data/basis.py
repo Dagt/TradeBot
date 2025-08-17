@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..bus import EventBus
+from ..utils.metrics import BASIS, BASIS_HIST
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_basis
@@ -53,6 +54,8 @@ async def poll_basis(
                 "symbol": symbol,
                 "basis": info["basis"],
             }
+            BASIS.labels(symbol=symbol).set(info["basis"])
+            BASIS_HIST.labels(symbol=symbol).observe(info["basis"])
             await bus.publish("basis", event)
             if engine is not None:
                 try:

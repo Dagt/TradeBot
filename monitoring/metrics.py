@@ -22,6 +22,7 @@ from tradingbot.utils.metrics import (
     MARKET_LATENCY,
     E2E_LATENCY,
     FUNDING_RATE,
+    BASIS,
     OPEN_INTEREST,
 )
 
@@ -202,11 +203,19 @@ def metrics_summary() -> dict:
         if sample.name == "open_interest"
     }
 
+    basis = {
+        sample.labels["symbol"]: sample.value
+        for metric in BASIS.collect()
+        for sample in metric.samples
+        if sample.name == "basis"
+    }
+
     return {
         "pnl": TRADING_PNL._value.get(),
         "positions": positions,
         "funding_rates": funding_rates,
         "open_interest": open_interest,
+        "basis": basis,
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,

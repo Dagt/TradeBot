@@ -37,6 +37,7 @@
       return React.createElement('div', null, [
         React.createElement('h1', {key:'h'}, 'TradeBot Monitoring'),
         section('Metrics Summary', state.metrics),
+        section('Basis', state.metrics ? state.metrics.basis : null),
         section('PnL', state.pnl),
         section('Risk', state.risk)
       ]);

@@ -8,6 +8,7 @@ from tradingbot.data.open_interest import poll_open_interest
 from tradingbot.data.funding import poll_funding
 from tradingbot.data.basis import poll_basis
 from tradingbot.connectors import Funding, OpenInterest
+from tradingbot.utils.metrics import BASIS, BASIS_HIST
 
 
 @pytest.mark.asyncio
@@ -107,8 +108,11 @@ async def test_poll_basis_publishes_and_inserts(monkeypatch):
     monkeypatch.setattr("tradingbot.data.basis.insert_basis", lambda *a, **k: inserted.append(k))
     monkeypatch.setattr("tradingbot.data.basis._CAN_PG", True)
 
+    BASIS.clear()
+    BASIS_HIST.clear()
+
     task = asyncio.create_task(
-        poll_basis(DummyAdapter(), "BTCUSDT", bus, interval=0, persist_pg=True)
+        poll_basis(DummyAdapter(), "BTCUSDT", bus, interval=1, persist_pg=True)
     )
     await asyncio.sleep(0.01)
     task.cancel()
@@ -117,3 +121,11 @@ async def test_poll_basis_publishes_and_inserts(monkeypatch):
 
     assert events and events[0]["basis"] == 5.0
     assert inserted and inserted[0]["basis"] == 5.0
+    assert BASIS.labels(symbol="BTCUSDT")._value.get() == 5.0
+    hist_samples = [
+        s
+        for m in BASIS_HIST.collect()
+        for s in m.samples
+        if s.name.endswith("_sum")
+    ]
+    assert hist_samples and hist_samples[0].value == 5.0
