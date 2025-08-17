@@ -232,6 +232,32 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
         return {"ts": ts_dt, "rate": rate}
 
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        Binance expone el ``markPrice`` y el ``indexPrice`` del contrato
+        perpetuo mediante el endpoint ``premiumIndex`` de su API pública. La
+        diferencia entre ambos valores se conoce como *basis*.  Si el método
+        correspondiente no está disponible en el cliente REST se lanza un
+        ``NotImplementedError`` para dejar claro que el venue no lo soporta.
+        """
+
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "public_get_premiumindex", None)
+        if method is None:
+            raise NotImplementedError("Basis no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts = data.get("time") or data.get("timestamp") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts //= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        basis = mark_px - index_px
+        return {"ts": ts_dt, "basis": basis}
+
     async def fetch_oi(self, symbol: str):
         """Fetch current open interest for ``symbol``.
 
