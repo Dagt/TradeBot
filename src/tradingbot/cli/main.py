@@ -101,7 +101,18 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 
-        bot = TradeBotDaemon({"binance": adapter}, [strat], risk, router, [cfg.backtest.symbol])
+        corr_thr = getattr(getattr(cfg, "risk", {}), "correlation_threshold", 0.8)
+        ret_win = getattr(getattr(cfg, "risk", {}), "returns_window", 100)
+
+        bot = TradeBotDaemon(
+            {"binance": adapter},
+            [strat],
+            risk,
+            router,
+            [cfg.backtest.symbol],
+            correlation_threshold=corr_thr,
+            returns_window=ret_win,
+        )
 
         typer.echo(OmegaConf.to_yaml(cfg))
         asyncio.run(bot.run())

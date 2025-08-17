@@ -67,6 +67,8 @@ class TradeBotDaemon:
         strategy_paths: Iterable[str] | None = None,
         arb_runners: Iterable[tuple[str, dict]] | None = None,
         balance_interval: float = 60.0,
+        correlation_threshold: float = 0.8,
+        returns_window: int = 100,
     ) -> None:
         self.adapters = adapters
         self.strategies: List[object] = []
@@ -95,6 +97,7 @@ class TradeBotDaemon:
             except Exception as exc:
                 log.warning("runner_load_error", extra={"path": path, "err": str(exc)})
         self.balance_interval = balance_interval
+        self.corr_threshold = float(correlation_threshold)
 
         # initialize position books for all venues/symbols
         for venue in self.adapters:
@@ -111,7 +114,9 @@ class TradeBotDaemon:
         self._tasks: List[asyncio.Task] = []
         self._stop = asyncio.Event()
         self.balances: Dict[str, dict] = {}
-        self.price_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
+        self.price_history: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=returns_window)
+        )
 
         # Bus subscriptions
         self.bus.subscribe("trade", self._dispatch_trade)
@@ -332,10 +337,10 @@ class TradeBotDaemon:
                 rets_list = returns(df_hist).dropna().tolist()
                 if rets_list:
                     returns_dict[sym] = rets_list
+        corr_pairs: Dict[tuple[str, str], float] = {}
         if returns_dict:
             cov_matrix = self.risk.covariance_matrix(returns_dict)
             rets_df = pd.DataFrame(returns_dict)
-            corr_pairs: Dict[tuple[str, str], float] = {}
             cols = list(rets_df.columns)
             for a_idx in range(len(cols)):
                 for b_idx in range(a_idx + 1, len(cols)):
@@ -344,11 +349,14 @@ class TradeBotDaemon:
                     corr = rets_df[a].corr(rets_df[b])
                     if not pd.isna(corr):
                         corr_pairs[(a, b)] = float(corr)
-            self.risk.update_correlation(corr_pairs, 0.8)
-            self.risk.update_covariance(cov_matrix, 0.8)
+            self.risk.update_correlation(corr_pairs, self.corr_threshold)
+            self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
         delta = self.risk.size(side, strength)
         delta += self.risk.size_with_volatility(symbol_vol)
+        delta = self.risk.adjust_size_for_correlation(
+            symbol, delta, corr_pairs, self.corr_threshold
+        )
         if abs(delta) <= 0:
             return
         if price is not None and not self.risk.check_limits(price):
