@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Dict, Callable, Tuple, Type, List
+from typing import Dict, Callable, Tuple, Type, List, Any
 
 import pandas as pd
 
@@ -20,6 +20,8 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..adapters.binance_futures import BinanceFuturesAdapter
 from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter, BybitSpotAdapter
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter, OKXSpotAdapter
+from ..adapters.bybit_futures import BybitFuturesAdapter
+from ..adapters.okx_futures import OKXFuturesAdapter
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +30,9 @@ ADAPTERS: Dict[Tuple[str, str], AdapterTuple] = {
     ("binance", "spot"): (BinanceSpotWSAdapter, BinanceSpotAdapter, "binance_spot_testnet"),
     ("binance", "futures"): (BinanceWSAdapter, BinanceFuturesAdapter, "binance_futures_testnet"),
     ("bybit", "spot"): (BybitSpotWSAdapter, BybitSpotAdapter, "bybit_spot_testnet"),
+    ("bybit", "futures"): (BybitFuturesAdapter, BybitFuturesAdapter, "bybit_futures_testnet"),
     ("okx", "spot"): (OKXSpotWSAdapter, OKXSpotAdapter, "okx_spot_testnet"),
+    ("okx", "futures"): (OKXFuturesAdapter, OKXFuturesAdapter, "okx_futures_testnet"),
 }
 
 @dataclass
@@ -42,11 +46,23 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
                       daily_max_loss_usdt: float, daily_max_drawdown_pct: float,
                       max_consecutive_losses: int) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
-    ws = ws_cls()
+    ws_kwargs: Dict[str, Any] = {}
+    exec_kwargs: Dict[str, Any] = {}
     if market == "futures":
-        exec_adapter = exec_cls(leverage=leverage, testnet=True)
-    else:
-        exec_adapter = exec_cls()
+        ws_kwargs["testnet"] = True
+        exec_kwargs.update({"leverage": leverage, "testnet": True})
+    try:
+        ws = ws_cls(**ws_kwargs)
+    except TypeError:
+        ws = ws_cls()
+    try:
+        exec_adapter = exec_cls(**exec_kwargs) if exec_kwargs else exec_cls()
+    except TypeError:
+        exec_kwargs.pop("leverage", None)
+        try:
+            exec_adapter = exec_cls(**exec_kwargs)
+        except TypeError:
+            exec_adapter = exec_cls()
     agg = BarAggregator()
     strat = BreakoutATR()
     risk = RiskManager(max_pos=1.0)
