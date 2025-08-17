@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from prometheus_client import Counter
 
@@ -58,6 +59,41 @@ class BatchIngestionWorker:
                 await asyncio.sleep(0.5 * 2 ** (attempt - 1))
 
 
+class OrderBookBatchWorker:
+    """Accumulates order book snapshots and writes them in batches."""
+
+    def __init__(
+        self,
+        storage,
+        engine,
+        *,
+        batch_size: int = 100,
+    ) -> None:
+        self.storage = storage
+        self.engine = engine
+        self.batch_size = batch_size
+        self._buffer: list[dict] = []
+
+    async def add(self, snapshot: dict) -> None:
+        self._buffer.append(snapshot)
+        if len(self._buffer) >= self.batch_size:
+            await self.flush()
+
+    async def flush(self) -> None:
+        if not self._buffer:
+            return
+        batch = self._buffer
+        self._buffer = []
+        try:
+            for snap in batch:
+                self.storage.insert_orderbook(self.engine, **snap)
+            rows_inserted.labels("market.orderbook").inc(len(batch))
+        except Exception as exc:  # pragma: no cover - logging only
+            log.warning("orderbook insert failed: %s", exc)
+            failed_batches.labels("market.orderbook").inc()
+            raise
+
+
 def _get_storage(backend: str):
     """Return the storage module matching *backend*.
 
@@ -74,6 +110,23 @@ def _get_storage(backend: str):
     else:
         from ..storage import quest as storage
     return storage
+
+
+async def run_orderbook_ingestion(adapter, symbol: str, depth: int, worker) -> None:
+    """Stream order books from *adapter* and persist them using *worker*."""
+
+    async for d in adapter.stream_order_book(symbol, depth):
+        snapshot = {
+            "ts": d.get("ts", datetime.now(timezone.utc)),
+            "exchange": getattr(adapter, "name", "unknown"),
+            "symbol": symbol,
+            "bid_px": d.get("bid_px") or [],
+            "bid_qty": d.get("bid_qty") or [],
+            "ask_px": d.get("ask_px") or [],
+            "ask_qty": d.get("ask_qty") or [],
+        }
+        await worker.add(snapshot)
+    await worker.flush()
 
 
 async def funding_worker(
