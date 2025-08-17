@@ -15,10 +15,11 @@ from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.service import RiskService
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
-    from ..storage.timescale import get_engine, insert_trade, insert_risk_event
+    from ..storage.timescale import get_engine, insert_trade
     _CAN_PG = True
 except Exception:
     _CAN_PG = False
@@ -99,7 +100,7 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_pos=1.0)
     strat = BreakoutATR()
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
@@ -114,8 +115,8 @@ async def run_live_binance(
         max_consecutive_losses=max_consecutive_losses,
         halt_action="close_all",
     ), venue="binance")
-
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
+    risk = RiskService(risk_core, guard, dguard, engine=pg_engine)
     if persist_pg and not _CAN_PG:
         log.warning("Persistencia Timescale no disponible (sqlalchemy/psycopg2 no cargados).")
 
@@ -127,17 +128,10 @@ async def run_live_binance(
         px: float = float(t["price"])
         qty: float = float(t["qty"] or 0.0)
         broker.update_last_price(symbol, px)
-        guard.mark_price(symbol, px)
-        dguard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: px}))
-        halted, reason = dguard.check_halt()
+        risk.mark_price(symbol, px)
+        halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)
-            if pg_engine is not None:
-                try:
-                    insert_risk_event(pg_engine, venue="binance", symbol=symbol,
-                                      kind=f"HALT_{reason}", message=f"HALT: {reason}", details={})
-                except Exception:
-                    log.exception("Persist failure: risk_event HALT")
             break
 
         # Persistencia opcional: guardar trade crudo
@@ -167,54 +161,26 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        delta = risk.size(signal.side, signal.strength)
+        delta = risk.rm.size(signal.side, signal.strength)
         # Ajuste por correlaciones intraportafolio
         corr_pairs = guard.correlations()
-        delta = risk.adjust_size_for_correlation(symbol, delta, corr_pairs, threshold=0.8)
+        delta = risk.rm.adjust_size_for_correlation(symbol, delta, corr_pairs, threshold=0.8)
         if abs(delta) > 1e-9:
-            # Verifica límites de riesgo antes de enviar cualquier orden
-            if not risk.check_limits(closed.c):
-                log.warning("RiskManager disabled; kill switch activated")
-                continue
             side = "buy" if delta > 0 else "sell"
-            action, reason, metrics = guard.soft_cap_decision(symbol, side, abs(delta), closed.c)
-            if action == "block":
-                log.warning("[PG] Bloqueado %s: %s", symbol, reason)
-                if pg_engine is not None:
-                    try:
-                        insert_risk_event(pg_engine, venue="binance", symbol=symbol,
-                                          kind="VIOLATION", message=reason, details=metrics)
-                    except Exception:
-                        log.exception("Persist failure: risk_event VIOLATION")
+            allowed, reason = risk.check_order(symbol, side, abs(delta), closed.c)
+            if not allowed:
+                log.warning("[RISK] Bloqueado %s: %s", symbol, reason)
                 continue
-            elif action == "soft_allow" and pg_engine is not None:
-                try:
-                    insert_risk_event(pg_engine, venue="binance", symbol=symbol,
-                                      kind="INFO", message=reason, details=metrics)
-                except Exception:
-                    log.exception("Persist failure: risk_event INFO")
             prev_rpnl = broker.state.realized_pnl
             resp = await broker.place_order(symbol, side, "market", abs(delta))
             fills += 1
             log.info("FILL live %s", resp)
-            risk.add_fill(side, abs(delta))
-            guard.update_position_on_order(symbol, side, abs(delta))
-            # sincroniza posiciones agregadas en RiskManager
-            risk.update_position("binance", symbol, guard.st.positions.get(symbol, 0.0))
+            risk.on_fill(symbol, side, abs(delta), venue="binance")
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-            if abs(delta_rpnl) > 0:
-                dguard.on_realized_delta(delta_rpnl)
-                dguard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: px}))
-                halted, reason = dguard.check_halt()
-                if halted:
-                    log.error("[HALT] motivo=%s", reason)
-                    if pg_engine is not None:
-                        try:
-                            insert_risk_event(pg_engine, venue="binance", symbol=symbol,
-                                              kind=f"HALT_{reason}", message=f"HALT: {reason}", details={})
-                        except Exception:
-                            log.exception("Persist failure: risk_event HALT")
-                    break
+            halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+            if halted:
+                log.error("[HALT] motivo=%s", reason)
+                break
 
         # Persistir barra 1m si quieres (opcional; requiere tabla market.bars creada)
         # Puedes descomentar y ampliar con INSERT a bars.

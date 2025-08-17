@@ -13,6 +13,9 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge, compute_qtys_for_route
 )
+from ..risk.manager import RiskManager
+from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.service import RiskService
 
 # Persistencia opcional
 try:
@@ -37,7 +40,7 @@ class TriConfig:
     edge_threshold: float = 0.001
     persist_pg: bool = False  # <-- nuevo flag
 
-async def run_triangular_binance(cfg: TriConfig):
+async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None):
     syms = make_symbols(cfg.route)
     streams = [_stream_name(syms.bq), _stream_name(syms.mq), _stream_name(syms.mb)]
     url = BINANCE_WS + "/".join(streams)
@@ -45,6 +48,11 @@ async def run_triangular_binance(cfg: TriConfig):
     broker = PaperAdapter(fee_bps=cfg.taker_fee_bps)
     last: Dict[str, float] = {"bq": None, "mq": None, "mb": None}
     fills = 0
+    if risk is None:
+        risk = RiskService(
+            RiskManager(),
+            PortfolioGuard(GuardConfig(venue="binance")),
+        )
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
@@ -67,10 +75,13 @@ async def run_triangular_binance(cfg: TriConfig):
 
                     if syms.bq.replace("/", "").lower() in s:
                         last["bq"] = price
+                        risk.mark_price(syms.bq, price)
                     elif syms.mq.replace("/", "").lower() in s:
                         last["mq"] = price
+                        risk.mark_price(syms.mq, price)
                     elif syms.mb.replace("/", "").lower() in s:
                         last["mb"] = price
+                        risk.mark_price(syms.mb, price)
 
                     if None in last.values():
                         continue
@@ -106,6 +117,13 @@ async def run_triangular_binance(cfg: TriConfig):
 
                     # Ejecutar 3 patas en PAPER
                     if edge.direction == "b->m":
+                        checks = [
+                            risk.check_order(f"{cfg.route.base}/{cfg.route.quote}", "buy", q["base_qty"], last["bq"]),
+                            risk.check_order(f"{cfg.route.mid}/{cfg.route.base}", "buy", q["mid_qty"], last["mb"]),
+                            risk.check_order(f"{cfg.route.mid}/{cfg.route.quote}", "sell", q["mid_qty"], last["mq"]),
+                        ]
+                        if not all(c[0] for c in checks):
+                            continue
                         resp1 = await broker.place_order(f"{cfg.route.base}/{cfg.route.quote}", "buy", "market", q["base_qty"])
                         resp2 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.base}", "buy", "market", q["mid_qty"])
                         resp3 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.quote}", "sell", "market", q["mid_qty"])
@@ -115,6 +133,13 @@ async def run_triangular_binance(cfg: TriConfig):
                             ("sell", f"{cfg.route.mid}/{cfg.route.quote}", q["mid_qty"], resp3),
                         ]
                     else:
+                        checks = [
+                            risk.check_order(f"{cfg.route.mid}/{cfg.route.quote}", "buy", q["mid_qty"], last["mq"]),
+                            risk.check_order(f"{cfg.route.mid}/{cfg.route.base}", "sell", q["mid_qty"], last["mb"]),
+                            risk.check_order(f"{cfg.route.base}/{cfg.route.quote}", "sell", q["base_qty"], last["bq"]),
+                        ]
+                        if not all(c[0] for c in checks):
+                            continue
                         resp1 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.quote}", "buy", "market", q["mid_qty"])
                         resp2 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.base}", "sell", "market", q["mid_qty"])
                         resp3 = await broker.place_order(f"{cfg.route.base}/{cfg.route.quote}", "sell", "market", q["base_qty"])
@@ -125,6 +150,8 @@ async def run_triangular_binance(cfg: TriConfig):
                         ]
 
                     fills += 3
+                    for side, sym, qty_leg, _r in legs:
+                        risk.on_fill(sym, side, qty_leg, venue="binance")
                     # Persistir órdenes paper
                     if engine is not None:
                         for side, symbol, qty, r in legs:
