@@ -282,6 +282,81 @@ def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
     return pd.Series(di, index=df.index, name="depth_imbalance")
 
 
+def book_vacuum(data: DataLike, threshold: float = 0.5) -> pd.Series:
+    """Detect sudden drops in book depth ("vaciados").
+
+    The detector compares bid and ask queue sizes with the previous snapshot
+    and flags events where one side loses at least ``threshold`` proportion of
+    its volume.  Positive values indicate that the ask side was wiped (bullish)
+    while negative values denote a bid side wipe (bearish).  Zero is returned
+    when no event is detected or for the first observation.
+
+    Parameters
+    ----------
+    data:
+        Iterable of snapshots or DataFrame with ``bid_qty`` and ``ask_qty``.
+    threshold:
+        Proportional drop required to trigger an event.  ``0.5`` means a
+        reduction of 50% or more compared with the previous snapshot.
+    """
+
+    df = _to_dataframe_lists(data, ["bid_qty", "ask_qty"])
+    bid = df["bid_qty"].to_numpy()
+    ask = df["ask_qty"].to_numpy()
+
+    if isinstance(bid[0], (list, tuple, np.ndarray, pd.Series)):
+        bid = np.stack(bid)[:, 0]
+        ask = np.stack(ask)[:, 0]
+
+    out = np.zeros(len(df))
+    for i in range(1, len(df)):
+        b_prev, a_prev = bid[i - 1], ask[i - 1]
+        b, a = bid[i], ask[i]
+        if b_prev > 0 and (b_prev - b) / b_prev >= threshold:
+            out[i] = -1
+        elif a_prev > 0 and (a_prev - a) / a_prev >= threshold:
+            out[i] = 1
+    return pd.Series(out, index=df.index, name="book_vacuum")
+
+
+def liquidity_gap(data: DataLike, threshold: float) -> pd.Series:
+    """Detect large gaps between the first and second level of the book.
+
+    Parameters
+    ----------
+    data:
+        Input exposing ``bid_px`` and ``ask_px`` lists (at least two levels).
+    threshold:
+        Minimum absolute price gap to signal an event.
+
+    Returns
+    -------
+    pandas.Series
+        +1 for gaps on the ask side (bullish), ``-1`` for bid side gaps and ``0``
+        otherwise.
+    """
+
+    df = _to_dataframe_lists(data, ["bid_px", "ask_px"])
+    bid_px = df["bid_px"].to_numpy()
+    ask_px = df["ask_px"].to_numpy()
+
+    out = np.zeros(len(df))
+    for i in range(len(df)):
+        bp = bid_px[i]
+        ap = ask_px[i]
+        bid_gap = np.nan
+        ask_gap = np.nan
+        if isinstance(bp, (list, tuple, np.ndarray, pd.Series)) and len(bp) > 1:
+            bid_gap = bp[0] - bp[1]
+        if isinstance(ap, (list, tuple, np.ndarray, pd.Series)) and len(ap) > 1:
+            ask_gap = ap[1] - ap[0]
+        if bid_gap > threshold:
+            out[i] = -1
+        elif ask_gap > threshold:
+            out[i] = 1
+    return pd.Series(out, index=df.index, name="liquidity_gap")
+
+
 def returns(data: DataLike, log: bool = True) -> pd.Series:
     """Compute sequential returns from ``close`` prices.
 
@@ -326,6 +401,8 @@ __all__ = [
     "rsi",
     "order_flow_imbalance",
     "depth_imbalance",
+    "book_vacuum",
+    "liquidity_gap",
     "returns",
     "keltner_channels",
 ]
