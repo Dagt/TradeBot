@@ -13,7 +13,14 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from .metrics import router as metrics_router, metrics_summary, STRATEGY_ACTIONS
+from .metrics import (
+    router as metrics_router,
+    metrics_summary,
+    STRATEGY_ACTIONS,
+    TRADING_PNL,
+    OPEN_POSITIONS,
+    KILL_SWITCH_ACTIVE,
+)
 from .strategies import strategies_status, set_strategy_status
 
 config_path = Path(__file__).with_name("sentry.yml")
@@ -104,6 +111,33 @@ def summary() -> dict:
         "strategies": strategies_status()["strategies"],
         "alerts": fetch_alerts(),
     }
+
+
+@app.get("/pnl")
+def pnl() -> dict:
+    """Return current trading PnL."""
+
+    return {"pnl": TRADING_PNL._value.get()}
+
+
+@app.get("/positions")
+def positions() -> dict:
+    """Return current open positions by symbol."""
+
+    pos = {
+        sample.labels["symbol"]: sample.value
+        for metric in OPEN_POSITIONS.collect()
+        for sample in metric.samples
+        if sample.name == "open_position"
+    }
+    return {"positions": pos}
+
+
+@app.get("/kill-switch")
+def kill_switch() -> dict:
+    """Return whether the kill switch is active."""
+
+    return {"kill_switch_active": bool(KILL_SWITCH_ACTIVE._value.get())}
 
 
 @app.post("/strategies/{name}/enable")
