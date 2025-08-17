@@ -47,9 +47,10 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
         "tradingbot.execution.balance.insert_portfolio_snapshot", fake_insert
     )
 
+    px = 2.0
     await rebalance_between_exchanges(
         "USDT",
-        price=1.0,
+        price=px,
         venues={"A": ex_a, "B": ex_b},
         risk=risk,
         engine=engine,
@@ -71,7 +72,7 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
     venues_recorded = {c[0] for c in calls}
     assert venues_recorded == {"A", "B"}
     for _, pos, price, notional in calls:
-        assert price == 1.0
+        assert price == px
         assert notional == pytest.approx(pos * price)
 
 
@@ -83,12 +84,22 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     router = ExecutionRouter(adapters={"A": ex_a, "B": ex_b})
 
     calls = []
+    prices_used = []
 
     def fake_insert(engine, *, venue, symbol, position, price, notional_usd):
         calls.append((venue, position))
 
+    async def fake_rebalance(asset, price, **kwargs):
+        prices_used.append(price)
+        return await real_rebalance(asset, price=price, **kwargs)
+
     monkeypatch.setattr(
         "tradingbot.execution.balance.insert_portfolio_snapshot", fake_insert
+    )
+
+    real_rebalance = rebalance_between_exchanges
+    monkeypatch.setattr(
+        "tradingbot.live.daemon.rebalance_between_exchanges", fake_rebalance
     )
 
     daemon = TradeBotDaemon(
@@ -105,6 +116,8 @@ async def test_daemon_periodic_rebalance(monkeypatch):
         rebalance_enabled=True,
     )
 
+    daemon.last_prices["USDT"] = 2.0
+
     task = asyncio.create_task(daemon._rebalance_worker())
     await asyncio.sleep(0.05)
     daemon._stop.set()
@@ -115,3 +128,4 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     assert risk.positions_multi["B"]["USDT"] == pytest.approx(50.0)
     venues_recorded = {c[0] for c in calls}
     assert venues_recorded == {"A", "B"}
+    assert prices_used and prices_used[0] == 2.0
