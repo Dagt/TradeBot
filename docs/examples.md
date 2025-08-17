@@ -97,6 +97,35 @@ stats = run_parameter_sweep(data, ma_signal, params)
 print(stats)
 ```
 
+## Estrategias Freqtrade
+
+Requiere instalar la dependencia opcional `freqtrade`.
+
+```python
+import pandas as pd
+from tradingbot.backtesting.freqtrade_wrapper import load_ohlcv, run_strategy
+
+
+class SimpleStrategy:
+    timeframe = "1m"
+
+    def populate_indicators(self, dataframe, metadata):
+        return dataframe
+
+    def populate_entry_trend(self, dataframe, metadata):
+        dataframe["enter_long"] = dataframe["close"] > dataframe["close"].shift(1)
+        return dataframe
+
+    def populate_exit_trend(self, dataframe, metadata):
+        dataframe["exit_long"] = dataframe["close"] < dataframe["close"].shift(1)
+        return dataframe
+
+
+data = load_ohlcv("data/examples/btcusdt_1m.csv")
+result = run_strategy(data, SimpleStrategy)
+print(result["equity"])
+```
+
 ## Walk-forward
 
 ```python
