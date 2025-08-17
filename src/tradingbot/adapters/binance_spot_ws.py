@@ -96,6 +96,11 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
             return await self.rest.fetch_funding(symbol)
         raise NotImplementedError("Funding no disponible para mercados Spot")
 
+    async def fetch_basis(self, symbol: str):
+        if self.rest:
+            return await self.rest.fetch_basis(symbol)
+        raise NotImplementedError("Basis no disponible para mercados Spot")
+
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)

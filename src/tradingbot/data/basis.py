@@ -14,6 +14,27 @@ except Exception:  # pragma: no cover - optional dependency
 log = logging.getLogger(__name__)
 
 
+async def fetch_basis(adapter, symbol: str) -> dict[str, Any]:
+    """Fetch basis information using ``adapter`` and normalise the output."""
+
+    fetch = getattr(adapter, "fetch_basis", None)
+    if fetch is None:
+        raise AttributeError("adapter lacks fetch_basis")
+
+    info: Any = await fetch(symbol)
+    ts_raw = info.get("ts") or info.get("time")
+    if isinstance(ts_raw, (int, float)):
+        ts = datetime.fromtimestamp(ts_raw / 1000, tz=timezone.utc)
+    else:
+        ts = ts_raw or datetime.now(timezone.utc)
+    basis = float(info.get("basis") or info.get("value") or 0.0)
+    return {
+        "ts": ts,
+        "basis": basis,
+        "exchange": getattr(adapter, "name", "unknown"),
+    }
+
+
 async def poll_basis(
     adapter,
     symbol: str,
@@ -25,19 +46,23 @@ async def poll_basis(
     engine = get_engine() if (persist_pg and _CAN_PG) else None
     while True:
         try:
-            info: Any = await adapter.fetch_basis(symbol)
-            ts = info.get("ts") or datetime.now(timezone.utc)
-            basis = float(info.get("basis") or 0.0)
+            info = await fetch_basis(adapter, symbol)
             event = {
-                "ts": ts,
-                "exchange": getattr(adapter, "name", "unknown"),
+                "ts": info["ts"],
+                "exchange": info["exchange"],
                 "symbol": symbol,
-                "basis": basis,
+                "basis": info["basis"],
             }
             await bus.publish("basis", event)
             if engine is not None:
                 try:
-                    insert_basis(engine, ts=ts, exchange=event["exchange"], symbol=symbol, basis=basis)
+                    insert_basis(
+                        engine,
+                        ts=info["ts"],
+                        exchange=event["exchange"],
+                        symbol=symbol,
+                        basis=info["basis"],
+                    )
                 except Exception as e:  # pragma: no cover - logging only
                     log.debug("No se pudo insertar basis: %s", e)
         except asyncio.CancelledError:  # allow task cancellation

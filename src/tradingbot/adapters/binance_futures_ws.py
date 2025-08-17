@@ -105,6 +105,36 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
 
         return await self._request(_fetch)
 
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        The futures premium index endpoint provides both the mark and index
+        price.  If a REST adapter is configured we simply delegate to it,
+        otherwise we query the public endpoint directly using ``urllib``.
+        The response fields are normalised into a ``{"ts": datetime,
+        "basis": float}`` mapping.
+        """
+
+        if self.rest:
+            return await self.rest.fetch_basis(symbol)
+
+        sym = self.normalize_symbol(symbol)
+        url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
+
+        def _fetch():
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return json.loads(resp.read())
+
+        data = await self._request(_fetch)
+        ts_raw = data.get("time") or data.get("timestamp") or data.get("ts") or 0
+        ts_raw = int(ts_raw)
+        if ts_raw > 1e12:
+            ts_raw //= 1000
+        ts = datetime.fromtimestamp(ts_raw, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        return {"ts": ts, "basis": mark_px - index_px}
+
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)
