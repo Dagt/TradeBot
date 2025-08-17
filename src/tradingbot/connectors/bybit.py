@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .base import ExchangeConnector, OrderBook, Trade
+from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
 
 
 class BybitConnector(ExchangeConnector):
@@ -51,6 +51,16 @@ class BybitConnector(ExchangeConnector):
             amount=float(trade_data.get("v", 0.0)),
             side=(trade_data.get("S") or trade_data.get("side", "")).lower(),
         )
+
+    async def fetch_funding(self, symbol: str) -> Funding:
+        """Return funding information for ``symbol`` using CCXT."""
+
+        return await super().fetch_funding(symbol)
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        """Return open interest for ``symbol`` using CCXT."""
+
+        return await super().fetch_open_interest(symbol)
 
     # ------------------------------------------------------------------
     # Trading helpers

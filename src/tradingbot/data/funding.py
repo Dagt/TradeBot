@@ -19,19 +19,49 @@ async def fetch_funding(adapter, symbol: str) -> dict[str, Any]:
 
     The returned mapping includes ``ts`` (datetime), ``rate`` (float) and
     ``interval_sec`` (int) fields.  Any missing values are substituted with
-    sane defaults so callers only need to handle the happy path.
+    sane defaults so callers only need to handle the happy path.  ``adapter``
+    may return either a plain mapping or one of the Pydantic models used by
+    the exchange connectors.
     """
 
-    info: Any = await adapter.fetch_funding(symbol)
-    ts = info.get("ts") or datetime.now(timezone.utc)
-    rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
-    interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
-    return {
-        "ts": ts,
-        "rate": rate,
-        "interval_sec": interval_sec,
-        "exchange": getattr(adapter, "name", "unknown"),
-    }
+    fetch = getattr(adapter, "fetch_funding", None) or getattr(
+        adapter, "fetch_funding_rate", None
+    )
+    if fetch is None:
+        raise AttributeError("adapter lacks fetch_funding")
+
+    info: Any = await fetch(symbol)
+    if isinstance(info, dict):
+        ts_raw = info.get("ts") or info.get("time") or info.get("timestamp")
+        rate_raw = info.get("rate") or info.get("fundingRate") or info.get("value")
+        interval_raw = info.get("interval_sec") or info.get("interval")
+        exchange = info.get("exchange") or getattr(adapter, "name", "unknown")
+    else:
+        ts_raw = (
+            getattr(info, "timestamp", None)
+            or getattr(info, "ts", None)
+            or getattr(info, "time", None)
+        )
+        rate_raw = (
+            getattr(info, "rate", None)
+            or getattr(info, "fundingRate", None)
+            or getattr(info, "value", None)
+        )
+        interval_raw = getattr(info, "interval_sec", getattr(info, "interval", None))
+        exchange = getattr(info, "exchange", getattr(adapter, "name", "unknown"))
+
+    if isinstance(ts_raw, datetime):
+        ts = ts_raw
+    elif isinstance(ts_raw, (int, float)):
+        if ts_raw > 1e12:
+            ts_raw /= 1000
+        ts = datetime.fromtimestamp(ts_raw, timezone.utc)
+    else:
+        ts = datetime.now(timezone.utc)
+
+    rate = float(rate_raw or 0.0)
+    interval_sec = int(interval_raw or 0)
+    return {"ts": ts, "rate": rate, "interval_sec": interval_sec, "exchange": exchange}
 
 
 async def poll_funding(adapter, symbol: str, bus: EventBus, interval: int = 60, persist_pg: bool = False) -> None:
