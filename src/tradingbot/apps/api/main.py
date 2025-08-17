@@ -1,11 +1,14 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, Response, HTTPException
+from fastapi import FastAPI, Query, Response, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pathlib import Path
 import time
 from starlette.requests import Request
+import os
+import secrets
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from monitoring.metrics import metrics_summary as _metrics_summary
 
@@ -21,7 +24,23 @@ except Exception:
     _CAN_PG = False
     _ENGINE = None
 
-app = FastAPI(title="TradingBot API")
+security = HTTPBasic()
+
+
+def _check_basic_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
+    user = os.getenv("API_USER", "admin")
+    password = os.getenv("API_PASS", "admin")
+    correct_user = secrets.compare_digest(credentials.username, user)
+    correct_pass = secrets.compare_digest(credentials.password, password)
+    if not (correct_user and correct_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+app = FastAPI(title="TradingBot API", dependencies=[Depends(_check_basic_auth)])
 
 app.add_middleware(
     CORSMiddleware,

@@ -12,6 +12,7 @@ from monitoring.metrics import (
     STRATEGY_STATE,
     OPEN_POSITIONS,
     STRATEGY_ACTIONS,
+    KILL_SWITCH_ACTIVE,
 )
 
 
@@ -32,6 +33,7 @@ def test_panel_endpoints_and_metrics():
     E2E_LATENCY.observe(0.7)
     WS_FAILURES.labels(adapter="test").inc()
     STRATEGY_STATE.labels(strategy="alpha").set(1)
+    KILL_SWITCH_ACTIVE.set(1)
 
     resp = client.get("/")
     assert resp.status_code == 200
@@ -52,6 +54,18 @@ def test_panel_endpoints_and_metrics():
     assert data["avg_e2e_latency_seconds"] == 0.7
     assert data["ws_failures"] == 1.0
     assert data["strategy_states"] == {"alpha": 1.0}
+
+    resp = client.get("/pnl")
+    assert resp.status_code == 200
+    assert resp.json()["pnl"] == 100.0
+
+    resp = client.get("/positions")
+    assert resp.status_code == 200
+    assert resp.json()["positions"] == {"BTCUSD": 2.0}
+
+    resp = client.get("/kill-switch")
+    assert resp.status_code == 200
+    assert resp.json()["kill_switch_active"] is True
 
 
 def test_strategy_control_endpoints():

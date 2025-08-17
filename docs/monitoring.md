@@ -11,10 +11,17 @@ Run the monitoring panel with:
 uvicorn monitoring.panel:app --reload
 ```
 
+The API backing the panel uses HTTP Basic authentication. Configure
+credentials via the `API_USER` and `API_PASS` environment variables
+(default `admin` / `admin`) and supply them when querying the API.
+
 Available endpoints:
 
 - `GET /metrics` – Prometheus metrics.
 - `GET /metrics/summary` – compact JSON snapshot of key metrics.
+- `GET /pnl` – current trading PnL.
+- `GET /positions` – open positions by symbol.
+- `GET /kill-switch` – kill switch active flag.
 - `GET /strategies/status` – current strategy states.
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
@@ -44,6 +51,7 @@ panel's `/dashboards` endpoint. The directory currently includes:
 * `datasources/datasource.yml` – Prometheus data source
 * `dashboards/dashboard.yml` – automatic dashboard loading
 * `dashboards/core.json` and `dashboards/tradebot.json` – example panels
+* `dashboards/pnl_positions.json` – PnL, kill‑switch and open positions
 
 To build a standalone Grafana image with these files baked in:
 
