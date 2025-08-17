@@ -80,6 +80,14 @@ class _DummyFuturesRest:
     def fapiPublicGetOpenInterest(self, params):
         return {"symbol": params.get("symbol"), "openInterest": "100", "time": 1000}
 
+    def public_get_premiumindex(self, params):
+        return {
+            "symbol": params.get("symbol"),
+            "indexPrice": "100",
+            "markPrice": "105",
+            "time": 1000,
+        }
+
 
 class _DummyDelegate:
     async def place_order(self, *a, **k):
@@ -124,10 +132,21 @@ async def test_binance_futures_rest_fetch():
     adapter._request = _req
 
     funding = await adapter.fetch_funding("BTC/USDT")
+    basis = await adapter.fetch_basis("BTC/USDT")
     oi = await adapter.fetch_oi("BTC/USDT")
     assert funding["rate"] == 0.01
+    assert basis["basis"] == 5.0
+    assert isinstance(basis["ts"], datetime)
     assert oi["oi"] == 100.0
     assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_binance_futures_rest_basis_not_supported():
+    adapter = BinanceFuturesAdapter.__new__(BinanceFuturesAdapter)
+    adapter.rest = type("R", (), {})()
+    with pytest.raises(NotImplementedError):
+        await adapter.fetch_basis("BTC/USDT")
 
 
 @pytest.mark.asyncio
