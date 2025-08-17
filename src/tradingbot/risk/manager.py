@@ -67,6 +67,9 @@ class RiskManager:
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
         self.vol_target = abs(vol_target)
+        self._base_max_pos = self.max_pos
+        self._base_vol_target = self.vol_target
+        self._de_risk_stage = 0
 
         self.daily_loss_limit = abs(daily_loss_limit)
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
@@ -353,6 +356,22 @@ class RiskManager:
 
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
+    def de_risk(self) -> None:
+        """Reduce ``max_pos`` y ``vol_target`` ante drawdowns significativos."""
+        if self._daily_peak <= 0:
+            return
+        drawdown = (self._daily_peak - self.daily_pnl) / self._daily_peak
+        if drawdown >= 0.5 and self._de_risk_stage < 2:
+            self.max_pos = self._base_max_pos * 0.25
+            if self._base_vol_target > 0:
+                self.vol_target = self._base_vol_target * 0.25
+            self._de_risk_stage = 2
+        elif drawdown >= 0.25 and self._de_risk_stage < 1:
+            self.max_pos = self._base_max_pos * 0.5
+            if self._base_vol_target > 0:
+                self.vol_target = self._base_vol_target * 0.5
+            self._de_risk_stage = 1
+
     def update_pnl(self, delta: float, *, venue: str | None = None) -> None:
         """Actualizar PnL diario y por venue."""
         self.daily_pnl += float(delta)
@@ -360,8 +379,10 @@ class RiskManager:
             self.pnl_multi[venue] = self.pnl_multi.get(venue, 0.0) + float(delta)
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
+        self.de_risk()
 
     def _check_daily_limits(self) -> bool:
+        self.de_risk()
         if self.daily_loss_limit > 0 and self.daily_pnl <= -self.daily_loss_limit:
             self.kill_switch("daily_loss")
             return False
