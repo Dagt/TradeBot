@@ -55,6 +55,8 @@ def test_panel_endpoints_and_metrics():
     resp = client.get("/")
     assert resp.status_code == 200
     assert "TradeBot Monitoring" in resp.text
+    assert "Funding" in resp.text
+    assert "Open Interest" in resp.text
 
     resp = client.get("/metrics")
     assert resp.status_code == 200
@@ -146,11 +148,17 @@ def test_websocket_summary(monkeypatch):
 
     monkeypatch.setattr(panel, "fetch_risk", fake_risk)
     TRADING_PNL.set(42)
+    FUNDING_RATE.clear()
+    FUNDING_RATE.labels(symbol="BTCUSD").set(0.02)
+    OPEN_INTEREST.clear()
+    OPEN_INTEREST.labels(symbol="BTCUSD").set(1234)
 
     with client.websocket_connect("/ws/summary") as ws:
         data = ws.receive_json()
         assert data["pnl"]["pnl"] == 42
         assert data["risk"]["exposure"] == {"BTCUSD": 1}
+        assert data["metrics"]["funding_rates"] == {"BTCUSD": 0.02}
+        assert data["metrics"]["open_interest"] == {"BTCUSD": 1234.0}
 
 
 def test_api_funding_basis_and_params():
