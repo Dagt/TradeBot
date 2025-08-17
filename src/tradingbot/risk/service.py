@@ -58,7 +58,7 @@ class RiskService:
         price: float,
         strength: float = 1.0,
         *,
-        symbol_vol: float = 0.0,
+        symbol_vol: float | None = None,
         correlations: Dict[Tuple[str, str], float] | None = None,
         corr_threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
@@ -68,11 +68,14 @@ class RiskService:
         proposed after volatility and correlation adjustments.
         """
 
+        if symbol_vol is None or symbol_vol <= 0:
+            symbol_vol = self.guard.volatility(symbol)
+
         delta = self.rm.size(
             side,
             strength,
             symbol=symbol,
-            symbol_vol=symbol_vol,
+            symbol_vol=symbol_vol or 0.0,
             correlations=correlations or {},
             threshold=corr_threshold,
         )
