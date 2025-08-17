@@ -3,13 +3,18 @@ import pathlib
 import pytest
 
 sys.path.append(str(pathlib.Path(__file__).parent))
-from fixtures.market import synthetic_trades, synthetic_l2, synthetic_volatility  # noqa: F401
+from fixtures.market import (  # noqa: E402, F401
+    synthetic_trades,
+    synthetic_l2,
+    synthetic_volatility,
+    dual_testnet,
+)
 
 # Ensure the src package is importable
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from tradingbot.adapters.base import ExchangeAdapter
-from tradingbot.execution.paper import PaperAdapter
+from tradingbot.adapters.base import ExchangeAdapter  # noqa: E402
+from tradingbot.execution.paper import PaperAdapter  # noqa: E402
 
 
 class DummyAdapter(ExchangeAdapter):
@@ -31,7 +36,13 @@ class DummyAdapter(ExchangeAdapter):
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
     ):
-        return {"status": "placed", "symbol": symbol, "side": side, "qty": qty, "price": price}
+        return {
+            "status": "placed",
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price,
+        }
 
     async def cancel_order(self, order_id: str):
         return {"status": "canceled", "order_id": order_id}
