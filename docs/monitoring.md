@@ -11,6 +11,21 @@ Run the monitoring panel with:
 uvicorn monitoring.panel:app --reload
 ```
 
+Open <http://localhost:8000/> to access a lightweight React dashboard. The
+SPA connects to the `/ws/summary` WebSocket for real‑time metrics, PnL and
+risk updates.
+
+If the trading API is hosted on another URL, set `API_URL` before launching
+the panel so risk endpoints can be polled correctly:
+
+```bash
+API_URL="http://api-host:8000" uvicorn monitoring.panel:app --reload
+```
+
+Customize the look and behaviour of the panel by editing
+`monitoring/static/index.html` (React components) or tweaking the WebSocket
+logic in `monitoring/panel.py`.
+
 The API backing the panel uses HTTP Basic authentication. Configure
 credentials via the `API_USER` and `API_PASS` environment variables
 (default `admin` / `admin`) and supply them when querying the API.

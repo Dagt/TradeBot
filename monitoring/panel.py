@@ -4,11 +4,12 @@ import os
 import json
 from pathlib import Path
 import logging
+import asyncio
 
 import httpx
 import yaml
 import sentry_sdk
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -43,6 +44,7 @@ _strategy_params: dict[str, dict] = {}
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 dashboards_dir = Path(__file__).parent / "grafana" / "dashboards"
 GRAFANA_DASHBOARDS: dict[str, str] = {}
@@ -88,6 +90,30 @@ def fetch_alerts() -> list[dict]:
         return []
 
 
+async def fetch_risk() -> dict:
+    """Return risk exposure and recent events from the trading API."""
+
+    exposure: dict = {}
+    events: dict = {}
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            resp = await client.get(f"{API_URL}/risk/exposure")
+            resp.raise_for_status()
+            exposure = resp.json()
+        except httpx.HTTPError:
+            exposure = {}
+        try:
+            resp = await client.get(f"{API_URL}/risk/events?limit=20")
+            resp.raise_for_status()
+            events = resp.json()
+        except httpx.HTTPError:
+            events = {}
+    return {
+        "exposure": exposure.get("exposure"),
+        "events": events.get("events", []),
+    }
+
+
 @app.get("/alerts")
 def alerts() -> dict[str, bool | list[dict]]:
     """Expose current alert state with flags for key alerts."""
@@ -126,6 +152,25 @@ def summary() -> dict:
         "strategies": strategies_status()["strategies"],
         "alerts": fetch_alerts(),
     }
+
+
+@app.websocket("/ws/summary")
+async def ws_summary(ws: WebSocket) -> None:
+    """Stream metrics, PnL and risk data over a WebSocket."""
+
+    await ws.accept()
+    try:
+        while True:
+            update_process_metrics()
+            payload = {
+                "metrics": metrics_summary(),
+                "pnl": {"pnl": TRADING_PNL._value.get()},
+                "risk": await fetch_risk(),
+            }
+            await ws.send_json(payload)
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
 
 
 @app.get("/pnl")
