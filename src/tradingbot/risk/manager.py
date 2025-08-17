@@ -193,13 +193,48 @@ class RiskManager:
         if not self._check_daily_limits() and self.bus is not None:
             await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
 
-    def size(self, signal_side: str, strength: float = 1.0) -> float:
+    def size(
+        self,
+        signal_side: str,
+        strength: float = 1.0,
+        *,
+        symbol: str | None = None,
+        symbol_vol: float = 0.0,
+        correlations: Dict[Tuple[str, str], float] | None = None,
+        threshold: float = 0.0,
+    ) -> float:
+        """Compute desired position delta with optional volatility and correlation adjustments.
+
+        Parameters
+        ----------
+        signal_side:
+            "buy" para posición larga, "sell" para corta.
+        strength:
+            Factor para escalar la posición objetivo.
+        symbol:
+            Símbolo del activo (necesario si se aplican correlaciones).
+        symbol_vol:
+            Volatilidad actual del símbolo para ajustar al objetivo ``vol_target``.
+        correlations:
+            Mapa de correlaciones {(sym_a, sym_b): rho} para limitar tamaño.
+        threshold:
+            Umbral de correlación sobre el cual se reduce la posición.
         """
-        Sizing trivial: objetivo ±max_pos, delta = objetivo - pos_actual.
-        strength queda reservado para evolución futura (escalar tamaño).
-        """
-        target = self.max_pos * (1 if signal_side == "buy" else -1 if signal_side == "sell" else 0)
-        return target - self.pos.qty
+
+        target = self.max_pos * (
+            1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
+        )
+        delta = (target - self.pos.qty) * strength
+
+        if symbol_vol > 0:
+            delta += self.size_with_volatility(symbol_vol)
+
+        if correlations:
+            if symbol is None:
+                raise ValueError("symbol requerido para aplicar correlaciones")
+            delta = self.adjust_size_for_correlation(symbol, delta, correlations, threshold)
+
+        return delta
 
     def size_with_volatility(self, symbol_vol: float) -> float:
         """Dimensiona la posición basada en un objetivo de volatilidad.

@@ -117,36 +117,104 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
 
                     # Ejecutar 3 patas en PAPER
                     if edge.direction == "b->m":
+                        corr = risk.guard.correlations()
                         checks = [
-                            risk.check_order(f"{cfg.route.base}/{cfg.route.quote}", "buy", q["base_qty"], last["bq"]),
-                            risk.check_order(f"{cfg.route.mid}/{cfg.route.base}", "buy", q["mid_qty"], last["mb"]),
-                            risk.check_order(f"{cfg.route.mid}/{cfg.route.quote}", "sell", q["mid_qty"], last["mq"]),
+                            risk.check_order(
+                                f"{cfg.route.base}/{cfg.route.quote}",
+                                "buy",
+                                last["bq"],
+                                strength=q["base_qty"],
+                                correlations=corr,
+                            ),
+                            risk.check_order(
+                                f"{cfg.route.mid}/{cfg.route.base}",
+                                "buy",
+                                last["mb"],
+                                strength=q["mid_qty"],
+                                correlations=corr,
+                            ),
+                            risk.check_order(
+                                f"{cfg.route.mid}/{cfg.route.quote}",
+                                "sell",
+                                last["mq"],
+                                strength=q["mid_qty"],
+                                correlations=corr,
+                            ),
                         ]
                         if not all(c[0] for c in checks):
                             continue
-                        resp1 = await broker.place_order(f"{cfg.route.base}/{cfg.route.quote}", "buy", "market", q["base_qty"])
-                        resp2 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.base}", "buy", "market", q["mid_qty"])
-                        resp3 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.quote}", "sell", "market", q["mid_qty"])
+                        resp1 = await broker.place_order(
+                            f"{cfg.route.base}/{cfg.route.quote}",
+                            "buy",
+                            "market",
+                            abs(checks[0][2]),
+                        )
+                        resp2 = await broker.place_order(
+                            f"{cfg.route.mid}/{cfg.route.base}",
+                            "buy",
+                            "market",
+                            abs(checks[1][2]),
+                        )
+                        resp3 = await broker.place_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}",
+                            "sell",
+                            "market",
+                            abs(checks[2][2]),
+                        )
                         legs = [
-                            ("buy", f"{cfg.route.base}/{cfg.route.quote}", q["base_qty"], resp1),
-                            ("buy", f"{cfg.route.mid}/{cfg.route.base}", q["mid_qty"], resp2),
-                            ("sell", f"{cfg.route.mid}/{cfg.route.quote}", q["mid_qty"], resp3),
+                            ("buy", f"{cfg.route.base}/{cfg.route.quote}", abs(checks[0][2]), resp1),
+                            ("buy", f"{cfg.route.mid}/{cfg.route.base}", abs(checks[1][2]), resp2),
+                            ("sell", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[2][2]), resp3),
                         ]
                     else:
+                        corr = risk.guard.correlations()
                         checks = [
-                            risk.check_order(f"{cfg.route.mid}/{cfg.route.quote}", "buy", q["mid_qty"], last["mq"]),
-                            risk.check_order(f"{cfg.route.mid}/{cfg.route.base}", "sell", q["mid_qty"], last["mb"]),
-                            risk.check_order(f"{cfg.route.base}/{cfg.route.quote}", "sell", q["base_qty"], last["bq"]),
+                            risk.check_order(
+                                f"{cfg.route.mid}/{cfg.route.quote}",
+                                "buy",
+                                last["mq"],
+                                strength=q["mid_qty"],
+                                correlations=corr,
+                            ),
+                            risk.check_order(
+                                f"{cfg.route.mid}/{cfg.route.base}",
+                                "sell",
+                                last["mb"],
+                                strength=q["mid_qty"],
+                                correlations=corr,
+                            ),
+                            risk.check_order(
+                                f"{cfg.route.base}/{cfg.route.quote}",
+                                "sell",
+                                last["bq"],
+                                strength=q["base_qty"],
+                                correlations=corr,
+                            ),
                         ]
                         if not all(c[0] for c in checks):
                             continue
-                        resp1 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.quote}", "buy", "market", q["mid_qty"])
-                        resp2 = await broker.place_order(f"{cfg.route.mid}/{cfg.route.base}", "sell", "market", q["mid_qty"])
-                        resp3 = await broker.place_order(f"{cfg.route.base}/{cfg.route.quote}", "sell", "market", q["base_qty"])
+                        resp1 = await broker.place_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}",
+                            "buy",
+                            "market",
+                            abs(checks[0][2]),
+                        )
+                        resp2 = await broker.place_order(
+                            f"{cfg.route.mid}/{cfg.route.base}",
+                            "sell",
+                            "market",
+                            abs(checks[1][2]),
+                        )
+                        resp3 = await broker.place_order(
+                            f"{cfg.route.base}/{cfg.route.quote}",
+                            "sell",
+                            "market",
+                            abs(checks[2][2]),
+                        )
                         legs = [
-                            ("buy", f"{cfg.route.mid}/{cfg.route.quote}", q["mid_qty"], resp1),
-                            ("sell", f"{cfg.route.mid}/{cfg.route.base}", q["mid_qty"], resp2),
-                            ("sell", f"{cfg.route.base}/{cfg.route.quote}", q["base_qty"], resp3),
+                            ("buy", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[0][2]), resp1),
+                            ("sell", f"{cfg.route.mid}/{cfg.route.base}", abs(checks[1][2]), resp2),
+                            ("sell", f"{cfg.route.base}/{cfg.route.quote}", abs(checks[2][2]), resp3),
                         ]
 
                     fills += 3

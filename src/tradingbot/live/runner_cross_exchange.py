@@ -49,12 +49,25 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         qty = cfg.notional / last["spot"]
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
-        ok1, _ = risk.check_order(cfg.symbol, spot_side, qty, last["spot"])
-        ok2, _ = risk.check_order(cfg.symbol, perp_side, qty, last["perp"])
+        corr = risk.guard.correlations()
+        ok1, _r1, delta1 = risk.check_order(
+            cfg.symbol,
+            spot_side,
+            last["spot"],
+            strength=qty,
+            correlations=corr,
+        )
+        ok2, _r2, delta2 = risk.check_order(
+            cfg.symbol,
+            perp_side,
+            last["perp"],
+            strength=qty,
+            correlations=corr,
+        )
         if not (ok1 and ok2):
             return
-        order_spot = Order(cfg.symbol, spot_side, "market", qty)
-        order_perp = Order(cfg.symbol, perp_side, "market", qty)
+        order_spot = Order(cfg.symbol, spot_side, "market", abs(delta1))
+        order_perp = Order(cfg.symbol, perp_side, "market", abs(delta2))
         await asyncio.gather(
             router.execute(order_spot),
             router.execute(order_perp),

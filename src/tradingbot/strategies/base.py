@@ -34,14 +34,8 @@ def record_signal_metrics(fn):
         duration = time.monotonic() - start
         REQUEST_LATENCY.labels(method=self.name, endpoint="on_bar").observe(duration)
 
-        if sig and sig.side in {"buy", "sell"}:
-            # Optional risk-based sizing with volatility adjustment
-            risk = getattr(self, "risk", None)
-            if risk is not None:
-                vol = float(bar.get("volatility", 0.0) or 0.0)
-                delta = risk.size(sig.side, sig.strength)
-                delta += risk.size_with_volatility(vol)
-                sig.strength = delta
+        # Risk-based sizing is now handled within ``RiskService.check_order``
+        # so strategy signals keep their original strength here.
 
         if sig and sig.side in {"buy", "sell"} and {"exchange", "symbol"} <= bar.keys():
             try:
