@@ -122,21 +122,21 @@ def test_adapter_testnet_selection():
 
 
 class _DummyRest:
-    def fetch_trades(self, symbol, limit=1):
+    async def fetch_trades(self, symbol, limit=1):
         return [{"timestamp": 1000, "price": "1", "amount": "2", "side": "buy"}]
 
-    def fetch_order_book(self, symbol):
+    async def fetch_order_book(self, symbol):
         return {"timestamp": 1000, "bids": [["1", "2"]], "asks": [["3", "4"]]}
 
 
 class _DummyFuturesRest:
-    def fetchFundingRate(self, symbol):
+    async def fetchFundingRate(self, symbol):
         return {"rate": 0.01}
 
-    def fapiPublicGetOpenInterest(self, params):
+    async def fapiPublicGetOpenInterest(self, params):
         return {"symbol": params.get("symbol"), "openInterest": "100", "time": 1000}
 
-    def public_get_premiumindex(self, params):
+    async def public_get_premiumindex(self, params):
         return {
             "symbol": params.get("symbol"),
             "indexPrice": "100",
@@ -160,11 +160,6 @@ async def test_binance_spot_rest_streams():
     adapter.rest = _DummyRest()
     adapter.state = type("S", (), {"order_book": {}, "last_px": {}})()
 
-    async def _req(fn, *a, **k):
-        return fn(*a, **k)
-
-    adapter._request = _req
-
     gen = adapter.stream_trades("BTC/USDT")
     trade = await gen.__anext__()
     await gen.aclose()
@@ -180,12 +175,8 @@ async def test_binance_spot_rest_streams():
 @pytest.mark.asyncio
 async def test_binance_futures_rest_fetch():
     adapter = BinanceFuturesAdapter.__new__(BinanceFuturesAdapter)
+    ExchangeAdapter.__init__(adapter)
     adapter.rest = _DummyFuturesRest()
-
-    async def _req(fn, *a, **k):
-        return fn(*a, **k)
-
-    adapter._request = _req
 
     funding = await adapter.fetch_funding("BTC/USDT")
     basis = await adapter.fetch_basis("BTC/USDT")
@@ -256,13 +247,13 @@ async def test_ws_delegates_orders_to_rest():
 
 
 class _DummyBybitRest:
-    def fetchFundingRate(self, symbol):
+    async def fetchFundingRate(self, symbol):
         return {"fundingRate": "0.01", "timestamp": 1000}
 
-    def publicGetV5MarketOpenInterest(self, params):
+    async def publicGetV5MarketOpenInterest(self, params):
         return {"result": {"list": [{"timestamp": 1000, "openInterest": "100"}]}}
 
-    def publicGetV5MarketPremiumIndexPrice(self, params):
+    async def publicGetV5MarketPremiumIndexPrice(self, params):
         return {
             "result": {
                 "list": [
@@ -273,10 +264,10 @@ class _DummyBybitRest:
 
 
 class _DummyOKXRest:
-    def fetchFundingRate(self, symbol):
+    async def fetchFundingRate(self, symbol):
         return {"fundingRate": "0.02", "ts": 1000}
 
-    def publicGetPublicOpenInterest(self, params):
+    async def publicGetPublicOpenInterest(self, params):
         return {"data": [{"ts": 1000, "oi": "200"}]}
 
 
@@ -292,12 +283,8 @@ class _DummyOKXRest:
 )
 async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
     adapter = adapter_cls.__new__(adapter_cls)
+    ExchangeAdapter.__init__(adapter)
     adapter.rest = rest_cls()
-
-    async def _req(fn, *a, **k):
-        return fn(*a, **k)
-
-    adapter._request = _req
 
     funding = await adapter.fetch_funding("BTC/USDT")
     assert funding["rate"] == rate
@@ -311,12 +298,8 @@ async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
 @pytest.mark.asyncio
 async def test_bybit_futures_fetch_basis():
     adapter = BybitFuturesAdapter.__new__(BybitFuturesAdapter)
+    ExchangeAdapter.__init__(adapter)
     adapter.rest = _DummyBybitRest()
-
-    async def _req(fn, *a, **k):
-        return fn(*a, **k)
-
-    adapter._request = _req
 
     basis = await adapter.fetch_basis("BTC/USDT")
     assert basis["basis"] == 5.0
@@ -324,25 +307,21 @@ async def test_bybit_futures_fetch_basis():
 
 
 class _DummyDeribitRest:
-    def public_get_get_funding_rate(self, params):
+    async def public_get_get_funding_rate(self, params):
         return {"result": {"funding_rate": "0.01", "timestamp": 1000}}
 
-    def public_get_ticker(self, params):
+    async def public_get_ticker(self, params):
         return {"result": {"index_price": "100", "mark_price": "105", "timestamp": 1000}}
 
-    def public_get_get_open_interest(self, params):
+    async def public_get_get_open_interest(self, params):
         return {"result": {"open_interest": "200", "timestamp": 1000}}
 
 
 @pytest.mark.asyncio
 async def test_deribit_fetch_methods():
     adapter = DeribitAdapter.__new__(DeribitAdapter)
+    ExchangeAdapter.__init__(adapter)
     adapter.rest = _DummyDeribitRest()
-
-    async def _req(fn, *a, **k):
-        return fn(*a, **k)
-
-    adapter._request = _req
 
     funding = await adapter.fetch_funding("BTC-PERPETUAL")
     assert funding["rate"] == 0.01
@@ -351,3 +330,37 @@ async def test_deribit_fetch_methods():
     oi = await adapter.fetch_oi("BTC-PERPETUAL")
     assert oi["oi"] == 200.0
     assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_request_and_close_async_rest():
+    class DummyAdapter(ExchangeAdapter):
+        name = "dummy"
+
+        async def stream_trades(self, symbol: str):
+            if False:
+                yield
+
+        async def place_order(self, *a, **k):
+            return {}
+
+        async def cancel_order(self, *a, **k):
+            return {}
+
+    adapter = DummyAdapter()
+
+    async def _coro(x):
+        return x + 1
+
+    assert await adapter._request(_coro, 41) == 42
+
+    class _R:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    adapter.rest = _R()
+    await adapter.close()
+    assert adapter.rest.closed

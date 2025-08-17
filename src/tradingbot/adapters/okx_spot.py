@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 try:  # pragma: no cover - optional during tests
-    import ccxt
+    import ccxt.async_support as ccxt
     NetworkError = getattr(ccxt, "NetworkError", Exception)
     ExchangeError = getattr(ccxt, "ExchangeError", Exception)
 except Exception:  # pragma: no cover
@@ -33,9 +33,6 @@ class OKXSpotAdapter(ExchangeAdapter):
         self.rest = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "spot"}})
         # Validar permisos disponibles en la API key
         validate_scopes(self.rest, log)
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"

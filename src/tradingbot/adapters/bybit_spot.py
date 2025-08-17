@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:  # pragma: no cover - ccxt optional during tests
     ccxt = None
 
@@ -30,9 +30,6 @@ class BybitSpotAdapter(ExchangeAdapter):
         self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "spot"}})
         # Advertir si la clave carece de permisos de trade o tiene retiros habilitados
         validate_scopes(self.rest, log)
-
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://stream.bybit.com/v5/public/spot"
@@ -103,7 +100,7 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     async def place_order(self, symbol: str, side: str, type_: str, qty: float,
                           price: float | None = None) -> dict:
-        return await self._to_thread(self.rest.create_order, symbol, type_, side, qty, price)
+        return await self.rest.create_order(symbol, type_, side, qty, price)
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        return await self._to_thread(self.rest.cancel_order, order_id, symbol)
+        return await self.rest.cancel_order(order_id, symbol)
