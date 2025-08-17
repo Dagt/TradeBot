@@ -122,7 +122,7 @@ class ExchangeAdapter(ABC):
                             yield msg
                     finally:
                         ping_task.cancel()
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(asyncio.CancelledError, Exception):
                             await ping_task
             except asyncio.CancelledError:
                 raise

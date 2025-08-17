@@ -178,6 +178,7 @@ class EventDrivenBacktestEngine:
         orders: List[Order] = []
         slippage_total = 0.0
         funding_total = 0.0
+        equity_curve: List[float] = []
 
         max_len = max(len(df) for df in self.data.values())
         for i in range(max_len):
@@ -350,12 +351,22 @@ class EventDrivenBacktestEngine:
                     equity -= cash
                     funding_total += cash
 
+            # Track equity after processing each bar
+            equity_curve.append(equity)
+
         # Liquidate remaining positions
         for (strat_name, symbol), risk in self.risk.items():
             pos = risk.pos.qty
             if abs(pos) > 1e-9:
                 last_price = float(self.data[symbol]["close"].iloc[-1])
                 equity += pos * last_price
+
+        # Final equity value
+        equity_curve.append(equity)
+
+        # Compute simple Sharpe ratio from equity changes
+        rets = pd.Series(equity_curve).diff().dropna()
+        sharpe = float(rets.mean() / rets.std()) if not rets.empty and rets.std() else 0.0
 
         orders_summary = [
             {
@@ -377,6 +388,7 @@ class EventDrivenBacktestEngine:
             "orders": orders_summary,
             "slippage": slippage_total,
             "funding": funding_total,
+            "sharpe": sharpe,
         }
         log.info("Backtest result: %s", result)
         return result
@@ -412,6 +424,9 @@ def run_backtest_csv(
     return engine.run()
 
 
+from ..experiments.mlflow_utils import log_backtest_metrics, start_run
+
+
 def run_backtest_mlflow(
     csv_paths: Dict[str, str],
     strategies: Iterable[Tuple[str, str]],
@@ -425,6 +440,7 @@ def run_backtest_mlflow(
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
     stress: StressConfig | None = None,
+    experiment: str = "backtest",
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -435,14 +451,13 @@ def run_backtest_mlflow(
     latency, window, slippage: same as :func:`run_backtest_csv`.
     run_name: optional MLflow run name.
     params: extra parameters to log to MLflow.
+    experiment: MLflow experiment name.
     """
 
-    import mlflow  # type: ignore
-
-    with mlflow.start_run(run_name=run_name):
-        mlflow.log_params({"latency": latency, "window": window})
-        if params:
-            mlflow.log_params(params)
+    param_log = {"latency": latency, "window": window}
+    if params:
+        param_log.update(params)
+    with start_run(experiment, run_name=run_name, params=param_log):
         result = run_backtest_csv(
             csv_paths,
             strategies,
@@ -455,9 +470,8 @@ def run_backtest_mlflow(
             cancel_unfilled=cancel_unfilled,
             stress=stress,
         )
-        mlflow.log_metric("equity", result.get("equity", 0.0))
-        mlflow.log_metric("fills", len(result.get("fills", [])))
-    return result
+        log_backtest_metrics(result)
+        return result
 
 
 def optimize_strategy_optuna(
