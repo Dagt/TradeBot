@@ -1,13 +1,10 @@
 # src/tradingbot/adapters/okx_spot.py
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator
-
-import websockets
 
 try:  # pragma: no cover - optional during tests
     import ccxt
@@ -43,48 +40,28 @@ class OKXSpotAdapter(ExchangeAdapter):
         url = "wss://ws.okx.com:8443/ws/v5/public"
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        for t in msg.get("data", []) or []:
-                            price = float(t.get("px"))
-                            qty = float(t.get("sz", 0))
-                            side = t.get("side", "")
-                            ts = datetime.fromtimestamp(int(t.get("ts", 0)) / 1000, tz=timezone.utc)
-                            self.state.last_px[symbol] = price
-                            yield self.normalize_trade(symbol, ts, price, qty, side)
-            except Exception as e:  # pragma: no cover
-                log.warning("OKX spot trade WS error %s, retrying in %.1fs", e, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for t in msg.get("data", []) or []:
+                price = float(t.get("px"))
+                qty = float(t.get("sz", 0))
+                side = t.get("side", "")
+                ts = datetime.fromtimestamp(int(t.get("ts", 0)) / 1000, tz=timezone.utc)
+                self.state.last_px[symbol] = price
+                yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        for d in msg.get("data", []) or []:
-                            bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
-                            asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
-                            ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
-                            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-                            yield self.normalize_order_book(symbol, ts, bids, asks)
-            except Exception as e:  # pragma: no cover
-                log.warning("OKX spot book WS error %s, retrying in %.1fs", e, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for d in msg.get("data", []) or []:
+                bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
+                asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
+                ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
+                self.state.order_book[symbol] = {"bids": bids, "asks": asks}
+                yield self.normalize_order_book(symbol, ts, bids, asks)
 
     stream_orderbook = stream_order_book
 

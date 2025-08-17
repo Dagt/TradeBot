@@ -1,8 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 import asyncio
+import contextlib
 import logging
 import time
+
+import websockets
+
+from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 
 class AdapterState:
@@ -29,6 +34,7 @@ class ExchangeAdapter(ABC):
         self.log = logging.getLogger(getattr(self, "name", self.__class__.__name__))
         # live market data populated by streaming helpers
         self.state = AdapterState()
+        self.ping_interval = 20.0
 
     # ------------------------------------------------------------------
     # Rate limiting helpers
@@ -88,6 +94,44 @@ class ExchangeAdapter(ABC):
             "ask_px": ask_px,
             "ask_qty": ask_qty,
         }
+
+    # ------------------------------------------------------------------
+    # Websocket helpers
+    async def _ping(self, ws) -> None:
+        while True:
+            try:
+                await asyncio.sleep(self.ping_interval)
+                await ws.ping()
+            except asyncio.CancelledError:  # pragma: no cover - task cancelled
+                break
+            except Exception:  # pragma: no cover - network issues
+                break
+
+    async def _ws_messages(self, url: str, subscribe: str | None = None) -> AsyncIterator[str]:
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(url, ping_interval=None) as ws:
+                    if subscribe:
+                        await ws.send(subscribe)
+                    backoff = 1.0
+                    ping_task = asyncio.create_task(self._ping(ws))
+                    try:
+                        while True:
+                            msg = await ws.recv()
+                            yield msg
+                    finally:
+                        ping_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await ping_task
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                WS_FAILURES.labels(adapter=self.name).inc()
+                WS_RECONNECTS.labels(adapter=self.name).inc()
+                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
 
     # ------------------------------------------------------------------
     # Abstract API

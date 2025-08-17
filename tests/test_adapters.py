@@ -1,3 +1,4 @@
+import json
 import pytest
 from datetime import datetime, timezone
 from tradingbot.adapters import (
@@ -12,6 +13,7 @@ from tradingbot.adapters.binance_spot import BinanceSpotAdapter
 from tradingbot.adapters.binance_futures import BinanceFuturesAdapter
 from tradingbot.adapters.binance_spot_ws import BinanceSpotWSAdapter
 from tradingbot.adapters.binance_futures_ws import BinanceFuturesWSAdapter
+from tradingbot.adapters.binance import BinanceWSAdapter
 
 
 async def collect_trades(adapter):
@@ -32,6 +34,60 @@ async def test_mock_adapter_stream_and_orders(mock_adapter, mock_trades, mock_or
 
     cancel = await mock_adapter.cancel_order("1")
     assert cancel["status"] == "canceled"
+
+
+@pytest.mark.asyncio
+async def test_ws_adapter_reconnect(monkeypatch):
+    adapter = BinanceWSAdapter()
+    adapter.ping_interval = 0
+
+    msg1 = json.dumps({"data": {"p": "1", "q": "1", "T": 0, "m": False}})
+    msg2 = json.dumps({"data": {"p": "2", "q": "1", "T": 1, "m": True}})
+
+    class DummyWS:
+        def __init__(self, messages):
+            self.messages = messages
+            self.pings = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, msg):
+            pass
+
+        async def recv(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise ConnectionError("closed")
+
+        async def ping(self):
+            self.pings += 1
+
+    ws1 = DummyWS([msg1])
+    ws2 = DummyWS([msg2])
+    ws_iter = iter([ws1, ws2])
+
+    monkeypatch.setattr("websockets.connect", lambda url, **k: next(ws_iter))
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(t):
+        sleeps.append(t)
+
+    monkeypatch.setattr("tradingbot.adapters.base.asyncio.sleep", fake_sleep)
+
+    gen = adapter.stream_trades("BTCUSDT")
+    t1 = await gen.__anext__()
+    t2 = await gen.__anext__()
+    assert t1["price"] == 1.0
+    assert t2["price"] == 2.0
+    await gen.aclose()
+
+    assert ws1.pings > 0 and ws2.pings > 0
+    assert [s for s in sleeps if s >= 1][:2] == [1, 2]
 
 
 def test_registered_adapters_are_subclasses():

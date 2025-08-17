@@ -28,6 +28,7 @@ class DummyWS:
     def __init__(self, messages):
         self.messages = messages
         self.sent = []
+        self.pings = 0
 
     async def __aenter__(self):
         return self
@@ -42,6 +43,9 @@ class DummyWS:
         if self.messages:
             return self.messages.pop(0)
         raise ConnectionError("closed")
+
+    async def ping(self):
+        self.pings += 1
 
 
 @pytest.mark.parametrize(
@@ -68,14 +72,24 @@ async def test_rest_normalization(connector_cls):
 async def test_stream_reconnect(monkeypatch, caplog):
     caplog.set_level("WARNING")
     c = BinanceConnector()
+    c.ping_interval = 0
     msg1 = json.dumps({"b": [["1", "1"]], "a": [["2", "2"]]})
     msg2 = json.dumps({"b": [["3", "3"]], "a": [["4", "4"]]})
-    ws_iter = iter([DummyWS([msg1]), DummyWS([msg2])])
+    ws1 = DummyWS([msg1])
+    ws2 = DummyWS([msg2])
+    ws_iter = iter([ws1, ws2])
 
     def fake_connect(url):
         return next(ws_iter)
 
     monkeypatch.setattr("websockets.connect", fake_connect)
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(t):
+        sleeps.append(t)
+
+    monkeypatch.setattr("tradingbot.connectors.base.asyncio.sleep", fake_sleep)
 
     gen = c.stream_order_book("BTCUSDT")
     book1 = await gen.__anext__()
@@ -86,6 +100,8 @@ async def test_stream_reconnect(monkeypatch, caplog):
     await gen.aclose()
 
     assert any("ws_reconnect" in r.message for r in caplog.records)
+    assert ws1.pings > 0 and ws2.pings > 0
+    assert [s for s in sleeps if s >= 1][:2] == [1, 2]
 
 
 binance_msgs = [
