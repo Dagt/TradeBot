@@ -1,13 +1,10 @@
 # src/tradingbot/adapters/bybit_futures.py
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator
-
-import websockets
 
 try:  # pragma: no cover - optional during tests
     import ccxt
@@ -66,50 +63,30 @@ class BybitFuturesAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        for t in msg.get("data", []) or []:
-                            price = float(t.get("p"))
-                            qty = float(t.get("v", 0))
-                            side = t.get("S", "").lower()
-                            ts = datetime.fromtimestamp(int(t.get("T", 0)) / 1000, tz=timezone.utc)
-                            self.state.last_px[symbol] = price
-                            yield self.normalize_trade(symbol, ts, price, qty, side)
-            except Exception as e:  # pragma: no cover - network paths
-                log.warning("Bybit futures trade WS error %s, retrying in %.1fs", e, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for t in msg.get("data", []) or []:
+                price = float(t.get("p"))
+                qty = float(t.get("v", 0))
+                side = t.get("S", "").lower()
+                ts = datetime.fromtimestamp(int(t.get("T", 0)) / 1000, tz=timezone.utc)
+                self.state.last_px[symbol] = price
+                yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        data = msg.get("data") or {}
-                        if not data:
-                            continue
-                        bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
-                        asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
-                        ts = datetime.fromtimestamp(int(data.get("ts", 0)) / 1000, tz=timezone.utc)
-                        self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-                        yield self.normalize_order_book(symbol, ts, bids, asks)
-            except Exception as e:  # pragma: no cover - network paths
-                log.warning("Bybit futures book WS error %s, retrying in %.1fs", e, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            data = msg.get("data") or {}
+            if not data:
+                continue
+            bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
+            asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
+            ts = datetime.fromtimestamp(int(data.get("ts", 0)) / 1000, tz=timezone.utc)
+            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
+            yield self.normalize_order_book(symbol, ts, bids, asks)
 
     # Backwards compatible alias
     stream_orderbook = stream_order_book

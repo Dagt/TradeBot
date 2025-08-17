@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
-import websockets
-
 from .base import ExchangeAdapter
 from .deribit import DeribitAdapter
-from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 log = logging.getLogger(__name__)
 
@@ -38,35 +34,17 @@ class DeribitWSAdapter(ExchangeAdapter):
             "id": 1,
         }
 
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(
-                    self.ws_url, ping_interval=20, ping_timeout=20
-                ) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        params = msg.get("params") or {}
-                        for t in params.get("data") or []:
-                            price = float(t.get("price") or 0.0)
-                            qty = float(t.get("amount") or t.get("size") or 0.0)
-                            side = (t.get("direction") or t.get("side") or "").lower()
-                            ts_ms = int(t.get("timestamp") or t.get("time") or 0)
-                            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-                            self.state.last_px[symbol] = price
-                            yield self.normalize_trade(symbol, ts, price, qty, side)
-            except Exception as e:
-                WS_FAILURES.labels(adapter=self.name).inc()
-                log.warning(
-                    "Deribit trades WS desconectado (%s). Reintento en %.1fs ...",
-                    e,
-                    backoff,
-                )
-                await asyncio.sleep(backoff)
-                WS_RECONNECTS.labels(adapter=self.name).inc()
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
+            msg = json.loads(raw)
+            params = msg.get("params") or {}
+            for t in params.get("data") or []:
+                price = float(t.get("price") or 0.0)
+                qty = float(t.get("amount") or t.get("size") or 0.0)
+                side = (t.get("direction") or t.get("side") or "").lower()
+                ts_ms = int(t.get("timestamp") or t.get("time") or 0)
+                ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                self.state.last_px[symbol] = price
+                yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book snapshots from Deribit."""
@@ -79,33 +57,15 @@ class DeribitWSAdapter(ExchangeAdapter):
             "id": 1,
         }
 
-        backoff = 1.0
-        while True:
-            try:
-                async with websockets.connect(
-                    self.ws_url, ping_interval=20, ping_timeout=20
-                ) as ws:
-                    await ws.send(json.dumps(sub))
-                    backoff = 1.0
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        data = (msg.get("params") or {}).get("data") or {}
-                        bids = [[float(p), float(q)] for p, q, *_ in data.get("bids", [])]
-                        asks = [[float(p), float(q)] for p, q, *_ in data.get("asks", [])]
-                        ts_ms = int(data.get("timestamp") or data.get("ts") or 0)
-                        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-                        self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-                        yield self.normalize_order_book(symbol, ts, bids, asks)
-            except Exception as e:
-                WS_FAILURES.labels(adapter=self.name).inc()
-                log.warning(
-                    "Deribit book WS desconectado (%s). Reintento en %.1fs ...",
-                    e,
-                    backoff,
-                )
-                await asyncio.sleep(backoff)
-                WS_RECONNECTS.labels(adapter=self.name).inc()
-                backoff = min(backoff * 2, 30.0)
+        async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
+            msg = json.loads(raw)
+            data = (msg.get("params") or {}).get("data") or {}
+            bids = [[float(p), float(q)] for p, q, *_ in data.get("bids", [])]
+            asks = [[float(p), float(q)] for p, q, *_ in data.get("asks", [])]
+            ts_ms = int(data.get("timestamp") or data.get("ts") or 0)
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
+            yield self.normalize_order_book(symbol, ts, bids, asks)
 
     stream_orderbook = stream_order_book
 

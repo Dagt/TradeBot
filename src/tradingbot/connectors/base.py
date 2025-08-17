@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, List, Tuple
@@ -59,6 +60,7 @@ class ExchangeConnector:
         self._sem = asyncio.Semaphore(rate_limit)
         self.log = logging.getLogger(self.__class__.__name__)
         self.reconnect_delay = 1
+        self.ping_interval = 20
 
     async def _rest_call(self, fn: Callable[..., Awaitable[Any]], *a, **k) -> Any:
         async with self._sem:
@@ -129,38 +131,66 @@ class ExchangeConnector:
         """Alias for :meth:`fetch_open_interest` to maintain backwards compatibility."""
         return await self.fetch_open_interest(symbol)
 
+    async def _ping(self, ws) -> None:
+        while True:
+            try:
+                await asyncio.sleep(self.ping_interval)
+                await ws.ping()
+            except asyncio.CancelledError:  # pragma: no cover - task cancelled
+                break
+            except Exception:  # pragma: no cover - network issues
+                break
+
     async def stream_order_book(self, symbol: str):
         url = self._ws_url(symbol)
         subscribe = self._ws_subscribe(symbol)
+        backoff = self.reconnect_delay
         while True:
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(url, ping_interval=None) as ws:
                     await ws.send(subscribe)
-                    while True:
-                        msg = await ws.recv()
-                        yield self._parse_order_book(msg, symbol)
+                    backoff = self.reconnect_delay
+                    ping_task = asyncio.create_task(self._ping(ws))
+                    try:
+                        while True:
+                            msg = await ws.recv()
+                            yield self._parse_order_book(msg, symbol)
+                    finally:
+                        ping_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await ping_task
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(self.reconnect_delay)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
 
     async def stream_trades(self, symbol: str):
         """Stream trades for the given symbol."""
         url = self._ws_trades_url(symbol)
         subscribe = self._ws_trades_subscribe(symbol)
+        backoff = self.reconnect_delay
         while True:
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(url, ping_interval=None) as ws:
                     await ws.send(subscribe)
-                    while True:
-                        msg = await ws.recv()
-                        yield self._parse_trade(msg, symbol)
+                    backoff = self.reconnect_delay
+                    ping_task = asyncio.create_task(self._ping(ws))
+                    try:
+                        while True:
+                            msg = await ws.recv()
+                            yield self._parse_trade(msg, symbol)
+                    finally:
+                        ping_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await ping_task
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(self.reconnect_delay)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
 
     # --- methods to be implemented by subclasses ---
     def _ws_url(self, symbol: str) -> str:  # pragma: no cover - abstract
