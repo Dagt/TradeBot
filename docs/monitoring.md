@@ -32,6 +32,17 @@ Available endpoints:
 
 Static assets are served from `monitoring/static/` for a quick HTML view.
 
+### Plotly dashboard
+
+The API also exposes a lightweight dashboard at `/dashboard` which polls
+`/metrics/summary` every few seconds and renders basic graphs using
+Plotly. Launch the API and open the dashboard in a browser:
+
+```bash
+uvicorn tradingbot.apps.api.main:app --reload
+# then visit http://localhost:8000/dashboard (use API_USER/API_PASS credentials)
+```
+
 ## Grafana dashboards
 
 The monitoring stack ships with ready‑to‑use Grafana, Prometheus and

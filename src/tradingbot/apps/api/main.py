@@ -11,6 +11,7 @@ import secrets
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from monitoring.metrics import metrics_summary as _metrics_summary
+from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
@@ -46,6 +47,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+app.include_router(dashboard_router)
 
 
 @app.middleware("http")
