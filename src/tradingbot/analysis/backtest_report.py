@@ -69,6 +69,10 @@ def generate_report(result: Dict) -> Dict[str, float]:
         "avg_latency": avg_latency,
     }
 
+    cv_metric = result.get("purged_cv")
+    if cv_metric is not None:
+        stats["purged_cv"] = float(cv_metric)
+
     eq_curve = result.get("equity_curve")
     if eq_curve and len(eq_curve) > 1:
         # Accept a list of numbers or dicts with an "equity" key
