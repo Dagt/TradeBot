@@ -7,7 +7,7 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     section { margin-bottom: 1.5rem; }
-    input { padding: 4px; margin-bottom: 8px; }
+    pre { background: #f4f4f4; padding: 10px; }
   </style>
 </head>
 <body>
@@ -15,56 +15,23 @@
   <h1>TradeBot Monitoring</h1>
 
   <section>
-    <h2>Metrics Summary</h2>
+    <h2>Metrics</h2>
     <div v-if="!metrics">Loading...</div>
-    <div v-else>
-      PnL: {{ metrics.pnl }} |
-      Positions: {{ Object.entries(metrics.positions || {}).map(([s,v]) => s + ':' + v).join(', ') }} |
-      Disconnects: {{ metrics.disconnects }} |
-      Avg Market Latency: {{ metrics.avg_market_latency_seconds }} |
-      Avg Order Latency: {{ metrics.avg_order_latency_seconds }} |
-      E2E Latency: {{ metrics.avg_e2e_latency_seconds }} |
-      Maker/Taker Ratio: {{ metrics.avg_maker_taker_ratio }}
-    </div>
+    <pre v-else>{{ metrics }}</pre>
   </section>
 
   <section>
-    <h2>Funding & Basis</h2>
-    <div v-if="!funding || !basis">Loading...</div>
-    <div v-else>
-      Funding: {{ JSON.stringify(funding.funding) }} |
-      Basis: {{ JSON.stringify(basis.basis) }}
-    </div>
+    <h2>PnL</h2>
+    <div v-if="!pnl">Loading...</div>
+    <div v-else>Current: {{ pnl.pnl.toFixed(2) }}</div>
   </section>
 
   <section>
-    <h2>Strategies</h2>
-    <div v-if="!strategies">Loading...</div>
-    <ul v-else>
-      <li v-for="(status, name) in strategies" :key="name">
-        {{ name }}: {{ status }}
-        <button @click="enableStrategy(name)">Enable</button>
-        <button @click="disableStrategy(name)">Disable</button>
-        <input v-model="params[name]" placeholder="{\"key\":\"val\"}" />
-        <button @click="updateParams(name)">Set Params</button>
-      </li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>Slippage (last 24h)</h2>
-    <input v-model="slipSymbol" placeholder="symbol e.g. BTC/USDT" />
-    <div v-if="!slippage">Loading...</div>
+    <h2>Risk</h2>
+    <div v-if="!risk">Loading...</div>
     <div v-else>
-      Mean: {{ slippage.global?.mean?.toFixed(4) ?? 0 }}
-    </div>
-  </section>
-
-  <section>
-    <h2>Intraday PnL</h2>
-    <div v-if="!intraday">Loading...</div>
-    <div v-else>
-      Net: {{ intraday.net.toFixed(2) }}
+      Events: {{ risk.events }}<br>
+      Exposure: {{ JSON.stringify(risk.exposure) }}
     </div>
   </section>
 </div>
@@ -74,66 +41,32 @@ const { createApp } = Vue;
 
 createApp({
   data() {
-    return {
-      metrics: null,
-      funding: null,
-      basis: null,
-      strategies: null,
-      slippage: null,
-      intraday: null,
-      slipSymbol: '',
-      params: {}
-    };
+    return { metrics: null, pnl: null, risk: null };
   },
   methods: {
-    async fetchMetrics() {
+    async fetchData() {
       this.metrics = await fetch('/metrics/summary').then(r => r.json());
+      const pnl = await fetch('/pnl/summary').then(r => r.json());
+      const exposure = await fetch('/risk/exposure').then(r => r.json());
+      const events = await fetch('/risk/events').then(r => r.json());
+      this.pnl = pnl;
+      this.risk = { exposure: exposure.exposure, events: events.events };
     },
-    async fetchFunding() {
-      this.funding = await fetch('/funding').then(r => r.json());
-    },
-    async fetchBasis() {
-      this.basis = await fetch('/basis').then(r => r.json());
-    },
-    async fetchStrategies() {
-      const data = await fetch('/strategies/status').then(r => r.json());
-      this.strategies = data.strategies || {};
-    },
-    async fetchSlippage() {
-      const url = '/fills/slippage' + (this.slipSymbol ? '?symbol=' + encodeURIComponent(this.slipSymbol) : '');
-      this.slippage = await fetch(url).then(r => r.json());
-    },
-    async fetchIntraday() {
-      this.intraday = await fetch('/pnl/intraday').then(r => r.json());
-    },
-    async enableStrategy(name) {
-      await fetch(`/strategies/${name}/enable`, { method: 'POST' });
-      this.fetchStrategies();
-    },
-    async disableStrategy(name) {
-      await fetch(`/strategies/${name}/disable`, { method: 'POST' });
-      this.fetchStrategies();
-    },
-    async updateParams(name) {
-      const body = this.params[name] || '{}';
-      try { JSON.parse(body); } catch(e) { alert('Invalid JSON'); return; }
-      await fetch(`/strategies/${name}/params`, { method: 'POST', headers: {'Content-Type':'application/json'}, body });
-    },
-    refresh() {
-      this.fetchMetrics();
-      this.fetchFunding();
-      this.fetchBasis();
-      this.fetchStrategies();
-      this.fetchSlippage();
-      this.fetchIntraday();
+    connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(proto + '://' + location.host + '/ws');
+      ws.onmessage = e => {
+        const data = JSON.parse(e.data);
+        if (data.metrics) this.metrics = data.metrics;
+        if (data.pnl) this.pnl = data.pnl;
+        if (data.risk) this.risk = data.risk;
+      };
+      ws.onclose = () => setTimeout(this.connectWS, 1000);
     }
   },
-  watch: {
-    slipSymbol() { this.fetchSlippage(); }
-  },
   mounted() {
-    this.refresh();
-    setInterval(this.refresh, 5000);
+    this.fetchData();
+    this.connectWS();
   }
 }).mount('#app');
 </script>

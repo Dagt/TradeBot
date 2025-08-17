@@ -20,6 +20,7 @@ from monitoring.metrics import (
     OPEN_POSITIONS,
     STRATEGY_ACTIONS,
     KILL_SWITCH_ACTIVE,
+    RISK_EVENTS,
 )
 from tradingbot.apps.api.main import app as api_app
 
@@ -74,6 +75,33 @@ def test_panel_endpoints_and_metrics():
     resp = client.get("/kill-switch")
     assert resp.status_code == 200
     assert resp.json()["kill_switch_active"] is True
+
+
+def test_pnl_risk_endpoints_and_ws():
+    client = TestClient(app)
+
+    TRADING_PNL.set(50)
+    OPEN_POSITIONS.clear()
+    OPEN_POSITIONS.labels(symbol="ETHUSD").set(1)
+    RISK_EVENTS.clear()
+    RISK_EVENTS.labels(event_type="limit").inc()
+
+    resp = client.get("/pnl/summary")
+    assert resp.status_code == 200
+    assert resp.json()["pnl"] == 50.0
+
+    resp = client.get("/risk/exposure")
+    assert resp.status_code == 200
+    assert resp.json()["exposure"] == {"ETHUSD": 1.0}
+
+    resp = client.get("/risk/events")
+    assert resp.status_code == 200
+    assert resp.json()["events"] == 1.0
+
+    with client.websocket_connect("/ws") as ws:
+        data = ws.receive_json()
+        assert data["pnl"]["pnl"] == 50.0
+        assert data["risk"]["events"] >= 1.0
 
 
 def test_strategy_control_endpoints():

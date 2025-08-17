@@ -20,6 +20,7 @@ Available endpoints:
 - `GET /metrics` – Prometheus metrics.
 - `GET /metrics/summary` – compact JSON snapshot of key metrics.
 - `GET /pnl` – current trading PnL.
+- `GET /pnl/summary` – alias for current trading PnL.
 - `GET /positions` – open positions by symbol.
 - `GET /kill-switch` – kill switch active flag.
 - `GET /strategies/status` – current strategy states.
@@ -29,8 +30,28 @@ Available endpoints:
 - `GET /alerts` – current firing and pending alerts with risk flags.
 - `GET /dashboards` – list of Grafana dashboards with direct URLs.
 - `GET /dashboards/{name}` – redirect to a specific Grafana dashboard.
+- `GET /risk/exposure` – current risk exposure per symbol.
+- `GET /risk/events` – aggregate risk management events.
+- `WS /ws` – websocket streaming metrics, PnL and risk updates.
 
-Static assets are served from `monitoring/static/` for a quick HTML view.
+The root path (`/`) now serves a lightweight Vue single‑page application
+that queries `/metrics/summary`, `/pnl/summary` and `/risk/*` and listens
+to `/ws` for realtime updates. Static assets live under
+`monitoring/static/` and can be replaced with a custom build.
+
+### Deploying & customizing
+
+Run the panel with:
+
+```bash
+uvicorn monitoring.panel:app --host 0.0.0.0 --port 8000
+```
+
+Set `GRAFANA_URL` and `PROMETHEUS_URL` to point to remote services if
+required. To customize the dashboard, edit
+`monitoring/static/index.html` or swap it out with your own React/Vue
+bundle. Real‑time update frequency can be adjusted in
+`monitoring/panel.py` inside the `ws_updates` coroutine.
 
 ### Plotly dashboard
 

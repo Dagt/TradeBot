@@ -4,11 +4,12 @@ import os
 import json
 from pathlib import Path
 import logging
+import asyncio
 
 import httpx
 import yaml
 import sentry_sdk
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -19,6 +20,7 @@ from .metrics import (
     STRATEGY_ACTIONS,
     TRADING_PNL,
     OPEN_POSITIONS,
+    RISK_EVENTS,
     KILL_SWITCH_ACTIVE,
     PROCESS_CPU,
     PROCESS_MEMORY,
@@ -135,6 +137,13 @@ def pnl() -> dict:
     return {"pnl": TRADING_PNL._value.get()}
 
 
+@app.get("/pnl/summary")
+def pnl_summary() -> dict:
+    """Return summary PnL (alias of /pnl)."""
+
+    return {"pnl": TRADING_PNL._value.get()}
+
+
 @app.get("/positions")
 def positions() -> dict:
     """Return current open positions by symbol."""
@@ -146,6 +155,32 @@ def positions() -> dict:
         if sample.name == "open_position"
     }
     return {"positions": pos}
+
+
+@app.get("/risk/exposure")
+def risk_exposure() -> dict:
+    """Return current risk exposure per symbol."""
+
+    pos = {
+        sample.labels["symbol"]: sample.value
+        for metric in OPEN_POSITIONS.collect()
+        for sample in metric.samples
+        if sample.name == "open_position"
+    }
+    return {"exposure": pos}
+
+
+@app.get("/risk/events")
+def risk_events() -> dict:
+    """Return total risk management events."""
+
+    total = sum(
+        sample.value
+        for metric in RISK_EVENTS.collect()
+        for sample in metric.samples
+        if sample.name.endswith("_total")
+    )
+    return {"events": total}
 
 
 @app.get("/kill-switch")
@@ -193,6 +228,36 @@ def get_strategies_status() -> dict:
     """Return the status of all strategies."""
 
     return strategies_status()
+
+
+@app.websocket("/ws")
+async def ws_updates(ws: WebSocket) -> None:
+    """Send periodic metric, PnL and risk updates over a WebSocket."""
+
+    await ws.accept()
+    try:
+        while True:
+            exposure = {
+                sample.labels["symbol"]: sample.value
+                for metric in OPEN_POSITIONS.collect()
+                for sample in metric.samples
+                if sample.name == "open_position"
+            }
+            events = sum(
+                sample.value
+                for metric in RISK_EVENTS.collect()
+                for sample in metric.samples
+                if sample.name.endswith("_total")
+            )
+            payload = {
+                "metrics": metrics_summary(),
+                "pnl": {"pnl": TRADING_PNL._value.get()},
+                "risk": {"exposure": exposure, "events": events},
+            }
+            await ws.send_json(payload)
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        return
 
 
 static_dir = Path(__file__).parent / "static"
