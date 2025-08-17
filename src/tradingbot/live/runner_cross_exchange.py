@@ -6,9 +6,13 @@ import asyncio
 import logging
 from typing import Dict, Optional
 
+from ..bus import EventBus
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
+from ..data.funding import poll_funding
+from ..data.open_interest import poll_open_interest
+from ..data.basis import poll_basis
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +27,7 @@ async def run_cross_exchange(cfg: CrossArbConfig) -> None:
     """
 
     router = ExecutionRouter([cfg.spot, cfg.perp])
+    bus = EventBus()
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
 
@@ -73,7 +78,15 @@ async def run_cross_exchange(cfg: CrossArbConfig) -> None:
             last["perp"] = price
             await maybe_trade()
 
-    await asyncio.gather(listen_spot(), listen_perp())
+    tasks = [listen_spot(), listen_perp()]
+    if getattr(cfg.perp, "fetch_funding", None):
+        tasks.append(poll_funding(cfg.perp, cfg.symbol, bus, persist_pg=True))
+    if getattr(cfg.perp, "fetch_open_interest", None) or getattr(cfg.perp, "fetch_oi", None):
+        tasks.append(poll_open_interest(cfg.perp, cfg.symbol, bus, persist_pg=True))
+    if getattr(cfg.perp, "fetch_basis", None):
+        tasks.append(poll_basis(cfg.perp, cfg.symbol, bus, persist_pg=True))
+
+    await asyncio.gather(*tasks)
 
 
 __all__ = ["run_cross_exchange"]
