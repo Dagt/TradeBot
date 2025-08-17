@@ -6,8 +6,13 @@ from collections import defaultdict, deque
 from importlib import import_module
 from collections.abc import Iterable
 from typing import Dict, List, Optional
+import os
+from pathlib import Path
 
 import pandas as pd
+import sentry_sdk
+import yaml
+from sentry_sdk import capture_exception
 from ..data.features import returns
 
 from ..bus import EventBus
@@ -23,6 +28,52 @@ from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
 
 log = logging.getLogger(__name__)
+
+
+def _init_sentry() -> None:
+    """Initialize Sentry from config file and environment variables."""
+    cfg_path = Path(__file__).resolve().parents[3] / "monitoring" / "sentry.yml"
+    config: dict = {}
+    try:
+        with cfg_path.open("r") as fh:
+            config = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        config = {}
+
+    dsn = os.getenv("SENTRY_DSN", config.get("dsn"))
+    enabled = os.getenv("SENTRY_ENABLED")
+    if enabled is not None and enabled.lower() not in {"1", "true", "yes"}:
+        return
+    if not dsn:
+        return
+
+    init_kwargs = {
+        "dsn": dsn,
+        "environment": os.getenv("SENTRY_ENVIRONMENT", config.get("environment")),
+    }
+    sample_rate = os.getenv(
+        "SENTRY_TRACES_SAMPLE_RATE", config.get("traces_sample_rate")
+    )
+    if sample_rate is not None:
+        try:
+            init_kwargs["traces_sample_rate"] = float(sample_rate)
+        except (TypeError, ValueError):
+            pass
+    sentry_sdk.init(**{k: v for k, v in init_kwargs.items() if v is not None})
+
+
+_init_sentry()
+
+
+def _report_task_error(task: asyncio.Task) -> None:
+    """Send unhandled task exceptions to Sentry."""
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:  # pragma: no cover - task management
+        return
+    if exc:
+        log.exception("task_error", exc_info=exc)
+        capture_exception(exc)
 
 
 def _load_obj(path: str):
@@ -155,6 +206,7 @@ class TradeBotDaemon:
                         self.guard.set_position(name, sym, qty)
             except Exception as exc:  # pragma: no cover - network
                 log.warning("balance_error", extra={"account": name, "err": str(exc)})
+                capture_exception(exc)
         self._reconcile_balances()
 
     # ------------------------------------------------------------------
@@ -191,6 +243,7 @@ class TradeBotDaemon:
                         log.warning(
                             "rebalance_error", extra={"asset": asset, "err": str(exc)}
                         )
+                        capture_exception(exc)
             await asyncio.sleep(self.balance_interval)
 
     # ------------------------------------------------------------------
@@ -275,6 +328,7 @@ class TradeBotDaemon:
             except Exception as exc:  # pragma: no cover - network
                 delay = getattr(adapter, "reconnect_delay", 1)
                 log.warning("ws_reconnect", extra={"adapter": name, "err": str(exc)})
+                capture_exception(exc)
                 await asyncio.sleep(delay)
 
     # ------------------------------------------------------------------
@@ -421,25 +475,42 @@ class TradeBotDaemon:
         """Entry point for running the daemon until halted."""
         await self.refresh_balances()
         # periodic balance reconciliation
-        self._tasks.append(asyncio.create_task(self._balance_worker()))
+        task = asyncio.create_task(self._balance_worker())
+        task.add_done_callback(_report_task_error)
+        self._tasks.append(task)
         # cross exchange arbitrage loops
         for cfg in self.cross_arbs:
             task = asyncio.create_task(self._cross_arbitrage(cfg))
+            task.add_done_callback(_report_task_error)
             self._tasks.append(task)
         # dynamic arbitrage runners
         for func, kwargs in self.arb_runners:
             task = asyncio.create_task(func(**kwargs))
+            task.add_done_callback(_report_task_error)
             self._tasks.append(task)
         # market data streams
         for name, adapter in self.adapters.items():
             for symbol in self.symbols:
                 task = asyncio.create_task(self._stream_adapter(name, adapter, symbol))
+                task.add_done_callback(_report_task_error)
                 self._tasks.append(task)
                 if getattr(adapter, "fetch_funding", None):
-                    self._tasks.append(asyncio.create_task(poll_funding(adapter, symbol, self.bus, persist_pg=True)))
+                    task = asyncio.create_task(
+                        poll_funding(adapter, symbol, self.bus, persist_pg=True)
+                    )
+                    task.add_done_callback(_report_task_error)
+                    self._tasks.append(task)
                 if getattr(adapter, "fetch_open_interest", None) or getattr(adapter, "fetch_oi", None):
-                    self._tasks.append(asyncio.create_task(poll_open_interest(adapter, symbol, self.bus, persist_pg=True)))
+                    task = asyncio.create_task(
+                        poll_open_interest(adapter, symbol, self.bus, persist_pg=True)
+                    )
+                    task.add_done_callback(_report_task_error)
+                    self._tasks.append(task)
                 if getattr(adapter, "fetch_basis", None):
-                    self._tasks.append(asyncio.create_task(poll_basis(adapter, symbol, self.bus, persist_pg=True)))
+                    task = asyncio.create_task(
+                        poll_basis(adapter, symbol, self.bus, persist_pg=True)
+                    )
+                    task.add_done_callback(_report_task_error)
+                    self._tasks.append(task)
         await self._stop.wait()
         await asyncio.gather(*self._tasks, return_exceptions=True)
