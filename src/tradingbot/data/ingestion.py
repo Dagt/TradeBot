@@ -7,6 +7,7 @@ from typing import Any, Iterable, Literal
 
 from ..bus import EventBus
 from ..types import Tick, Bar, OrderBook
+from ..connectors import Trade as ConnTrade, OrderBook as ConnOrderBook
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 
@@ -110,6 +111,57 @@ def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: 
             storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
         except Exception as exc:  # pragma: no cover - logging only
             log.debug("Bar insert failed: %s", exc)
+
+
+async def download_trades(
+    connector: Any,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch trades using *connector* and persist them.
+
+    The connector must implement a ``fetch_trades`` coroutine returning a list of
+    :class:`tradingbot.connectors.Trade` objects.
+    """
+
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    ticks: list[Tick] = []
+    for t in raw_trades:
+        ticks.append(
+            Tick(
+                ts=t.timestamp,
+                exchange=getattr(connector, "name", "unknown"),
+                symbol=symbol,
+                price=t.price,
+                qty=t.amount,
+                side=t.side,
+            )
+        )
+    persist_trades(ticks, backend=backend)
+
+
+async def download_order_book(
+    connector: Any,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch an order book snapshot using *connector* and persist it."""
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    snapshot = OrderBook(
+        ts=ob.timestamp,
+        exchange=getattr(connector, "name", "unknown"),
+        symbol=symbol,
+        bid_px=[p for p, _ in ob.bids],
+        bid_qty=[q for _, q in ob.bids],
+        ask_px=[p for p, _ in ob.asks],
+        ask_qty=[q for _, q in ob.asks],
+    )
+    persist_orderbooks([snapshot], backend=backend)
 
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:

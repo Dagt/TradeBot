@@ -8,7 +8,8 @@ from tradingbot.adapters.binance_futures import BinanceFuturesAdapter
 from tradingbot.bus import EventBus
 from tradingbot.data.ingestion import run_orderbook_stream, run_trades_stream
 from tradingbot.data import ingestion
-from tradingbot.types import OrderBook
+from tradingbot.types import OrderBook, Tick
+from tradingbot.connectors import Trade as ConnTrade, OrderBook as ConnOrderBook
 
 
 class DummyOBAdapter(ExchangeAdapter):
@@ -270,3 +271,66 @@ async def test_poll_basis_inserts(monkeypatch, backend):
     assert inserted[0]["basis"] == 5.0
     assert inserted[0]["ts"] == ts
     assert requested_backends == [backend]
+
+
+@pytest.mark.asyncio
+async def test_download_trades_connector(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConn:
+        name = "kaiko"
+
+        async def fetch_trades(self, symbol: str, **params):
+            return [
+                ConnTrade(
+                    timestamp=ts,
+                    exchange="kaiko",
+                    symbol=symbol,
+                    price=1.0,
+                    amount=2.0,
+                    side="buy",
+                )
+            ]
+
+    captured: list[Tick] = []
+
+    def fake_persist(trades, *, backend, path=None):
+        captured.extend(trades)
+
+    monkeypatch.setattr(ingestion, "persist_trades", fake_persist)
+
+    await ingestion.download_trades(DummyConn(), "BTC/USDT", backend="csv")
+
+    assert captured
+    assert captured[0].price == 1.0
+    assert captured[0].qty == 2.0
+
+
+@pytest.mark.asyncio
+async def test_download_order_book_connector(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConn:
+        name = "kaiko"
+
+        async def fetch_order_book(self, symbol: str, **params):
+            return ConnOrderBook(
+                timestamp=ts,
+                exchange="kaiko",
+                symbol=symbol,
+                bids=[(100.0, 1.0)],
+                asks=[(101.0, 2.0)],
+            )
+
+    captured: list[OrderBook] = []
+
+    def fake_persist(obs, *, backend, path=None):
+        captured.extend(obs)
+
+    monkeypatch.setattr(ingestion, "persist_orderbooks", fake_persist)
+
+    await ingestion.download_order_book(DummyConn(), "BTC/USDT", backend="csv")
+
+    assert captured
+    assert captured[0].bid_px == [100.0]
+    assert captured[0].ask_qty == [2.0]

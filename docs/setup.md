@@ -32,6 +32,21 @@ archivos CSV dentro de `db/` o directamente en TimescaleDB/QuestDB:
 
 La persistencia se realiza mediante utilidades de `tradingbot.data.ingestion`.
 
+### Claves de API para conectores externos
+
+Algunos proveedores como Kaiko y CoinAPI requieren claves de autenticación.
+Establece las variables de entorno `KAIKO_API_KEY` y `COINAPI_KEY` antes de
+invocar los conectores o scripts que los utilicen:
+
+```bash
+export KAIKO_API_KEY="tu_clave_kaiko"
+export COINAPI_KEY="tu_clave_coinapi"
+```
+
+Los conectores `KaikoConnector` y `CoinAPIConnector` ofrecen métodos
+``fetch_trades`` y ``fetch_order_book`` que pueden emplearse junto a las
+utilidades de `ingestion` para descargar históricos y persistirlos.
+
 ## Servicios con Docker
 Puedes levantar únicamente las bases de datos con los scripts del
 repositorio:

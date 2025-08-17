@@ -3,6 +3,8 @@ from .binance import BinanceConnector
 from .bybit import BybitConnector
 from .okx import OKXConnector
 from .deribit import DeribitConnector
+from .kaiko import KaikoConnector
+from .coinapi import CoinAPIConnector
 
 __all__ = [
     "Trade",
@@ -15,4 +17,6 @@ __all__ = [
     "BybitConnector",
     "OKXConnector",
     "DeribitConnector",
+    "KaikoConnector",
+    "CoinAPIConnector",
 ]
