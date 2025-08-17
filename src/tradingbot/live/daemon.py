@@ -17,6 +17,9 @@ from ..execution.router import ExecutionRouter
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
+from ..data.funding import poll_funding
+from ..data.open_interest import poll_open_interest
+from ..data.basis import poll_basis
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +119,9 @@ class TradeBotDaemon:
         self.bus.subscribe("risk:halted", self._on_halt)
         self.bus.subscribe("control:halt", self._on_external_halt)
         self.bus.subscribe("capital:update", self._on_capital_update)
+        self.bus.subscribe("funding", self._dispatch_funding)
+        self.bus.subscribe("basis", self._dispatch_basis)
+        self.bus.subscribe("open_interest", self._dispatch_open_interest)
 
     # ------------------------------------------------------------------
     async def refresh_balances(self) -> None:
@@ -260,6 +266,48 @@ class TradeBotDaemon:
             if signal is not None:
                 await self.bus.publish("signal", {"signal": signal, "trade": trade})
 
+    async def _dispatch_funding(self, evt: dict) -> None:
+        """Forward funding events to strategies."""
+        for strat in self.strategies:
+            handler = getattr(strat, "on_funding", None)
+            if handler is None:
+                continue
+            try:
+                signal = handler(evt)
+            except Exception as exc:  # pragma: no cover - strategy error
+                log.exception("strategy_error", extra={"strategy": strat.__class__.__name__, "err": str(exc)})
+                continue
+            if signal is not None:
+                await self.bus.publish("signal", {"signal": signal, "funding": evt})
+
+    async def _dispatch_basis(self, evt: dict) -> None:
+        """Forward basis events to strategies."""
+        for strat in self.strategies:
+            handler = getattr(strat, "on_basis", None)
+            if handler is None:
+                continue
+            try:
+                signal = handler(evt)
+            except Exception as exc:  # pragma: no cover - strategy error
+                log.exception("strategy_error", extra={"strategy": strat.__class__.__name__, "err": str(exc)})
+                continue
+            if signal is not None:
+                await self.bus.publish("signal", {"signal": signal, "basis": evt})
+
+    async def _dispatch_open_interest(self, evt: dict) -> None:
+        """Forward open interest events to strategies."""
+        for strat in self.strategies:
+            handler = getattr(strat, "on_open_interest", None)
+            if handler is None:
+                continue
+            try:
+                signal = handler(evt)
+            except Exception as exc:  # pragma: no cover - strategy error
+                log.exception("strategy_error", extra={"strategy": strat.__class__.__name__, "err": str(exc)})
+                continue
+            if signal is not None:
+                await self.bus.publish("signal", {"signal": signal, "open_interest": evt})
+
     # ------------------------------------------------------------------
     async def _on_signal(self, evt: dict) -> None:
         """Size and route signals coming from strategies."""
@@ -357,5 +405,11 @@ class TradeBotDaemon:
             for symbol in self.symbols:
                 task = asyncio.create_task(self._stream_adapter(name, adapter, symbol))
                 self._tasks.append(task)
+                if getattr(adapter, "fetch_funding", None):
+                    self._tasks.append(asyncio.create_task(poll_funding(adapter, symbol, self.bus, persist_pg=True)))
+                if getattr(adapter, "fetch_open_interest", None) or getattr(adapter, "fetch_oi", None):
+                    self._tasks.append(asyncio.create_task(poll_open_interest(adapter, symbol, self.bus, persist_pg=True)))
+                if getattr(adapter, "fetch_basis", None):
+                    self._tasks.append(asyncio.create_task(poll_basis(adapter, symbol, self.bus, persist_pg=True)))
         await self._stop.wait()
         await asyncio.gather(*self._tasks, return_exceptions=True)
