@@ -6,11 +6,23 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from tradingbot.backtesting.engine import walk_forward_optimize
+from tradingbot.backtesting.engine import purged_kfold, walk_forward_optimize
+
+
+def test_purged_kfold_partitions():
+    n = 20
+    splits = purged_kfold(n, n_splits=4, embargo=0.1)
+    assert len(splits) == 4
+    embargo_size = int(n * 0.1)
+    for train_idx, test_idx in splits:
+        test_start, test_end = test_idx[0], test_idx[-1]
+        embargo_range = set(
+            range(max(0, test_start - embargo_size), min(n, test_end + embargo_size + 1))
+        )
+        assert embargo_range.isdisjoint(train_idx)
 
 
 def test_walk_forward_optimize(tmp_path):
-    # Create simple increasing price data
     n = 30
     df = pd.DataFrame(
         {
@@ -30,11 +42,11 @@ def test_walk_forward_optimize(tmp_path):
         "FOO/USDT",
         "momentum",
         params,
-        train_size=10,
-        test_size=5,
+        n_splits=3,
+        embargo=0.1,
     )
 
-    assert len(results) == 4
+    assert len(results) == 3
     for i, rec in enumerate(results):
         assert rec["split"] == i
         assert "train_equity" in rec and "test_equity" in rec
