@@ -42,6 +42,9 @@ class ExecutionRouter:
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
         """Select venue based on spread, fees and latency."""
+        maker = order.post_only or (
+            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
+        )
 
         def venue_score(adapter) -> float | None:
             state = getattr(adapter, "state", None)
@@ -58,7 +61,8 @@ class ExecutionRouter:
             else:
                 return None
 
-            fee_bps = getattr(adapter, "fee_bps", 0.0)
+            fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
+            fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
             fee = price * fee_bps / 10000.0
             latency = getattr(adapter, "latency", 0.0)
             direction = 1 if order.side == "buy" else -1
@@ -177,6 +181,11 @@ class ExecutionRouter:
             res.setdefault("est_slippage_bps", est_slippage)
         if queue_pos is not None:
             res.setdefault("queue_position", queue_pos)
+        maker = order.post_only or (
+            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
+        )
+        fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
+        fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
         if res.get("status") == "filled":
             FILL_COUNT.labels(symbol=order.symbol, side=order.side).inc()
             if self._engine is not None:
@@ -192,7 +201,7 @@ class ExecutionRouter:
                         px=res.get("price"),
                         status=res.get("status", "unknown"),
                         ext_order_id=res.get("order_id"),
-                        notes=None,
+                        notes={"fee_type": "maker" if maker else "taker", "fee_bps": fee_bps},
                     )
                 except Exception:
                     pass
@@ -206,9 +215,6 @@ class ExecutionRouter:
             if bps != 0:
                 SLIPPAGE.labels(symbol=order.symbol, side=order.side).observe(bps)
 
-        maker = order.post_only or (
-            order.type_.lower() == "limit" and order.time_in_force not in {"IOC", "FOK"}
-        )
         if maker:
             self._maker_counts[venue] += 1
         else:
