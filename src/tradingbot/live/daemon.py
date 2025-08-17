@@ -123,6 +123,8 @@ class TradeBotDaemon:
         returns_window: int = 100,
         rebalance_assets: Iterable[str] | None = None,
         rebalance_threshold: float = 0.0,
+        rebalance_interval: float | None = None,
+        rebalance_enabled: bool = False,
     ) -> None:
         self.adapters = adapters
         self.strategies: List[object] = []
@@ -154,6 +156,10 @@ class TradeBotDaemon:
         self.corr_threshold = float(correlation_threshold)
         self.rebalance_assets = list(rebalance_assets or [])
         self.rebalance_threshold = float(rebalance_threshold)
+        self.rebalance_interval = (
+            rebalance_interval if rebalance_interval is not None else balance_interval
+        )
+        self.rebalance_enabled = rebalance_enabled
 
         # initialize position books for all venues/symbols
         for venue in self.adapters:
@@ -227,24 +233,28 @@ class TradeBotDaemon:
     async def _balance_worker(self) -> None:
         while not self._stop.is_set():
             await self.refresh_balances()
-            if self.rebalance_assets:
-                engine = getattr(self.router, "_engine", None)
-                for asset in self.rebalance_assets:
-                    try:
-                        await rebalance_between_exchanges(
-                            asset,
-                            price=1.0,
-                            venues=self.accounts,
-                            risk=self.risk,
-                            engine=engine,
-                            threshold=self.rebalance_threshold,
-                        )
-                    except Exception as exc:  # pragma: no cover - network
-                        log.warning(
-                            "rebalance_error", extra={"asset": asset, "err": str(exc)}
-                        )
-                        capture_exception(exc)
             await asyncio.sleep(self.balance_interval)
+
+    # ------------------------------------------------------------------
+    async def _rebalance_worker(self) -> None:
+        engine = getattr(self.router, "_engine", None)
+        while not self._stop.is_set():
+            for asset in self.rebalance_assets:
+                try:
+                    await rebalance_between_exchanges(
+                        asset,
+                        price=1.0,
+                        venues=self.accounts,
+                        risk=self.risk,
+                        engine=engine,
+                        threshold=self.rebalance_threshold,
+                    )
+                except Exception as exc:  # pragma: no cover - network
+                    log.warning(
+                        "rebalance_error", extra={"asset": asset, "err": str(exc)}
+                    )
+                    capture_exception(exc)
+            await asyncio.sleep(self.rebalance_interval)
 
     # ------------------------------------------------------------------
     async def _cross_arbitrage(self, cfg: CrossArbConfig) -> None:
@@ -478,6 +488,10 @@ class TradeBotDaemon:
         task = asyncio.create_task(self._balance_worker())
         task.add_done_callback(_report_task_error)
         self._tasks.append(task)
+        if self.rebalance_enabled and self.rebalance_assets:
+            task = asyncio.create_task(self._rebalance_worker())
+            task.add_done_callback(_report_task_error)
+            self._tasks.append(task)
         # cross exchange arbitrage loops
         for cfg in self.cross_arbs:
             task = asyncio.create_task(self._cross_arbitrage(cfg))

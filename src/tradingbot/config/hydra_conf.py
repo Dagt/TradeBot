@@ -63,7 +63,9 @@ class RiskConfig:
 class BalanceConfig:
     """Balance rebalancing parameters."""
 
+    enabled: bool = False
     threshold: float = 0.0
+    interval: float = 60.0
     assets: List[str] = field(default_factory=list)
 
 
