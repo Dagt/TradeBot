@@ -10,6 +10,7 @@ from tradingbot.connectors import (
     Basis,
     OpenInterest,
 )
+from tradingbot.adapters import DeribitWSAdapter
 
 
 class DummyRest:
@@ -50,6 +51,14 @@ class DummyWS:
         if self.messages:
             return self.messages.pop(0)
         raise ConnectionError("closed")
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.messages:
+            return self.messages.pop(0)
+        raise StopAsyncIteration
 
 
 @pytest.mark.asyncio
@@ -106,4 +115,59 @@ async def test_stream_trades_and_orderbook(monkeypatch):
     ob = await ogen.__anext__()
     assert isinstance(ob, OrderBook)
     assert ob.bids[0][0] == 1.0
+    await ogen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_deribit_ws_adapter_parsing(monkeypatch):
+    adapter = DeribitWSAdapter()
+
+    trade_msgs = [
+        json.dumps(
+            {
+                "params": {
+                    "data": [
+                        {
+                            "price": "100",
+                            "amount": "0.5",
+                            "direction": "buy",
+                            "timestamp": 0,
+                        }
+                    ]
+                }
+            }
+        )
+    ]
+
+    book_msgs = [
+        json.dumps(
+            {
+                "params": {
+                    "data": {
+                        "bids": [["100", "1"]],
+                        "asks": [["101", "2"]],
+                        "timestamp": 0,
+                    }
+                }
+            }
+        )
+    ]
+
+    ws_iter = iter([DummyWS(trade_msgs.copy()), DummyWS(book_msgs.copy())])
+
+    def fake_connect(*args, **kwargs):
+        return next(ws_iter)
+
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    tgen = adapter.stream_trades("BTC-PERPETUAL")
+    trade = await tgen.__anext__()
+    assert trade["price"] == 100.0
+    assert trade["qty"] == 0.5
+    await tgen.aclose()
+
+    ogen = adapter.stream_order_book("BTC-PERPETUAL", depth=10)
+    ob = await ogen.__anext__()
+    assert ob["bid_px"][0] == 100.0
+    assert ob["ask_qty"][0] == 2.0
     await ogen.aclose()
