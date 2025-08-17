@@ -9,19 +9,24 @@ from tradingbot.connectors import (
     OrderBook,
     Trade,
     Funding,
+    OpenInterest,
 )
 
 
 class DummyRest:
-    def __init__(self, trades, funding):
+    def __init__(self, trades, funding, oi):
         self._trades = trades
         self._funding = funding
+        self._oi = oi
 
     async def fetch_trades(self, symbol):
         return self._trades
 
     async def fetch_funding_rate(self, symbol):
         return self._funding
+
+    async def fetch_open_interest(self, symbol):
+        return self._oi
 
 
 class DummyWS:
@@ -56,8 +61,9 @@ class DummyWS:
 async def test_rest_normalization(connector_cls):
     trades = [{"timestamp": 1000, "price": "1", "amount": "2", "side": "buy"}]
     funding = {"fundingRate": "0.01", "timestamp": 1000}
+    oi = {"openInterest": "5", "timestamp": 1000}
     c = connector_cls()
-    c.rest = DummyRest(trades, funding)
+    c.rest = DummyRest(trades, funding, oi)
 
     res_trades = await c.fetch_trades("BTC/USDT")
     assert isinstance(res_trades[0], Trade)
@@ -66,6 +72,10 @@ async def test_rest_normalization(connector_cls):
     res_funding = await c.fetch_funding("BTC/USDT")
     assert isinstance(res_funding, Funding)
     assert res_funding.rate == 0.01
+
+    res_oi = await c.fetch_open_interest("BTC/USDT")
+    assert isinstance(res_oi, OpenInterest)
+    assert res_oi.oi == 5.0
 
 
 @pytest.mark.asyncio

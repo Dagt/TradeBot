@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .base import ExchangeConnector, OrderBook, Trade
+from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
 
 
 class OKXConnector(ExchangeConnector):
@@ -51,6 +51,16 @@ class OKXConnector(ExchangeConnector):
             amount=float(trade.get("sz", 0.0)),
             side=trade.get("side", ""),
         )
+
+    async def fetch_funding(self, symbol: str) -> Funding:
+        """Retrieve funding data for ``symbol`` using CCXT."""
+
+        return await super().fetch_funding(symbol)
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        """Retrieve open interest for ``symbol`` using CCXT."""
+
+        return await super().fetch_open_interest(symbol)
 
     # ------------------------------------------------------------------
     # Trading helpers

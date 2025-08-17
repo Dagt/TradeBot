@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from .base import ExchangeConnector, OrderBook, Trade
+from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
 
 
 class BinanceConnector(ExchangeConnector):
@@ -51,3 +51,23 @@ class BinanceConnector(ExchangeConnector):
             amount=float(data.get("q", 0.0)),
             side="sell" if data.get("m") else "buy",
         )
+
+    async def fetch_funding(self, symbol: str) -> Funding:
+        """Fetch the current funding rate for ``symbol``.
+
+        This simply proxies to the :class:`ExchangeConnector` implementation
+        which in turn delegates to the underlying CCXT client.  The method is
+        defined explicitly so that callers can rely on its presence for the
+        Binance connector.
+        """
+
+        return await super().fetch_funding(symbol)
+
+    async def fetch_open_interest(self, symbol: str) -> OpenInterest:
+        """Fetch open interest for ``symbol``.
+
+        Binance does not expose a dedicated endpoint in this connector so we
+        fall back to the generic CCXT helper provided by the base class.
+        """
+
+        return await super().fetch_open_interest(symbol)

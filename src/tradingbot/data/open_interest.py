@@ -18,21 +18,41 @@ log = logging.getLogger(__name__)
 async def fetch_oi(adapter, symbol: str) -> dict[str, Any]:
     """Fetch open interest using ``adapter`` and return a normalised mapping."""
 
-    fetch = getattr(adapter, "fetch_open_interest", None) or getattr(adapter, "fetch_oi", None)
+    fetch = getattr(adapter, "fetch_open_interest", None) or getattr(
+        adapter, "fetch_oi", None
+    )
     if fetch is None:
         raise AttributeError("adapter lacks fetch_open_interest")
+
     info: Any = await fetch(symbol)
-    ts_raw = info.get("ts") or info.get("time")
-    if isinstance(ts_raw, (int, float)):
-        ts = datetime.fromtimestamp(ts_raw / 1000, timezone.utc)
+    if isinstance(info, dict):
+        ts_raw = info.get("ts") or info.get("time") or info.get("timestamp")
+        oi_raw = info.get("oi") or info.get("openInterest") or info.get("value")
+        exchange = info.get("exchange") or getattr(adapter, "name", "unknown")
     else:
-        ts = ts_raw or datetime.now(timezone.utc)
-    oi = float(info.get("oi") or info.get("openInterest") or 0.0)
-    return {
-        "ts": ts,
-        "oi": oi,
-        "exchange": getattr(adapter, "name", "unknown"),
-    }
+        ts_raw = (
+            getattr(info, "timestamp", None)
+            or getattr(info, "ts", None)
+            or getattr(info, "time", None)
+        )
+        oi_raw = (
+            getattr(info, "oi", None)
+            or getattr(info, "openInterest", None)
+            or getattr(info, "value", None)
+        )
+        exchange = getattr(info, "exchange", getattr(adapter, "name", "unknown"))
+
+    if isinstance(ts_raw, datetime):
+        ts = ts_raw
+    elif isinstance(ts_raw, (int, float)):
+        if ts_raw > 1e12:
+            ts_raw /= 1000
+        ts = datetime.fromtimestamp(ts_raw, timezone.utc)
+    else:
+        ts = datetime.now(timezone.utc)
+
+    oi = float(oi_raw or 0.0)
+    return {"ts": ts, "oi": oi, "exchange": exchange}
 
 
 async def poll_open_interest(
