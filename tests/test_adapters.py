@@ -206,6 +206,15 @@ class _DummyBybitRest:
     def publicGetV5MarketOpenInterest(self, params):
         return {"result": {"list": [{"timestamp": 1000, "openInterest": "100"}]}}
 
+    def publicGetV5MarketPremiumIndexPrice(self, params):
+        return {
+            "result": {
+                "list": [
+                    {"timestamp": 1000, "markPrice": "105", "indexPrice": "100"}
+                ]
+            }
+        }
+
 
 class _DummyOKXRest:
     def fetchFundingRate(self, symbol):
@@ -241,6 +250,21 @@ async def test_parsing_funding_and_oi(adapter_cls, rest_cls, rate, oi):
     oi_res = await adapter.fetch_oi("BTC/USDT")
     assert oi_res["oi"] == oi
     assert oi_res["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_bybit_futures_fetch_basis():
+    adapter = BybitFuturesAdapter.__new__(BybitFuturesAdapter)
+    adapter.rest = _DummyBybitRest()
+
+    async def _req(fn, *a, **k):
+        return fn(*a, **k)
+
+    adapter._request = _req
+
+    basis = await adapter.fetch_basis("BTC/USDT")
+    assert basis["basis"] == 5.0
+    assert basis["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
 
 
 class _DummyDeribitRest:
