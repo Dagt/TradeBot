@@ -37,14 +37,14 @@ groups:
           summary: High end-to-end latency
           description: 95th percentile E2E latency above 2s for 5m
 
-      - alert: WebsocketFailures
+      - alert: WebsocketDisconnects
         expr: increase(ws_failures_total[5m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: Websocket failures detected
-          description: Websocket errors occurred in the last 5m
+          summary: Websocket disconnections detected
+          description: Websocket connections were lost in the last 5m
 
       - alert: StrategyError
         expr: sum(strategy_state == 2) > 0
@@ -55,7 +55,16 @@ groups:
           summary: Strategy in error state
           description: One or more strategies reporting error state
 
-      - alert: KillSwitchActivated
+      - alert: RiskEvents
+        expr: increase(risk_events_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Risk management events detected
+          description: Risk events occurred in the last 5m
+
+      - alert: KillSwitchActive
         expr: kill_switch_active > 0
         for: 1m
         labels:

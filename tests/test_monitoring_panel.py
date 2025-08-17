@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
-
 from monitoring.panel import app
+import monitoring.panel as panel
 from monitoring.metrics import (
     TRADING_PNL,
     SYSTEM_DISCONNECTS,
@@ -51,3 +51,20 @@ def test_panel_endpoints_and_metrics():
     assert data["avg_e2e_latency_seconds"] == 0.7
     assert data["ws_failures"] == 1.0
     assert data["strategy_states"] == {"alpha": 1.0}
+
+
+def test_alerts_endpoint(monkeypatch):
+    client = TestClient(app)
+    alerts_list = [
+        {"labels": {"alertname": "RiskEvents"}},
+        {"labels": {"alertname": "KillSwitchActive"}},
+    ]
+    monkeypatch.setattr(panel, "fetch_alerts", lambda: alerts_list)
+
+    resp = client.get("/alerts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["risk_events"] is True
+    assert data["kill_switch_active"] is True
+    assert data["ws_disconnects"] is False
+    assert data["alerts"] == alerts_list
