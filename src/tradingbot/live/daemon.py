@@ -26,7 +26,7 @@ from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
-from ..utils.metrics import FUNDING_RATE, OPEN_INTEREST
+from ..utils.metrics import BASIS, FUNDING_RATE, OPEN_INTEREST
 
 log = logging.getLogger(__name__)
 
@@ -407,6 +407,9 @@ class TradeBotDaemon:
 
     async def _dispatch_basis(self, evt: dict) -> None:
         """Forward basis events to strategies."""
+        value = float(evt.get("basis") or 0.0)
+        symbol = evt.get("symbol", "")
+        BASIS.labels(symbol=symbol).set(value)
         for strat in self.strategies:
             handler = getattr(strat, "on_basis", None)
             if handler is None:

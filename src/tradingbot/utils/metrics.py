@@ -111,6 +111,19 @@ FUNDING_RATE_HIST = Histogram(
     ["symbol"],
 )
 
+# Basis per symbol
+BASIS = Gauge(
+    "basis",
+    "Latest basis value",
+    ["symbol"],
+)
+
+BASIS_HIST = Histogram(
+    "basis_distribution",
+    "Distribution of basis observations",
+    ["symbol"],
+)
+
 # Open interest per symbol
 OPEN_INTEREST = Gauge(
     "open_interest",
