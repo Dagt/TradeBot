@@ -127,6 +127,43 @@ results = walk_forward_optimize(
 print(results)
 ```
 
+## MLflow y Optuna
+
+El módulo `tradingbot.experiments` incluye helpers para registrar backtests en
+**MLflow** y ejecutar optimizaciones genéricas con **Optuna**.
+
+```python
+from tradingbot.backtesting.engine import run_backtest_mlflow
+
+res = run_backtest_mlflow(
+    {"BTC/USDT": "data/examples/btcusdt_1m.csv"},
+    [("breakout_atr", "BTC/USDT")],
+    run_name="demo",
+)
+print(res["sharpe"])
+```
+
+Para búsquedas de hiperparámetros:
+
+```python
+from tradingbot.experiments import optimize
+from tradingbot.backtesting.engine import run_backtest_csv
+
+param_space = {
+    "window": lambda t: t.suggest_int("window", 50, 150),
+}
+
+def backtest(params):
+    return run_backtest_csv(
+        {"BTC/USDT": "data/examples/btcusdt_1m.csv"},
+        [("breakout_atr", "BTC/USDT")],
+        window=params["window"],
+    )
+
+study = optimize(param_space, backtest, n_trials=5)
+print(study.best_params)
+```
+
 ## Interfaz mínima de monitoreo
 
 `monitoring/panel.py` levanta una aplicación FastAPI que expone las métricas en
