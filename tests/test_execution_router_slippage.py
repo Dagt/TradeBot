@@ -3,6 +3,9 @@ import pytest
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
 from tradingbot.utils.metrics import SLIPPAGE
+from tradingbot.backtesting.engine import SlippageModel
+from tradingbot.data.features import order_flow_imbalance
+import pandas as pd
 
 
 class MockAdapter:
@@ -110,3 +113,23 @@ async def test_est_slippage_and_queue_paths():
     )
     res_maker = await router_maker.execute(order_maker)
     assert res_maker["queue_position"] == pytest.approx(0.8, rel=1e-3)
+
+
+def test_slippage_model_ofi_impact():
+    df = pd.DataFrame(
+        {
+            "high": [101.0, 101.0],
+            "low": [99.0, 99.0],
+            "volume": [1000.0, 1000.0],
+            "bid_qty": [1.0, 2.0],
+            "ask_qty": [1.0, 1.0],
+        }
+    )
+    df["order_flow_imbalance"] = order_flow_imbalance(df[["bid_qty", "ask_qty"]])
+    bar = df.iloc[1]
+    model = SlippageModel(volume_impact=0.0, spread_mult=0.0, ofi_impact=0.5)
+    price = 100.0
+    adj_buy = model.adjust("buy", 1.0, price, bar)
+    adj_sell = model.adjust("sell", 1.0, price, bar)
+    assert adj_buy == pytest.approx(price + 0.5, rel=1e-9)
+    assert adj_sell == pytest.approx(price - 0.5, rel=1e-9)

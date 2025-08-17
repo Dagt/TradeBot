@@ -12,7 +12,7 @@ import pandas as pd
 
 from ..risk.manager import RiskManager
 from ..strategies import STRATEGIES
-from ..data.features import returns
+from ..data.features import returns, order_flow_imbalance
 
 log = logging.getLogger(__name__)
 
@@ -47,15 +47,30 @@ class SlippageModel:
     the bid/ask spread.
     """
 
-    def __init__(self, volume_impact: float = 0.1, spread_mult: float = 1.0) -> None:
+    def __init__(
+        self,
+        volume_impact: float = 0.1,
+        spread_mult: float = 1.0,
+        ofi_impact: float = 0.0,
+    ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
+        self.ofi_impact = float(ofi_impact)
 
     def adjust(self, side: str, qty: float, price: float, bar: pd.Series) -> float:
         spread = float(bar["high"] - bar["low"]) * self.spread_mult
         vol = float(bar.get("volume", 0.0))
         impact = self.volume_impact * qty / max(vol, 1e-9)
-        slip = spread / 2 + impact
+        ofi_val = 0.0
+        if "order_flow_imbalance" in bar:
+            ofi_val = float(bar["order_flow_imbalance"])
+        elif {"bid_qty", "ask_qty"}.issubset(bar.index):
+            ofi_val = float(
+                order_flow_imbalance(
+                    pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
+                ).iloc[-1]
+            )
+        slip = spread / 2 + impact + self.ofi_impact * ofi_val
         return price + slip if side == "buy" else price - slip
 
     # ------------------------------------------------------------------
