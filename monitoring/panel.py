@@ -1,13 +1,15 @@
 """Monitoring panel exposing metrics and strategy state via FastAPI."""
 
 import os
+import json
+from pathlib import Path
+
+import httpx
+import yaml
+import sentry_sdk
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-
-import yaml
-import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from .metrics import router as metrics_router, metrics_summary
@@ -28,10 +30,19 @@ app.include_router(strategies_router)
 
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
-GRAFANA_DASHBOARDS = {
-    "core": "core",
-    "tradebot": "tradebot",
-}
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+
+dashboards_dir = Path(__file__).parent / "grafana" / "dashboards"
+GRAFANA_DASHBOARDS: dict[str, str] = {}
+for path in dashboards_dir.glob("*.json"):
+    try:
+        with path.open() as f:
+            data = json.load(f)
+        uid = data.get("uid")
+        if uid:
+            GRAFANA_DASHBOARDS[path.stem] = uid
+    except Exception:
+        continue
 
 
 @app.get("/dashboards")
@@ -51,6 +62,24 @@ def dashboard_link(name: str) -> RedirectResponse:
     return RedirectResponse(f"{GRAFANA_URL}/d/{uid}")
 
 
+def fetch_alerts() -> list[dict]:
+    """Return current alerts from Prometheus."""
+
+    try:
+        resp = httpx.get(f"{PROMETHEUS_URL}/api/v1/alerts", timeout=5.0)
+        resp.raise_for_status()
+        return resp.json().get("data", {}).get("alerts", [])
+    except httpx.HTTPError:
+        return []
+
+
+@app.get("/alerts")
+def alerts() -> dict[str, list[dict]]:
+    """Expose current alert state."""
+
+    return {"alerts": fetch_alerts()}
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Basic health check endpoint."""
@@ -65,6 +94,7 @@ def summary() -> dict:
     return {
         "metrics": metrics_summary(),
         "strategies": strategies_status()["strategies"],
+        "alerts": fetch_alerts(),
     }
 
 static_dir = Path(__file__).parent / "static"

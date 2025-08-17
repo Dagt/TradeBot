@@ -19,6 +19,7 @@ Available endpoints:
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
 - `GET /health` – basic liveness probe.
+- `GET /alerts` – current firing and pending alerts.
 - `GET /dashboards` – list of Grafana dashboards with direct URLs.
 - `GET /dashboards/{name}` – redirect to a specific Grafana dashboard.
 
@@ -26,17 +27,19 @@ Static assets are served from `monitoring/static/` for a quick HTML view.
 
 ## Grafana dashboards
 
-The monitoring stack ships with ready‑to‑use Grafana and Prometheus
-configuration. To launch both services with the provided dashboards and
-data source, run:
+The monitoring stack ships with ready‑to‑use Grafana, Prometheus and
+Alertmanager configuration. To launch the services with the provided
+dashboards and data source, run:
 
 ```bash
-docker-compose up -d prometheus grafana
+docker-compose up -d prometheus alertmanager grafana
 ```
 
 Prometheus uses `monitoring/prometheus.yml` to scrape the API and
 monitoring panel. Grafana is provisioned from files under
-`monitoring/grafana/` which includes:
+`monitoring/grafana/`. Any JSON file dropped into
+`monitoring/grafana/dashboards/` is automatically exposed through the
+panel's `/dashboards` endpoint. The directory currently includes:
 
 * `datasources/datasource.yml` – Prometheus data source
 * `dashboards/dashboard.yml` – automatic dashboard loading
@@ -49,8 +52,9 @@ docker build -t tradebot-grafana monitoring/grafana
 docker run -p 3000:3000 tradebot-grafana
 ```
 
-Set `GRAFANA_URL` to point the FastAPI panel to a remote Grafana instance
-if it is not running on `localhost:3000`.
+Set `GRAFANA_URL` and `PROMETHEUS_URL` to point the FastAPI panel to
+remote instances if they are not running on `localhost:3000` and
+`localhost:9090` respectively.
 
 Customize the panel by editing `datasources/datasource.yml` or adding new
 JSON dashboards under `monitoring/grafana/dashboards/`.
@@ -66,7 +70,17 @@ The `core.json` dashboard provides panels for:
 
 Prometheus alerting rules are defined in `monitoring/alerts.yml`,
 covering negative PnL, high latencies, websocket failures and the
-kill‑switch being triggered.
+kill‑switch being triggered. Prometheus loads this file and forwards
+firing alerts to Alertmanager, which is configured via
+`monitoring/alertmanager.yml`.
 
-Load the rules file into Prometheus or Alertmanager to enable basic
-notifications.
+Edit `alertmanager.yml` to integrate with your preferred notification
+service (Slack, email, webhooks, …). After changes, restart the stack so
+both Prometheus and Alertmanager pick up the updates:
+
+```bash
+docker-compose up -d --force-recreate prometheus alertmanager
+```
+
+The monitoring panel exposes active alerts at `GET /alerts` and also
+includes them in `GET /summary`.
