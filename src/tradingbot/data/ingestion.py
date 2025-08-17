@@ -115,6 +115,73 @@ def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: 
             log.debug("Bar insert failed: %s", exc)
 
 
+def persist_funding(
+    fundings: Iterable[dict[str, Any]], *, backend: Backends = "timescale", path: Path | None = None
+) -> None:
+    """Persist funding rates to the selected backend or CSV file."""
+    if backend == "csv":
+        csv_path = _csv_path("funding", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for f in fundings:
+                writer.writerow(
+                    [
+                        f["ts"].isoformat(),
+                        f["exchange"],
+                        f["symbol"],
+                        f["rate"],
+                        f.get("interval_sec", 0),
+                    ]
+                )
+        return
+
+    storage = _get_storage(backend)
+    if storage is None:
+        return
+    engine = storage.get_engine()
+    for f in fundings:
+        try:
+            storage.insert_funding(
+                engine,
+                ts=f["ts"],
+                exchange=f["exchange"],
+                symbol=f["symbol"],
+                rate=f["rate"],
+                interval_sec=f.get("interval_sec", 0),
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Funding insert failed: %s", exc)
+
+
+def persist_open_interest(
+    records: Iterable[dict[str, Any]], *, backend: Backends = "timescale", path: Path | None = None
+) -> None:
+    """Persist open interest snapshots to the selected backend or CSV file."""
+    if backend == "csv":
+        csv_path = _csv_path("open_interest", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for r in records:
+                writer.writerow([r["ts"].isoformat(), r["exchange"], r["symbol"], r["oi"]])
+        return
+
+    storage = _get_storage(backend)
+    if storage is None:
+        return
+    engine = storage.get_engine()
+    for r in records:
+        try:
+            storage.insert_open_interest(
+                engine,
+                ts=r["ts"],
+                exchange=r["exchange"],
+                symbol=r["symbol"],
+                oi=r["oi"],
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Open interest insert failed: %s", exc)
+
+
 async def download_trades(
     connector: Any,
     symbol: str,
@@ -164,6 +231,31 @@ async def download_order_book(
         ask_qty=[q for _, q in ob.asks],
     )
     persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_funding(
+    connector: Any,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch a funding rate using *connector* and persist it."""
+
+    info: Any = await connector.fetch_funding(symbol, **params)
+    ts = getattr(info, "timestamp", None) or getattr(info, "ts", None) or info.get("ts")
+    rate = getattr(info, "rate", None) or info.get("rate") or info.get("fundingRate")
+    interval = getattr(info, "interval_sec", None) or info.get("interval_sec") or info.get("interval") or 0
+    if isinstance(ts, (int, float)):
+        ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
+    record = {
+        "ts": ts,
+        "exchange": getattr(connector, "name", "unknown"),
+        "symbol": symbol,
+        "rate": float(rate or 0.0),
+        "interval_sec": int(interval),
+    }
+    persist_funding([record], backend=backend)
 
 
 async def download_kaiko_trades(
@@ -216,6 +308,27 @@ async def download_kaiko_order_book(
     persist_orderbooks([snapshot], backend=backend)
 
 
+async def download_kaiko_open_interest(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch open interest from Kaiko and persist it."""
+
+    raw = await connector.fetch_open_interest(exchange, pair, **params)
+    records = []
+    for r in raw if isinstance(raw, Iterable) else [raw]:
+        ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
+        oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
+        if isinstance(ts, (int, float)):
+            ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
+        records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
+    persist_open_interest(records, backend=backend)
+
+
 async def download_coinapi_trades(
     connector: CoinAPIConnector,
     symbol: str,
@@ -260,6 +373,26 @@ async def download_coinapi_order_book(
         ask_qty=[q for _, q in ob.asks],
     )
     persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_coinapi_open_interest(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch open interest from CoinAPI and persist it."""
+
+    raw = await connector.fetch_open_interest(symbol, **params)
+    records = []
+    for r in raw if isinstance(raw, Iterable) else [raw]:
+        ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
+        oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
+        if isinstance(ts, (int, float)):
+            ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
+        records.append({"ts": ts, "exchange": connector.name, "symbol": symbol, "oi": float(oi or 0.0)})
+    persist_open_interest(records, backend=backend)
 
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:

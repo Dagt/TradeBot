@@ -82,7 +82,9 @@ def ingest_historical(
     source: str = typer.Argument(..., help="Fuente de datos: kaiko o coinapi"),
     symbol: str = typer.Argument(..., help="Símbolo o par"),
     exchange: str = typer.Option("", help="Exchange para Kaiko"),
-    kind: str = typer.Option("trades", help="Tipo de dato: trades u orderbook"),
+    kind: str = typer.Option(
+        "trades", help="Tipo de dato: trades, orderbook, open_interest o funding"
+    ),
     backend: str = typer.Option("timescale", help="Backend de storage"),
     limit: int = typer.Option(100, help="Límite de trades"),
     depth: int = typer.Option(10, help="Profundidad del order book"),
@@ -95,6 +97,8 @@ def ingest_historical(
         from ..data.ingestion import (
             download_kaiko_trades,
             download_kaiko_order_book,
+            download_kaiko_open_interest,
+            download_funding,
         )
 
         connector = KaikoConnector()
@@ -104,6 +108,14 @@ def ingest_historical(
                     connector, exchange, symbol, backend=backend, depth=depth
                 )
             )
+        elif kind == "open_interest":
+            asyncio.run(
+                download_kaiko_open_interest(
+                    connector, exchange, symbol, backend=backend, limit=limit
+                )
+            )
+        elif kind == "funding":
+            asyncio.run(download_funding(connector, symbol, backend=backend))
         else:
             asyncio.run(
                 download_kaiko_trades(
@@ -115,6 +127,8 @@ def ingest_historical(
         from ..data.ingestion import (
             download_coinapi_trades,
             download_coinapi_order_book,
+            download_coinapi_open_interest,
+            download_funding,
         )
 
         connector = CoinAPIConnector()
@@ -124,6 +138,14 @@ def ingest_historical(
                     connector, symbol, backend=backend, depth=depth
                 )
             )
+        elif kind == "open_interest":
+            asyncio.run(
+                download_coinapi_open_interest(
+                    connector, symbol, backend=backend, limit=limit
+                )
+            )
+        elif kind == "funding":
+            asyncio.run(download_funding(connector, symbol, backend=backend))
         else:
             asyncio.run(
                 download_coinapi_trades(

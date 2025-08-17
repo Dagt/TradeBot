@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 import pytest
 
 from tradingbot.workers import OrderBookBatchWorker, run_orderbook_ingestion
+from tradingbot.data.ingestion import (
+    download_coinapi_open_interest,
+    download_funding,
+)
 
 
 class DummyAdapter:
@@ -85,3 +89,55 @@ async def test_run_orderbook_ingestion_batches(monkeypatch):
 
     assert len(inserted) == 5
     assert flush_count == 3
+
+
+@pytest.mark.asyncio
+async def test_download_open_interest_persists(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConnector:
+        name = "dummy"
+
+        async def fetch_open_interest(self, symbol, **params):
+            return [{"timestamp": ts, "oi": 10.0}]
+
+    inserted = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_open_interest(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(
+        "tradingbot.data.ingestion._get_storage", lambda backend: DummyStorage()
+    )
+    await download_coinapi_open_interest(DummyConnector(), "BTCUSDT")
+    assert inserted and inserted[0]["oi"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_download_funding_persists(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConnector:
+        name = "dummy"
+
+        async def fetch_funding(self, symbol, **params):
+            return {"ts": ts, "rate": 0.05, "interval_sec": 8}
+
+    inserted = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_funding(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(
+        "tradingbot.data.ingestion._get_storage", lambda backend: DummyStorage()
+    )
+    await download_funding(DummyConnector(), "BTCUSDT")
+    assert inserted and inserted[0]["rate"] == 0.05
