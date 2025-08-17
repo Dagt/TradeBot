@@ -361,15 +361,16 @@ class TradeBotDaemon:
         corr_pairs: Dict[tuple[str, str], float] = {}
         if returns_dict:
             cov_matrix = self.risk.covariance_matrix(returns_dict)
-            rets_df = pd.DataFrame(returns_dict)
-            cols = list(rets_df.columns)
-            for a_idx in range(len(cols)):
-                for b_idx in range(a_idx + 1, len(cols)):
-                    a = cols[a_idx]
-                    b = cols[b_idx]
-                    corr = rets_df[a].corr(rets_df[b])
-                    if not pd.isna(corr):
-                        corr_pairs[(a, b)] = float(corr)
+            vars: Dict[str, float] = {
+                sym: abs(cov_matrix.get((sym, sym), 0.0)) for sym in returns_dict
+            }
+            for (a, b), cov in cov_matrix.items():
+                if a == b:
+                    continue
+                va = vars.get(a)
+                vb = vars.get(b)
+                if va and vb and va > 0 and vb > 0:
+                    corr_pairs[(a, b)] = cov / ((va ** 0.5) * (vb ** 0.5))
             self.risk.update_correlation(corr_pairs, self.corr_threshold)
             self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
