@@ -121,7 +121,7 @@ python -m tradingbot.cli <comando> [opciones]
 
 | Comando | Descripción | Ejemplo |
 |---------|-------------|---------|
-| `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest BTC/USDT --depth 20` |
+| `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20` |
 | `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
 | `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
 | `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr` |
@@ -135,6 +135,7 @@ python -m tradingbot.cli <comando> [opciones]
 | `tri-arb` | Arbitraje triangular | `python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50` |
 | `cross-arb` | Arbitraje spot vs perp entre exchanges | `python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures` |
 | `run-cross-arb` | Runner de arbitraje usando ExecutionRouter | `python -m tradingbot.cli run-cross-arb BTC/USDT binance_spot binance_futures` |
+| `cfg-validate` | Valida archivos YAML y reporta campos faltantes | `python -m tradingbot.cli cfg-validate data/examples/backtest.yaml` |
 
 La salida de cada comando aparecerá tanto en la terminal como en la consola
 del panel web.
