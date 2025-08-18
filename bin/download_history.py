@@ -15,6 +15,8 @@ import typer
 
 from tradingbot.data import ingestion
 from tradingbot.types import Bar, OrderBook, Tick
+from tradingbot.connectors.kaiko import KaikoConnector
+from tradingbot.connectors.coinapi import CoinAPIConnector
 
 Backend = Literal["timescale", "quest", "csv"]
 
@@ -144,6 +146,56 @@ def l2(
 ) -> None:
     """Collect level 2 order book snapshots."""
     asyncio.run(_download_l2(exchange, symbol, snapshots, depth, interval, backend))
+
+
+@app.command()
+def funding(
+    source: str,
+    symbol: str,
+    exchange: str = "",
+    backend: Backend = "timescale",
+) -> None:
+    """Download funding rates using Kaiko or CoinAPI connectors."""
+
+    if source.lower() == "kaiko":
+        if not exchange:
+            raise typer.BadParameter("exchange required for Kaiko funding")
+        connector = KaikoConnector()
+        asyncio.run(
+            ingestion.download_kaiko_funding(
+                connector, exchange, symbol, backend=backend
+            )
+        )
+    else:
+        connector = CoinAPIConnector()
+        asyncio.run(ingestion.download_funding(connector, symbol, backend=backend))
+
+
+@app.command(name="open-interest")
+def open_interest_cmd(
+    source: str,
+    symbol: str,
+    exchange: str = "",
+    backend: Backend = "timescale",
+) -> None:
+    """Download open interest data using Kaiko or CoinAPI."""
+
+    if source.lower() == "kaiko":
+        if not exchange:
+            raise typer.BadParameter("exchange required for Kaiko open interest")
+        connector = KaikoConnector()
+        asyncio.run(
+            ingestion.download_kaiko_open_interest(
+                connector, exchange, symbol, backend=backend
+            )
+        )
+    else:
+        connector = CoinAPIConnector()
+        asyncio.run(
+            ingestion.download_coinapi_open_interest(
+                connector, symbol, backend=backend
+            )
+        )
 
 
 if __name__ == "__main__":

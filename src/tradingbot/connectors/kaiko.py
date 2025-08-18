@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime
-from typing import List
+from typing import Any, Iterable, List
 
 import httpx
 
-from .base import OrderBook, Trade
+from .base import Funding, OpenInterest, OrderBook, Trade
 
 
 class KaikoConnector:
@@ -26,8 +27,10 @@ class KaikoConnector:
     name = "kaiko"
     _BASE_URL = "https://us.market-api.kaiko.io/v2/data"
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, rate_limit: int = 5) -> None:
         self.api_key = api_key or os.getenv("KAIKO_API_KEY", "")
+        # very small semaphore based limiter for historical downloads
+        self._sem = asyncio.Semaphore(rate_limit)
 
     async def fetch_trades(
         self, exchange: str, pair: str, limit: int = 100
@@ -84,3 +87,132 @@ class KaikoConnector:
         bids = [(float(p), float(q)) for p, q in bids_raw]
         asks = [(float(p), float(q)) for p, q in asks_raw]
         return OrderBook(timestamp=dt, exchange=exchange, symbol=pair, bids=bids, asks=asks)
+
+    async def _paginate(
+        self,
+        url: str,
+        params: dict[str, Any],
+        headers: dict[str, str],
+        max_pages: int | None = None,
+    ) -> Iterable[dict]:
+        """Internal helper handling Kaiko style pagination."""
+
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient() as client:
+            next_page: str | None = None
+            while True:
+                req_params = params.copy()
+                if next_page:
+                    req_params["page_token"] = next_page
+                async with self._sem:
+                    resp = await client.get(url, params=req_params, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+                results.extend(payload.get("data", []))
+                next_page = payload.get("next_page_token")
+                page += 1
+                if not next_page or (max_pages and page >= max_pages):
+                    break
+        return results
+
+    async def fetch_funding(
+        self,
+        exchange: str,
+        pair: str,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        page_size: int = 1000,
+        max_pages: int | None = None,
+    ) -> List[Funding]:
+        """Fetch historical funding rates for *pair* on *exchange*.
+
+        Parameters are thin wrappers over Kaiko's REST API. Pagination is
+        handled transparently and results are returned as a list of
+        :class:`Funding` objects.
+        """
+
+        url = f"{self._BASE_URL}/funding-rates.v1/exchanges/{exchange}/perpetual/{pair}/historical"
+        headers = {"X-Api-Key": self.api_key}
+        params: dict[str, Any] = {"page_size": page_size}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+
+        raw = await self._paginate(url, params, headers, max_pages)
+        records: list[Funding] = []
+        for f in raw:
+            ts = f.get("timestamp") or f.get("time") or ""
+            dt = (
+                datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if isinstance(ts, str) and ts
+                else datetime.utcnow()
+            )
+            records.append(
+                Funding(
+                    timestamp=dt,
+                    exchange=exchange,
+                    symbol=pair,
+                    rate=float(
+                        f.get("funding_rate")
+                        or f.get("rate")
+                        or f.get("value")
+                        or 0.0
+                    ),
+                )
+            )
+        return records
+
+    async def fetch_open_interest(
+        self,
+        exchange: str,
+        pair: str,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        page_size: int = 1000,
+        max_pages: int | None = None,
+    ) -> List[OpenInterest]:
+        """Fetch historical open interest data for *pair*.
+
+        The method automatically pages through the Kaiko API and normalises
+        responses into :class:`OpenInterest` objects.
+        """
+
+        url = f"{self._BASE_URL}/open-interest.v1/exchanges/{exchange}/perpetual/{pair}/historical"
+        headers = {"X-Api-Key": self.api_key}
+        params: dict[str, Any] = {"page_size": page_size}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+
+        raw = await self._paginate(url, params, headers, max_pages)
+        records: list[OpenInterest] = []
+        for r in raw:
+            ts = r.get("timestamp") or r.get("time") or ""
+            dt = (
+                datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if isinstance(ts, str) and ts
+                else datetime.utcnow()
+            )
+            records.append(
+                OpenInterest(
+                    timestamp=dt,
+                    exchange=exchange,
+                    symbol=pair,
+                    oi=float(
+                        r.get("open_interest")
+                        or r.get("openInterest")
+                        or r.get("oi")
+                        or r.get("value")
+                        or 0.0
+                    ),
+                )
+            )
+        return records
+
+    # Backwards compatibility alias
+    fetch_oi = fetch_open_interest

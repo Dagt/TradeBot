@@ -238,14 +238,38 @@ async def download_funding(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    retries: int = 3,
     **params: Any,
 ) -> None:
-    """Fetch a funding rate using *connector* and persist it."""
+    """Fetch a funding rate using *connector* and persist it.
 
-    info: Any = await connector.fetch_funding(symbol, **params)
+    Parameters
+    ----------
+    retries:
+        Number of retry attempts when the connector raises an exception.
+    """
+
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            info: Any = await connector.fetch_funding(symbol, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_funding failed")
+
     ts = getattr(info, "timestamp", None) or getattr(info, "ts", None) or info.get("ts")
     rate = getattr(info, "rate", None) or info.get("rate") or info.get("fundingRate")
-    interval = getattr(info, "interval_sec", None) or info.get("interval_sec") or info.get("interval") or 0
+    interval = (
+        getattr(info, "interval_sec", None)
+        or info.get("interval_sec")
+        or info.get("interval")
+        or 0
+    )
     if isinstance(ts, (int, float)):
         ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
     record = {
@@ -374,11 +398,25 @@ async def download_kaiko_open_interest(
     pair: str,
     *,
     backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
     **params: Any,
 ) -> None:
     """Fetch open interest from Kaiko and persist it."""
 
-    raw = await connector.fetch_open_interest(exchange, pair, **params)
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_open_interest(exchange, pair, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_open_interest failed")
+
     records = []
     for r in raw if isinstance(raw, Iterable) else [raw]:
         ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
@@ -386,7 +424,60 @@ async def download_kaiko_open_interest(
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
         records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
-    persist_open_interest(records, backend=backend)
+
+    for i in range(0, len(records), batch_size):
+        persist_open_interest(records[i : i + batch_size], backend=backend)
+
+
+async def download_kaiko_funding(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
+    **params: Any,
+) -> None:
+    """Fetch funding rates from Kaiko and persist them."""
+
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_funding(exchange, pair, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_funding failed")
+
+    records = []
+    for r in raw if isinstance(raw, Iterable) else [raw]:
+        ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
+        rate = getattr(r, "rate", None) or r.get("rate") or r.get("fundingRate")
+        interval = (
+            getattr(r, "interval_sec", None)
+            or r.get("interval_sec")
+            or r.get("interval")
+            or 0
+        )
+        if isinstance(ts, (int, float)):
+            ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
+        records.append(
+            {
+                "ts": ts,
+                "exchange": exchange,
+                "symbol": pair,
+                "rate": float(rate or 0.0),
+                "interval_sec": int(interval),
+            }
+        )
+
+    for i in range(0, len(records), batch_size):
+        persist_funding(records[i : i + batch_size], backend=backend)
 
 
 async def fetch_trades_coinapi(
@@ -491,11 +582,25 @@ async def download_coinapi_open_interest(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
     **params: Any,
 ) -> None:
     """Fetch open interest from CoinAPI and persist it."""
 
-    raw = await connector.fetch_open_interest(symbol, **params)
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_open_interest(symbol, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_open_interest failed")
+
     records = []
     for r in raw if isinstance(raw, Iterable) else [raw]:
         ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
@@ -503,7 +608,9 @@ async def download_coinapi_open_interest(
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
         records.append({"ts": ts, "exchange": connector.name, "symbol": symbol, "oi": float(oi or 0.0)})
-    persist_open_interest(records, backend=backend)
+
+    for i in range(0, len(records), batch_size):
+        persist_open_interest(records[i : i + batch_size], backend=backend)
 
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
