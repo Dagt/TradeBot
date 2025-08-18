@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 import inspect
 from collections import defaultdict
@@ -19,11 +18,12 @@ from ..utils.metrics import (
     QUEUE_POSITION,
 )
 from ..storage import timescale
+from ..utils.logging import get_logger
 
 if TYPE_CHECKING:
     from ..risk.manager import RiskManager
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class ExecutionRouter:
@@ -205,7 +205,12 @@ class ExecutionRouter:
             ):
                 kwargs["iceberg_qty"] = order.iceberg_qty
 
-        res = await adapter.place_order(**kwargs)
+        try:
+            res = await adapter.place_order(**kwargs)
+        except Exception as exc:  # pragma: no cover - logging only
+            log.exception("Order placement failed on %s", venue)
+            return {"status": "error", "reason": str(exc), "venue": venue}
+
         latency = time.monotonic() - start
         ORDER_LATENCY.labels(venue=venue).observe(latency)
         res.setdefault("est_slippage_bps", est_slippage)
@@ -231,8 +236,8 @@ class ExecutionRouter:
                         ext_order_id=res.get("order_id"),
                         notes={"fee_type": "maker" if maker else "taker", "fee_bps": fee_bps},
                     )
-                except Exception:
-                    pass
+                except Exception:  # pragma: no cover - logging only
+                    log.exception("Persist failure: insert_order")
 
         exec_price = res.get("price")
         expected = order.price

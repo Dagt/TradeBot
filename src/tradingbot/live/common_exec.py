@@ -1,9 +1,10 @@
 # src/tradingbot/live/common_exec.py
 from __future__ import annotations
-import logging
 from datetime import datetime, timezone
 
-log = logging.getLogger(__name__)
+from ..utils.logging import get_logger
+
+log = get_logger(__name__)
 
 try:
     from ..storage.timescale import (
