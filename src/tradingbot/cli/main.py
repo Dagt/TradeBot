@@ -101,7 +101,7 @@ def backfill(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
 ) -> None:
-    """Backfill historical data for symbols with rate limiting."""
+    """Backfill OHLCV and trades for symbols with rate limiting."""
 
     setup_logging()
     from ..jobs.backfill import backfill as run_backfill
