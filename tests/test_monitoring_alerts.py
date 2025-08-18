@@ -1,5 +1,7 @@
 import yaml
+from prometheus_client import Gauge
 
+from monitoring.alerts import AlertManager
 from tradingbot.utils.metrics import ORDER_BOOK_MIN_DEPTH, WS_RECONNECTS
 
 
@@ -44,3 +46,35 @@ def test_alerts_and_metrics_definitions():
         if s.name == "ws_reconnections_total" and s.labels["adapter"] == "test"
     ][0]
     assert ws_sample.value == 1.0
+
+
+def test_absent_ticks_triggers_alert(tmp_path, caplog):
+    """Simulate missing market ticks and ensure alert fires."""
+
+    cfg = {
+        "groups": [
+            {
+                "name": "test",  # noqa: F841
+                "rules": [
+                    {
+                        "alert": "NoTicks",
+                        "expr": "test_ticks_total == 0",
+                        "for": "0m",
+                    }
+                ],
+            }
+        ]
+    }
+    path = tmp_path / "alerts.yml"
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f)
+
+    ticks = Gauge("test_ticks_total", "Number of market ticks")
+    ticks.set(0)
+
+    manager = AlertManager(config_path=path)
+    with caplog.at_level("WARNING"):
+        triggered = manager.check()
+
+    assert any(a["labels"]["alertname"] == "NoTicks" for a in triggered)
+    assert "NoTicks" in caplog.text
