@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover
     NetworkError = ExchangeError = Exception
 
 from .base import ExchangeAdapter
+from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class OKXSpotAdapter(ExchangeAdapter):
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -50,7 +51,7 @@ class OKXSpotAdapter(ExchangeAdapter):
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -64,7 +65,7 @@ class OKXSpotAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
@@ -85,7 +86,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         difference, returning a normalised ``{"ts": datetime, "basis": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -118,7 +119,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         ``data`` array and return it as ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")

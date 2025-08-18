@@ -8,6 +8,7 @@ import random
 
 import websockets
 
+from ..core.symbols import normalize as normalize_symbol
 from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 
@@ -82,9 +83,15 @@ class ExchangeAdapter(ABC):
 
     # ------------------------------------------------------------------
     # Normalization helpers
-    def normalize_symbol(self, symbol: str) -> str:
-        """Default symbol normalisation removing separators."""
-        return symbol.replace("/", "")
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Normalise ``symbol`` using :func:`tradingbot.core.symbols.normalize`.
+
+        This wrapper maintains backwards compatibility with older code
+        invoking :meth:`normalize_symbol` on adapters directly while the
+        actual implementation lives in :mod:`tradingbot.core.symbols`.
+        """
+        return normalize_symbol(symbol)
 
     def normalize_trade(self, symbol, ts, price, qty, side) -> dict:
         return {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}

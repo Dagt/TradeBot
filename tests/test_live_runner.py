@@ -10,6 +10,7 @@ binance_ws_stub.BinanceWSAdapter = object
 sys.modules.setdefault("tradingbot.adapters.binance_ws", binance_ws_stub)
 
 from tradingbot.live import runner_testnet as rt
+from tradingbot.core import normalize
 
 
 class DummyWS:
@@ -97,7 +98,7 @@ async def test_bybit_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec, "bybit_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol="BTC/USDT", trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
     await rt._run_symbol(
         "bybit",
         "futures",
@@ -116,7 +117,7 @@ async def test_bybit_futures_order(monkeypatch):
     inst = DummyExec.last_instance
     assert inst.leverage == 5
     assert inst.testnet is True
-    assert inst.orders[0][:4] == ("BTC/USDT", "buy", "market", 1.0)
+    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
 
 
 class DummyExec2(DummyExec):
@@ -138,7 +139,7 @@ async def test_okx_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec2, "okx_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol="BTC/USDT", trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
     await rt._run_symbol(
         "okx",
         "futures",
@@ -157,4 +158,4 @@ async def test_okx_futures_order(monkeypatch):
     inst = DummyExec2.last_instance
     assert inst.leverage == 7
     assert inst.testnet is True
-    assert inst.orders[0][:4] == ("BTC/USDT", "buy", "market", 1.0)
+    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)

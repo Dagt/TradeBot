@@ -12,6 +12,7 @@ except Exception:  # pragma: no cover
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class DeribitAdapter(ExchangeAdapter):
             await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = (
             getattr(self.rest, "public_get_get_funding_rate", None)
             or getattr(self.rest, "fetchFundingRate", None)
@@ -74,7 +75,7 @@ class DeribitAdapter(ExchangeAdapter):
         return {"ts": ts_dt, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "public_get_ticker", None) or getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -89,7 +90,7 @@ class DeribitAdapter(ExchangeAdapter):
         return {"ts": ts_dt, "basis": basis}
 
     async def fetch_oi(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = (
             getattr(self.rest, "public_get_get_open_interest", None)
             or getattr(self.rest, "fetchOpenInterest", None)

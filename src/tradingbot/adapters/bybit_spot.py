@@ -12,6 +12,7 @@ except Exception:  # pragma: no cover - ccxt optional during tests
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://stream.bybit.com/v5/public/spot"
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -47,7 +48,7 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://stream.bybit.com/v5/public/spot"
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -63,7 +64,7 @@ class BybitSpotAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
@@ -86,7 +87,7 @@ class BybitSpotAdapter(ExchangeAdapter):
         ``{"ts": datetime, "basis": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "publicGetV5MarketPremiumIndexPrice", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -120,7 +121,7 @@ class BybitSpotAdapter(ExchangeAdapter):
         the data normalised to ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "publicGetV5MarketOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")

@@ -3,6 +3,7 @@ import pytest
 from types import SimpleNamespace
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, SlippageModel
+from tradingbot.core import normalize
 from tradingbot.strategies import STRATEGIES
 
 
@@ -17,14 +18,15 @@ class AlwaysBuyStrategy:
 def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     df = pd.read_csv("data/examples/btcusdt_1m.csv")
     monkeypatch.setitem(STRATEGIES, "alwaysbuy", AlwaysBuyStrategy)
+    sym = normalize("BTC-USDT")
     engine = EventDrivenBacktestEngine(
-        {"BTC/USDT": df},
-        [("alwaysbuy", "BTC/USDT")],
+        {sym: df},
+        [("alwaysbuy", sym)],
         latency=1,
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
     )
-    risk = engine.risk[("alwaysbuy", "BTC/USDT")]
+    risk = engine.risk[("alwaysbuy", sym)]
     risk.max_pos = 1.0
     result = engine.run()
     assert len(result["fills"]) == 1
