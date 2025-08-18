@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import time
+import random
 
 import websockets
 
@@ -132,12 +133,16 @@ class ExchangeAdapter(ABC):
 
     async def _ws_messages(self, url: str, subscribe: str | None = None) -> AsyncIterator[str]:
         backoff = 1.0
+        successes = 0
         while True:
             try:
                 async with websockets.connect(url, ping_interval=None) as ws:
                     if subscribe:
                         await ws.send(subscribe)
-                    backoff = 1.0
+                    successes += 1
+                    if successes >= 3:
+                        backoff = 1.0
+                        successes = 0
                     ping_task = asyncio.create_task(self._ping(ws))
                     try:
                         while True:
@@ -152,8 +157,10 @@ class ExchangeAdapter(ABC):
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 WS_RECONNECTS.labels(adapter=self.name).inc()
-                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, backoff)
-                await asyncio.sleep(backoff)
+                successes = 0
+                delay = backoff * random.uniform(0.5, 1.5)
+                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, delay)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 30.0)
 
     # ------------------------------------------------------------------
