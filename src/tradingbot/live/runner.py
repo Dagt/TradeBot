@@ -93,6 +93,8 @@ async def run_live_binance(
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
+    *,
+    config_path: str | None = None,
 ):
     """
     Pipeline en vivo:
@@ -101,7 +103,7 @@ async def run_live_binance(
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     risk_core = RiskManager(max_pos=1.0)
-    strat = BreakoutATR()
+    strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,

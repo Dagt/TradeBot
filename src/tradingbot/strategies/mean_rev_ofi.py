@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import calc_ofi, returns
 
 
@@ -32,11 +32,14 @@ class MeanRevOFI(Strategy):
         zscore_threshold: float = 1.0,
         vol_window: int = 20,
         vol_threshold: float = 0.01,
+        *,
+        config_path: str | None = None,
     ) -> None:
-        self.ofi_window = ofi_window
-        self.zscore_threshold = zscore_threshold
-        self.vol_window = vol_window
-        self.vol_threshold = vol_threshold
+        params = load_params(config_path)
+        self.ofi_window = int(params.get("ofi_window", ofi_window))
+        self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
+        self.vol_window = int(params.get("vol_window", vol_window))
+        self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
