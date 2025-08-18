@@ -17,6 +17,10 @@ pytest
 ```
 El módulo de análisis ahora forma parte del paquete `tradingbot` y se importa como `tradingbot.analysis`.
 
+Una vez instalado, puedes explorar funciones avanzadas descritas en
+[extra_features.md](extra_features.md), como estrategias de arbitraje y
+el panel web con ejecución de comandos.
+
 ## Descarga de datos
 Puedes descargar históricos de barras, trades o snapshots de libro L2 con
 `bin/download_history.py`.  Los datos se normalizan y pueden guardarse en

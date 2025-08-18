@@ -3,6 +3,9 @@
 Este proyecto incluye una interfaz de línea de comandos y una API para
 controlar estrategias.  A continuación algunos ejemplos rápidos.
 
+Las funcionalidades adicionales (arbitrajes, panel web con CLI, API de
+control) se documentan en [extra_features.md](extra_features.md).
+
 ## CLI
 
 ```bash

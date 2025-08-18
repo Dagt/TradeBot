@@ -21,3 +21,6 @@ la latencia reportada en las órdenes debe reflejar el incremento.
 
 Ambas pruebas están marcadas con `@pytest.mark.integration` y se ejecutan
 automáticamente en CI mediante `pytest -m integration`.
+
+Para verificar también las funcionalidades extra (arbitrajes, panel web,
+API, etc.) consulta [extra_features.md](extra_features.md).

@@ -13,3 +13,10 @@ Este documento enlaza los puntos del [blueprint inicial](../blueprint_trading_bo
 | **7. Backtesting & simulación** | `backtest/event_engine.py`, `backtesting/engine.py`, `backtesting/vectorbt_wrapper.py` | `backtest`, `backtest-cfg`, `walk-forward`, `paper-run` |
 | **8. Monitoreo & Ops** | `monitoring/panel.py`, `monitoring/metrics.py`, `utils/metrics.py` | `report` |
 
+## Funcionalidades extra
+
+Además de los puntos anteriores, el proyecto incorpora estrategias de
+arbitraje avanzado, señales de microestructura, adaptadores para
+testnets, un panel web con ejecución de comandos y una API de control
+remoto.  La lista completa se describe en
+[extra_features.md](extra_features.md).
