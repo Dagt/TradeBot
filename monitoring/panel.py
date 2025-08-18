@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import logging
 import asyncio
+import shlex
 
 import httpx
 import yaml
@@ -12,6 +13,7 @@ import sentry_sdk
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from .metrics import (
@@ -238,6 +240,33 @@ def get_strategies_status() -> dict:
     """Return the status of all strategies."""
 
     return strategies_status()
+
+
+class CLICommand(BaseModel):
+    """Payload for executing a CLI command from the dashboard."""
+
+    command: str
+
+
+@app.post("/run-cli")
+async def run_cli(cmd: CLICommand) -> dict:
+    """Execute a ``tradingbot.cli`` command and return its output."""
+
+    args = shlex.split(cmd.command)
+    proc = await asyncio.create_subprocess_exec(
+        "python",
+        "-m",
+        "tradingbot.cli",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    return {
+        "stdout": out.decode(),
+        "stderr": err.decode(),
+        "returncode": proc.returncode,
+    }
 
 
 static_dir = Path(__file__).parent / "static"

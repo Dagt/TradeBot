@@ -89,75 +89,53 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # completa con tus claves
 ```
+## Configuración inicial
 
-## Ejemplos de uso
+1. Copia `.env.example` a `.env` y completa tus claves API (`BINANCE_KEY`,
+   `BINANCE_SECRET`, etc.). Para pruebas en modo papel puedes dejar los
+   valores vacíos.
+2. (Opcional) Levanta la base de datos y el stack de monitoreo con Docker:
 
-Estos ejemplos utilizan datos de prueba y son seguros para principiantes.
+   ```bash
+   docker-compose up -d
+   ```
 
-### Simular una estrategia de momentum
+3. Inicia el panel web con métricas y consola de comandos:
 
-```bash
-python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml
-```
+   ```bash
+   uvicorn monitoring.panel:app --reload --port 8000
+   ```
 
-El comando ejecuta la estrategia de momentum sobre el par BTC/USDT y muestra
-estadísticas como ganancias/pérdidas y número de operaciones.
+   Luego visita `http://localhost:8000` en tu navegador.
 
-### Probar un arbitraje triangular
+## Comandos CLI
 
-```bash
-python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50
-```
-
-El bot revisa si la ruta BTC→ETH→USDT→BTC en Binance ofrece un beneficio
-mayor a las comisiones usando un capital ficticio de 50 USDT.
-
-## Ejecución del panel web
-
-El panel expone métricas, PnL y una consola para ejecutar comandos de la
-CLI.
+Todos los comandos están disponibles tanto desde la terminal como desde la
+consola del panel web.
 
 ```bash
-uvicorn tradingbot.apps.api.main:app --reload --port 8000
+python -m tradingbot.cli <comando> [opciones]
 ```
 
-Visita `http://localhost:8000` e inicia sesión con las credenciales
-definidas en `API_USER`/`API_PASS` (por defecto `admin`/`admin`).
+| Comando | Descripción | Ejemplo |
+|---------|-------------|---------|
+| `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest BTC/USDT --depth 20` |
+| `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
+| `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
+| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr` |
+| `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
+| `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
+| `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |
+| `backtest-cfg` | Backtest desde un YAML de configuración | `python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml` |
+| `walk-forward` | Optimización walk-forward | `python -m tradingbot.cli walk-forward cfg/wf.yaml` |
+| `report` | Resumen de PnL en TimescaleDB | `python -m tradingbot.cli report` |
+| `train-ml` | Entrena una estrategia con ML | `python -m tradingbot.cli train-ml datos.csv target modelo.pkl` |
+| `tri-arb` | Arbitraje triangular | `python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50` |
+| `cross-arb` | Arbitraje spot vs perp entre exchanges | `python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures` |
+| `run-cross-arb` | Runner de arbitraje usando ExecutionRouter | `python -m tradingbot.cli run-cross-arb BTC/USDT binance_spot binance_futures` |
 
-### Consola de comandos
-
-En la sección **Comandos CLI** del panel puedes ejecutar cualquier comando
-de `tradingbot.cli`.  Ejemplos:
-
-1. Escribe `backtest-cfg data/examples/backtest.yaml` y pulsa **Ejecutar**.
-2. Usa `tri-arb BTC-ETH-USDT --notional 50` para disparar un arbitraje
-   triangular de prueba.
-
-La salida de `stdout` y `stderr` aparecerá debajo del formulario.
-
-## Uso desde la línea de comandos
-
-La CLI está basada en [Typer](https://typer.tiangolo.com/) y ofrece
-subcomandos para las distintas tareas del proyecto.
-
-```bash
-python -m tradingbot.cli --help
-
-# Ingesta de libro de órdenes
-python -m tradingbot.cli ingest BTC/USDT --depth 20
-
-# Descarga histórica desde Kaiko
-python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades
-
-# Backtest a partir de un YAML de configuración
-python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml
-
-# Arbitraje triangular
-python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50
-```
-
-Todos estos comandos pueden ejecutarse también desde el panel web gracias a
-la nueva sección de **Comandos CLI**.
+La salida de cada comando aparecerá tanto en la terminal como en la consola
+del panel web.
 
 ## Ejecutar pruebas
 
