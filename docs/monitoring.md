@@ -35,6 +35,7 @@ Available endpoints:
 - `GET /metrics` – Prometheus metrics.
 - `GET /metrics/summary` – compact JSON snapshot of key metrics.
 - `GET /pnl` – current trading PnL.
+- `GET /orders` – open orders with id, symbol, side and status.
 - `GET /positions` – open positions by symbol.
 - `GET /kill-switch` – kill switch active flag.
 - `GET /strategies/status` – current strategy states.
