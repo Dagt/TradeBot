@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Dict
+import time
 
 from .base import Strategy, Signal, record_signal_metrics
 
@@ -31,11 +32,22 @@ def make_symbols(route: TriRoute) -> TriSymbols:
         mb=f"{route.mid}/{route.base}",
     )
 
-def compute_edge(prices: Dict[str, float], taker_fee_bps: float, buffer_bps: float) -> Optional[TriEdge]:
-    """
-    prices: {"bq": Px(BASE/QUOTE), "mq": Px(MID/QUOTE), "mb": Px(MID/BASE)}
-    taker_fee_bps: comisión de taker por pata (en bps). Ejem: 7.5 bps = 0.075%
-    buffer_bps: colchón para slippage/errores (por pata) en bps.
+def compute_edge(
+    prices: Dict[str, float],
+    taker_fee_bps: float,
+    buffer_bps: float,
+) -> Optional[TriEdge]:
+    """Compute the triangular arbitrage edge.
+
+    Parameters
+    ----------
+    prices:
+        Mapping with keys ``"bq"`` (BASE/QUOTE), ``"mq"`` (MID/QUOTE) and
+        ``"mb"`` (MID/BASE).
+    taker_fee_bps:
+        Commission of taker per leg in basis points (e.g. ``7.5`` → 0.075%).
+    buffer_bps:
+        Extra buffer to account for slippage per leg in basis points.
     """
     if any(prices.get(k) in (None, 0) for k in ("bq", "mq", "mb")):
         return None
@@ -76,29 +88,59 @@ def compute_qtys_for_route(
     prices: Dict[str, float],
     taker_fee_bps: float,
     buffer_bps: float,
+    latency_s: float = 0.0,
+    max_notional: Optional[float] = None,
+    max_leg_qty: Optional[float] = None,
 ) -> Dict[str, float]:
+    """Compute approximate quantities for each leg of the route.
+
+    Parameters
+    ----------
+    direction:
+        ``"b->m"`` for QUOTE→BASE→MID→QUOTE or ``"m->b"`` for
+        QUOTE→MID→BASE→QUOTE.
+    notional_quote:
+        Initial notional in quote currency to deploy.
+    prices:
+        Mapping of prices for the legs (``bq``, ``mq``, ``mb``).
+    taker_fee_bps:
+        Taker fee in basis points per leg.
+    buffer_bps:
+        Safety buffer in basis points per leg.
+    latency_s:
+        Optional latency in seconds to simulate before computing quantities.
+    max_notional:
+        Cap the total notional deployed. ``None`` disables the cap.
+    max_leg_qty:
+        Maximum quantity allowed for each leg. ``None`` disables the cap.
+
+    Returns
+    -------
+    Dict[str, float]
+        Approximate quantities for ``base_qty``, ``mid_qty`` and
+        resulting ``quote_out``.
     """
-    Devuelve cantidades por pata (aprox) dadas las prices y un notional en QUOTE.
-    Todas las patas se asumen taker a market (simulación).
-    """
+    if latency_s:
+        time.sleep(latency_s)
+    if max_notional is not None:
+        notional_quote = min(notional_quote, max_notional)
+
     f = 1 - taker_fee_bps/10000.0
     buf = 1 - buffer_bps/10000.0
     bq, mq, mb = prices["bq"], prices["mq"], prices["mb"]
 
     if direction == "b->m":
-        # QUOTE -> BASE (BUY BASE/QUOTE)
         base_qty = (notional_quote * f * buf) / bq
-        # BASE -> MID (BUY MID/BASE)
+        base_qty = min(base_qty, max_leg_qty) if max_leg_qty is not None else base_qty
         mid_qty = (base_qty * f * buf) / mb
-        # MID -> QUOTE (SELL MID/QUOTE)
+        mid_qty = min(mid_qty, max_leg_qty) if max_leg_qty is not None else mid_qty
         quote_out = mid_qty * mq * f * buf
         return {"base_qty": base_qty, "mid_qty": mid_qty, "quote_out": quote_out}
     else:
-        # QUOTE -> MID (BUY MID/QUOTE)
         mid_qty = (notional_quote * f * buf) / mq
-        # MID -> BASE (SELL MID/BASE) => recibes BASE
+        mid_qty = min(mid_qty, max_leg_qty) if max_leg_qty is not None else mid_qty
         base_qty = (mid_qty * f * buf) / mb
-        # BASE -> QUOTE (SELL BASE/QUOTE)
+        base_qty = min(base_qty, max_leg_qty) if max_leg_qty is not None else base_qty
         quote_out = base_qty * bq * f * buf
         return {"base_qty": base_qty, "mid_qty": mid_qty, "quote_out": quote_out}
 
@@ -106,11 +148,17 @@ def compute_qtys_for_route(
 class TriangularArb(Strategy):
     """Naive triangular arbitrage strategy based on three market prices.
 
+    Parameters
+    ----------
+    taker_fee_bps:
+        Taker fee in basis points applied to each leg.
+    buffer_bps:
+        Additional buffer in basis points applied to each leg.
+    min_edge:
+        Minimum net edge required to emit a trading signal.
+
     The strategy expects the incoming ``bar`` to contain a ``prices`` mapping
     with the keys ``bq`` (base/quote), ``mq`` (mid/quote) and ``mb`` (mid/base).
-    ``taker_fee_bps`` and ``buffer_bps`` can be supplied via ``**kwargs`` to
-    account for trading fees and a safety buffer.
-
     A ``buy`` signal represents traversing the markets in the ``b->m``
     direction, while ``sell`` corresponds to ``m->b``.
     """

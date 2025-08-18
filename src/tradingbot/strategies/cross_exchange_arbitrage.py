@@ -26,7 +26,33 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class CrossArbConfig:
-    """Configuration for cross exchange spot/perp arbitrage."""
+    """Configuration for cross exchange spot/perp arbitrage.
+
+    Attributes
+    ----------
+    symbol:
+        Trading pair, e.g. ``"BTC/USDT"``.
+    spot:
+        Spot market connector implementing :class:`ExchangeAdapter`.
+    perp:
+        Perpetual market connector implementing :class:`ExchangeAdapter`.
+    threshold:
+        Premium threshold as decimal (``0.001`` = 0.1%).
+    notional:
+        Quote currency notional per leg.
+    persist_pg:
+        If ``True`` persist signals/fills in TimescaleDB.
+    rebalance_assets:
+        Optional assets to periodically rebalance.
+    rebalance_threshold:
+        Minimum imbalance required to trigger a rebalance.
+    latency:
+        Simulated latency in seconds before sending orders.
+    max_notional:
+        Maximum quote notional allowed per trade. ``None`` disables the cap.
+    max_qty:
+        Maximum base quantity allowed per trade. ``None`` disables the cap.
+    """
 
     symbol: str
     spot: ExchangeAdapter
@@ -36,6 +62,9 @@ class CrossArbConfig:
     persist_pg: bool = False
     rebalance_assets: tuple[str, ...] = ()
     rebalance_threshold: float = 0.0
+    latency: float = 0.0
+    max_notional: Optional[float] = None
+    max_qty: Optional[float] = None
 
 
 async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
@@ -43,8 +72,12 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
 
     The function listens to trade streams from both adapters. When the
     difference between perp and spot price exceeds ``cfg.threshold`` it sends
-    offsetting market orders on each venue and persists the opportunity and
-    resulting fills into TimescaleDB (if available).
+    offsetting market orders on each venue and optionally persists the
+    opportunity and resulting fills into TimescaleDB.
+
+    The trade size can be capped via ``cfg.max_notional`` or ``cfg.max_qty``
+    and a simulated network latency can be injected via ``cfg.latency``. Prior
+    to submitting orders the required balances on both venues are verified.
     """
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
@@ -70,6 +103,10 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 return
 
             qty = cfg.notional / last["spot"]
+            if cfg.max_notional is not None:
+                qty = min(qty, cfg.max_notional / last["spot"])
+            if cfg.max_qty is not None:
+                qty = min(qty, cfg.max_qty)
             ts = datetime.now(timezone.utc)
 
             # persist opportunity
@@ -92,6 +129,33 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 spot_side, perp_side = "buy", "sell"
             else:
                 spot_side, perp_side = "sell", "buy"
+
+            base, quote = cfg.symbol.split("/")
+            fetch_spot = getattr(cfg.spot, "fetch_balance", None)
+            fetch_perp = getattr(cfg.perp, "fetch_balance", None)
+            bal_spot, bal_perp = {}, {}
+            if fetch_spot or fetch_perp:
+                bal_spot, bal_perp = await asyncio.gather(
+                    fetch_spot() if fetch_spot else asyncio.sleep(0),
+                    fetch_perp() if fetch_perp else asyncio.sleep(0),
+                )
+                bal_spot = bal_spot or {}
+                bal_perp = bal_perp or {}
+
+            def _has(bal: dict, asset: str, needed: float) -> bool:
+                return float(bal.get(asset, 0.0)) >= needed
+
+            need_spot = qty * last["spot"] if spot_side == "buy" else qty
+            asset_spot = quote if spot_side == "buy" else base
+            need_perp = qty * last["perp"] if perp_side == "buy" else qty
+            asset_perp = quote if perp_side == "buy" else base
+
+            if not (_has(bal_spot, asset_spot, need_spot) and _has(bal_perp, asset_perp, need_perp)):
+                log.debug("Trade skipped due to insufficient balance")
+                return
+
+            if cfg.latency:
+                await asyncio.sleep(cfg.latency)
 
             # execute offsetting orders
             resp_spot, resp_perp = await asyncio.gather(
