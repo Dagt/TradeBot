@@ -197,6 +197,7 @@ class ExecutionRouter:
             price=order.price,
             post_only=order.post_only,
             time_in_force=order.time_in_force,
+            reduce_only=order.reduce_only,
         )
         if order.iceberg_qty is not None:
             sig = inspect.signature(adapter.place_order)
@@ -238,7 +239,11 @@ class ExecutionRouter:
                         px=res.get("price"),
                         status=res.get("status", "unknown"),
                         ext_order_id=res.get("order_id"),
-                        notes={"fee_type": "maker" if maker else "taker", "fee_bps": fee_bps},
+                        notes={
+                            "fee_type": "maker" if maker else "taker",
+                            "fee_bps": fee_bps,
+                            "reduce_only": order.reduce_only,
+                        },
                     )
                 except Exception:  # pragma: no cover - logging only
                     log.exception("Persist failure: insert_order")

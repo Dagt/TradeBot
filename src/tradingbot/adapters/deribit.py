@@ -116,12 +116,15 @@ class DeribitAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         params = {}
         if post_only:
             params["post_only"] = True
         if time_in_force:
             params["time_in_force"] = time_in_force
+        if reduce_only:
+            params["reduce_only"] = True
         return await self._request(self.rest.create_order, symbol, type_, side, qty, price, params)
 
     async def cancel_order(self, order_id: str) -> dict:

@@ -82,7 +82,13 @@ async def run_paper(
             if not allowed or abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
-            order = Order(symbol=symbol, side=side, type_="market", qty=abs(delta))
+            order = Order(
+                symbol=symbol,
+                side=side,
+                type_="market",
+                qty=abs(delta),
+                reduce_only=signal.reduce_only,
+            )
             await router.execute(order)
             risk.on_fill(symbol, side, abs(delta), venue="paper")
     finally:

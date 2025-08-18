@@ -104,6 +104,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ):
         """
         Envía orden con idempotencia (NEW CLIENT ORDER ID) + retries.

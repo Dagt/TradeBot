@@ -74,7 +74,8 @@ def persist_after_order(
 
     # 1) Orden
     try:
-        notes = resp if isinstance(resp, dict) else {}
+        notes = resp.copy() if isinstance(resp, dict) else {}
+        notes["reduce_only"] = bool(reduce_only)
         insert_order(
             engine,
             strategy=strategy,
@@ -84,8 +85,8 @@ def persist_after_order(
             type_=type_,
             qty=float(qty),
             px=None,
-            status=(resp.get("status", "sent") if isinstance(notes, dict) else "sent"),
-            ext_order_id=(notes.get("ext_order_id") if isinstance(notes, dict) else None),
+            status=(resp.get("status", "sent") if isinstance(resp, dict) else "sent"),
+            ext_order_id=(resp.get("ext_order_id") if isinstance(resp, dict) else None),
             notes=notes,
         )
     except Exception:
