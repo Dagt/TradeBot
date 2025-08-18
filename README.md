@@ -131,6 +131,15 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # completa con tus claves
 ```
+## Arranque rápido
+
+Inicia y detén los servicios de Docker con el Makefile:
+
+```bash
+make up    # levanta los servicios en segundo plano
+make logs  # sigue los logs de todos los contenedores
+make down  # detiene y elimina los servicios
+```
 ## Configuración inicial
 
 1. Copia `.env.example` a `.env` y completa tus claves API (`BINANCE_KEY`,
@@ -139,7 +148,7 @@ cp .env.example .env   # completa con tus claves
 2. (Opcional) Levanta la base de datos y el stack de monitoreo con Docker:
 
    ```bash
-   docker-compose up -d
+   make up
    ```
 
 3. Inicia el panel web con métricas y consola de comandos:

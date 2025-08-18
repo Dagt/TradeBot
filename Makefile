@@ -1,5 +1,15 @@
 MONITORING_COMPOSE=docker-compose.prod.yml
 
+.PHONY: up down logs
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f
+
 .PHONY: monitoring-up monitoring-down monitoring-update
 
 monitoring-up:
