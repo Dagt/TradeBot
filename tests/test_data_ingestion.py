@@ -59,7 +59,7 @@ async def test_run_orderbook_stream_persists(monkeypatch):
     monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
 
     await run_orderbook_stream(
-        adapter, "BTC/USDT", depth=5, bus=bus, engine="engine"
+        adapter, "BTC/USDT", depth=5, bus=bus, engine="engine", persist=True
     )
 
     assert len(published) == 1
@@ -69,6 +69,38 @@ async def test_run_orderbook_stream_persists(monkeypatch):
     assert len(inserted) == 1
     assert inserted[0]["symbol"] == "BTC/USDT"
     assert inserted[0]["bid_px"] == [100.0, 99.5]
+
+
+@pytest.mark.asyncio
+async def test_run_orderbook_stream_no_persist(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    snapshot = {
+        "ts": ts,
+        "bid_px": [100.0, 99.5],
+        "bid_qty": [1.0, 2.0],
+        "ask_px": [100.5, 101.0],
+        "ask_qty": [1.5, 2.5],
+    }
+    adapter = DummyOBAdapter([snapshot])
+    bus = EventBus()
+    published = []
+    bus.subscribe("orderbook", lambda ob: published.append(ob))
+
+    called = False
+
+    def _get_storage(backend):
+        nonlocal called
+        called = True
+        return None
+
+    monkeypatch.setattr(ingestion, "_get_storage", _get_storage)
+
+    await run_orderbook_stream(
+        adapter, "BTC/USDT", depth=5, bus=bus, engine=None, persist=False
+    )
+
+    assert len(published) == 1
+    assert not called
 
 
 @pytest.mark.asyncio
