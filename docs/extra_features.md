@@ -41,10 +41,17 @@ python -m tradingbot.cli ingest --venue bybit_spot --symbol BTC/USDT
 La aplicación FastAPI incluye un **dashboard** en `/` con métricas en
  tiempo real, PnL, exposición y eventos de riesgo.  También posee un
  ejecutor de comandos para lanzar cualquier instrucción de la CLI desde el
- navegador, permitiendo la gestión sin necesidad de terminal.
+ navegador, permitiendo la gestión sin necesidad de terminal.  El panel
+ ofrece formularios en modo oscuro donde se pueden configurar exchanges,
+ claves API y parámetros de estrategias de forma interactiva.
 
-Ejemplo: ejecutar un backtest desde la interfaz web escribiendo en la caja
-"`backtest data/btc.csv --strategy breakout_atr`".
+Ejemplos:
+
+- Ejecutar un backtest desde la interfaz web escribiendo en la caja
+  `backtest data/btc.csv --strategy breakout_atr`.
+- Definir las credenciales de Binance y el umbral de una estrategia
+  `momentum` sin usar la línea de comandos.
+
 
 ## Backtesting y análisis
 
