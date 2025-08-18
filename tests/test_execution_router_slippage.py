@@ -64,6 +64,17 @@ async def test_router_selects_lowest_cost_venue_maker():
 
 
 @pytest.mark.asyncio
+async def test_execute_reports_fee_info():
+    ob = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)]}}
+    adapter = MockAdapter("a", order_book=ob, taker_fee_bps=12.0)
+    router = ExecutionRouter(adapter)
+    order = Order(symbol="XYZ", side="buy", type_="market", qty=1.0)
+    res = await router.execute(order)
+    assert res["fee_type"] == "taker"
+    assert res["fee_bps"] == 12.0
+
+
+@pytest.mark.asyncio
 async def test_router_records_slippage_metric():
     SLIPPAGE.clear()
     ob = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)]}}

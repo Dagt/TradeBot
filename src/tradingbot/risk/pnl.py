@@ -10,10 +10,10 @@ class Position:
     realized_pnl: float = 0.0   # acumulado (USDT)
     fees_paid: float = 0.0      # acumulado (USDT)
 
-def _fee_usdt(px: float, qty: float, taker_fee_bps: float) -> float:
-    return abs(px * qty) * (taker_fee_bps / 10000.0)
+def _fee_usdt(px: float, qty: float, fee_bps: float) -> float:
+    return abs(px * qty) * (fee_bps / 10000.0)
 
-def apply_fill(pos: Position, side: str, qty: float, px: float, taker_fee_bps: float, venue_type: str) -> Position:
+def apply_fill(pos: Position, side: str, qty: float, px: float, fee_bps: float, venue_type: str) -> Position:
     """
     Actualiza la posición con un fill estimado:
       - SPOT: qty >=0, solo lados buy (incrementa) y sell (reduce). No permitimos qty final <0.
@@ -23,7 +23,7 @@ def apply_fill(pos: Position, side: str, qty: float, px: float, taker_fee_bps: f
     q = float(qty)
     px = float(px)
     side = side.lower()
-    fee = _fee_usdt(px, q, taker_fee_bps)
+    fee = _fee_usdt(px, q, fee_bps)
 
     if venue_type == "spot":
       # Representamos spot como qty>=0 siempre

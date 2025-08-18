@@ -358,8 +358,8 @@ def rebuild_positions_from_fills(engine, venue: str) -> dict:
 
     from ..risk.pnl import Position, apply_fill
     out: dict[str, Position] = {}
-    # Asumimos taker fee bps aproximadas; si tus fills traen fee_usdt real, lo sumaremos aparte
-    taker_bps_guess = 2.0 if "futures" in venue else 7.5
+    # Asumimos fee bps aproximadas; si tus fills traen fee_usdt real, lo sumaremos aparte
+    fee_bps_guess = 2.0 if "futures" in venue else 7.5
     for r in rows:
         sym = r["symbol"]
         if sym not in out:
@@ -368,7 +368,7 @@ def rebuild_positions_from_fills(engine, venue: str) -> dict:
         px = float(r["price"])
         q = float(r["qty"])
         side = (r["side"] or "buy").lower()
-        p = apply_fill(p, side, q, px, taker_bps_guess, venue_type=("futures" if "futures" in venue else "spot"))
+        p = apply_fill(p, side, q, px, fee_bps_guess, venue_type=("futures" if "futures" in venue else "spot"))
         # ajusta fees si viene real
         fee = r["fee_usdt"]
         if fee is not None:

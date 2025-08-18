@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     binance_futures_leverage: int = 5    # puedes cambiarlo en CLI también
     binance_futures_market: str = "USDT-M"  # informativo
 
+    # Fees (bps) configurable por entorno
+    paper_maker_fee_bps: float = 0.0
+    paper_taker_fee_bps: float | None = None
+
+    binance_spot_maker_fee_bps: float = 0.0
+    binance_spot_taker_fee_bps: float = 10.0
+    binance_spot_testnet_maker_fee_bps: float = 0.0
+    binance_spot_testnet_taker_fee_bps: float = 10.0
+
+    binance_futures_maker_fee_bps: float = 0.0
+    binance_futures_taker_fee_bps: float = 5.0
+    binance_futures_testnet_maker_fee_bps: float = 0.0
+    binance_futures_testnet_taker_fee_bps: float = 5.0
+
     class Config:
         env_file = ".env"
         extra = "ignore"
