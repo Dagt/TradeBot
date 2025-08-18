@@ -29,6 +29,7 @@ from .metrics import (
     update_process_metrics,
 )
 from .strategies import strategies_status, set_strategy_status
+from .alerts import evaluate_alerts
 
 config_path = Path(__file__).with_name("sentry.yml")
 if config_path.exists():
@@ -82,14 +83,9 @@ def dashboard_link(name: str) -> RedirectResponse:
 
 
 def fetch_alerts() -> list[dict]:
-    """Return current alerts from Prometheus."""
+    """Return current alerts evaluated by :mod:`monitoring.alerts`."""
 
-    try:
-        resp = httpx.get(f"{PROMETHEUS_URL}/api/v1/alerts", timeout=5.0)
-        resp.raise_for_status()
-        return resp.json().get("data", {}).get("alerts", [])
-    except httpx.HTTPError:
-        return []
+    return evaluate_alerts()
 
 
 async def fetch_risk() -> dict:
