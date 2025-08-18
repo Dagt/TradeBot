@@ -52,6 +52,7 @@ Ejemplos:
 - Definir las credenciales de Binance y el umbral de una estrategia
   `momentum` sin usar la línea de comandos.
 
+
 ## Backtesting y análisis
 
 - Motor **vectorizado** basado en `vectorbt` para exploración rápida.
