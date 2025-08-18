@@ -142,6 +142,7 @@ class PaperAdapter(ExchangeAdapter):
         type_: str,
         qty: float,
         price: float | None = None,
+        reduce_only: bool = False,
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,

@@ -3,6 +3,7 @@ import pytest
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
 from tradingbot.storage import timescale
+from tradingbot.live.common_exec import persist_after_order
 
 
 class DummyAdapter:
@@ -50,3 +51,36 @@ async def test_execute_persists_fee_type(monkeypatch):
     await router.execute(order)
     assert captured["notes"]["fee_type"] == "taker"
     assert captured["notes"]["fee_bps"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_persist_after_order_records_reduce_only(monkeypatch):
+    captured = {}
+
+    def fake_insert_fill(engine, **kwargs):
+        nonlocal captured
+        captured = kwargs
+
+    monkeypatch.setattr("tradingbot.live.common_exec.insert_order", lambda *a, **k: None)
+    monkeypatch.setattr("tradingbot.live.common_exec.insert_fill", fake_insert_fill)
+    monkeypatch.setattr("tradingbot.live.common_exec.upsert_position", lambda *a, **k: None)
+    monkeypatch.setattr("tradingbot.live.common_exec.insert_pnl_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr("tradingbot.live.common_exec.insert_risk_event", lambda *a, **k: None)
+
+    pos_obj = type("P", (), {"qty": 0.0, "avg_price": 0.0, "realized_pnl": 0.0, "fees_paid": 0.0})()
+
+    persist_after_order(
+        "eng",
+        venue="v",
+        strategy="s",
+        symbol="X",
+        side="buy",
+        type_="market",
+        qty=1.0,
+        mark_price=100.0,
+        resp={"status": "filled"},
+        reduce_only=True,
+        pos_obj=pos_obj,
+    )
+
+    assert captured["reduce_only"] is True

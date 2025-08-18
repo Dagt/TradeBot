@@ -194,6 +194,7 @@ class ExecutionRouter:
             qty=order.qty,
             price=order.price,
             post_only=order.post_only,
+            reduce_only=order.reduce_only,
             time_in_force=order.time_in_force,
         )
         if order.iceberg_qty is not None:
