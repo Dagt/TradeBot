@@ -9,6 +9,7 @@ from .depth_imbalance import DepthImbalance
 from .liquidity_events import LiquidityEvents
 from .triple_barrier import TripleBarrier
 from .ml_models import MLStrategy
+from .mean_rev_ofi import MeanRevOFI
 
 # Registry of available strategies, useful for CLI/backtests
 STRATEGIES = {
@@ -23,6 +24,7 @@ STRATEGIES = {
     LiquidityEvents.name: LiquidityEvents,
     TripleBarrier.name: TripleBarrier,
     MLStrategy.name: MLStrategy,
+    MeanRevOFI.name: MeanRevOFI,
 }
 
 __all__ = [
@@ -37,5 +39,6 @@ __all__ = [
     "LiquidityEvents",
     "TripleBarrier",
     "MLStrategy",
+    "MeanRevOFI",
     "STRATEGIES",
 ]
