@@ -25,6 +25,7 @@ import numpy as np
 
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
+from .position_sizing import vol_target as _vol_target
 
 
 @dataclass
@@ -248,8 +249,8 @@ class RiskManager:
         """
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
-        scale = self.vol_target / symbol_vol
-        target_abs = min(self.max_pos, self.max_pos * scale)
+        risk_budget = self.max_pos * self.vol_target
+        target_abs = _vol_target(symbol_vol, risk_budget, self.max_pos)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
