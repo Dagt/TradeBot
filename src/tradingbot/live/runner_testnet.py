@@ -9,12 +9,13 @@ import pandas as pd
 
 from .runner import BarAggregator
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
 from ..risk.service import RiskService
 from ..execution.paper import PaperAdapter
+from ..risk.oco import OcoBook, load_active_oco
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
@@ -24,6 +25,12 @@ from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter, BybitS
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter, OKXSpotAdapter
 from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
+
+try:
+    from ..storage.timescale import get_engine
+    _CAN_PG = True
+except Exception:  # pragma: no cover
+    _CAN_PG = False
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +92,16 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, dguard, corr_service=corr)
     broker = PaperAdapter(fee_bps=1.5)
+    engine = get_engine() if _CAN_PG else None
+    oco_book = OcoBook()
+    if engine is not None:
+        pos_map = load_positions(engine, guard.cfg.venue)
+        for sym, data in pos_map.items():
+            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
+            risk.rm._entry_price = data.get("avg_price")
+        oco_book.preload(
+            load_active_oco(engine, venue=guard.cfg.venue, symbols=[cfg.symbol])
+        )
 
     async for t in ws.stream_trades(cfg.symbol):
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)

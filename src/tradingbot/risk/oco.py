@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Literal, Callable
+from sqlalchemy import text
 from datetime import datetime, timezone
 
 Side = Literal["long", "short"]
@@ -204,3 +205,62 @@ class OcoBook:
                 oco.sl_price = target_sl
                 if self._on_update:
                     self._on_update(oco.symbol, oco)
+
+
+# ---------------------------------------------------------------------------
+# Rehidratación desde base de datos
+def load_active_oco(engine, *, venue: str, symbols: list[str]) -> Dict[str, OcoOrder]:
+    """Carga órdenes OCO activas desde la base de datos.
+
+    Parameters
+    ----------
+    engine:
+        Conexión SQLAlchemy a la base de datos.
+    venue:
+        Nombre del venue a consultar.
+    symbols:
+        Lista de símbolos a cargar.
+
+    Returns
+    -------
+    dict
+        Mapa ``{symbol: OcoOrder}`` con las órdenes activas recuperadas.  Si el
+        ``engine`` es ``None`` o ocurre algún error se devuelve un diccionario
+        vacío.
+    """
+
+    if engine is None or not symbols:
+        return {}
+    try:  # pragma: no cover - dependencias opcionales
+        from ..storage.timescale import load_active_oco_by_symbols
+
+        rows = load_active_oco_by_symbols(engine, venue=venue, symbols=symbols)
+    except Exception:
+        try:  # fallback para motores sin esquema Timescale (ej. SQLite)
+            placeholders = ",".join([f":s{i}" for i in range(len(symbols))])
+            params = {"venue": venue}
+            for i, sym in enumerate(symbols):
+                params[f"s{i}"] = sym
+            sql = text(
+                f"SELECT symbol, side, qty, entry_price, sl_price, tp_price "
+                f"FROM \"market.oco_orders\" WHERE venue=:venue AND status='active' "
+                f"AND symbol IN ({placeholders})"
+            )
+            with engine.begin() as conn:
+                rows = conn.execute(sql, params).mappings().all()
+            rows = {r["symbol"]: r for r in rows}
+        except Exception:
+            rows = {}
+
+    out: Dict[str, OcoOrder] = {}
+    for sym, data in rows.items():
+        out[sym] = OcoOrder(
+            symbol=sym,
+            side=data["side"],
+            qty=float(data["qty"]),
+            entry_price=float(data["entry_price"]),
+            sl_price=float(data["sl_price"]),
+            tp_price=float(data["tp_price"]),
+        )
+    return out
+

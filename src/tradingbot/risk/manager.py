@@ -27,6 +27,7 @@ from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
 from .position_sizing import vol_target
+from sqlalchemy import text
 
 
 @dataclass
@@ -502,3 +503,43 @@ class RiskManager:
             return False
 
         return self._check_daily_limits()
+
+
+# ---------------------------------------------------------------------------
+# Rehidratación desde base de datos
+def load_positions(engine, venue: str) -> dict:
+    """Cargar posiciones persistidas para ``venue``.
+
+    Devuelve un diccionario ``{symbol: {qty, avg_price, ...}}`` obtenido de la
+    capa de almacenamiento.  Si ``engine`` es ``None`` o ocurre algún error se
+    retorna un mapeo vacío para evitar que la carga falle en entornos sin base
+    de datos.
+    """
+
+    if engine is None:
+        return {}
+    try:  # pragma: no cover - si faltan dependencias simplemente ignoramos
+        from ..storage.timescale import load_positions as _load
+        return _load(engine, venue)
+    except Exception:
+        try:  # fallback para motores sin esquema Timescale (ej. SQLite)
+            with engine.begin() as conn:
+                rows = conn.execute(
+                    text(
+                        'SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid'
+                        ' FROM "market.positions" WHERE venue = :venue'
+                    ),
+                    {"venue": venue},
+                ).mappings().all()
+            out: dict = {}
+            for r in rows:
+                out[r["symbol"]] = {
+                    "qty": float(r["qty"]),
+                    "avg_price": float(r["avg_price"]),
+                    "realized_pnl": float(r["realized_pnl"]),
+                    "fees_paid": float(r["fees_paid"]),
+                }
+            return out
+        except Exception:
+            return {}
+
