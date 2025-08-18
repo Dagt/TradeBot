@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover - ccxt optional durante tests
 from .base import ExchangeAdapter
 from ..config import settings
 from ..utils.secrets import validate_scopes
+from ..execution.venue_adapter import translate_order_flags
 
 log = logging.getLogger(__name__)
 
@@ -171,15 +172,20 @@ class BybitFuturesAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
         params: dict | None = None,
     ) -> dict:
         params = params or {}
-        if post_only:
-            params["postOnly"] = True
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if iceberg_qty is not None:
-            params["iceberg"] = iceberg_qty
+        extra = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+        )
+        params.update(extra)
         backoff = 1.0
         while True:
             try:

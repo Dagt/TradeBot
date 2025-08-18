@@ -19,6 +19,7 @@ import json
 from datetime import datetime
 
 from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
+from ..execution.venue_adapter import translate_order_flags
 
 
 class OKXConnector(ExchangeConnector):
@@ -89,6 +90,8 @@ class OKXConnector(ExchangeConnector):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
     ) -> dict:
         """Place an order via the underlying CCXT client.
 
@@ -97,14 +100,14 @@ class OKXConnector(ExchangeConnector):
         respective CCXT parameters when provided.
         """
 
-        params: dict[str, object] = {}
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if post_only:
-            # CCXT para OKX soporta ``postOnly`` booleano
-            params["postOnly"] = True
-        if iceberg_qty is not None:
-            params["iceberg"] = iceberg_qty
+        params = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+        )
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

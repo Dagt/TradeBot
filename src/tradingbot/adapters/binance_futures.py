@@ -15,6 +15,7 @@ from .base import ExchangeAdapter
 from ..config import settings
 from ..market.exchange_meta import ExchangeMeta
 from ..execution.normalize import adjust_order
+from ..execution.venue_adapter import translate_order_flags
 from .binance_errors import parse_binance_error_code
 from ..execution.retry import with_retries, AmbiguousOrderError
 from ..utils.secrets import validate_scopes
@@ -91,6 +92,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -104,25 +107,30 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         async def _send():
             try:
                 send_type = type_u
-                params = {
-                    "symbol": symbol_ex,
-                    "side": side_u,
-                    "type": send_type,
-                    "quantity": qty,
-                    "newClientOrderId": cid,
-                }
+                params = translate_order_flags(
+                    self.name,
+                    post_only=post_only,
+                    time_in_force=time_in_force,
+                    iceberg_qty=iceberg_qty,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                )
+                params.update(
+                    {
+                        "symbol": symbol_ex,
+                        "side": side_u,
+                        "type": send_type,
+                        "quantity": qty,
+                        "newClientOrderId": cid,
+                    }
+                )
                 if reduce_only:
                     params["reduceOnly"] = True
-                if iceberg_qty is not None:
-                    params["icebergQty"] = float(iceberg_qty)
                 if send_type == "LIMIT":
                     if price is None:
                         raise ValueError("LIMIT requiere price")
                     params["price"] = float(price)
-                    tif = time_in_force or ("GTX" if post_only else "GTC")
-                    params["timeInForce"] = tif
-                if post_only and send_type != "LIMIT":
-                    params["timeInForce"] = "GTX"
+                    params.setdefault("timeInForce", "GTC")
 
                 resp = await self.rest.futures_order_new(**params)
                 return {
