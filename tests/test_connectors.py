@@ -111,7 +111,8 @@ async def test_stream_reconnect(monkeypatch, caplog):
     await gen.aclose()
 
     assert any("ws_reconnect" in r.message for r in caplog.records)
-    assert [s for s in sleeps if s >= 1] == [1]
+    assert len(sleeps) == 1
+    assert 0.5 <= sleeps[0] <= 1.5
 
 
 @pytest.mark.asyncio

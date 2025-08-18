@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 from datetime import datetime
 from typing import Any, Awaitable, Callable, List, Tuple
 
@@ -163,7 +164,8 @@ class ExchangeConnector:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(backoff)
+                delay = backoff * random.uniform(0.5, 1.5)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 60)
 
     async def stream_trades(self, symbol: str):
@@ -189,7 +191,8 @@ class ExchangeConnector:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(backoff)
+                delay = backoff * random.uniform(0.5, 1.5)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 60)
 
     # --- methods to be implemented by subclasses ---
