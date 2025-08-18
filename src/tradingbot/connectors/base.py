@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, List, Tuple
 import ccxt.async_support as ccxt
 import websockets
 from pydantic import BaseModel
+from tradingbot.execution.retry import with_retries
 
 
 class Trade(BaseModel):
@@ -62,10 +63,18 @@ class ExchangeConnector:
         self.reconnect_delay = 1
         self.ping_interval = 20
 
-    async def _rest_call(self, fn: Callable[..., Awaitable[Any]], *a, **k) -> Any:
+    async def _rest_call(
+        self,
+        fn: Callable[..., Awaitable[Any]],
+        *a,
+        max_attempts: int = 5,
+        **k,
+    ) -> Any:
         async with self._sem:
             try:
-                return await fn(*a, **k)
+                return await with_retries(
+                    lambda: fn(*a, **k), max_attempts=max_attempts
+                )
             except Exception as e:  # pragma: no cover - logging only
                 self.log.error("rest_error", extra={"err": str(e)})
                 raise
