@@ -4,6 +4,10 @@ from pydantic import Field
 class Settings(BaseSettings):
     env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
+    log_file: str | None = None
+    log_max_bytes: int = Field(default=10 * 1024 * 1024)
+    log_backup_count: int = Field(default=5)
+    log_json: bool = False
     sentry_dsn: str | None = None
 
     # DB
