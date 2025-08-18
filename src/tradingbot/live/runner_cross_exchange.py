@@ -13,9 +13,11 @@ from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, rehydrate_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..risk.oco import OcoBook, load_open_oco
+from ..storage import get_engine
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,19 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )
+    oco_book = OcoBook()
+    engine = getattr(risk, "engine", None) or None
+    if engine is None:
+        try:
+            engine = get_engine()
+        except Exception:
+            engine = None
+    if engine is not None:
+        try:
+            rehydrate_positions(engine, risk.guard.cfg.venue, risk)
+            oco_book.preload(load_open_oco(engine, risk.guard.cfg.venue, [cfg.symbol]))
+        except Exception:
+            pass
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
 

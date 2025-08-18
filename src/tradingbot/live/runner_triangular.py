@@ -13,9 +13,10 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge, compute_qtys_for_route
 )
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, rehydrate_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..risk.oco import OcoBook, load_open_oco
 
 # Persistencia opcional
 try:
@@ -55,6 +56,15 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
         )
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
+    oco_book = OcoBook()
+    if engine is not None:
+        try:
+            rehydrate_positions(engine, risk.guard.cfg.venue, risk)
+            oco_book.preload(
+                load_open_oco(engine, risk.guard.cfg.venue, [syms.bq, syms.mq, syms.mb])
+            )
+        except Exception:
+            pass
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero SQL no disponible (sqlalchemy/psycopg2).")
 

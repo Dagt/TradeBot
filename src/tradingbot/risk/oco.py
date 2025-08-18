@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Literal, Callable
 from datetime import datetime, timezone
 
+from sqlalchemy import text
+
 Side = Literal["long", "short"]
 
 @dataclass
@@ -204,3 +206,36 @@ class OcoBook:
                 oco.sl_price = target_sl
                 if self._on_update:
                     self._on_update(oco.symbol, oco)
+
+
+# ---------------------------------------------------------------------------
+# Persistence helpers
+def load_open_oco(engine, venue: str, symbols: list[str]) -> Dict[str, OcoOrder]:
+    """Load active OCO orders for symbols from database."""
+
+    if not symbols:
+        return {}
+    placeholders = ",".join(f":s{i}" for i in range(len(symbols)))
+    params = {"venue": venue}
+    for i, sym in enumerate(symbols):
+        params[f"s{i}"] = sym
+    sql = text(
+        f"""
+        SELECT symbol, side, qty, entry_price, sl_price, tp_price
+        FROM market.oco_orders
+        WHERE venue=:venue AND status='active' AND symbol IN ({placeholders})
+        """
+    )
+    out: Dict[str, OcoOrder] = {}
+    with engine.begin() as conn:
+        for row in conn.execute(sql, params).mappings():
+            out[row["symbol"]] = OcoOrder(
+                symbol=row["symbol"],
+                side=row["side"],
+                qty=float(row["qty"]),
+                entry_price=float(row["entry_price"]),
+                sl_price=float(row["sl_price"]),
+                tp_price=float(row["tp_price"]),
+                best_price_since_entry=float(row["entry_price"]),
+            )
+    return out

@@ -9,10 +9,12 @@ import pandas as pd
 
 from .runner import BarAggregator
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions_from_db
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..execution.paper import PaperAdapter
+from ..risk.oco import OcoBook, load_open_oco
+from ..storage import get_engine
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
@@ -80,6 +82,16 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
         halt_action="close_all",
     ), venue=venue)
     broker = PaperAdapter(fee_bps=1.5)
+    oco_book = OcoBook()
+    try:
+        engine = get_engine()
+        positions = load_positions_from_db(engine, venue)
+        for sym, qty in positions.items():
+            risk.update_position(venue, sym, qty)
+            guard.set_position(venue, sym, qty)
+        oco_book.preload(load_open_oco(engine, venue, [cfg.symbol]))
+    except Exception:
+        pass
 
     async for t in ws.stream_trades(cfg.symbol):
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)

@@ -19,8 +19,10 @@ from ..bus import EventBus
 from ..connectors.base import ExchangeConnector
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions_from_db
 from ..risk.portfolio_guard import PortfolioGuard
+from ..risk.oco import OcoBook, load_open_oco
+from ..storage import get_engine
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
@@ -126,6 +128,7 @@ class TradeBotDaemon:
         rebalance_threshold: float = 0.0,
         rebalance_interval: float | None = None,
         rebalance_enabled: bool = False,
+        engine=None,
     ) -> None:
         self.adapters = adapters
         self.strategies: List[object] = []
@@ -168,6 +171,28 @@ class TradeBotDaemon:
                 self.risk.update_position(venue, sym, 0.0)
                 if self.guard:
                     self.guard.set_position(venue, sym, 0.0)
+
+        # Rehydrate state from database if possible
+        self.engine = engine or None
+        self.oco_books: Dict[str, OcoBook] = {v: OcoBook() for v in self.adapters}
+        if self.engine is None:
+            try:
+                self.engine = get_engine()
+            except Exception:
+                self.engine = None
+        if self.engine is not None:
+            for venue in self.adapters:
+                try:
+                    pos = load_positions_from_db(self.engine, venue)
+                    for sym, qty in pos.items():
+                        self.risk.update_position(venue, sym, qty)
+                        if self.guard:
+                            self.guard.set_position(venue, sym, qty)
+                    self.oco_books[venue].preload(
+                        load_open_oco(self.engine, venue, self.symbols)
+                    )
+                except Exception:
+                    log.debug("rehydrate_failed", exc_info=True)
 
         # Event bus used across components
         self.bus = risk_manager.bus or EventBus()

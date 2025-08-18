@@ -10,9 +10,11 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, rehydrate_positions
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
+from ..risk.oco import OcoBook, load_open_oco
+from ..storage import get_engine
 from ..strategies import STRATEGIES
 from monitoring import panel
 
@@ -43,6 +45,13 @@ async def run_paper(
     risk_core = RiskManager(max_pos=1.0)
     guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
     risk = RiskService(risk_core, guard)
+    oco_book = OcoBook()
+    try:
+        engine = get_engine()
+        rehydrate_positions(engine, guard.cfg.venue, risk)
+        oco_book.preload(load_open_oco(engine, guard.cfg.venue, [symbol]))
+    except Exception:
+        pass
 
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:

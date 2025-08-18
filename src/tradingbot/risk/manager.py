@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
+from sqlalchemy import text
 import numpy as np
 
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
@@ -502,3 +503,31 @@ class RiskManager:
             return False
 
         return self._check_daily_limits()
+
+
+# ---------------------------------------------------------------------------
+# Persistence helpers
+def load_positions_from_db(engine, venue: str) -> Dict[str, float]:
+    """Load latest positions for a venue from the database."""
+
+    sql = text(
+        """
+        SELECT symbol, qty
+        FROM market.positions
+        WHERE venue=:venue AND ABS(qty) > 0
+        """
+    )
+    out: Dict[str, float] = {}
+    with engine.begin() as conn:
+        for row in conn.execute(sql, {"venue": venue}).mappings():
+            out[row["symbol"]] = float(row["qty"])
+    return out
+
+
+def rehydrate_positions(engine, venue: str, risk_service) -> Dict[str, float]:
+    """Load positions and apply them to ``risk_service`` via ``update_position``."""
+
+    positions = load_positions_from_db(engine, venue)
+    for sym, qty in positions.items():
+        risk_service.update_position(venue, sym, qty)
+    return positions
