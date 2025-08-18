@@ -138,6 +138,36 @@ def atr(data: DataLike, n: int = 14) -> pd.Series:
     return tr.rolling(n).mean()
 
 
+def atr_ewma(data: DataLike, n: int = 14) -> pd.Series:
+    """Average True Range using an exponential moving average.
+
+    This variant applies an exponentially weighted moving average (EWMA)
+    to the sequence of true ranges, mirroring the original formulation by
+    Welles Wilder.  It offers a smoother estimate of volatility compared to
+    the simple moving average used in :func:`atr`.
+
+    Parameters
+    ----------
+    data:
+        Source data containing ``high``, ``low`` and ``close`` columns.
+    n:
+        Lookback window for the exponential mean of true ranges.
+
+    Returns
+    -------
+    pandas.Series
+        The EWMA-based ATR values.
+    """
+
+    df = _to_dataframe(data, ["high", "low", "close"])
+    high, low, close = df["high"], df["low"], df["close"]
+    tr = np.maximum(
+        high - low,
+        np.maximum((high - close.shift(1)).abs(), (low - close.shift(1)).abs()),
+    )
+    return tr.ewm(alpha=1 / n, adjust=False).mean()
+
+
 def rsi(data: DataLike, n: int = 14) -> pd.Series:
     """Relative Strength Index of the ``close`` column.
 
@@ -410,6 +440,7 @@ def keltner_channels(
 
 __all__ = [
     "atr",
+    "atr_ewma",
     "rsi",
     "order_flow_imbalance",
     "depth_imbalance",

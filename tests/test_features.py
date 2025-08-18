@@ -7,6 +7,7 @@ from tradingbot.data.features import (
     depth_imbalance,
     rsi,
     atr,
+    atr_ewma,
     returns,
     donchian_channels,
 )
@@ -177,6 +178,18 @@ def test_atr_df(ohlc_df):
 def test_atr_snapshots(ohlc_df, ohlc_snapshots):
     atr_df = atr(ohlc_df, n=3)
     atr_snaps = atr(ohlc_snapshots, n=3)
+    pd.testing.assert_series_equal(atr_df, atr_snaps)
+
+
+def test_atr_ewma_df(ohlc_df):
+    # EWMA variant produces a smoother estimate of true range
+    val = atr_ewma(ohlc_df, n=3).iloc[-1]
+    assert abs(val - 3.6296296296296293) < 1e-9
+
+
+def test_atr_ewma_snapshots(ohlc_df, ohlc_snapshots):
+    atr_df = atr_ewma(ohlc_df, n=3)
+    atr_snaps = atr_ewma(ohlc_snapshots, n=3)
     pd.testing.assert_series_equal(atr_df, atr_snaps)
 
 
