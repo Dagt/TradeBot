@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 
 from .order_types import Order
+from .slippage import impact_by_depth, queue_position
 from ..utils.metrics import (
     SLIPPAGE,
     ORDER_LATENCY,
@@ -165,22 +166,11 @@ class ExecutionRouter:
                 book["asks"] if maker and order.side == "sell" else
                 book["asks"] if order.side == "buy" else book["bids"]
             )
-            top_px, top_qty = levels[0]
             if maker:
-                queue_pos = top_qty / (top_qty + order.qty) if top_qty else 0.0
+                queue_pos = queue_position(order.qty, levels)
                 QUEUE_POSITION.labels(symbol=order.symbol, side=order.side).observe(queue_pos)
             else:
-                remaining = order.qty
-                cost = 0.0
-                for px, qty in levels:
-                    take = min(remaining, qty)
-                    cost += px * take
-                    remaining -= take
-                    if remaining <= 0:
-                        break
-                if remaining == 0:
-                    avg_px = cost / order.qty
-                    est_slippage = (avg_px - top_px) / top_px * 10000
+                est_slippage = impact_by_depth(order.side, order.qty, levels)
 
         start = time.monotonic()
         kwargs = dict(
