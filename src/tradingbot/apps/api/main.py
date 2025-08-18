@@ -15,6 +15,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from monitoring.metrics import metrics_summary as _metrics_summary
+from monitoring.metrics import router as metrics_router
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
@@ -52,6 +53,7 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+app.include_router(metrics_router)
 app.include_router(dashboard_router)
 
 

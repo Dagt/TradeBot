@@ -72,6 +72,72 @@ STRATEGY_ACTIONS = Counter(
 router = APIRouter()
 
 
+def _avg_slippage() -> float:
+    """Compute average slippage in basis points."""
+
+    slippage_samples = [
+        sample
+        for metric in SLIPPAGE.collect()
+        for sample in metric.samples
+    ]
+    slippage_sum = sum(
+        s.value for s in slippage_samples if s.name.endswith("_sum")
+    )
+    slippage_count = sum(
+        s.value for s in slippage_samples if s.name.endswith("_count")
+    )
+    return slippage_sum / slippage_count if slippage_count else 0.0
+
+
+def _avg_order_latency() -> float:
+    """Compute average order execution latency across venues."""
+
+    latency_samples = [
+        sample
+        for metric in ORDER_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    latency_sum = sum(
+        s.value for s in latency_samples if s.name.endswith("_sum")
+    )
+    latency_count = sum(
+        s.value for s in latency_samples if s.name.endswith("_count")
+    )
+    return latency_sum / latency_count if latency_count else 0.0
+
+
+def _avg_market_latency() -> float:
+    """Compute average market data latency."""
+
+    market_samples = [
+        sample
+        for metric in MARKET_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    market_sum = sum(
+        s.value for s in market_samples if s.name.endswith("_sum")
+    )
+    market_count = sum(
+        s.value for s in market_samples if s.name.endswith("_count")
+    )
+    return market_sum / market_count if market_count else 0.0
+
+
+def _avg_e2e_latency() -> float:
+    """Compute average end-to-end latency."""
+
+    e2e_samples = [
+        sample
+        for metric in E2E_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
+    e2e_count = sum(
+        s.value for s in e2e_samples if s.name.endswith("_count")
+    )
+    return e2e_sum / e2e_count if e2e_count else 0.0
+
+
 @router.get("/metrics")
 def metrics() -> Response:
     """Expose Prometheus metrics."""
@@ -101,47 +167,10 @@ def metrics_summary() -> dict:
         if sample.name.endswith("_total")
     )
 
-    # Compute average slippage in basis points
-    slippage_samples = [
-        sample
-        for metric in SLIPPAGE.collect()
-        for sample in metric.samples
-    ]
-    slippage_sum = sum(
-        s.value for s in slippage_samples if s.name.endswith("_sum")
-    )
-    slippage_count = sum(
-        s.value for s in slippage_samples if s.name.endswith("_count")
-    )
-    avg_slippage = slippage_sum / slippage_count if slippage_count else 0.0
-
-    # Compute average order execution latency across venues
-    latency_samples = [
-        sample
-        for metric in ORDER_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    latency_sum = sum(
-        s.value for s in latency_samples if s.name.endswith("_sum")
-    )
-    latency_count = sum(
-        s.value for s in latency_samples if s.name.endswith("_count")
-    )
-    avg_latency = latency_sum / latency_count if latency_count else 0.0
-
-    # Compute average market data latency
-    market_samples = [
-        sample
-        for metric in MARKET_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    market_sum = sum(
-        s.value for s in market_samples if s.name.endswith("_sum")
-    )
-    market_count = sum(
-        s.value for s in market_samples if s.name.endswith("_count")
-    )
-    avg_market_latency = market_sum / market_count if market_count else 0.0
+    avg_slippage = _avg_slippage()
+    avg_latency = _avg_order_latency()
+    avg_market_latency = _avg_market_latency()
+    avg_e2e = _avg_e2e_latency()
 
     # Compute average maker/taker ratio across venues
     ratio_samples = [
@@ -153,18 +182,6 @@ def metrics_summary() -> dict:
     avg_ratio = (
         sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
     )
-
-    # Compute average end-to-end latency
-    e2e_samples = [
-        sample
-        for metric in E2E_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
-    e2e_count = sum(
-        s.value for s in e2e_samples if s.name.endswith("_count")
-    )
-    avg_e2e = e2e_sum / e2e_count if e2e_count else 0.0
 
     # Aggregate websocket failures across adapters
     ws_failures_total = sum(
@@ -230,4 +247,29 @@ def metrics_summary() -> dict:
         "cpu_percent": PROCESS_CPU._value.get(),
         "memory_bytes": PROCESS_MEMORY._value.get(),
         "process_uptime_seconds": PROCESS_UPTIME._value.get(),
+    }
+
+
+@router.get("/metrics/pnl")
+def metrics_pnl() -> dict:
+    """Expose current trading PnL."""
+
+    return {"pnl": TRADING_PNL._value.get()}
+
+
+@router.get("/metrics/slippage")
+def metrics_slippage() -> dict:
+    """Expose aggregated slippage information."""
+
+    return {"avg_slippage_bps": _avg_slippage()}
+
+
+@router.get("/metrics/latency")
+def metrics_latency() -> dict:
+    """Expose order and market latency metrics."""
+
+    return {
+        "avg_order_latency_seconds": _avg_order_latency(),
+        "avg_market_latency_seconds": _avg_market_latency(),
+        "avg_e2e_latency_seconds": _avg_e2e_latency(),
     }
