@@ -7,6 +7,46 @@ ingerir datos, realizar backtesting y ejecutar estrategias en modo
 
 La correspondencia entre el blueprint original y los módulos del código se documenta en [docs/blueprint_map.md](docs/blueprint_map.md).
 
+## Quickstart
+
+1. **Clonar el repositorio**
+   ```bash
+   git clone https://github.com/<tu_usuario>/TradeBot.git
+   cd TradeBot
+   ```
+
+2. **Crear `.env`**
+   Copia el archivo `.env.example` a `.env` y completa las credenciales.
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Levantar los servicios**
+   ```bash
+   make up
+   ```
+
+4. **Ingerir datos**
+   ```bash
+   tradingbot ingest
+   ```
+
+5. **Ejecutar backtesting**
+   ```bash
+   tradingbot backtest
+   ```
+
+Al terminar, consulta [docs/blueprint_map.md](docs/blueprint_map.md) para entender la correspondencia entre el blueprint y el código.
+
+## Errores comunes
+
+| Error | Solución |
+|-------|----------|
+| `tradingbot: command not found` | Ejecuta los comandos dentro del contenedor o añade `src` al `PYTHONPATH`. |
+| Falta el archivo `.env` | Crea uno con `cp .env.example .env` y completa las variables requeridas. |
+| `make: *** No rule to make target 'up'` | Ejecuta `make` desde la raíz del proyecto donde está el `Makefile`. |
+| `tradingbot backtest` sin datos | Ejecuta `tradingbot ingest` primero para descargar los datos necesarios. |
+
 ### Explicación para principiantes
 
 Un bot de trading es como un "piloto automático" que compra y vende
