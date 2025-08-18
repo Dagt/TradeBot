@@ -67,6 +67,16 @@ gracias al **paper trading** (simulación).
 - **Panel web** con métricas en vivo y un **ejecutor de comandos CLI** que
   permite lanzar cualquier comando desde el navegador.
 
+## Funcionalidades extra
+
+TradeBot incluye una serie de capacidades adicionales más allá del MVP
+original. Entre ellas se destacan las estrategias de arbitraje
+triangular y entre exchanges, señales basadas en microestructura,
+adaptadores para múltiples venues con soporte de testnet, un panel web
+que permite ejecutar comandos de la CLI y una API para control remoto.
+La descripción completa y ejemplos de uso se encuentran en
+[docs/extra_features.md](docs/extra_features.md).
+
 ## Exchanges y pares soportados
 
 - **Exchanges**: [Binance](https://www.binance.com),

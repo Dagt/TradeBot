@@ -151,6 +151,15 @@
 
 ---
 
+## Funcionalidades extra implementadas
+
+El repositorio actual expande este MVP con estrategias de arbitraje
+triangular y cross‑exchange, señales de microestructura como Order Flow
+Imbalance, adaptadores para testnets de Binance, Bybit y OKX, un panel
+web con ejecución de comandos de la CLI y una API de monitoreo/riesgo.
+La descripción detallada y ejemplos de uso están en
+[docs/extra_features.md](docs/extra_features.md).
+
 ## 6) Riesgo, PnL y OCO (implementación de referencia)
 
 ### 6.1 RiskManager

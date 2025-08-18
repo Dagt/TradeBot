@@ -37,3 +37,7 @@ Job de cron que ejecuta cada minuto:
 ```
 * * * * * cd /ruta/a/TradeBot && /usr/bin/python /ruta/a/poll_perp.py >> /var/log/tradingbot.log 2>&1
 ```
+
+Para conocer características avanzadas como estrategias de arbitraje,
+panel web y API de control, consulta
+[extra_features.md](extra_features.md).

@@ -38,13 +38,13 @@
     <div class="kv"><div class="k">Último evento riesgo</div><div class="v" id="sum-risk-last">—</div></div>
     <div class="kv"><div class="k">Notional promedio (QUOTE)</div><div class="v" id="sum-avg-notional">—</div></div>
     <div class="kv"><div class="k">Exposición total (Spot)</div><div class="v" id="sum-expo-spot">—</div></div>
-    <div class="kv"><div class="k">Exposición total (Spot)</div><div class="v" id="sum-expo-fut">—</div></div>
+    <div class="kv"><div class="k">Exposición total (Futuros)</div><div class="v" id="sum-expo-fut">—</div></div>
     <div class="kv"><div class="k">UPnL (Spot)</div><div class="v" id="sum-upnl-spot">—</div></div>
     <div class="kv"><div class="k">RPnL (Spot)</div><div class="v" id="sum-rpnl-spot">—</div></div>
     <div class="kv"><div class="k">PnL Neto (Spot)</div><div class="v" id="sum-net-spot">—</div></div>
-    <div class="kv"><div class="k">UPnL (Spot)</div><div class="v" id="sum-upnl-fut">—</div></div>
-    <div class="kv"><div class="k">RPnL (Spot)</div><div class="v" id="sum-rpnl-fut">—</div></div>
-    <div class="kv"><div class="k">PnL Neto (Spot)</div><div class="v" id="sum-net-fut">—</div></div>
+    <div class="kv"><div class="k">UPnL (Futuros)</div><div class="v" id="sum-upnl-fut">—</div></div>
+    <div class="kv"><div class="k">RPnL (Futuros)</div><div class="v" id="sum-rpnl-fut">—</div></div>
+    <div class="kv"><div class="k">PnL Neto (Futuros)</div><div class="v" id="sum-net-fut">—</div></div>
   </div>
 
 
@@ -113,6 +113,28 @@
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h2>Exposición por símbolo (Futuros)</h2>
+      <div class="muted">Último snapshot por símbolo</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-expo-fut">
+          <thead><tr><th>symbol</th><th>position</th><th>px</th><th>notional</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Futuros)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-fut">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h2>PnL (Spot) – Serie temporal</h2>
       <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
       <div style="padding:10px">
@@ -122,7 +144,7 @@
   </div>
 
   <div class="card" style="margin-top:16px">
-      <h2>PnL (Spot) – Serie temporal</h2>
+      <h2>PnL (Futuros) – Serie temporal</h2>
       <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
     <div style="padding:10px">
       <canvas id="chart-pnl-fut" height="120"></canvas>
@@ -238,6 +260,28 @@ async function refreshExposure(){
   }catch(e){}
 }
 
+async function refreshExposureFut(){
+  try{
+    const r = await fetch(api("/risk/exposure?venue=binance_futures_um_testnet"));
+    const j = await r.json();
+    document.getElementById("sum-expo-fut").textContent = "$ " + fmtUSD(j.total_notional || 0);
+    const tb = document.querySelector("#tbl-expo-fut tbody");
+    if(tb){
+      tb.innerHTML = "";
+      for(const it of (j.items || [])){
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+        <td>${it.symbol}</td>
+        <td class="mono">${fmtNum(it.position, 6)}</td>
+        <td class="mono">${fmtNum(it.price, 2)}</td>
+        <td class="mono">$ ${fmtUSD(it.notional_usd)}</td>
+        `;
+        tb.appendChild(tr);
+      }
+    }
+  }catch(e){}
+}
+
 async function refreshRisk(){
   try{
     const r = await fetch(api("/risk/events?venue=binance_spot_testnet&limit=20"));
@@ -264,6 +308,7 @@ async function refreshRisk(){
       document.getElementById("sum-risk-last").textContent = "—";
     }
   }catch(e){}
+}
 
 async function refreshSpotPnL(){
   try{
@@ -297,15 +342,16 @@ async function refreshFuturePnL(){
     const r = await fetch(api("/pnl/summary?venue=binance_futures_um_testnet"));
     const j = await r.json();
     const t = j.totals || {};
-    document.getElementById("sum-upnl-spot").textContent = "$ " + fmtUSD(t.upnl || 0);
-    document.getElementById("sum-rpnl-spot").textContent = "$ " + fmtUSD(t.rpnl || 0);
-    document.getElementById("sum-net-spot").textContent = "$ " + fmtUSD(t.net_pnl || 0);
+    document.getElementById("sum-upnl-fut").textContent = "$ " + fmtUSD(t.upnl || 0);
+    document.getElementById("sum-rpnl-fut").textContent = "$ " + fmtUSD(t.rpnl || 0);
+    document.getElementById("sum-net-fut").textContent = "$ " + fmtUSD(t.net_pnl || 0);
 
-    const tb = document.querySelector("#tbl-pnl-spot tbody");
-    tb.innerHTML = "";
-    for(const it of (j.items || [])){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
+    const tb = document.querySelector("#tbl-pnl-fut tbody");
+    if(tb){
+      tb.innerHTML = "";
+      for(const it of (j.items || [])){
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
         <td>${it.symbol}</td>
         <td class="mono">${fmtNum(it.qty,6)}</td>
         <td class="mono">${fmtNum(it.avg_price,2)}</td>
@@ -313,8 +359,9 @@ async function refreshFuturePnL(){
         <td class="mono">$ ${fmtUSD(it.realized_pnl)}</td>
         <td class="mono">$ ${fmtUSD(it.fees_paid)}</td>
         <td class="mono">$ ${fmtUSD(it.total_pnl)}</td>
-      `;
-      tb.appendChild(tr);
+        `;
+        tb.appendChild(tr);
+      }
     }
   }catch(e){}
 }
@@ -400,14 +447,15 @@ async function refreshPnlChart(){
 // boot
 refreshHealth(); refreshSummary(); refreshTables();
 setInterval(refreshExposure, 5000); refreshExposure();
+setInterval(refreshExposureFut, 5000); refreshExposureFut();
 setInterval(refreshRisk, 5000); refreshRisk();
 setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
-setInterval(refreshFutureSpotPnL, 5000); refreshFutureSpotPnL();
+setInterval(refreshFuturePnL, 5000); refreshFuturePnL();
 setInterval(refreshPnlChart, 10000); refreshPnlChart();
 setInterval(refreshPnlChartFut, 10000); refreshPnlChartFut();
-  setInterval(refreshHealth, 5000);
-  setInterval(refreshSummary, 5000);
-  setInterval(refreshTables, 5000);
+setInterval(refreshHealth, 5000);
+setInterval(refreshSummary, 5000);
+setInterval(refreshTables, 5000);
 
   document.getElementById("cli-run").addEventListener("click", runCli);
 
