@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+import numpy as np
 import pandas as pd
+import random
 
 from ..risk.manager import RiskManager
 from ..strategies import STRATEGIES
@@ -140,6 +142,7 @@ class EventDrivenBacktestEngine:
         partial_fills: bool = True,
         cancel_unfilled: bool = False,
         stress: StressConfig | None = None,
+        seed: int | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -149,6 +152,12 @@ class EventDrivenBacktestEngine:
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
         self.stress = stress or StressConfig()
+
+        # Set global random seeds for reproducibility
+        self.seed = seed
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
 
         # Apply spread multiplier to slippage model if provided
         if self.slippage and hasattr(self.slippage, "spread_mult"):
@@ -427,6 +436,7 @@ def run_backtest_csv(
     partial_fills: bool = True,
     cancel_unfilled: bool = False,
     stress: StressConfig | None = None,
+    seed: int | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -442,6 +452,7 @@ def run_backtest_csv(
         partial_fills=partial_fills,
         cancel_unfilled=cancel_unfilled,
         stress=stress,
+        seed=seed,
     )
     return engine.run()
 
@@ -462,6 +473,7 @@ def run_backtest_mlflow(
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
     stress: StressConfig | None = None,
+    seed: int | None = None,
     experiment: str = "backtest",
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
@@ -491,6 +503,7 @@ def run_backtest_mlflow(
             partial_fills=partial_fills,
             cancel_unfilled=cancel_unfilled,
             stress=stress,
+            seed=seed,
         )
         log_backtest_metrics(result)
         return result
