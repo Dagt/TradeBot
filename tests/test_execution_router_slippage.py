@@ -2,6 +2,7 @@ import pytest
 
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
+from tradingbot.execution.slippage import impact_by_depth, queue_position
 from tradingbot.utils.metrics import SLIPPAGE
 from tradingbot.backtesting.engine import SlippageModel
 from tradingbot.data.features import order_flow_imbalance
@@ -133,3 +134,13 @@ def test_slippage_model_ofi_impact():
     adj_sell = model.adjust("sell", 1.0, price, bar)
     assert adj_buy == pytest.approx(price + 0.5, rel=1e-9)
     assert adj_sell == pytest.approx(price - 0.5, rel=1e-9)
+
+
+def test_slippage_helpers():
+    asks = [(100.0, 1.0), (101.0, 1.0)]
+    bps = impact_by_depth("buy", 1.5, asks)
+    assert bps == pytest.approx(33.333, rel=1e-3)
+
+    bids = [(99.0, 2.0)]
+    pos = queue_position(0.5, bids)
+    assert pos == pytest.approx(0.8, rel=1e-3)
