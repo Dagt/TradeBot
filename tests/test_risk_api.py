@@ -1,0 +1,50 @@
+import importlib
+
+from fastapi.testclient import TestClient
+from tradingbot.bus import EventBus
+from tradingbot.risk.manager import RiskManager
+
+
+def get_app():
+    import tradingbot.apps.api.main as main
+    importlib.reload(main)
+    return main.app
+
+
+def test_risk_halt_publishes_and_auth(monkeypatch):
+    monkeypatch.setenv("API_USER", "u")
+    monkeypatch.setenv("API_PASS", "p")
+    app = get_app()
+    bus = EventBus()
+    events = []
+    bus.subscribe("control:halt", lambda msg: events.append(msg))
+    app.state.bus = bus
+    client = TestClient(app)
+
+    resp = client.post("/risk/halt", json={"reason": "stop"})
+    assert resp.status_code == 401
+
+    resp = client.post("/risk/halt", json={"reason": "stop"}, auth=("u", "p"))
+    assert resp.status_code == 200
+    assert events == [{"reason": "stop"}]
+
+
+def test_risk_reset_resets_and_auth(monkeypatch):
+    monkeypatch.setenv("API_USER", "u")
+    monkeypatch.setenv("API_PASS", "p")
+    app = get_app()
+    rm = RiskManager()
+    rm.enabled = False
+    rm.last_kill_reason = "dd"
+    app.state.risk_manager = rm
+    client = TestClient(app)
+
+    resp = client.post("/risk/reset")
+    assert resp.status_code == 401
+
+    resp = client.post("/risk/reset", auth=("u", "p"))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["risk"]["enabled"] is True
+    assert data["risk"]["last_kill_reason"] is None
+    assert rm.enabled is True

@@ -3,15 +3,18 @@ import pathlib
 import pytest
 
 sys.path.append(str(pathlib.Path(__file__).parent))
+root_dir = pathlib.Path(__file__).resolve().parents[1]
+if str(root_dir) not in sys.path:
+    sys.path.append(str(root_dir))
+# Ensure the src package is importable
+sys.path.append(str(root_dir / "src"))
+
 from fixtures.market import (  # noqa: E402, F401
     synthetic_trades,
     synthetic_l2,
     synthetic_volatility,
     dual_testnet,
 )
-
-# Ensure the src package is importable
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from tradingbot.adapters.base import ExchangeAdapter  # noqa: E402
 from tradingbot.execution.paper import PaperAdapter  # noqa: E402

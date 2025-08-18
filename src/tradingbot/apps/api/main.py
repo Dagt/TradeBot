@@ -142,6 +142,31 @@ def risk_events(venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1
     items = select_recent_risk_events(_ENGINE, venue=venue, limit=limit)
     return {"venue": venue, "items": items}
 
+
+class HaltRequest(BaseModel):
+    reason: str
+
+
+@app.post("/risk/halt")
+async def risk_halt(payload: HaltRequest):
+    bus = getattr(app.state, "bus", None)
+    if bus is None:
+        rm = getattr(app.state, "risk_manager", None)
+        bus = getattr(rm, "bus", None) if rm else None
+    if bus is None:
+        raise HTTPException(status_code=500, detail="bus not configured")
+    await bus.publish("control:halt", {"reason": payload.reason})
+    return {"status": "halt"}
+
+
+@app.post("/risk/reset")
+def risk_reset():
+    rm = getattr(app.state, "risk_manager", None)
+    if rm is None:
+        raise HTTPException(status_code=500, detail="risk manager not configured")
+    rm.reset()
+    return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
+
 @app.get("/pnl/summary")
 def pnl_summary(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
