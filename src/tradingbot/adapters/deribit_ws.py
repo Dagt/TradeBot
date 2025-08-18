@@ -49,6 +49,11 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book snapshots from Deribit."""
 
+        if self.rest and hasattr(self.rest, "stream_order_book"):
+            async for ob in self.rest.stream_order_book(symbol, depth):
+                yield ob
+            return
+
         channel = f"book.{depth}.{symbol}"
         sub = {
             "jsonrpc": "2.0",

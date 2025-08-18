@@ -120,7 +120,7 @@ async def test_stream_trades_and_orderbook(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_deribit_ws_adapter_parsing(monkeypatch):
-    adapter = DeribitWSAdapter()
+    adapter = DeribitWSAdapter(rest=DummyRest([], {}, {}, {}))
 
     trade_msgs = [
         json.dumps(
@@ -171,3 +171,36 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
     assert ob["bid_px"][0] == 100.0
     assert ob["ask_qty"][0] == 2.0
     await ogen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_deribit_ws_adapter_delegates_to_rest():
+    class _Rest:
+        async def stream_order_book(self, symbol, depth=10):
+            yield {"bid_px": [1.0], "ask_px": [2.0], "bid_qty": [3.0], "ask_qty": [4.0]}
+
+        async def fetch_funding(self, symbol):
+            return {"rate": 0.01}
+
+        async def fetch_basis(self, symbol):
+            return {"basis": 5.0}
+
+        async def fetch_oi(self, symbol):
+            return {"oi": 10.0}
+
+    rest = _Rest()
+    adapter = DeribitWSAdapter(rest=rest)
+
+    funding = await adapter.fetch_funding("BTC-PERPETUAL")
+    assert funding["rate"] == 0.01
+
+    basis = await adapter.fetch_basis("BTC-PERPETUAL")
+    assert basis["basis"] == 5.0
+
+    oi = await adapter.fetch_oi("BTC-PERPETUAL")
+    assert oi["oi"] == 10.0
+
+    gen = adapter.stream_order_book("BTC-PERPETUAL")
+    ob = await gen.__anext__()
+    await gen.aclose()
+    assert ob["bid_px"][0] == 1.0
