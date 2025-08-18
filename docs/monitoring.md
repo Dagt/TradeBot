@@ -162,3 +162,43 @@ docker-compose up -d --force-recreate prometheus alertmanager
 
 The monitoring panel exposes active alerts at `GET /alerts` and also
 includes them in `GET /summary`.
+
+## Production deployment
+
+The `docker-compose.prod.yml` file launches Prometheus, Alertmanager and
+Grafana with persistent volumes. Grafana credentials are read from the
+`GF_ADMIN_USER` and `GF_ADMIN_PASSWORD` environment variables, and
+dashboards, data sources and users under `monitoring/grafana/` are provisioned
+automatically.
+
+Run the stack:
+
+```bash
+make monitoring-up
+```
+
+Update to the latest images:
+
+```bash
+make monitoring-update
+```
+
+Stop all services:
+
+```bash
+make monitoring-down
+```
+
+Prometheus retention can be tuned with `PROMETHEUS_RETENTION` (defaults to
+`30d`).
+
+### TLS and authentication
+
+Enable HTTPS in Grafana by setting `GF_SERVER_PROTOCOL=https` and providing
+`GF_SERVER_CERT_FILE` and `GF_SERVER_CERT_KEY`. User sign-ups are disabled via
+`GF_USERS_ALLOW_SIGN_UP=false`; additional accounts can be defined in
+`monitoring/grafana/users/users.yml`.
+
+Prometheus and Alertmanager do not ship with TLS or authentication. Place
+them behind a reverse proxy such as Nginx or Traefik configured with TLS
+certificates and optional HTTP basic authentication to secure access.

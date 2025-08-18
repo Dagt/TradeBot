@@ -1,0 +1,7 @@
+apiVersion: 1
+users:
+  - name: viewer
+    email: viewer@example.com
+    login: viewer
+    password: viewerpass
+    isAdmin: false
