@@ -99,3 +99,12 @@ groups:
         annotations:
           summary: Excessive order slippage
           description: 95th percentile slippage above 10 bps for 5m
+
+      - alert: NoTicks
+        expr: rate(trades_total[30s]) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: No trades received
+          description: No ticks have been observed in the last 30s
