@@ -21,6 +21,7 @@ import json
 from datetime import datetime
 
 from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
+from ..execution.venue_adapter import translate_order_flags
 
 
 class BinanceConnector(ExchangeConnector):
@@ -101,21 +102,24 @@ class BinanceConnector(ExchangeConnector):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
     ) -> dict:
         """Submit an order to Binance via CCXT.
 
-        Parameters are mapped to Binance's REST API. ``post_only`` orders are
-        encoded by setting ``timeInForce`` to ``GTX``. ``iceberg_qty`` maps to
-        the native ``icebergQty`` field.
+        Parameters are normalised and translated using
+        :func:`~tradingbot.execution.venue_adapter.translate_order_flags` so
+        individual connectors do not need to duplicate the mapping logic.
         """
 
-        params: dict[str, object] = {}
-        if post_only:
-            params["timeInForce"] = "GTX"
-        elif time_in_force:
-            params["timeInForce"] = time_in_force
-        if iceberg_qty is not None:
-            params["icebergQty"] = float(iceberg_qty)
+        params = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+        )
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

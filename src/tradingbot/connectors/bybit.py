@@ -20,6 +20,7 @@ import json
 from datetime import datetime
 
 from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
+from ..execution.venue_adapter import translate_order_flags
 
 
 class BybitConnector(ExchangeConnector):
@@ -90,16 +91,19 @@ class BybitConnector(ExchangeConnector):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
     ) -> dict:
         """Submit an order through the CCXT Bybit client."""
 
-        params: dict[str, object] = {}
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if post_only:
-            params["postOnly"] = True
-        if iceberg_qty is not None:
-            params["iceberg"] = iceberg_qty
+        params = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+        )
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

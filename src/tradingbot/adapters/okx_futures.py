@@ -15,6 +15,7 @@ from .base import ExchangeAdapter
 from ..config import settings
 from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
+from ..execution.venue_adapter import translate_order_flags
 
 log = logging.getLogger(__name__)
 
@@ -168,11 +169,23 @@ class OKXFuturesAdapter(ExchangeAdapter):
         type_: str,
         qty: float,
         price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        params: dict | None = None,
     ) -> dict:
-        params = {}
-        if iceberg_qty is not None:
-            params["iceberg"] = iceberg_qty
+        params = params or {}
+        extra = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+        )
+        params.update(extra)
         return await self._request(
             self.rest.create_order, symbol, type_, side, qty, price, params
         )
