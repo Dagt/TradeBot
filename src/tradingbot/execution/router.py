@@ -91,7 +91,9 @@ class ExecutionRouter:
 
             maker = maker_pref
             fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
-            fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
+            fee_bps = float(
+                getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
+            )
             fee = price * fee_bps / 10000.0
             latency = getattr(adapter, "latency", 0.0)
             direction = 1 if order.side == "buy" else -1
@@ -211,7 +213,9 @@ class ExecutionRouter:
         res.setdefault("est_slippage_bps", est_slippage)
         res.setdefault("queue_position", queue_pos)
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
-        fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
+        fee_bps = float(
+            getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
+        )
         res.setdefault("fee_type", "maker" if maker else "taker")
         res.setdefault("fee_bps", fee_bps)
         if res.get("status") == "filled":

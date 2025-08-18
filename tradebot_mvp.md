@@ -177,7 +177,7 @@
 
 ### 6.5 PnL y posiciones
 
-- `apply_fill(pos, side, qty, px, taker_fee_bps, venue_type)` → actualiza `avg_price`, `qty`, `realized_pnl`, `fees_paid`
+- `apply_fill(pos, side, qty, px, fee_bps, venue_type)` → actualiza `avg_price`, `qty`, `realized_pnl`, `fees_paid`
 - `mark_to_market(pos, mark_px)` → `UPnL` intradía
 
 ---
