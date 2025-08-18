@@ -4,7 +4,12 @@ exchanges:
 
 strategies:
   default: breakout_atr
-  params: {}
+  params:
+    mean_rev_ofi:
+      ofi_window: 20
+      zscore_threshold: 1.0
+      vol_window: 20
+      vol_threshold: 0.01
 
 backtest:
   data: data/examples/btcusdt_1m.csv
