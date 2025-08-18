@@ -1,4 +1,18 @@
-"""OKX connector using CCXT REST and native websockets."""
+"""OKX connector using CCXT REST and native websockets.
+
+Examples
+--------
+>>> c = OKXConnector()
+>>> await c.place_order(
+...     "BTC-USDT", "buy", "limit", 1,
+...     price=20_000, post_only=True, iceberg_qty=0.3
+... )
+
+Limitations
+-----------
+Advanced order types depend on instrument support. Iceberg quantity maps
+to the ``iceberg`` parameter and may require specific account settings.
+"""
 from __future__ import annotations
 
 import json
@@ -74,6 +88,7 @@ class OKXConnector(ExchangeConnector):
         *,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ) -> dict:
         """Place an order via the underlying CCXT client.
 
@@ -88,6 +103,8 @@ class OKXConnector(ExchangeConnector):
         if post_only:
             # CCXT para OKX soporta ``postOnly`` booleano
             params["postOnly"] = True
+        if iceberg_qty is not None:
+            params["iceberg"] = iceberg_qty
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

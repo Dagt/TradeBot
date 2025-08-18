@@ -10,7 +10,18 @@ from .base import OrderBook, Trade
 
 
 class CoinAPIConnector:
-    """REST connector for CoinAPI."""
+    """REST connector for CoinAPI.
+
+    Examples
+    --------
+    >>> c = CoinAPIConnector("KEY")
+    >>> trades = await c.fetch_trades("BTCUSD")
+
+    Limitations
+    -----------
+    Only public market data is available; authentication is required via an
+    API key and the service enforces strict rate limits.
+    """
 
     name = "coinapi"
     _BASE_URL = "https://rest.coinapi.io/v1"

@@ -1,4 +1,19 @@
-"""Bybit connector using CCXT REST and native websockets."""
+"""Bybit connector using CCXT REST and native websockets.
+
+Examples
+--------
+>>> c = BybitConnector()
+>>> await c.place_order(
+...     "BTC/USDT", "sell", "limit", 1,
+...     price=25_000, time_in_force="IOC", iceberg_qty=0.2
+... )
+
+Limitations
+-----------
+Post-only, IOC/FOK and iceberg orders are supported only where Bybit's
+API exposes the respective parameters. The connector targets spot
+markets by default.
+"""
 from __future__ import annotations
 
 import json
@@ -74,6 +89,7 @@ class BybitConnector(ExchangeConnector):
         *,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ) -> dict:
         """Submit an order through the CCXT Bybit client."""
 
@@ -82,6 +98,8 @@ class BybitConnector(ExchangeConnector):
             params["timeInForce"] = time_in_force
         if post_only:
             params["postOnly"] = True
+        if iceberg_qty is not None:
+            params["iceberg"] = iceberg_qty
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

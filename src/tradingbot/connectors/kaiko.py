@@ -10,7 +10,18 @@ from .base import OrderBook, Trade
 
 
 class KaikoConnector:
-    """Simple Kaiko REST connector."""
+    """Simple Kaiko REST connector.
+
+    Examples
+    --------
+    >>> c = KaikoConnector("KEY")
+    >>> ob = await c.fetch_order_book("binance", "btc-usdt")
+
+    Limitations
+    -----------
+    Only historical and recent public data are accessible. Rate limits and
+    data availability depend on the Kaiko subscription plan.
+    """
 
     name = "kaiko"
     _BASE_URL = "https://us.market-api.kaiko.io/v2/data"

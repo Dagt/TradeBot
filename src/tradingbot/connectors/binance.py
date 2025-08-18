@@ -1,4 +1,20 @@
-"""Binance connector using CCXT REST and native websockets."""
+"""Binance connector using CCXT REST and native websockets.
+
+Examples
+--------
+>>> c = BinanceConnector()
+>>> await c.place_order(
+...     "BTC/USDT", "buy", "limit", 1.0,
+...     price=30_000, post_only=True, time_in_force="GTC", iceberg_qty=0.1
+... )
+
+Limitations
+-----------
+Only spot markets are supported and advanced order types depend on
+Binance's REST API availability. Post-only orders are translated via the
+``timeInForce`` parameter using ``GTX``. Iceberg quantity requires a limit
+order and may not be accepted on all symbols.
+"""
 from __future__ import annotations
 
 import json
@@ -71,3 +87,68 @@ class BinanceConnector(ExchangeConnector):
         """
 
         return await super().fetch_open_interest(symbol)
+
+    # ------------------------------------------------------------------
+    # Trading helpers
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        *,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
+    ) -> dict:
+        """Submit an order to Binance via CCXT.
+
+        Parameters are mapped to Binance's REST API. ``post_only`` orders are
+        encoded by setting ``timeInForce`` to ``GTX``. ``iceberg_qty`` maps to
+        the native ``icebergQty`` field.
+        """
+
+        params: dict[str, object] = {}
+        if post_only:
+            params["timeInForce"] = "GTX"
+        elif time_in_force:
+            params["timeInForce"] = time_in_force
+        if iceberg_qty is not None:
+            params["icebergQty"] = float(iceberg_qty)
+
+        data = await self._rest_call(
+            self.rest.create_order, symbol, type_, side, qty, price, params
+        )
+        return {
+            "id": data.get("id") or data.get("orderId"),
+            "status": data.get("status"),
+            "symbol": data.get("symbol", symbol),
+            "side": data.get("side", side),
+            "price": float(data.get("price") or data.get("avgPrice") or 0.0),
+            "amount": float(data.get("amount") or data.get("origQty") or 0.0),
+            "raw": data,
+        }
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        """Cancel an order and return a minimal response."""
+
+        data = await self._rest_call(self.rest.cancel_order, order_id, symbol)
+        return {
+            "id": data.get("id") or data.get("orderId") or order_id,
+            "status": data.get("status") or data.get("result"),
+            "raw": data,
+        }
+
+    async def fetch_balance(self) -> dict:
+        """Fetch account balances normalising totals to floats."""
+
+        data = await self._rest_call(self.rest.fetch_balance)
+        balances: dict[str, float] = {}
+        for asset, info in (data or {}).items():
+            if isinstance(info, dict) and "total" in info:
+                try:
+                    balances[asset] = float(info["total"])
+                except (TypeError, ValueError):
+                    continue
+        return balances
