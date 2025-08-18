@@ -64,6 +64,16 @@ groups:
           summary: Risk management events detected
           description: Risk events occurred in the last 5m
 
+      - alert: HighOrderRejectRate
+        # Trigger when more than 5% of orders are rejected
+        expr: increase(order_rejects_total[5m]) / increase(order_sent_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High order rejection rate
+          description: Order rejection rate exceeded 5% in the last 5m
+
       - alert: KillSwitchActive
         expr: kill_switch_active > 0
         for: 1m
