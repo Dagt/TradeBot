@@ -418,21 +418,30 @@ def walk_forward_cfg(config: str) -> None:
 
     @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
     def _run(cfg) -> None:  # type: ignore[override]
-        from ..backtesting.engine import walk_forward_optimize
+        from ..backtesting.walk_forward import walk_forward_backtest
 
         wf_cfg = cfg.walk_forward
-        results = walk_forward_optimize(
+        df = walk_forward_backtest(
             wf_cfg.data,
             wf_cfg.symbol,
             wf_cfg.strategy,
             wf_cfg.param_grid,
+            train_size=getattr(wf_cfg, "train_size", 1000),
+            test_size=getattr(wf_cfg, "test_size", 250),
             latency=getattr(wf_cfg, "latency", 1),
             window=getattr(wf_cfg, "window", 120),
-            n_splits=getattr(wf_cfg, "n_splits", 3),
-            embargo=getattr(wf_cfg, "embargo", 0.0),
         )
+
+        reports_dir = Path("reports")
+        reports_dir.mkdir(exist_ok=True)
+        csv_path = reports_dir / "walk_forward.csv"
+        html_path = reports_dir / "walk_forward.html"
+        df.to_csv(csv_path, index=False)
+        df.to_html(html_path, index=False)
+
         typer.echo(OmegaConf.to_yaml(cfg))
-        typer.echo(results)
+        typer.echo(df.to_string(index=False))
+        typer.echo(f"Reports saved to {csv_path} and {html_path}")
 
     old_argv = sys.argv
     sys.argv = [sys.argv[0]]
