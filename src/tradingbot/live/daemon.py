@@ -489,7 +489,13 @@ class TradeBotDaemon:
         if price is not None and not self.risk.check_limits(price):
             log.warning("risk_halt", extra={"price": price})
             return
-        order = Order(symbol=symbol, side="buy" if delta > 0 else "sell", type_="market", qty=abs(delta))
+        order = Order(
+            symbol=symbol,
+            side="buy" if delta > 0 else "sell",
+            type_="market",
+            qty=abs(delta),
+            reduce_only=getattr(signal, "reduce_only", False),
+        )
         res = await self.router.execute(order)
         venue = res.get("venue")
         await self.bus.publish("fill", {"symbol": symbol, "side": order.side, "qty": order.qty, "venue": venue, **res})

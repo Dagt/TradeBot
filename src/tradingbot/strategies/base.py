@@ -13,6 +13,7 @@ from ..storage import timescale
 class Signal:
     side: str  # 'buy' | 'sell' | 'flat'
     strength: float = 1.0
+    reduce_only: bool = False
 
 class Strategy(ABC):
     name: str

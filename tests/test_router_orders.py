@@ -47,6 +47,7 @@ async def test_best_venue_selection():
         {"type_": "limit", "price": 100.0, "time_in_force": "IOC"},
         {"type_": "limit", "price": 100.0, "time_in_force": "FOK"},
         {"type_": "limit", "price": 100.0, "iceberg_qty": 0.1},
+        {"type_": "market", "reduce_only": True},
     ],
 )
 async def test_order_type_support(kwargs):

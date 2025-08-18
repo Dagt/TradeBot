@@ -159,6 +159,7 @@ class BinanceWSAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Envía una orden usando el adaptador REST si está disponible."""
 

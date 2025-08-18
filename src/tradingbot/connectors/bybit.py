@@ -93,6 +93,7 @@ class BybitConnector(ExchangeConnector):
         iceberg_qty: float | None = None,
         take_profit: float | None = None,
         stop_loss: float | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Submit an order through the CCXT Bybit client."""
 
@@ -103,6 +104,7 @@ class BybitConnector(ExchangeConnector):
             iceberg_qty=iceberg_qty,
             take_profit=take_profit,
             stop_loss=stop_loss,
+            reduce_only=reduce_only,
         )
 
         data = await self._rest_call(

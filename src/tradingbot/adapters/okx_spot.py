@@ -141,6 +141,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
         params: dict | None = None,
     ) -> dict:
         params = params or {}
@@ -148,6 +149,8 @@ class OKXSpotAdapter(ExchangeAdapter):
             params["postOnly"] = True
         if time_in_force:
             params["timeInForce"] = time_in_force
+        if reduce_only:
+            params["reduceOnly"] = True
         backoff = 1.0
         while True:
             try:

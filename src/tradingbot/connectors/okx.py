@@ -92,6 +92,7 @@ class OKXConnector(ExchangeConnector):
         iceberg_qty: float | None = None,
         take_profit: float | None = None,
         stop_loss: float | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Place an order via the underlying CCXT client.
 
@@ -107,6 +108,7 @@ class OKXConnector(ExchangeConnector):
             iceberg_qty=iceberg_qty,
             take_profit=take_profit,
             stop_loss=stop_loss,
+            reduce_only=reduce_only,
         )
 
         data = await self._rest_call(

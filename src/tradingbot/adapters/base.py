@@ -219,6 +219,7 @@ class ExchangeAdapter(ABC):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Return provider response (paper/live)."""
 

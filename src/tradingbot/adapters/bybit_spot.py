@@ -134,8 +134,17 @@ class BybitSpotAdapter(ExchangeAdapter):
         oi = float(item.get("openInterest", 0.0))
         return {"ts": ts, "oi": oi}
 
-    async def place_order(self, symbol: str, side: str, type_: str, qty: float,
-                          price: float | None = None) -> dict:
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+        reduce_only: bool = False,
+    ) -> dict:
         return await self.rest.create_order(symbol, type_, side, qty, price)
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
