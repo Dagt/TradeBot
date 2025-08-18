@@ -7,6 +7,7 @@ from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
 from tradingbot.risk.service import RiskService
 from tradingbot.storage import timescale
+from tradingbot.utils.metrics import KILL_SWITCH_ACTIVE
 
 
 def test_stop_loss_sets_reason():
@@ -36,6 +37,18 @@ def test_manual_kill_switch_records_reason():
     assert rm.enabled is False
     assert rm.last_kill_reason == "manual"
     assert rm.pos.qty == 0
+
+
+def test_reset_clears_kill_switch():
+    rm = RiskManager(max_pos=1)
+    rm.kill_switch("manual")
+    assert rm.enabled is False
+    assert KILL_SWITCH_ACTIVE._value.get() == 1.0
+    rm.reset()
+    assert rm.enabled is True
+    assert rm.last_kill_reason is None
+    assert rm.pos.qty == 0
+    assert KILL_SWITCH_ACTIVE._value.get() == 0.0
 
 
 def test_daily_loss_limit_triggers_kill_switch():
