@@ -35,6 +35,17 @@ FILL_COUNT = Counter(
     ["symbol", "side"],
 )
 
+# Order flow counters
+ORDER_SENT = Counter(
+    "order_sent_total",
+    "Total orders sent",
+)
+
+ORDER_REJECTS = Counter(
+    "order_rejects_total",
+    "Total order rejections",
+)
+
 # Slippage observed in order execution (basis points)
 SLIPPAGE = Histogram(
     "order_slippage_bps",
