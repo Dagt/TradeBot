@@ -11,6 +11,7 @@ binance_ws_stub.BinanceWSAdapter = object
 sys.modules.setdefault("tradingbot.adapters.binance_ws", binance_ws_stub)
 
 from tradingbot.live import runner_paper as rp
+from tradingbot.core import normalize
 
 
 class DummyWS:
@@ -81,6 +82,6 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
 
-    await rp.run_paper(symbol="BTC/USDT", strategy_name="dummy")
+    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 
-    assert DummyRouter.last_order.symbol == "BTC/USDT"
+    assert DummyRouter.last_order.symbol == normalize("BTC-USDT")

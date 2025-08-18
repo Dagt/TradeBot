@@ -13,6 +13,7 @@ except Exception:
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..market.exchange_meta import ExchangeMeta
 from .binance_errors import parse_binance_error_code  # si no lo tienes, ver notas abajo
 from ..execution.retry import with_retries, AmbiguousOrderError
@@ -62,7 +63,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
             for t in trades or []:
@@ -186,7 +187,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
                 }
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
             ts_ms = ob.get("timestamp")
@@ -205,7 +206,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         respuesta a ``{"ts": datetime, "rate": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado")
@@ -230,7 +231,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         es la *basis*.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetPremiumIndex", None)
         if method is None:
             raise NotImplementedError("Basis no soportado")
@@ -252,7 +253,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         store it directly.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest no soportado")
@@ -264,5 +265,5 @@ class BinanceSpotAdapter(ExchangeAdapter):
         return {"ts": ts, "oi": oi}
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        symbol_ex = symbol and self.normalize_symbol(symbol)
+        symbol_ex = symbol and normalize(symbol)
         return await self._request(self.rest.cancel_order, order_id, symbol_ex)

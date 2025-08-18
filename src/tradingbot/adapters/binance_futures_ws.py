@@ -7,6 +7,7 @@ from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             )
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
-        streams = "/".join(_stream_name(self.normalize_symbol(s), channel) for s in symbols)
+        streams = "/".join(_stream_name(normalize(s), channel) for s in symbols)
         url = self.ws_base + streams
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -77,7 +78,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             yield t
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
+        stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -96,7 +97,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
 
         def _fetch():
@@ -118,7 +119,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         if self.rest:
             return await self.rest.fetch_basis(symbol)
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
 
         def _fetch():
@@ -138,7 +139,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={sym}"
 
         def _fetch():

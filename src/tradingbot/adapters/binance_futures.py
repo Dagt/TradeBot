@@ -13,6 +13,7 @@ except Exception:
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..market.exchange_meta import ExchangeMeta
 from ..execution.normalize import adjust_order
 from .binance_errors import parse_binance_error_code
@@ -66,7 +67,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             log.debug("No se pudo fijar position_mode (one-way): %s", e)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
             for t in trades or []:
@@ -189,7 +190,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                 }
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        symbol_ex = symbol and self.normalize_symbol(symbol)
+        symbol_ex = symbol and normalize(symbol)
         try:
             return await self._request(self.rest.futures_cancel_order, symbol_ex, orderId=order_id)
         except Exception as e:  # pragma: no cover - logging only
@@ -197,7 +198,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
             ts_ms = ob.get("timestamp")
@@ -209,7 +210,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado")
@@ -232,7 +233,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         ``NotImplementedError`` para dejar claro que el venue no lo soporta.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "public_get_premiumindex", None)
         if method is None:
             raise NotImplementedError("Basis no soportado")
@@ -258,7 +259,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         callers can persist it without further transformation.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest no soportado")

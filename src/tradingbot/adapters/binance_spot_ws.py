@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         self.rest = rest
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        stream = _stream_name(self.normalize_symbol(symbol))
+        stream = _stream_name(normalize(symbol))
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -47,7 +48,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         Un solo socket con múltiples streams. Yields:
         {"symbol": <sym>, "ts": datetime, "price": float, "qty": float, "side": "buy"/"sell"}
         """
-        streams = "/".join(_stream_name(self.normalize_symbol(s)) for s in symbols)
+        streams = "/".join(_stream_name(normalize(s)) for s in symbols)
         url = self.ws_base + streams
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -75,7 +76,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
             yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
+        stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
