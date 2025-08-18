@@ -12,7 +12,7 @@ import pandas as pd
 
 from ..risk.manager import RiskManager
 from ..strategies import STRATEGIES
-from ..data.features import returns, order_flow_imbalance
+from ..data.features import returns, calc_ofi
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class SlippageModel:
             ofi_val = float(bar["order_flow_imbalance"])
         elif {"bid_qty", "ask_qty"}.issubset(bar.index):
             ofi_val = float(
-                order_flow_imbalance(
+                calc_ofi(
                     pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
                 ).iloc[-1]
             )

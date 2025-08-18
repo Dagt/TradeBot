@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from tradingbot.data.features import (
+    calc_ofi,
     order_flow_imbalance,
     depth_imbalance,
     rsi,
@@ -106,13 +107,15 @@ def ohlc_snapshots(ohlc_df):
 # Order book features
 
 
-def test_order_flow_imbalance_df(orderbook_df):
-    ofi = order_flow_imbalance(orderbook_df)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_df(orderbook_df, func):
+    ofi = func(orderbook_df)
     assert list(ofi) == [0, 4, -3, -1]
 
 
-def test_order_flow_imbalance_snapshots(orderbook_snapshots):
-    ofi = order_flow_imbalance(orderbook_snapshots)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_snapshots(orderbook_snapshots, func):
+    ofi = func(orderbook_snapshots)
     assert list(ofi) == [0, 4, -3, -1]
 
 
@@ -138,8 +141,9 @@ def test_depth_imbalance_snapshots(orderbook_snapshots):
     assert all(abs(a - b) < 1e-9 for a, b in zip(di, expected))
 
 
-def test_order_flow_imbalance_l2(l2_snapshots):
-    ofi = order_flow_imbalance(l2_snapshots, depth=2)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_l2(l2_snapshots, func):
+    ofi = func(l2_snapshots, depth=2)
     assert list(ofi) == [0.0, 13.0, 0.0]
 
 

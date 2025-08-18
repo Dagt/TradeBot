@@ -1,6 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import order_flow_imbalance
+from ..data.features import calc_ofi
 
 
 class OrderFlow(Strategy):
@@ -23,7 +23,7 @@ class OrderFlow(Strategy):
         needed = {"bid_qty", "ask_qty"}
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
-        ofi_series = order_flow_imbalance(df[list(needed)])
+        ofi_series = calc_ofi(df[list(needed)])
         ofi_mean = ofi_series.iloc[-self.window:].mean()
         if ofi_mean > self.buy_threshold:
             return Signal("buy", 1.0)

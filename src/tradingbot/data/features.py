@@ -198,6 +198,30 @@ def rsi(data: DataLike, n: int = 14) -> pd.Series:
     return rsi.fillna(100)
 
 
+# Wrappers -----------------------------------------------------------------
+
+def calc_ofi(data: DataLike, depth: int = 1) -> pd.Series:
+    """Wrapper for :func:`order_flow_imbalance` to maintain backwards
+    compatibility.
+
+    Parameters
+    ----------
+    data:
+        Input exposing order book fields.
+    depth:
+        Number of levels to include in the calculation. Defaults to ``1``
+        (top of book).
+
+    Returns
+    -------
+    pandas.Series
+        Sequence of OFI values where positive numbers indicate buying
+        pressure.
+    """
+
+    return order_flow_imbalance(data, depth=depth)
+
+
 def order_flow_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
     """Order Flow Imbalance.
 
@@ -275,24 +299,8 @@ def order_flow_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
     return pd.Series(out, index=df.index, name="ofi")
 
 
-def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
-    """Depth imbalance between bid and ask queues.
-
-    Parameters
-    ----------
-    data:
-        Input exposing ``bid_qty`` and ``ask_qty`` fields.
-    depth:
-        Number of levels to aggregate when quantities are provided as lists.
-        Defaults to ``1`` (top of book).
-
-    Returns
-    -------
-    pandas.Series
-        Values in the ``[-1, 1]`` range where positive numbers signal more
-        depth on the bid side.
-    """
-
+# Existing implementation kept private for backwards compatibility
+def _depth_imbalance_impl(data: DataLike, depth: int = 1) -> pd.Series:
     if depth < 1:
         raise ValueError("depth must be at least 1")
 
@@ -310,6 +318,27 @@ def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
 
     di = _depth_jit(bid.astype(np.float64), ask.astype(np.float64))
     return pd.Series(di, index=df.index, name="depth_imbalance")
+
+
+def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
+    """Wrapper around the depth imbalance computation.
+
+    Parameters
+    ----------
+    data:
+        Input exposing ``bid_qty`` and ``ask_qty`` fields.
+    depth:
+        Number of levels to aggregate when quantities are provided as lists.
+        Defaults to ``1`` (top of book).
+
+    Returns
+    -------
+    pandas.Series
+        Values in the ``[-1, 1]`` range where positive numbers signal more
+        depth on the bid side.
+    """
+
+    return _depth_imbalance_impl(data, depth)
 
 
 def book_vacuum(data: DataLike, threshold: float = 0.5) -> pd.Series:

@@ -1,6 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import rsi, order_flow_imbalance
+from ..data.features import rsi, calc_ofi
 
 class Momentum(Strategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
@@ -32,7 +32,7 @@ class Momentum(Strategy):
         last_rsi = rsi_series.iloc[-1]
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
-            ofi_val = order_flow_imbalance(df[["bid_qty", "ask_qty"]]).iloc[-1]
+            ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
         if last_rsi > self.threshold and ofi_val >= 0:
             return Signal("buy", 1.0)
         if last_rsi < 100 - self.threshold and ofi_val <= 0:
