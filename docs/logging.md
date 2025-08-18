@@ -27,3 +27,7 @@ except Exception:
 Esto facilita identificar rápidamente el punto exacto del fallo al revisar los
 logs.
 
+Para una descripción de funcionalidades avanzadas y cómo generan logs
+adicionales (arbitrajes, panel web, API), ver
+[extra_features.md](extra_features.md).
+

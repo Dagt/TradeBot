@@ -8,3 +8,7 @@ Mantener seguras las credenciales es fundamental. Algunas recomendaciones:
 - El gestor sólo registra el identificador de la clave (últimos 4 caracteres) para evitar filtrar información sensible.
 - Revisa periódicamente los registros y rota las claves con regularidad.
 - Nunca compartas claves ni las publiques en repositorios.
+
+Algunas funciones avanzadas (API web, panel de monitoreo, estrategias de
+arbitraje) también requieren considerar permisos y autenticación.
+Consulta [extra_features.md](extra_features.md) para más detalles.

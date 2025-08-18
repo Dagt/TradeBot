@@ -57,6 +57,9 @@ stats = run_parameter_sweep(bars, ma_signal, {"fast": [5], "slow": [20]})
 print(stats)
 ```
 
+Más ejemplos de estrategias avanzadas y uso del panel web se encuentran
+en [extra_features.md](extra_features.md).
+
 ## Backtest rápido
 ```bash
 python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \

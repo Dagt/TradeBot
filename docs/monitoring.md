@@ -38,6 +38,9 @@ Available endpoints:
 - `GET /orders` – open orders with id, symbol, side and status.
 - `GET /positions` – open positions by symbol.
 - `GET /kill-switch` – kill switch active flag.
+
+Para un resumen de todas las capacidades adicionales del panel y la API
+consulta [extra_features.md](extra_features.md).
 - `GET /strategies/status` – current strategy states.
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
