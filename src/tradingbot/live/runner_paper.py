@@ -10,12 +10,19 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
 from ..risk.correlation_service import CorrelationService
+from ..risk.oco import OcoBook, load_active_oco
 from ..strategies import STRATEGIES
 from monitoring import panel
+
+try:
+    from ..storage.timescale import get_engine
+    _CAN_PG = True
+except Exception:  # pragma: no cover
+    _CAN_PG = False
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +53,14 @@ async def run_paper(
     guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, corr_service=corr)
+    engine = get_engine() if _CAN_PG else None
+    oco_book = OcoBook()
+    if engine is not None:
+        pos_map = load_positions(engine, guard.cfg.venue)
+        for sym, data in pos_map.items():
+            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
+            risk.rm._entry_price = data.get("avg_price")
+        oco_book.preload(load_active_oco(engine, venue=guard.cfg.venue, symbols=[symbol]))
 
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
