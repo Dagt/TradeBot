@@ -198,28 +198,50 @@ class BinanceSpotAdapter(ExchangeAdapter):
             await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchFundingRate", None)
-        if method is None:
-            raise NotImplementedError("Funding no soportado en spot")
-        data = await self._request(method, sym)
-        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
-        ts = int(ts)
-        if ts > 1e12:
-            ts /= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        """Return current funding rate for ``symbol``.
 
-    async def fetch_basis(self, symbol: str):
-        """Spot markets no tienen *basis* definida.
-
-        Se implementa únicamente para cumplir la interfaz del adaptador y
-        lanzar un ``NotImplementedError`` claro indicando que Binance Spot no
-        ofrece este dato.
+        Binance expone la tasa de funding del contrato perpetuo equivalente en
+        ``fapi/v1/fundingRate``.  Consultamos ese endpoint y normalizamos la
+        respuesta a ``{"ts": datetime, "rate": float}``.
         """
 
-        raise NotImplementedError("Basis no soportado en spot")
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fapiPublicGetFundingRate", None)
+        if method is None:
+            raise NotImplementedError("Funding no soportado")
+
+        data = await self._request(method, {"symbol": sym, "limit": 1})
+        item = data[0] if isinstance(data, list) and data else data
+        ts_ms = int(
+            item.get("fundingTime")
+            or item.get("timestamp")
+            or item.get("time")
+            or 0
+        )
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
+
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        El endpoint ``fapi/v1/premiumIndex`` expone tanto el ``indexPrice``
+        como el ``markPrice`` del contrato perpetuo.  La diferencia entre ambos
+        es la *basis*.
+        """
+
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "fapiPublicGetPremiumIndex", None)
+        if method is None:
+            raise NotImplementedError("Basis no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time") or data.get("timestamp") or 0)
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        basis = mark_px - index_px
+        return {"ts": ts, "basis": basis}
 
     async def fetch_oi(self, symbol: str):
         """Fetch futures open interest for the given spot ``symbol``.
