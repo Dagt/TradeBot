@@ -77,6 +77,21 @@ def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
         typer.echo("stopped")
 
 
+@app.command()
+def backfill(
+    days: int = typer.Option(1, "--days", help="Number of days to backfill"),
+    symbols: List[str] = typer.Option(
+        ["BTC/USDT"], "--symbols", help="Symbols to download"
+    ),
+) -> None:
+    """Backfill historical data for symbols with rate limiting."""
+
+    setup_logging()
+    from ..jobs.backfill import backfill as run_backfill
+
+    asyncio.run(run_backfill(days=days, symbols=symbols))
+
+
 @app.command("ingest-historical")
 def ingest_historical(
     source: str = typer.Argument(..., help="Fuente de datos: kaiko o coinapi"),

@@ -195,3 +195,36 @@ async def test_download_kaiko_funding_persists(monkeypatch):
     )
     await download_kaiko_funding(DummyConnector(), "ex", "BTCUSD")
     assert inserted and inserted[0]["rate"] == 0.02
+
+
+@pytest.mark.asyncio
+async def test_backfill_applies_rate_limit(monkeypatch):
+    from tradingbot.jobs import backfill as backfill_job
+
+    calls: list[str] = []
+
+    class DummyExchange:
+        rateLimit = 1200
+
+        async def fetch_ohlcv(self, symbol, timeframe, since, limit):
+            calls.append(symbol)
+            return []
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(
+        backfill_job.ccxt, "binance", lambda params=None: DummyExchange()
+    )
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(backfill_job.asyncio, "sleep", fake_sleep)
+
+    await backfill_job.backfill(1, ["BTC/USDT", "ETH/USDT"])
+
+    assert calls == ["BTC/USDT", "ETH/USDT"]
+    assert sleeps == [DummyExchange.rateLimit / 1000] * 2
