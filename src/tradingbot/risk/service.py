@@ -105,6 +105,14 @@ class RiskService:
         return True, reason, delta
 
     # ------------------------------------------------------------------
+    def update_correlation(self, threshold: float) -> list[tuple[str, str]]:
+        """Fetch correlations and delegate limit enforcement to ``RiskManager``."""
+        if self.corr is None:
+            return []
+        pairs = self.corr.get_correlations()
+        return self.rm.update_correlation(pairs, threshold)
+
+    # ------------------------------------------------------------------
     # Fill / PnL updates
     def on_fill(self, symbol: str, side: str, qty: float, venue: str | None = None) -> None:
         """Update internal position books after a fill."""

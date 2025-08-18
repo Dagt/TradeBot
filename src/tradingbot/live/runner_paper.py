@@ -13,6 +13,7 @@ from ..execution.router import ExecutionRouter
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
+from ..risk.correlation_service import CorrelationService
 from ..strategies import STRATEGIES
 from monitoring import panel
 
@@ -33,6 +34,7 @@ async def run_paper(
     *,
     config_path: str | None = None,
     metrics_port: int = 8000,
+    corr_threshold: float = 0.8,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
 
@@ -42,7 +44,8 @@ async def run_paper(
 
     risk_core = RiskManager(max_pos=1.0)
     guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
-    risk = RiskService(risk_core, guard)
+    corr = CorrelationService()
+    risk = RiskService(risk_core, guard, corr_service=corr)
 
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
@@ -59,6 +62,7 @@ async def run_paper(
             qty = float(t.get("qty", 0.0))
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
+            risk.update_correlation(corr_threshold)
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
                 continue
@@ -68,7 +72,13 @@ async def run_paper(
             signal = strat.on_bar({"window": df})
             if signal is None:
                 continue
-            allowed, _reason, delta = risk.check_order(symbol, signal.side, closed.c, strength=signal.strength)
+            allowed, _reason, delta = risk.check_order(
+                symbol,
+                signal.side,
+                closed.c,
+                strength=signal.strength,
+                corr_threshold=corr_threshold,
+            )
             if not allowed or abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
