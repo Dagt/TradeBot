@@ -13,7 +13,14 @@ python -m tradingbot.cli backtest-cfg src/tradingbot/config/config.yaml
 python -m tradingbot.cli report --venue binance_spot_testnet
 python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 100
 python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures --threshold 0.001 --notional 50
+python bin/download_history.py funding kaiko BTC-USD --exchange binance --backend csv
+python bin/download_history.py open-interest coinapi BTCUSD --backend csv
 ```
+
+Los nuevos comandos `funding` y `open-interest` de `bin/download_history.py`
+permiten descargar tasas de funding y datos de open interest utilizando
+conectores REST de Kaiko o CoinAPI y persistirlos en TimescaleDB, QuestDB o
+archivos CSV.
 
 `tri-arb` lanza un pequeño lazo de arbitraje triangular en Binance. La ruta se
 especifica como ``BASE-MID-QUOTE`` (p.ej. ``BTC-ETH-USDT``) y ``--notional``
