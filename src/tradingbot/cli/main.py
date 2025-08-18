@@ -30,8 +30,10 @@ from typing import List
 
 import typer
 
+from .. import adapters
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
+from tradingbot.core.symbols import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
 
 
@@ -52,9 +54,33 @@ except Exception as exc:  # pragma: no cover - network failures
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
+def _get_available_venues() -> set[str]:
+    """Return venue names exposed by :mod:`tradingbot.adapters`.
+
+    The adapters package exposes classes via ``__all__``.  Each adapter class
+    defines a ``name`` attribute used throughout the project.  We derive the
+    CLI choices from those values so that users can only select valid venues.
+    """
+
+    names: set[str] = set()
+    for cls_name in getattr(adapters, "__all__", []):
+        cls = getattr(adapters, cls_name, None)
+        if cls is None:
+            continue
+        name = getattr(cls, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    return names
+
+
+_AVAILABLE_VENUES = _get_available_venues()
+
+
 @app.command()
 def ingest(
-    venue: str = typer.Option("binance_spot_ws", help="Data venue adapter"),
+    venue: str = typer.Option(
+        "binance_spot", help=f"Data venue adapter ({', '.join(sorted(_AVAILABLE_VENUES))})"
+    ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
     depth: int = typer.Option(10, help="Order book depth"),
     kind: str = typer.Option(
@@ -72,10 +98,15 @@ def ingest(
     from ..types import Tick
     from ..storage.timescale import get_engine
 
+    if venue not in _AVAILABLE_VENUES:
+        choices = ", ".join(sorted(_AVAILABLE_VENUES))
+        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
+
     module = import_module(f"tradingbot.adapters.{venue}")
     cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
     adapter = getattr(module, cls_name)()
 
+    symbols = [normalize(s) for s in symbols]
     bus = EventBus()
     engine = get_engine() if persist else None
 
@@ -468,6 +499,35 @@ def run_ingestion_workers(
         typer.echo("stopped")
 
 
+
+
+@app.command("cfg-validate")
+def cfg_validate(path: str) -> None:
+    """Validate a YAML configuration file.
+
+    Ensures required fields exist for known sections such as ``backtest`` and
+    ``walk_forward``.
+    """
+
+    import yaml
+
+    with open(path) as fh:
+        cfg = yaml.safe_load(fh) or {}
+
+    required = {
+        "backtest": ["data", "symbol", "strategy"],
+        "walk_forward": ["data", "symbol", "strategy", "param_grid"],
+    }
+    missing: list[str] = []
+    for section, keys in required.items():
+        section_cfg = cfg.get(section, {}) or {}
+        for key in keys:
+            if key not in section_cfg:
+                missing.append(f"{section}.{key}")
+    if missing:
+        raise typer.BadParameter("Missing required fields: " + ", ".join(missing))
+
+    typer.echo("Configuration valid")
 
 
 @app.command()
