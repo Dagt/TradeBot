@@ -410,6 +410,7 @@ class EventDrivenBacktestEngine:
             "funding": funding_total,
             "sharpe": sharpe,
             "max_drawdown": max_drawdown,
+            "equity_curve": equity_curve,
         }
         log.info("Backtest result: %s", result)
         return result
