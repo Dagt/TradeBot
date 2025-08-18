@@ -77,6 +77,7 @@ class RiskManager:
         self._daily_peak: float = 0.0
 
         self.enabled = True
+        self.last_kill_reason: str | None = None
         self.pos = Position()
         # Multi-exchange position book: {exchange: {symbol: qty}}
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -353,6 +354,21 @@ class RiskManager:
         if self.bus is not None:
             # dispatch asynchronously without awaiting
             asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
+
+    def reset(self) -> None:
+        """Reinicia el gestor tras una activación del *kill switch*."""
+        self.enabled = True
+        self.last_kill_reason = None
+        self.close_all_positions()
+        self.positions_multi.clear()
+        self.pnl_multi.clear()
+        self.daily_pnl = 0.0
+        self._daily_peak = 0.0
+        self.max_pos = self._base_max_pos
+        self.vol_target = self._base_vol_target
+        self._de_risk_stage = 0
+        self._reset_price_trackers()
+        KILL_SWITCH_ACTIVE.set(0)
 
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
