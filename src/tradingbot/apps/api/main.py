@@ -8,7 +8,11 @@ import time
 from starlette.requests import Request
 import os
 import secrets
+import subprocess
+import sys
+import shlex
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
 
 from monitoring.metrics import metrics_summary as _metrics_summary
 from monitoring.dashboard import router as dashboard_router
@@ -305,3 +309,36 @@ def update_strategy_params(name: str, params: dict):
 
     _strategy_params[name] = params
     return {"strategy": name, "params": params}
+
+
+# --- CLI runner ------------------------------------------------------------------
+
+
+class CLIRequest(BaseModel):
+    """Payload for running a command via the CLI."""
+
+    command: str
+
+
+@app.post("/cli/run")
+def run_cli(req: CLIRequest):
+    """Execute a TradingBot CLI command and return its output.
+
+    The endpoint runs ``python -m tradingbot.cli`` with the arguments supplied
+    in ``command``.  Output from ``stdout`` and ``stderr`` is captured and
+    returned to the caller so it can be displayed in the dashboard.
+    """
+
+    args = shlex.split(req.command)
+    cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return {
+            "command": req.command,
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+        }
+    except Exception as exc:  # pragma: no cover - subprocess failures
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
