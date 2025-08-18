@@ -25,6 +25,7 @@ import numpy as np
 
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
+from .limits import RiskLimits, LimitTracker
 
 
 @dataclass
@@ -52,6 +53,7 @@ class RiskManager:
         *,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
+        limits: RiskLimits | None = None,
         bus: EventBus | None = None,
     ):
         """Create a :class:`RiskManager`.
@@ -97,6 +99,8 @@ class RiskManager:
             self.bus.subscribe("price", self._on_price_event)
             self.bus.subscribe("pnl", self._on_pnl_event)
 
+        self.limits = LimitTracker(limits, bus) if limits is not None else None
+
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
         self._peak_price = None
@@ -116,6 +120,18 @@ class RiskManager:
         # Si se cerró o se invirtió la posición, reinicia trackers de precio
         if prev == 0 or prev * self.pos.qty <= 0:
             self._reset_price_trackers()
+
+    # ------------------------------------------------------------------
+    # Order limit helpers
+    def register_order(self, notional: float) -> bool:
+        """Registrar una nueva orden verificando límites opcionales."""
+        if self.limits is None:
+            return True
+        return self.limits.register_order(notional)
+
+    def complete_order(self) -> None:
+        if self.limits is not None:
+            self.limits.complete_order()
 
     # ------------------------------------------------------------------
     # Multi-exchange position helpers
@@ -369,6 +385,8 @@ class RiskManager:
         self._de_risk_stage = 0
         self._reset_price_trackers()
         KILL_SWITCH_ACTIVE.set(0)
+        if self.limits is not None:
+            self.limits.reset()
 
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
@@ -396,6 +414,8 @@ class RiskManager:
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
         self.de_risk()
+        if self.limits is not None:
+            self.limits.update_pnl(delta)
 
     def _check_daily_limits(self) -> bool:
         self.de_risk()
@@ -420,6 +440,8 @@ class RiskManager:
         """
 
         if not self.enabled:
+            return False
+        if self.limits is not None and self.limits.blocked:
             return False
 
         qty = self.pos.qty

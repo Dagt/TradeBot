@@ -8,6 +8,7 @@ from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
 from tradingbot.risk.service import RiskService
 from tradingbot.storage import timescale
 from tradingbot.utils.metrics import KILL_SWITCH_ACTIVE
+from tradingbot.risk.limits import RiskLimits
 
 
 def test_stop_loss_sets_reason():
@@ -107,4 +108,43 @@ async def test_update_covariance_emits_pause():
     await asyncio.sleep(0)
     assert exceeded == [("BTC", "ETH")]
     assert events and events[0]["reason"] == "covariance"
+
+
+def test_register_order_notional_limit():
+    rm = RiskManager(limits=RiskLimits(max_notional=100))
+    assert rm.register_order(50)
+    assert not rm.register_order(150)
+
+
+def test_concurrent_order_limit():
+    rm = RiskManager(limits=RiskLimits(max_concurrent_orders=1))
+    assert rm.register_order(10)
+    assert not rm.register_order(10)
+    rm.complete_order()
+    assert rm.register_order(10)
+
+
+@pytest.mark.asyncio
+async def test_daily_dd_limit_blocks_and_emits_event():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:blocked", lambda e: events.append(e))
+    rm = RiskManager(bus=bus, limits=RiskLimits(daily_dd_limit=50))
+    rm.update_pnl(100)
+    rm.update_pnl(-160)
+    await asyncio.sleep(0)
+    assert events and events[0]["reason"] == "daily_dd_limit"
+    assert not rm.check_limits(100)
+
+
+@pytest.mark.asyncio
+async def test_hard_pnl_stop_blocks():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:blocked", lambda e: events.append(e))
+    rm = RiskManager(bus=bus, limits=RiskLimits(hard_pnl_stop=100))
+    rm.update_pnl(-120)
+    await asyncio.sleep(0)
+    assert events and events[0]["reason"] == "hard_pnl_stop"
+    assert not rm.check_limits(100)
 
