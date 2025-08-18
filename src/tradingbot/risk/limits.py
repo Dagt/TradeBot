@@ -26,6 +26,7 @@ class LimitTracker:
         self.daily_pnl: float = 0.0
         self._daily_peak: float = 0.0
         self.blocked: bool = False
+        self.last_block_reason: str | None = None
 
     # ------------------------------------------------------------------
     # Order helpers
@@ -57,23 +58,23 @@ class LimitTracker:
             self._daily_peak = self.daily_pnl
         drawdown = self._daily_peak - self.daily_pnl
         if self.lim.daily_dd_limit > 0 and drawdown >= self.lim.daily_dd_limit:
-            self.blocked = True
-            if self.bus is not None:
-                asyncio.create_task(
-                    self.bus.publish("risk:blocked", {"reason": "daily_dd_limit"})
-                )
+            self.trigger_shutdown("daily_dd_limit")
         if (
             self.lim.hard_pnl_stop > 0
             and self.daily_pnl <= -abs(self.lim.hard_pnl_stop)
         ):
-            self.blocked = True
-            if self.bus is not None:
-                asyncio.create_task(
-                    self.bus.publish("risk:blocked", {"reason": "hard_pnl_stop"})
-                )
+            self.trigger_shutdown("hard_pnl_stop")
+
+    def trigger_shutdown(self, reason: str) -> None:
+        """Bloquea el envío de nuevas órdenes y notifica vía bus."""
+        self.blocked = True
+        self.last_block_reason = reason
+        if self.bus is not None:
+            asyncio.create_task(self.bus.publish("risk:blocked", {"reason": reason}))
 
     def reset(self) -> None:
         self.open_orders = 0
         self.daily_pnl = 0.0
         self._daily_peak = 0.0
         self.blocked = False
+        self.last_block_reason = None

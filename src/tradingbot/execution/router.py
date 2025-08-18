@@ -7,7 +7,7 @@ import logging
 import time
 import inspect
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
 from .order_types import Order
 from .slippage import impact_by_depth, queue_position
@@ -19,6 +19,9 @@ from ..utils.metrics import (
     QUEUE_POSITION,
 )
 from ..storage import timescale
+
+if TYPE_CHECKING:
+    from ..risk.manager import RiskManager
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +35,13 @@ class ExecutionRouter:
     ``prefer`` accepts ``"maker"`` or ``"taker"``.
     """
 
-    def __init__(self, adapters: Iterable, storage_engine=None, prefer: str | None = None):
+    def __init__(
+        self,
+        adapters: Iterable,
+        storage_engine=None,
+        prefer: str | None = None,
+        risk_manager: "RiskManager | None" = None,
+    ):
         if isinstance(adapters, dict):
             self.adapters: Dict[str, object] = adapters  # type: ignore[assignment]
         elif isinstance(adapters, (list, tuple, set)):
@@ -47,6 +56,7 @@ class ExecutionRouter:
         self._engine = storage_engine
         self._prefer = prefer
         self._last_maker = False
+        self.risk_manager = risk_manager
 
     # ------------------------------------------------------------------
     def _is_maker(self, order: Order) -> bool:
@@ -124,6 +134,10 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
+        if self.risk_manager is not None and not self.risk_manager.enabled:
+            log.warning("Risk manager disabled; rejecting order %s", order)
+            return {"status": "rejected", "reason": "risk_disabled"}
+
         if algo:
             from . import algos
 
@@ -194,10 +208,8 @@ class ExecutionRouter:
         res = await adapter.place_order(**kwargs)
         latency = time.monotonic() - start
         ORDER_LATENCY.labels(venue=venue).observe(latency)
-        if est_slippage is not None:
-            res.setdefault("est_slippage_bps", est_slippage)
-        if queue_pos is not None:
-            res.setdefault("queue_position", queue_pos)
+        res.setdefault("est_slippage_bps", est_slippage)
+        res.setdefault("queue_position", queue_pos)
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
         fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
         res.setdefault("fee_type", "maker" if maker else "taker")

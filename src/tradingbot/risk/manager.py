@@ -99,6 +99,7 @@ class RiskManager:
             self.bus.subscribe("fill", self._on_fill_event)
             self.bus.subscribe("price", self._on_price_event)
             self.bus.subscribe("pnl", self._on_pnl_event)
+            self.bus.subscribe("risk:blocked", self._on_block_event)
 
         self.limits = LimitTracker(limits, bus) if limits is not None else None
 
@@ -213,6 +214,12 @@ class RiskManager:
         self.update_pnl(delta, venue=venue)
         if not self._check_daily_limits() and self.bus is not None:
             await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
+
+    async def _on_block_event(self, evt: dict) -> None:
+        reason = evt.get("reason", "limit")
+        self.enabled = False
+        self.last_kill_reason = reason
+        self.close_all_positions()
 
     def size(
         self,
