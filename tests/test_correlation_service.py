@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from tradingbot.risk.correlation_service import CorrelationService
+from tradingbot.risk.correlation_guard import CorrelationGuard
 from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.service import RiskService
@@ -71,3 +72,18 @@ def test_risk_service_uses_correlation_service():
     allowed, _, delta = svc.check_order("BTC", "buy", price=price_btc, corr_threshold=0.8)
     assert allowed
     assert delta == pytest.approx(base * 0.5)
+
+
+def test_correlation_guard_groups_and_cap():
+    guard = CorrelationGuard(9.0)
+    pairs = {("BTC", "ETH"): 0.9, ("ETH", "LTC"): 0.85, ("XRP", "ADA"): 0.7}
+    groups, cap = guard.group_and_cap(pairs, 0.8)
+    assert groups == [["BTC", "ETH", "LTC"]]
+    assert cap == pytest.approx(3.0)
+
+
+def test_risk_manager_uses_correlation_guard():
+    rm = RiskManager(max_pos=9)
+    pairs = {("BTC", "ETH"): 0.9, ("ETH", "LTC"): 0.85}
+    rm.update_correlation(pairs, 0.8)
+    assert rm.max_pos == pytest.approx(3.0)

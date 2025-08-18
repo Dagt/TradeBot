@@ -25,6 +25,7 @@ import numpy as np
 
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
+from .correlation_guard import CorrelationGuard
 
 
 @dataclass
@@ -258,15 +259,21 @@ class RiskManager:
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
+        """Update correlated exposure limits using :class:`CorrelationGuard`.
 
-        Devuelve la lista de pares que excedieron ``threshold``.
+        Groups of symbols with correlations above ``threshold`` determine a
+        reduced global position cap.  The method returns pairs that exceeded
+        the threshold for backwards compatibility.
         """
+
         exceeded: list[tuple[str, str]] = [
             pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
         ]
+
         if exceeded:
-            self.max_pos *= 0.5
+            guard = CorrelationGuard(self._base_max_pos)
+            _groups, cap = guard.group_and_cap(symbol_pairs, threshold)
+            self.max_pos = cap
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -274,6 +281,10 @@ class RiskManager:
                         "risk:paused", {"reason": "correlation", "pairs": exceeded}
                     )
                 )
+        else:
+            # reset to base limit when no correlations breach the threshold
+            self.max_pos = self._base_max_pos
+
         return exceeded
 
     def update_covariance(
