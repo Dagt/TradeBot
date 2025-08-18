@@ -5,6 +5,10 @@ from .mean_reversion import MeanReversion
 from .arbitrage_triangular import TriangularArb
 from .cash_and_carry import CashAndCarry
 from .order_flow import OrderFlow
+from .depth_imbalance import DepthImbalance
+from .liquidity_events import LiquidityEvents
+from .triple_barrier import TripleBarrier
+from .ml_models import MLStrategy
 
 # Registry of available strategies, useful for CLI/backtests
 STRATEGIES = {
@@ -15,6 +19,10 @@ STRATEGIES = {
     TriangularArb.name: TriangularArb,
     CashAndCarry.name: CashAndCarry,
     OrderFlow.name: OrderFlow,
+    DepthImbalance.name: DepthImbalance,
+    LiquidityEvents.name: LiquidityEvents,
+    TripleBarrier.name: TripleBarrier,
+    MLStrategy.name: MLStrategy,
 }
 
 __all__ = [
@@ -25,5 +33,9 @@ __all__ = [
     "TriangularArb",
     "CashAndCarry",
     "OrderFlow",
+    "DepthImbalance",
+    "LiquidityEvents",
+    "TripleBarrier",
+    "MLStrategy",
     "STRATEGIES",
 ]

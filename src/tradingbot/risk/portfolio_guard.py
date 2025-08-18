@@ -27,6 +27,11 @@ class GuardState:
     # ventanas soft activas
     sym_soft_started: Dict[str, Optional[datetime]] = field(default_factory=dict)
     total_soft_started: Optional[datetime] = None
+    # posiciones y PnL por venue
+    venue_positions: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
+    venue_pnl: Dict[str, float] = field(default_factory=dict)
 
 class PortfolioGuard:
     def __init__(self, cfg: GuardConfig):
@@ -42,9 +47,19 @@ class PortfolioGuard:
             ret = (price / prev) - 1.0
             self.st.returns[symbol].append(ret)
 
-    def update_position_on_order(self, symbol: str, side: str, qty: float):
+    def update_position_on_order(self, symbol: str, side: str, qty: float, venue: str | None = None):
         cur = self.st.positions.get(symbol, 0.0)
-        self.st.positions[symbol] = cur + (qty if side.lower()=="buy" else -qty)
+        delta = qty if side.lower()=="buy" else -qty
+        self.st.positions[symbol] = cur + delta
+        if venue is not None:
+            book = self.st.venue_positions.setdefault(venue, {})
+            book[symbol] = book.get(symbol, 0.0) + delta
+
+    def set_position(self, venue: str, symbol: str, qty: float) -> None:
+        """Sincroniza posición absoluta para un venue."""
+        self.st.positions[symbol] = qty
+        book = self.st.venue_positions.setdefault(venue, {})
+        book[symbol] = qty
 
     def exposure_symbol(self, symbol: str) -> float:
         px = self.st.prices.get(symbol, 0.0)
@@ -67,6 +82,16 @@ class PortfolioGuard:
                     corr = float(np.corrcoef(a[-n:], b[-n:])[0, 1])
                     result[(syms[i], syms[j])] = corr
         return result
+
+    def volatility(self, symbol: str) -> float:
+        """Desviación estándar anualizada de los retornos de ``symbol``.
+
+        Si no hay suficientes datos de retornos, retorna ``0.0``.
+        """
+        rets = np.array(self.st.returns.get(symbol, []), dtype=float)
+        if len(rets) < 2:
+            return 0.0
+        return float(np.std(rets) * np.sqrt(365))
 
     # ---- hard caps (como antes) ----
     def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:

@@ -1,11 +1,21 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, Response, HTTPException
+from fastapi import FastAPI, Query, Response, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pathlib import Path
 import time
 from starlette.requests import Request
+import os
+import secrets
+import subprocess
+import sys
+import shlex
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
+
+from monitoring.metrics import metrics_summary as _metrics_summary
+from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
@@ -19,12 +29,30 @@ except Exception:
     _CAN_PG = False
     _ENGINE = None
 
-app = FastAPI(title="TradingBot API")
+security = HTTPBasic()
+
+
+def _check_basic_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
+    user = os.getenv("API_USER", "admin")
+    password = os.getenv("API_PASS", "admin")
+    correct_user = secrets.compare_digest(credentials.username, user)
+    correct_pass = secrets.compare_digest(credentials.password, password)
+    if not (correct_user and correct_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+app = FastAPI(title="TradingBot API", dependencies=[Depends(_check_basic_auth)])
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+app.include_router(dashboard_router)
 
 
 @app.middleware("http")
@@ -45,6 +73,12 @@ def health():
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/metrics/summary")
+def metrics_summary():
+    """Expose a summarized view of key metrics."""
+    return _metrics_summary()
 
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
@@ -152,12 +186,29 @@ def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
 @app.get("/fills/slippage")
 def fills_slippage(
     venue: str = "binance_spot_testnet",
-    hours: int = Query(6, ge=1, le=168)
+    hours: int = Query(6, ge=1, le=168),
+    symbol: str | None = Query(None)
 ):
     if not _CAN_PG:
-        return {"venue": venue, "hours": hours, "global": {}, "buy": {}, "sell": {}}
+        return {"venue": venue, "hours": hours, "symbol": symbol, "global": {}, "buy": {}, "sell": {}}
     from ...storage.timescale import select_slippage
-    return select_slippage(_ENGINE, venue=venue, hours=hours)
+    return select_slippage(_ENGINE, venue=venue, symbol=symbol, hours=hours)
+
+
+@app.get("/pnl/intraday")
+def pnl_intraday(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None)
+):
+    """Return intraday net PnL for the last 24h."""
+    if not _CAN_PG:
+        return {"venue": venue, "symbol": symbol, "net": 0.0, "points": []}
+    from ...storage.timescale import select_pnl_timeseries
+    points = select_pnl_timeseries(
+        _ENGINE, venue=venue, symbol=symbol, bucket="1 hour", hours=24
+    )
+    net = sum(p.get("net", 0.0) for p in points)
+    return {"venue": venue, "symbol": symbol, "net": net, "points": points}
 
 @app.get("/oco/active")
 def oco_active(venue: str, symbols: str):
@@ -173,6 +224,9 @@ def oco_active(venue: str, symbols: str):
 
 # --- Strategy control endpoints -------------------------------------------------
 _strategies_state: dict[str, str] = {}
+_strategy_params: dict[str, dict] = {}
+_funding: dict[str, float] = {}
+_basis: dict[str, float] = {}
 
 
 @app.post("/strategies/{name}/start")
@@ -204,3 +258,87 @@ def strategies_status():
     """Return the status of all known strategies."""
 
     return {"strategies": _strategies_state}
+
+
+# --- Funding and basis endpoints ------------------------------------------------
+
+
+@app.get("/funding")
+def get_funding():
+    """Return latest funding rates by symbol."""
+
+    return {"funding": _funding}
+
+
+@app.post("/funding")
+def set_funding(data: dict[str, float]):
+    """Update funding rates for one or more symbols."""
+
+    _funding.update(data)
+    return {"funding": _funding}
+
+
+@app.get("/basis")
+def get_basis():
+    """Return latest basis values by symbol."""
+
+    return {"basis": _basis}
+
+
+@app.post("/basis")
+def set_basis(data: dict[str, float]):
+    """Update basis values for one or more symbols."""
+
+    _basis.update(data)
+    return {"basis": _basis}
+
+
+# --- Strategy parameters --------------------------------------------------------
+
+
+@app.get("/strategies/{name}/params")
+def get_strategy_params(name: str):
+    """Return stored parameters for a strategy."""
+
+    return {"strategy": name, "params": _strategy_params.get(name, {})}
+
+
+@app.post("/strategies/{name}/params")
+def update_strategy_params(name: str, params: dict):
+    """Persist parameters for a strategy."""
+
+    _strategy_params[name] = params
+    return {"strategy": name, "params": params}
+
+
+# --- CLI runner ------------------------------------------------------------------
+
+
+class CLIRequest(BaseModel):
+    """Payload for running a command via the CLI."""
+
+    command: str
+
+
+@app.post("/cli/run")
+def run_cli(req: CLIRequest):
+    """Execute a TradingBot CLI command and return its output.
+
+    The endpoint runs ``python -m tradingbot.cli`` with the arguments supplied
+    in ``command``.  Output from ``stdout`` and ``stderr`` is captured and
+    returned to the caller so it can be displayed in the dashboard.
+    """
+
+    args = shlex.split(req.command)
+    cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return {
+            "command": req.command,
+            "returncode": res.returncode,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+        }
+    except Exception as exc:  # pragma: no cover - subprocess failures
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+

@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, date
 import logging
 from typing import Dict
+import asyncio
+
+from ..utils.metrics import RISK_EVENTS
+from ..storage import timescale
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +23,7 @@ class DailyGuard:
     Controla pérdidas diarias, drawdown y racha de pérdidas.
     Mantiene equity intradía, pérdidas consecutivas y fecha de corte (UTC).
     """
-    def __init__(self, limits: GuardLimits, venue: str):
+    def __init__(self, limits: GuardLimits, venue: str, storage_engine=None):
         self.lim = limits
         self.venue = venue
         self._cur_day: date | None = None
@@ -29,6 +33,7 @@ class DailyGuard:
         self._realized_today: float = 0.0
         self._consec_losses: int = 0
         self._halted: bool = False
+        self._engine = storage_engine
 
     def reset_for_new_day(self, now: datetime, equity_now: float):
         self._cur_day = now.date()
@@ -60,13 +65,48 @@ class DailyGuard:
         elif delta_rpnl > 0:
             self._consec_losses = 0
 
-    def check_halt(self) -> tuple[bool, str]:
+    def apply_halt_action(self, broker) -> None:
+        """Apply configured halt action through ``broker``.
+
+        If ``halt_action`` is ``"close_all"`` market orders are sent
+        asynchronously to close every open position known by ``broker``.
+        """
+        if broker is None or self.lim.halt_action != "close_all":
+            return
+        try:
+            pos_book = getattr(getattr(broker, "state", object()), "pos", {})
+            place = getattr(broker, "place_order", None)
+            if not pos_book or place is None:
+                return
+            for sym, p in list(pos_book.items()):
+                qty = getattr(p, "qty", 0.0)
+                if abs(qty) <= 0:
+                    continue
+                side = "sell" if qty > 0 else "buy"
+                asyncio.create_task(place(sym, side, "market", abs(qty)))
+        except Exception:  # pragma: no cover - safety guard
+            log.exception("[DG] apply_halt_action failed")
+
+    def check_halt(self, broker=None) -> tuple[bool, str]:
         if self._halted:
             return True, "already_halted"
 
         # Regla 1: pérdida neta diaria
         if self._realized_today <= -abs(self.lim.daily_max_loss_usdt):
             self._halted = True
+            self.apply_halt_action(broker)
+            RISK_EVENTS.labels(event_type="daily_max_loss").inc()
+            if self._engine is not None:
+                try:
+                    timescale.insert_risk_event(
+                        self._engine,
+                        venue=self.venue,
+                        symbol="",
+                        kind="daily_max_loss",
+                        message="",
+                    )
+                except Exception:
+                    pass
             return True, "daily_max_loss"
 
         # Regla 2: drawdown desde equity_peak
@@ -74,12 +114,37 @@ class DailyGuard:
             dd = (self._equity_peak - self._equity_last) / self._equity_peak
             if dd >= self.lim.daily_max_drawdown_pct:
                 self._halted = True
+                self.apply_halt_action(broker)
+                RISK_EVENTS.labels(event_type="daily_drawdown").inc()
+                if self._engine is not None:
+                    try:
+                        timescale.insert_risk_event(
+                            self._engine,
+                            venue=self.venue,
+                            symbol="",
+                            kind="daily_drawdown",
+                            message="",
+                        )
+                    except Exception:
+                        pass
                 return True, "daily_drawdown"
 
         # Regla 3: racha de pérdidas
         if self._consec_losses >= self.lim.max_consecutive_losses:
             self._halted = True
+            self.apply_halt_action(broker)
+            RISK_EVENTS.labels(event_type="consecutive_losses").inc()
+            if self._engine is not None:
+                try:
+                    timescale.insert_risk_event(
+                        self._engine,
+                        venue=self.venue,
+                        symbol="",
+                        kind="consecutive_losses",
+                        message="",
+                    )
+                except Exception:
+                    pass
             return True, "consecutive_losses"
 
         return False, ""
-

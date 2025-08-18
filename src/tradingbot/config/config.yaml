@@ -1,0 +1,34 @@
+exchanges:
+  binance_api_key: ""
+  binance_api_secret: ""
+
+strategies:
+  default: breakout_atr
+  params: {}
+
+backtest:
+  data: data/examples/btcusdt_1m.csv
+  symbol: BTC/USDT
+  strategy: breakout_atr
+  latency: 1
+  window: 120
+
+storage:
+  backend: sqlite
+  url: "sqlite:///:memory:"
+risk:
+  correlation_threshold: 0.8
+  returns_window: 100
+balance:
+  enabled: false
+  threshold: 0.0
+  interval: 60.0
+  assets: []
+
+ingestion:
+  funding:
+    binance_futures:
+      BTC/USDT: 60
+  open_interest:
+    binance_futures:
+      BTC/USDT: 60

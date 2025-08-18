@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import logging, time, uuid
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:
     ccxt = None
 
@@ -30,6 +31,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         testnet: bool = True,
         leverage: int = 5,
     ):
+        super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
 
@@ -59,22 +61,22 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             log.warning("load_markets falló: %s", e)
 
         try:
-            self.rest.set_position_mode(False)
+            asyncio.get_event_loop().create_task(self.rest.set_position_mode(False))
         except Exception as e:
             log.debug("No se pudo fijar position_mode (one-way): %s", e)
 
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
-
-    async def _ensure_leverage(self, symbol: str):
-        try:
-            market = self.rest.market(symbol)
-            await self._to_thread(self.rest.set_leverage, self.leverage, market["symbol"])
-        except Exception as e:
-            log.debug("set_leverage falló: %s", e)
-
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("usa BinanceWSAdapter para stream de trades")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            trades = await self._request(self.rest.fetch_trades, sym, limit=1)
+            for t in trades or []:
+                ts = datetime.fromtimestamp(t.get("timestamp", 0) / 1000, tz=timezone.utc)
+                price = float(t.get("price"))
+                qty = float(t.get("amount", 0))
+                side = t.get("side") or ""
+                self.state.last_px[symbol] = price
+                yield self.normalize_trade(symbol, ts, price, qty, side)
+            await asyncio.sleep(1)
 
     async def place_order(
         self,
@@ -88,6 +90,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -110,6 +113,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                 }
                 if reduce_only:
                     params["reduceOnly"] = True
+                if iceberg_qty is not None:
+                    params["icebergQty"] = float(iceberg_qty)
                 if send_type == "LIMIT":
                     if price is None:
                         raise ValueError("LIMIT requiere price")
@@ -192,22 +197,74 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("Usa BinanceFuturesWSAdapter para order book")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            ob = await self._request(self.rest.fetch_order_book, sym)
+            ts_ms = ob.get("timestamp")
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+            bids = [[float(b[0]), float(b[1])] for b in ob.get("bids", [])]
+            asks = [[float(a[0]), float(a[1])] for a in ob.get("asks", [])]
+            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
+            yield self.normalize_order_book(symbol, ts, bids, asks)
+            await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
         sym = self.normalize_symbol(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado")
-        return await self._request(method, sym)
+        data = await self._request(method, sym)
+        ts = data.get("timestamp") or data.get("fundingTime") or data.get("time") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts /= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
+        return {"ts": ts_dt, "rate": rate}
+
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        Binance expone el ``markPrice`` y el ``indexPrice`` del contrato
+        perpetuo mediante el endpoint ``premiumIndex`` de su API pública. La
+        diferencia entre ambos valores se conoce como *basis*.  Si el método
+        correspondiente no está disponible en el cliente REST se lanza un
+        ``NotImplementedError`` para dejar claro que el venue no lo soporta.
+        """
+
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "public_get_premiumindex", None)
+        if method is None:
+            raise NotImplementedError("Basis no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts = data.get("time") or data.get("timestamp") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts //= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        basis = mark_px - index_px
+        return {"ts": ts_dt, "basis": basis}
 
     async def fetch_oi(self, symbol: str):
+        """Fetch current open interest for ``symbol``.
+
+        Binance exposes the open interest via the futures REST API.  Even for
+        the futures testnet this endpoint lives under ``fapiPublic``.  The
+        response contains the current open interest value and a millisecond
+        timestamp.  We normalise it into ``{"ts": datetime, "oi": float}`` so
+        callers can persist it without further transformation.
+        """
+
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchOpenInterest", None)
-        if method:
-            return await self._request(method, sym)
-        hist = getattr(self.rest, "fetchOpenInterestHistory", None)
-        if hist:
-            data = await self._request(hist, sym)
-            return data[-1] if isinstance(data, list) and data else data
-        raise NotImplementedError("Open interest no soportado")
+        method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
+        if method is None:
+            raise NotImplementedError("Open interest no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        oi = float(data.get("openInterest", 0.0))
+        return {"ts": ts, "oi": oi}

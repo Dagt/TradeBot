@@ -1,124 +1,47 @@
-"""Execution algorithms that split large orders into smaller slices.
-
-These are simplified implementations intended for testing and examples.
-Each algorithm uses an :class:`ExecutionRouter` to route the generated
-sub-orders to the underlying adapter.
-"""
-
+"""Basic execution algorithms returning order slices."""
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass
-from typing import AsyncIterator, Iterable, List
+from dataclasses import replace
+from typing import Iterable, List
 
 from .order_types import Order
-from .router import ExecutionRouter
 
 
-@dataclass
-class TWAP:
-    """Time Weighted Average Price execution.
-
-    Parameters
-    ----------
-    router: ExecutionRouter
-        Router used to actually send sub-orders.
-    slices: int
-        Number of slices in which to split the parent order.
-    delay: float, optional
-        Delay in seconds between slices. Default ``0``.
-    """
-
-    router: ExecutionRouter
-    slices: int
-    delay: float = 0.0
-
-    async def execute(self, order: Order) -> List[dict]:
-        qty_per = order.qty / self.slices
-        results: List[dict] = []
-        for _ in range(self.slices):
-            child = Order(
-                symbol=order.symbol,
-                side=order.side,
-                type_=order.type_,
-                qty=qty_per,
-                price=order.price,
-                post_only=order.post_only,
-                time_in_force=order.time_in_force,
-                iceberg_qty=order.iceberg_qty,
-            )
-            res = await self.router.execute(child)
-            results.append(res)
-            if self.delay:
-                await asyncio.sleep(self.delay)
-        return results
+def _clone(order: Order, qty: float) -> Order:
+    return replace(order, qty=qty)
 
 
-@dataclass
-class VWAP:
-    """Volume Weighted Average Price execution.
-
-    The order is split according to the provided volume profile.
-    """
-
-    router: ExecutionRouter
-    volumes: Iterable[float]
-    delay: float = 0.0
-
-    async def execute(self, order: Order) -> List[dict]:
-        vols = list(self.volumes)
-        total = sum(vols)
-        results: List[dict] = []
-        for v in vols:
-            qty = order.qty * (v / total) if total else 0.0
-            child = Order(
-                symbol=order.symbol,
-                side=order.side,
-                type_=order.type_,
-                qty=qty,
-                price=order.price,
-                post_only=order.post_only,
-                time_in_force=order.time_in_force,
-                iceberg_qty=order.iceberg_qty,
-            )
-            res = await self.router.execute(child)
-            results.append(res)
-            if self.delay:
-                await asyncio.sleep(self.delay)
-        return results
+def twap(order: Order, slices: int) -> List[Order]:
+    """Split ``order`` into ``slices`` with equal quantity."""
+    if slices <= 0:
+        return []
+    qty = order.qty / slices
+    return [_clone(order, qty) for _ in range(slices)]
 
 
-@dataclass
-class POV:
-    """Percentage of Volume execution.
+def vwap(order: Order, volumes: Iterable[float]) -> List[Order]:
+    """Distribute ``order`` quantity following ``volumes`` weights."""
+    vols = list(volumes)
+    total = sum(vols)
+    if total <= 0:
+        return []
+    return [_clone(order, order.qty * v / total) for v in vols]
 
-    Consumes a percentage of the observed market volume.
-    """
 
-    router: ExecutionRouter
-    participation_rate: float  # 0 < rate <= 1
+def pov(order: Order, trades: Iterable[dict], participation_rate: float) -> List[Order]:
+    """Consume a percentage of traded volume until the order is filled."""
+    executed = 0.0
+    children: List[Order] = []
+    for trade in trades:
+        remaining = order.qty - executed
+        if remaining <= 0:
+            break
+        qty = min(trade.get("qty", 0.0) * participation_rate, remaining)
+        if qty <= 0:
+            continue
+        children.append(_clone(order, qty))
+        executed += qty
+    return children
 
-    async def execute(self, order: Order, trades: AsyncIterator[dict]) -> List[dict]:
-        executed = 0.0
-        results: List[dict] = []
-        async for trade in trades:
-            remaining = order.qty - executed
-            if remaining <= 0:
-                break
-            slice_qty = min(trade.get("qty", 0.0) * self.participation_rate, remaining)
-            if slice_qty <= 0:
-                continue
-            child = Order(
-                symbol=order.symbol,
-                side=order.side,
-                type_=order.type_,
-                qty=slice_qty,
-                price=order.price,
-                post_only=order.post_only,
-                time_in_force=order.time_in_force,
-                iceberg_qty=order.iceberg_qty,
-            )
-            res = await self.router.execute(child)
-            results.append(res)
-            executed += slice_qty
-        return results
+
+__all__ = ["twap", "vwap", "pov"]

@@ -35,8 +35,8 @@ def test_cash_and_carry_strategy():
     cfg = CashCarryConfig(symbol="BTCUSDT", threshold=0.0001)
     strat = CashAndCarry(cfg)
     sig_long = strat.on_bar({"spot": 100.0, "perp": 101.0, "funding": 0.001})
-    assert sig_long and sig_long.side == "long"
+    assert sig_long and sig_long.side == "buy"
     sig_short = strat.on_bar({"spot": 100.0, "perp": 99.0, "funding": -0.001})
-    assert sig_short and sig_short.side == "short"
+    assert sig_short and sig_short.side == "sell"
     sig_flat = strat.on_bar({"spot": 100.0, "perp": 100.0, "funding": 0.0001})
     assert sig_flat and sig_flat.side == "flat"

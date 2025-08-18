@@ -1,5 +1,5 @@
 import pandas as pd
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import keltner_channels
 
 class BreakoutATR(Strategy):
@@ -10,6 +10,7 @@ class BreakoutATR(Strategy):
         self.atr_n = atr_n
         self.mult = mult
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         # bar should include a small rolling window (as dict of lists) or a pandas row with context
         df: pd.DataFrame = bar["window"]  # expects columns: open, high, low, close, volume

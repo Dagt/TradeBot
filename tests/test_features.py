@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pytest
 
 from tradingbot.data.features import (
@@ -6,6 +7,7 @@ from tradingbot.data.features import (
     depth_imbalance,
     rsi,
     atr,
+    returns,
 )
 
 
@@ -37,6 +39,32 @@ def orderbook_snapshots(orderbook_df):
 
 
 @pytest.fixture
+def l2_snapshots():
+    """Synthetic L2 snapshots with price and quantity depth."""
+
+    return [
+        {
+            "bid_px": [100.0, 99.0],
+            "bid_qty": [5.0, 3.0],
+            "ask_px": [101.0, 102.0],
+            "ask_qty": [8.0, 2.0],
+        },
+        {
+            "bid_px": [100.5, 100.0],
+            "bid_qty": [6.0, 1.0],
+            "ask_px": [101.5, 102.0],
+            "ask_qty": [5.0, 4.0],
+        },
+        {
+            "bid_px": [100.5, 99.5],
+            "bid_qty": [4.0, 2.0],
+            "ask_px": [101.5, 102.5],
+            "ask_qty": [6.0, 3.0],
+        },
+    ]
+
+
+@pytest.fixture
 def close_df():
     return pd.DataFrame({"close": list(range(1, 30))})
 
@@ -44,6 +72,16 @@ def close_df():
 @pytest.fixture
 def close_snapshots(close_df):
     return close_df.to_dict(orient="records")
+
+
+@pytest.fixture
+def price_df():
+    return pd.DataFrame({"close": [100, 101, 102, 101]})
+
+
+@pytest.fixture
+def price_snapshots(price_df):
+    return price_df.to_dict(orient="records")
 
 
 @pytest.fixture
@@ -98,6 +136,21 @@ def test_depth_imbalance_snapshots(orderbook_snapshots):
     assert all(abs(a - b) < 1e-9 for a, b in zip(di, expected))
 
 
+def test_order_flow_imbalance_l2(l2_snapshots):
+    ofi = order_flow_imbalance(l2_snapshots, depth=2)
+    assert list(ofi) == [0.0, 13.0, 0.0]
+
+
+def test_depth_imbalance_l2(l2_snapshots):
+    di = depth_imbalance(l2_snapshots, depth=2)
+    expected = [
+        (5 + 3 - (8 + 2)) / (5 + 3 + 8 + 2),
+        (6 + 1 - (5 + 4)) / (6 + 1 + 5 + 4),
+        (4 + 2 - (6 + 3)) / (4 + 2 + 6 + 3),
+    ]
+    assert all(abs(a - b) < 1e-9 for a, b in zip(di, expected))
+
+
 # ---------------------------------------------------------------------------
 # Momentum / volatility indicators
 
@@ -124,5 +177,18 @@ def test_atr_snapshots(ohlc_df, ohlc_snapshots):
     atr_df = atr(ohlc_df, n=3)
     atr_snaps = atr(ohlc_snapshots, n=3)
     pd.testing.assert_series_equal(atr_df, atr_snaps)
+
+
+def test_returns_df(price_df):
+    ret = returns(price_df)
+    expected = np.log(price_df.close / price_df.close.shift(1))
+    expected.name = "returns"
+    pd.testing.assert_series_equal(ret, expected)
+
+
+def test_returns_snapshots(price_df, price_snapshots):
+    ret_df = returns(price_df)
+    ret_snaps = returns(price_snapshots)
+    pd.testing.assert_series_equal(ret_df, ret_snaps)
 
 

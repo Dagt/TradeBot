@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import logging, time, uuid
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
 
 try:
-    import ccxt
+    import ccxt.async_support as ccxt
 except Exception:
     ccxt = None
 
@@ -21,17 +22,27 @@ log = logging.getLogger(__name__)
 
 class BinanceSpotAdapter(ExchangeAdapter):
     """
-    Órdenes reales en Binance SPOT **TESTNET** vía CCXT, con validación (tick/step/minNotional).
+    Adapter de Binance Spot con soporte para modo real o testnet.
     Usa WS aparte para precios (ver SpotWSAdapter abajo o pasa mark_price).
     """
-    name = "binance_spot_testnet"
+    name = "binance_spot"
 
-    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, testnet: bool = True):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        testnet: bool = False,
+    ):
+        super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
+
+        key = api_key or (settings.binance_testnet_api_key if testnet else settings.binance_api_key)
+        secret = api_secret or (settings.binance_testnet_api_secret if testnet else settings.binance_api_secret)
+
         self.rest = ccxt.binance({
-            "apiKey": api_key or settings.binance_api_key,
-            "secret": api_secret or settings.binance_api_secret,
+            "apiKey": key,
+            "secret": secret,
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},
         })
@@ -41,20 +52,27 @@ class BinanceSpotAdapter(ExchangeAdapter):
         # Advertir si faltan scopes necesarios o si hay permisos peligrosos
         validate_scopes(self.rest, log)
 
-        self.meta = ExchangeMeta.binance_spot_testnet(
-            api_key or settings.binance_api_key,
-            api_secret or settings.binance_api_secret
-        )
+        meta_factory = ExchangeMeta.binance_spot_testnet if testnet else ExchangeMeta.binance_spot
+        self.meta = meta_factory(key, secret)
         try:
             self.meta.load_markets()
         except Exception as e:
             log.warning("load_markets spot falló: %s", e)
 
-    async def _to_thread(self, fn, *args, **kwargs):
-        return await asyncio.to_thread(fn, *args, **kwargs)
+        self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("Usa SpotWSAdapter o pasa mark_price manual")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            trades = await self._request(self.rest.fetch_trades, sym, limit=1)
+            for t in trades or []:
+                ts = datetime.fromtimestamp(t.get("timestamp", 0) / 1000, tz=timezone.utc)
+                price = float(t.get("price"))
+                qty = float(t.get("amount", 0))
+                side = t.get("side") or ""
+                self.state.last_px[symbol] = price
+                yield self.normalize_trade(symbol, ts, price, qty, side)
+            await asyncio.sleep(1)
 
     async def place_order(
         self,
@@ -168,18 +186,61 @@ class BinanceSpotAdapter(ExchangeAdapter):
                 }
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        raise NotImplementedError("Usa BinanceSpotWSAdapter para order book")
+        sym = self.normalize_symbol(symbol)
+        while True:
+            ob = await self._request(self.rest.fetch_order_book, sym)
+            ts_ms = ob.get("timestamp")
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
+            bids = [[float(b[0]), float(b[1])] for b in ob.get("bids", [])]
+            asks = [[float(a[0]), float(a[1])] for a in ob.get("asks", [])]
+            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
+            yield self.normalize_order_book(symbol, ts, bids, asks)
+            await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
         sym = self.normalize_symbol(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado en spot")
-        return await self._request(method, sym)
+        data = await self._request(method, sym)
+        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
+        ts = int(ts)
+        if ts > 1e12:
+            ts /= 1000
+        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
+        return {"ts": ts_dt, "rate": rate}
+
+    async def fetch_basis(self, symbol: str):
+        """Spot markets no tienen *basis* definida.
+
+        Se implementa únicamente para cumplir la interfaz del adaptador y
+        lanzar un ``NotImplementedError`` claro indicando que Binance Spot no
+        ofrece este dato.
+        """
+
+        raise NotImplementedError("Basis no soportado en spot")
 
     async def fetch_oi(self, symbol: str):
+        """Fetch futures open interest for the given spot ``symbol``.
+
+        Binance only exposes open interest on the futures API.  We therefore
+        call the ``fapiPublicGetOpenInterest`` endpoint and normalise the
+        result into ``{"ts": datetime, "oi": float}`` so downstream code can
+        store it directly.
+        """
+
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchOpenInterest", None)
-        if method:
-            return await self._request(method, sym)
-        raise NotImplementedError("Open interest no soportado")
+        method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
+        if method is None:
+            raise NotImplementedError("Open interest no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time", 0))
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        oi = float(data.get("openInterest", 0.0))
+        return {"ts": ts, "oi": oi}
+
+    async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
+        symbol_ex = symbol and self.normalize_symbol(symbol)
+        return await self._request(self.rest.cancel_order, order_id, symbol_ex)

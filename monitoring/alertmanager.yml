@@ -1,0 +1,7 @@
+route:
+  receiver: default
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://example.com/

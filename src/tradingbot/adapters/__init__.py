@@ -7,6 +7,8 @@ from .bybit_spot import BybitSpotAdapter
 from .bybit_futures import BybitFuturesAdapter
 from .okx_spot import OKXSpotAdapter
 from .okx_futures import OKXFuturesAdapter
+from .deribit import DeribitAdapter
+from .deribit_ws import DeribitWSAdapter
 
 __all__ = [
     "ExchangeAdapter",
@@ -16,4 +18,6 @@ __all__ = [
     "BybitFuturesAdapter",
     "OKXSpotAdapter",
     "OKXFuturesAdapter",
+    "DeribitAdapter",
+    "DeribitWSAdapter",
 ]

@@ -2,8 +2,9 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Iterable, AsyncIterator, AsyncIterable
 from datetime import datetime
+import csv
 
 from ..adapters.base import ExchangeAdapter
 from .order_types import Order
@@ -30,24 +31,68 @@ class PaperAdapter(ExchangeAdapter):
     """
     name = "paper"
 
-    def __init__(self, fee_bps: float = 0.0):
+    def __init__(self, maker_fee_bps: float = 0.0, taker_fee_bps: float | None = None):
         self.state = PaperState()
-        self.fee_bps = fee_bps
+        self.maker_fee_bps = float(maker_fee_bps)
+        self.taker_fee_bps = float(
+            taker_fee_bps if taker_fee_bps is not None else maker_fee_bps
+        )
 
     def update_last_price(self, symbol: str, px: float):
         self.state.last_px[symbol] = px
 
-    async def stream_trades(self, symbol: str):
-        # PaperAdapter no produce stream: úsalo con un adapter WS externo y llama update_last_price()
-        raise NotImplementedError("PaperAdapter no genera stream; úsalo como broker simulado")
+    async def stream_trades(
+        self,
+        symbol: str,
+        source: str | Iterable[dict] | AsyncIterable[dict] | None = None,
+    ) -> AsyncIterator[dict]:
+        """Reproduce trades desde ``source`` y actualiza ``last_px``.
+
+        ``source`` puede ser un path a CSV, una secuencia in-memory
+        (lista/generador) o un ``async`` generator. Cada item debe contener
+        al menos ``price`` y ``qty``; ``ts`` y ``side`` son opcionales.
+        """
+
+        if source is None:
+            raise ValueError("source es requerido para PaperAdapter.stream_trades")
+
+        def _prep(trade_dict):
+            ts = trade_dict.get("ts")
+            price = float(trade_dict["price"])
+            qty = float(trade_dict.get("qty", 0.0))
+            side = trade_dict.get("side", "buy")
+            norm = self.normalize_trade(symbol, ts, price, qty, side)
+            self.update_last_price(symbol, price)
+            return norm
+
+        if isinstance(source, str):
+            with open(source, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    yield _prep(row)
+        elif hasattr(source, "__aiter__"):
+            async for trade in source:  # type: ignore[operator]
+                yield _prep(trade)
+        else:
+            for trade in source:  # type: ignore[operator]
+                yield _prep(trade)
 
     def _next_order_id(self) -> str:
         self.state.order_id_seq += 1
         return f"paper-{self.state.order_id_seq}"
 
-    def _apply_fill(self, symbol: str, side: str, qty: float, px: float, ts: Optional[datetime] = None) -> dict:
+    def _apply_fill(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        px: float,
+        maker: bool,
+        ts: Optional[datetime] = None,
+    ) -> dict:
         # fees
-        fee = abs(qty) * px * (self.fee_bps / 10000.0)
+        fee_bps = self.maker_fee_bps if maker else self.taker_fee_bps
+        fee = abs(qty) * px * (fee_bps / 10000.0)
         # cash/pnl y posición
         pos = self.state.pos.setdefault(symbol, PaperPosition())
         if side == "buy":
@@ -80,6 +125,9 @@ class PaperAdapter(ExchangeAdapter):
         return {
             "filled": True,
             "fee": fee,
+            "fee_usdt": fee,
+            "fee_type": "maker" if maker else "taker",
+            "fee_bps": fee_bps,
             "pos_qty": pos.qty,
             "pos_avg_px": pos.avg_px,
             "realized_pnl": self.state.realized_pnl,
@@ -103,10 +151,16 @@ class PaperAdapter(ExchangeAdapter):
         if last is None:
             return {"status": "rejected", "reason": "no_last_price", "order_id": order_id}
 
+        # Determine maker/taker
+        maker = post_only or (
+            type_.lower() == "limit" and time_in_force not in {"IOC", "FOK"}
+        )
+
         # Estrategia simple: market llena a last; limit solo llena si cruza inmediatamente
         px_exec = None
         if type_.lower() == "market":
             px_exec = last
+            maker = False
         elif type_.lower() == "limit":
             if side == "buy" and price is not None and price >= last:
                 px_exec = last
@@ -118,8 +172,16 @@ class PaperAdapter(ExchangeAdapter):
         else:
             return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
 
-        fill = self._apply_fill(symbol, side, qty, px_exec)
-        return {"status": "filled", "order_id": order_id, "symbol": symbol, "side": side, "qty": qty, "price": px_exec, **fill}
+        fill = self._apply_fill(symbol, side, qty, px_exec, maker)
+        return {
+            "status": "filled",
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": px_exec,
+            **fill,
+        }
 
     async def cancel_order(self, order_id: str) -> dict:
         # Este simulador no mantiene colas pendientes (limit no cruzado = no entra al libro)

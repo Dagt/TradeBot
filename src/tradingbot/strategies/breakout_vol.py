@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 
 
 class BreakoutVol(Strategy):
@@ -26,6 +26,7 @@ class BreakoutVol(Strategy):
         self.lookback = kwargs.get("lookback", 20)
         self.mult = kwargs.get("mult", 2.0)
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.lookback + 1:

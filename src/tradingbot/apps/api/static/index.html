@@ -22,10 +22,13 @@
     .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .kv { background:#0f1622; border:1px solid #1f2937; border-radius:10px; padding:10px; }
     .kv .k { font-size:12px; color:#94a3b8 }
-    .kv .v { font-size:18px; margin-top:4px }
-  </style>
-</head>
-<body>
+      .kv .v { font-size:18px; margin-top:4px }
+      button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+      button:hover { background:#1d4ed8; }
+      textarea { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
+    </style>
+  </head>
+  <body>
   <h1>TradingBot Dashboard</h1>
   <div class="muted" id="health">Comprobando estado…</div>
 
@@ -121,11 +124,18 @@
   <div class="card" style="margin-top:16px">
       <h2>PnL (Spot) – Serie temporal</h2>
       <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
-      <div style="padding:10px">
-        <canvas id="chart-pnl-fut" height="120"></canvas>
-      </div>
+    <div style="padding:10px">
+      <canvas id="chart-pnl-fut" height="120"></canvas>
     </div>
   </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <textarea id="cli-input" rows="2" placeholder="--help"></textarea>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+</div>
 <script>
 const api = (path) => `${location.origin}${path}`;
 let pnlChart;
@@ -356,20 +366,37 @@ async function refreshPnlChart(){
   }catch(e){}
 }
 
-async function refreshPnlChartFut(){
-  try{
-    // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
-    const r = await fetch(api("/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6"));
-    const j = await r.json();
-    const pts = j.points || [];
-    const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
-    const upnl = pts.map(p => p.upnl || 0);
-    const rpnl = pts.map(p => p.rpnl || 0);
-    const net  = pts.map(p => p.net || 0);
-    const ctx = document.getElementById("chart-pnl-fut").getContext("2d");
-    buildPnlChart(ctx, labels, upnl, rpnl, net);
-  }catch(e){}
-}
+  async function refreshPnlChartFut(){
+    try{
+      // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
+      const r = await fetch(api("/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6"));
+      const j = await r.json();
+      const pts = j.points || [];
+      const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
+      const upnl = pts.map(p => p.upnl || 0);
+      const rpnl = pts.map(p => p.rpnl || 0);
+      const net  = pts.map(p => p.net || 0);
+      const ctx = document.getElementById("chart-pnl-fut").getContext("2d");
+      buildPnlChart(ctx, labels, upnl, rpnl, net);
+    }catch(e){}
+  }
+
+  async function runCli(){
+    const cmd = document.getElementById("cli-input").value;
+    if(!cmd.trim()) return;
+    try{
+      const r = await fetch(api("/cli/run"), {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({command: cmd})
+      });
+      const j = await r.json();
+      const out = (j.stdout || "") + (j.stderr ? "\n"+j.stderr : "");
+      document.getElementById("cli-output").textContent = out;
+    }catch(e){
+      document.getElementById("cli-output").textContent = String(e);
+    }
+  }
 // boot
 refreshHealth(); refreshSummary(); refreshTables();
 setInterval(refreshExposure, 5000); refreshExposure();
@@ -378,11 +405,13 @@ setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
 setInterval(refreshFutureSpotPnL, 5000); refreshFutureSpotPnL();
 setInterval(refreshPnlChart, 10000); refreshPnlChart();
 setInterval(refreshPnlChartFut, 10000); refreshPnlChartFut();
-setInterval(refreshHealth, 5000);
-setInterval(refreshSummary, 5000);
-setInterval(refreshTables, 5000);
+  setInterval(refreshHealth, 5000);
+  setInterval(refreshSummary, 5000);
+  setInterval(refreshTables, 5000);
 
-</script>
+  document.getElementById("cli-run").addEventListener("click", runCli);
+
+  </script>
 </body>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </html>

@@ -1,5 +1,5 @@
 import pandas as pd
-from .base import Strategy, Signal
+from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, order_flow_imbalance
 
 class Momentum(Strategy):
@@ -23,6 +23,7 @@ class Momentum(Strategy):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 60.0)
 
+    @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:
@@ -37,3 +38,43 @@ class Momentum(Strategy):
         if last_rsi < 100 - self.threshold and ofi_val <= 0:
             return Signal("sell", 1.0)
         return Signal("flat", 0.0)
+
+
+def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Generate momentum signals for backtesting.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Price data with a ``price`` column.
+    params : dict
+        Parameters including ``window``, ``position_size``, ``stop_loss``,
+        ``take_profit``, ``fee`` and ``slippage``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Data with signal, position, stop-loss/take-profit levels and
+        transaction cost estimates.
+    """
+
+    df = data.copy()
+    window = params.get("window", 14)
+    position_size = params.get("position_size", 1)
+    fee = params.get("fee", 0.0)
+    slippage = params.get("slippage", 0.0)
+    sl_pct = params.get("stop_loss", 0.0)
+    tp_pct = params.get("take_profit", 0.0)
+
+    ma = df["price"].rolling(window).mean()
+    df["signal"] = 0
+    df.loc[df["price"] > ma, "signal"] = 1
+    df.loc[df["price"] < ma, "signal"] = -1
+
+    df["position"] = df["signal"].shift(1).fillna(0) * position_size
+    df["stop_loss"] = df["price"] * (1 - sl_pct)
+    df["take_profit"] = df["price"] * (1 + tp_pct)
+    df["fee"] = df["position"].abs() * fee
+    df["slippage"] = df["position"].abs() * slippage
+
+    return df[["signal", "position", "stop_loss", "take_profit", "fee", "slippage"]]

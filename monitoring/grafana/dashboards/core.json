@@ -1,0 +1,103 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "title": "Core Metrics",
+  "uid": "core",
+  "schemaVersion": 16,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Trading PnL",
+      "targets": [
+        {
+          "expr": "trading_pnl",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "E2E latency (95th)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(e2e_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "95th percentile"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 2,
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "WS failures",
+      "targets": [
+        {
+          "expr": "increase(ws_failures_total[5m])",
+          "legendFormat": "{{adapter}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 3,
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+    },
+    {
+      "type": "stat",
+      "title": "Kill switch active",
+      "targets": [
+        {
+          "expr": "kill_switch_active",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 4,
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "CPU Usage",
+      "targets": [
+        {
+          "expr": "process_cpu_percent",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 5,
+      "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Memory Usage",
+      "targets": [
+        {
+          "expr": "process_memory_bytes",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 6,
+      "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8}
+    },
+    {
+      "type": "stat",
+      "title": "Process Uptime",
+      "targets": [
+        {
+          "expr": "process_uptime_seconds",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 7,
+      "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8}
+    }
+  ]
+}
