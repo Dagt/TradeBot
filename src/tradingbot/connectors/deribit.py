@@ -1,4 +1,15 @@
-"""Deribit connector leveraging CCXT and native websockets."""
+"""Deribit connector leveraging CCXT and native websockets.
+
+Examples
+--------
+>>> c = DeribitConnector()
+>>> trade = await c.stream_trades("BTC-PERPETUAL").__anext__()
+
+Limitations
+-----------
+Only public market data is implemented; order management is not available
+via this connector.
+"""
 from __future__ import annotations
 
 import json

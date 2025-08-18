@@ -157,7 +157,7 @@ class ExchangeConnector:
                             yield self._parse_order_book(msg, symbol)
                     finally:
                         ping_task.cancel()
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(BaseException):
                             await ping_task
             except asyncio.CancelledError:
                 raise
@@ -183,7 +183,7 @@ class ExchangeConnector:
                             yield self._parse_trade(msg, symbol)
                     finally:
                         ping_task.cancel()
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(BaseException):
                             await ping_task
             except asyncio.CancelledError:
                 raise
