@@ -4,6 +4,7 @@ import numpy as np
 from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.service import RiskService
+from tradingbot.risk.position_sizing import vol_target
 
 
 def test_risk_vol_sizing(synthetic_volatility):
@@ -13,6 +14,14 @@ def test_risk_vol_sizing(synthetic_volatility):
         rm.max_pos, rm.max_pos * rm.vol_target / synthetic_volatility
     )
     assert delta == pytest.approx(expected)
+
+
+def test_vol_target_basic():
+    assert vol_target(atr=2.0, risk_budget=10.0, notional_cap=20.0) == pytest.approx(5.0)
+
+
+def test_vol_target_caps_notional():
+    assert vol_target(atr=1.0, risk_budget=50.0, notional_cap=30.0) == pytest.approx(30.0)
 
 
 def test_risk_vol_sizing_with_correlation(synthetic_volatility):
