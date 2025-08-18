@@ -57,15 +57,19 @@ def ingest(
     venue: str = typer.Option("binance_spot_ws", help="Data venue adapter"),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
     depth: int = typer.Option(10, help="Order book depth"),
-    persist: bool = typer.Option(False, help="Persist snapshots to database"),
+    kind: str = typer.Option(
+        "orderbook", "--kind", help="Data kind: trades,orderbook,bba,delta,funding,oi"
+    ),
+    persist: bool = typer.Option(False, "--persist", help="Persist data"),
 ) -> None:
-    """Stream order book data from a venue into storage."""
+    """Stream market data from a venue and optionally persist it."""
 
     setup_logging()
     from importlib import import_module
 
     from ..bus import EventBus
-    from ..data.ingestion import run_orderbook_stream
+    from ..data import ingestion as ing
+    from ..types import Tick
     from ..storage.timescale import get_engine
 
     module = import_module(f"tradingbot.adapters.{venue}")
@@ -75,18 +79,89 @@ def ingest(
     bus = EventBus()
     engine = get_engine() if persist else None
 
+    if kind == "orderbook":
+        bus.subscribe("orderbook", lambda ob: typer.echo(str(ob)))
+
     async def _run() -> None:
-        tasks = [
-            asyncio.create_task(
-                run_orderbook_stream(adapter, sym, depth, bus, engine, persist=persist)
-            )
-            for sym in symbols
-        ]
+        tasks = []
+        for sym in symbols:
+            if kind == "orderbook":
+                tasks.append(
+                    asyncio.create_task(
+                        ing.run_orderbook_stream(
+                            adapter,
+                            sym,
+                            depth,
+                            bus,
+                            engine,
+                            persist=persist,
+                        )
+                    )
+                )
+            elif kind == "trades":
+                async def _t(symbol: str) -> None:
+                    async for d in adapter.stream_trades(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            tick = Tick(
+                                ts=d.get("ts"),
+                                exchange=adapter.name,
+                                symbol=symbol,
+                                price=float(d.get("price") or 0.0),
+                                qty=float(d.get("qty") or 0.0),
+                                side=d.get("side"),
+                            )
+                            ing.persist_trades([tick])
+
+                tasks.append(asyncio.create_task(_t(sym)))
+            elif kind == "bba":
+                async def _b(symbol: str) -> None:
+                    async for d in adapter.stream_bba(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_bba([data])
+
+                tasks.append(asyncio.create_task(_b(sym)))
+            elif kind == "delta":
+                async def _d(symbol: str) -> None:
+                    async for d in adapter.stream_book_delta(symbol, depth):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_book_delta([data])
+
+                tasks.append(asyncio.create_task(_d(sym)))
+            elif kind == "funding":
+                async def _f(symbol: str) -> None:
+                    async for d in adapter.stream_funding(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_funding([data])
+
+                tasks.append(asyncio.create_task(_f(sym)))
+            elif kind in ("oi", "open_interest"):
+                async def _oi(symbol: str) -> None:
+                    async for d in adapter.stream_open_interest(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_open_interest([data])
+
+                tasks.append(asyncio.create_task(_oi(sym)))
+            else:  # pragma: no cover - CLI validation
+                raise typer.BadParameter("invalid kind")
+
         if tasks:
             await asyncio.gather(*tasks)
 
     typer.echo(
-        f"Streaming {', '.join(symbols)} order book from {venue} ... (Ctrl+C to stop)"
+        f"Streaming {', '.join(symbols)} {kind} from {venue} ... (Ctrl+C to stop)"
     )
     try:
         asyncio.run(_run())
