@@ -93,6 +93,25 @@ def test_panel_endpoints_and_metrics():
     assert resp.json()["kill_switch_active"] is True
 
 
+def test_orders_endpoint(monkeypatch):
+    client = TestClient(app)
+
+    async def fake_fetch_orders():
+        return [
+            {"id": "1", "symbol": "BTCUSDT", "side": "buy", "status": "open"},
+            {"id": "2", "symbol": "ETHUSDT", "side": "sell", "status": "new"},
+        ]
+
+    monkeypatch.setattr(panel, "fetch_orders", fake_fetch_orders)
+
+    resp = client.get("/orders")
+    assert resp.status_code == 200
+    assert resp.json()["orders"] == [
+        {"id": "1", "symbol": "BTCUSDT", "side": "buy", "status": "open"},
+        {"id": "2", "symbol": "ETHUSDT", "side": "sell", "status": "new"},
+    ]
+
+
 def test_strategy_control_endpoints():
     client = TestClient(app)
     STRATEGY_STATE.clear()

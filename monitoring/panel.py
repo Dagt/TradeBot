@@ -48,6 +48,8 @@ _strategy_params: dict[str, dict] = {}
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_USER = os.getenv("API_USER", "admin")
+API_PASS = os.getenv("API_PASS", "admin")
 
 dashboards_dir = Path(__file__).parent / "grafana" / "dashboards"
 GRAFANA_DASHBOARDS: dict[str, str] = {}
@@ -110,6 +112,32 @@ async def fetch_risk() -> dict:
         "exposure": exposure.get("exposure"),
         "events": events.get("events", []),
     }
+
+
+async def fetch_orders() -> list[dict]:
+    """Return open orders from the trading API."""
+
+    orders: list[dict] = []
+    async with httpx.AsyncClient(timeout=5.0, auth=(API_USER, API_PASS)) as client:
+        try:
+            resp = await client.get(f"{API_URL}/orders?limit=100")
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError:
+            data = {}
+    items = data.get("items", [])
+    for o in items:
+        status = (o.get("status") or "").lower()
+        if status not in {"filled", "canceled", "rejected"}:
+            orders.append(
+                {
+                    "id": o.get("ext_order_id") or o.get("id"),
+                    "symbol": o.get("symbol"),
+                    "side": o.get("side"),
+                    "status": o.get("status"),
+                }
+            )
+    return orders
 
 
 @app.get("/alerts")
@@ -176,6 +204,13 @@ def pnl() -> dict:
     """Return current trading PnL."""
 
     return {"pnl": TRADING_PNL._value.get()}
+
+
+@app.get("/orders")
+async def orders() -> dict:
+    """Return currently open orders."""
+
+    return {"orders": await fetch_orders()}
 
 
 @app.get("/positions")
