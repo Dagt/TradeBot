@@ -333,13 +333,21 @@ def paper_run(
     symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
+    config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
     setup_logging()
     from ..live.runner_paper import run_paper
 
-    asyncio.run(run_paper(symbol=symbol, strategy_name=strategy, metrics_port=metrics_port))
+    asyncio.run(
+        run_paper(
+            symbol=symbol,
+            strategy_name=strategy,
+            config_path=config,
+            metrics_port=metrics_port,
+        )
+    )
 
 
 @app.command("real-run")

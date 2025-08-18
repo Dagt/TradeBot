@@ -173,7 +173,7 @@ python -m tradingbot.cli <comando> [opciones]
 | `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20` |
 | `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
 | `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
-| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr` |
+| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr --config params.yaml` |
 | `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
 | `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
 | `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |
@@ -188,6 +188,9 @@ python -m tradingbot.cli <comando> [opciones]
 
 La salida de cada comando aparecerá tanto en la terminal como en la consola
 del panel web.
+
+Las estrategias que lo permitan aceptan parámetros externos a través de un
+archivo YAML pasado con el flag `--config`.
 
 ## Ejecutar pruebas
 
