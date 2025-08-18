@@ -145,6 +145,17 @@ class _DummyFuturesRest:
         }
 
 
+class _DummyBinanceSpotRest:
+    async def fapiPublicGetFundingRate(self, params):
+        return [{"fundingRate": "0.01", "fundingTime": 1000}]
+
+    async def fapiPublicGetPremiumIndex(self, params):
+        return {"markPrice": "105", "indexPrice": "100", "time": 1000}
+
+    async def fapiPublicGetOpenInterest(self, params):
+        return {"openInterest": "100", "time": 1000}
+
+
 class _DummyDelegate:
     async def place_order(self, *a, **k):
         return {"status": "ok"}
@@ -194,6 +205,37 @@ async def test_binance_futures_rest_basis_not_supported():
     adapter.rest = type("R", (), {})()
     with pytest.raises(NotImplementedError):
         await adapter.fetch_basis("BTC/USDT")
+
+
+@pytest.mark.asyncio
+async def test_binance_spot_fetch_methods():
+    adapter = BinanceSpotAdapter.__new__(BinanceSpotAdapter)
+    ExchangeAdapter.__init__(adapter)
+    adapter.rest = _DummyBinanceSpotRest()
+
+    funding = await adapter.fetch_funding("BTC/USDT")
+    basis = await adapter.fetch_basis("BTC/USDT")
+    oi = await adapter.fetch_oi("BTC/USDT")
+
+    assert funding["rate"] == 0.01
+    assert funding["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+    assert basis["basis"] == 5.0
+    assert basis["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+    assert oi["oi"] == 100.0
+    assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_binance_spot_fetch_methods_not_supported():
+    adapter = BinanceSpotAdapter.__new__(BinanceSpotAdapter)
+    adapter.rest = type("R", (), {})()
+
+    with pytest.raises(NotImplementedError):
+        await adapter.fetch_funding("BTC/USDT")
+    with pytest.raises(NotImplementedError):
+        await adapter.fetch_basis("BTC/USDT")
+    with pytest.raises(NotImplementedError):
+        await adapter.fetch_oi("BTC/USDT")
 
 
 @pytest.mark.asyncio
