@@ -1,0 +1,79 @@
+from __future__ import annotations
+import asyncio
+import logging
+from datetime import datetime, timezone
+
+import uvicorn
+
+from .runner import BarAggregator
+from ..adapters.binance_ws import BinanceWSAdapter
+from ..execution.order_types import Order
+from ..execution.paper import PaperAdapter
+from ..execution.router import ExecutionRouter
+from ..risk.manager import RiskManager
+from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
+from ..risk.service import RiskService
+from ..strategies import STRATEGIES
+from monitoring import panel
+
+log = logging.getLogger(__name__)
+
+
+async def _start_metrics(port: int) -> uvicorn.Server:
+    """Launch the monitoring panel in the background."""
+    config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    asyncio.create_task(server.serve())
+    return server
+
+
+async def run_paper(
+    symbol: str = "BTC/USDT",
+    strategy_name: str = "breakout_atr",
+    *,
+    metrics_port: int = 8000,
+) -> None:
+    """Run a simple live pipeline entirely in paper mode."""
+
+    adapter = BinanceWSAdapter()
+    broker = PaperAdapter()
+    router = ExecutionRouter([broker])
+
+    risk_core = RiskManager(max_pos=1.0)
+    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
+    risk = RiskService(risk_core, guard)
+
+    strat_cls = STRATEGIES.get(strategy_name)
+    if strat_cls is None:
+        raise ValueError(f"unknown strategy: {strategy_name}")
+    strat = strat_cls()
+
+    server = await _start_metrics(metrics_port)
+
+    agg = BarAggregator()
+    try:
+        async for t in adapter.stream_trades(symbol):
+            ts = t.get("ts") or datetime.now(timezone.utc)
+            px = float(t.get("price"))
+            qty = float(t.get("qty", 0.0))
+            broker.update_last_price(symbol, px)
+            risk.mark_price(symbol, px)
+            closed = agg.on_trade(ts, px, qty)
+            if closed is None:
+                continue
+            df = agg.last_n_bars_df(200)
+            if len(df) < 140:
+                continue
+            signal = strat.on_bar({"window": df})
+            if signal is None:
+                continue
+            allowed, _reason, delta = risk.check_order(symbol, signal.side, closed.c, strength=signal.strength)
+            if not allowed or abs(delta) <= 0:
+                continue
+            side = "buy" if delta > 0 else "sell"
+            order = Order(symbol=symbol, side=side, type_="market", qty=abs(delta))
+            await router.execute(order)
+            risk.on_fill(symbol, side, abs(delta), venue="paper")
+    finally:
+        server.should_exit = True
+
