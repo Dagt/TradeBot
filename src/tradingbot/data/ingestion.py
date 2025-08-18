@@ -632,12 +632,25 @@ async def run_orderbook_stream(
     symbol: str,
     depth: int,
     bus: EventBus,
-    engine: Any,
+    engine: Any | None,
     *,
+    persist: bool = False,
     backend: Backends = "timescale",
 ) -> None:
-    """Publish and persist order book snapshots."""
-    storage = _get_storage(backend)
+    """Publish and optionally persist order book snapshots.
+
+    Parameters
+    ----------
+    adapter: object providing ``stream_order_book``
+    symbol: market symbol to subscribe.
+    depth: order book depth to request.
+    bus: event bus for publishing ``OrderBook`` objects.
+    engine: database engine or ``None`` to disable persistence.
+    persist: if ``True`` persist snapshots using the selected backend.
+    backend: storage backend name.
+    """
+
+    storage = _get_storage(backend) if persist else None
     async for d in adapter.stream_order_book(symbol, depth):
         ob = OrderBook(
             ts=d.get("ts", datetime.now(timezone.utc)),
@@ -649,16 +662,17 @@ async def run_orderbook_stream(
             ask_qty=d.get("ask_qty") or [],
         )
         await bus.publish("orderbook", ob)
-        storage.insert_orderbook(
-            engine,
-            ts=ob.ts,
-            exchange=ob.exchange,
-            symbol=ob.symbol,
-            bid_px=ob.bid_px,
-            bid_qty=ob.bid_qty,
-            ask_px=ob.ask_px,
-            ask_qty=ob.ask_qty,
-        )
+        if storage is not None and engine is not None:
+            storage.insert_orderbook(
+                engine,
+                ts=ob.ts,
+                exchange=ob.exchange,
+                symbol=ob.symbol,
+                bid_px=ob.bid_px,
+                bid_qty=ob.bid_qty,
+                ask_px=ob.ask_px,
+                ask_qty=ob.ask_qty,
+            )
 
 async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "timescale"):
     """Stream trades from *adapter* and persist each tick.

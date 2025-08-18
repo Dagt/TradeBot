@@ -53,26 +53,43 @@ app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
 @app.command()
-def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
-    """Stream order book data from Binance testnet into storage.
-
-    The command runs until interrupted and persists snapshots using
-    the Timescale helper if available.
-    """
+def ingest(
+    venue: str = typer.Option("binance_spot_ws", help="Data venue adapter"),
+    symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
+    depth: int = typer.Option(10, help="Order book depth"),
+    persist: bool = typer.Option(False, help="Persist snapshots to database"),
+) -> None:
+    """Stream order book data from a venue into storage."""
 
     setup_logging()
-    from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
+    from importlib import import_module
+
     from ..bus import EventBus
     from ..data.ingestion import run_orderbook_stream
     from ..storage.timescale import get_engine
 
-    adapter = BinanceSpotWSAdapter()
-    bus = EventBus()
-    engine = get_engine()
+    module = import_module(f"tradingbot.adapters.{venue}")
+    cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
+    adapter = getattr(module, cls_name)()
 
-    typer.echo(f"Streaming {symbol} order book ... (Ctrl+C to stop)")
+    bus = EventBus()
+    engine = get_engine() if persist else None
+
+    async def _run() -> None:
+        tasks = [
+            asyncio.create_task(
+                run_orderbook_stream(adapter, sym, depth, bus, engine, persist=persist)
+            )
+            for sym in symbols
+        ]
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    typer.echo(
+        f"Streaming {', '.join(symbols)} order book from {venue} ... (Ctrl+C to stop)"
+    )
     try:
-        asyncio.run(run_orderbook_stream(adapter, symbol, depth, bus, engine))
+        asyncio.run(_run())
     except KeyboardInterrupt:
         typer.echo("stopped")
 
