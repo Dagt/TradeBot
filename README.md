@@ -5,6 +5,8 @@ scalping y arbitraje sobre criptomonedas.  Incluye todo lo necesario para
 ingerir datos, realizar backtesting y ejecutar estrategias en modo
 ``paper`` o real desde una interfaz web.
 
+La correspondencia entre el blueprint original y los módulos del código se documenta en [docs/blueprint_map.md](docs/blueprint_map.md).
+
 ### Explicación para principiantes
 
 Un bot de trading es como un "piloto automático" que compra y vende
