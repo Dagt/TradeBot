@@ -199,6 +199,7 @@ def run_bot(
     trade_qty: float = typer.Option(0.001, help="Order size"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
+    config: str | None = typer.Option(None, "--config", help="YAML with strategy parameters"),
 ) -> None:
     """Run the live trading bot with configurable exchange and symbols."""
 
@@ -214,12 +215,13 @@ def run_bot(
                 trade_qty=trade_qty,
                 leverage=leverage,
                 dry_run=dry_run,
+                config_path=config,
             )
         )
     else:
         from ..live.runner import run_live_binance
 
-        asyncio.run(run_live_binance(symbol=symbols[0]))
+        asyncio.run(run_live_binance(symbol=symbols[0], config_path=config))
 
 
 @app.command("paper-run")
@@ -227,13 +229,21 @@ def paper_run(
     symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
+    config: str | None = typer.Option(None, "--config", help="YAML with strategy parameters"),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
     setup_logging()
     from ..live.runner_paper import run_paper
 
-    asyncio.run(run_paper(symbol=symbol, strategy_name=strategy, metrics_port=metrics_port))
+    asyncio.run(
+        run_paper(
+            symbol=symbol,
+            strategy_name=strategy,
+            metrics_port=metrics_port,
+            config=config,
+        )
+    )
 
 
 @app.command("real-run")
@@ -249,6 +259,7 @@ def real_run(
         "--i-know-what-im-doing",
         help="Acknowledge that this will trade on a real exchange",
     ),
+    config: str | None = typer.Option(None, "--config", help="YAML with strategy parameters"),
 ) -> None:
     """Run the live trading bot on real exchange endpoints."""
 
@@ -266,6 +277,7 @@ def real_run(
             trade_qty=trade_qty,
             leverage=leverage,
             dry_run=dry_run,
+            config_path=config,
             i_know_what_im_doing=i_know_what_im_doing,
         )
     )

@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 import time
+
+import yaml
 
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
@@ -59,4 +62,28 @@ def record_signal_metrics(fn):
     return wrapper
 
 
-__all__ = ["Signal", "Strategy", "record_signal_metrics"]
+def load_params(path: str) -> dict[str, Any]:
+    """Load strategy parameters from a YAML file.
+
+    Parameters
+    ----------
+    path : str
+        Path to a YAML file containing a mapping of parameter names to
+        values.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with parameters. Returns an empty dict if the file is not
+        found or cannot be parsed.
+    """
+
+    try:
+        with Path(path).open("r") as fh:
+            data = yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+__all__ = ["Signal", "Strategy", "record_signal_metrics", "load_params"]

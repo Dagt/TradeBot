@@ -3,6 +3,7 @@ import yaml
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
+from tradingbot.strategies.breakout_atr import BreakoutATR
 from hypothesis import given, strategies as st
 
 
@@ -63,6 +64,15 @@ vol_threshold: 1.0
 
     sig_buy = strat.on_bar({"window": df_buy})
     assert sig_buy.side == "buy"
+
+
+def test_breakout_atr_config(tmp_path):
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("ema_n: 5\natr_n: 5\nmult: 2.0\n")
+    strat = BreakoutATR(config_path=str(cfg))
+    assert strat.ema_n == 5
+    assert strat.atr_n == 5
+    assert strat.mult == 2.0
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))

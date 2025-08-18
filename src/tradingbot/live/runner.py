@@ -86,6 +86,7 @@ async def run_live_binance(
     symbol: str = "BTC/USDT",
     fee_bps: float = 1.5,
     persist_pg: bool = False,
+    config_path: str | None = None,
     total_cap_usdt: float = 1000.0,
     per_symbol_cap_usdt: float = 500.0,
     soft_cap_pct: float = 0.10,
@@ -101,7 +102,7 @@ async def run_live_binance(
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     risk_core = RiskManager(max_pos=1.0)
-    strat = BreakoutATR()
+    strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,

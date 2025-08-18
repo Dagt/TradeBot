@@ -44,7 +44,8 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
                       dry_run: bool, total_cap_usdt: float, per_symbol_cap_usdt: float,
                       soft_cap_pct: float, soft_cap_grace_sec: int,
                       daily_max_loss_usdt: float, daily_max_drawdown_pct: float,
-                      max_consecutive_losses: int) -> None:
+                      max_consecutive_losses: int,
+                      config_path: str | None = None) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     ws_kwargs: Dict[str, Any] = {}
     exec_kwargs: Dict[str, Any] = {}
@@ -64,7 +65,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
         except TypeError:
             exec_adapter = exec_cls()
     agg = BarAggregator()
-    strat = BreakoutATR()
+    strat = BreakoutATR(config_path=config_path)
     risk = RiskManager(max_pos=1.0)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
@@ -126,6 +127,7 @@ async def run_live_testnet(
     trade_qty: float = 0.001,
     leverage: int = 1,
     dry_run: bool = False,
+    config_path: str | None = None,
     total_cap_usdt: float = 1000.0,
     per_symbol_cap_usdt: float = 500.0,
     soft_cap_pct: float = 0.10,
@@ -142,7 +144,8 @@ async def run_live_testnet(
     tasks = [
         _run_symbol(exchange, market, c, leverage, dry_run, total_cap_usdt,
                     per_symbol_cap_usdt, soft_cap_pct, soft_cap_grace_sec,
-                    daily_max_loss_usdt, daily_max_drawdown_pct, max_consecutive_losses)
+                    daily_max_loss_usdt, daily_max_drawdown_pct, max_consecutive_losses,
+                    config_path=config_path)
         for c in cfgs
     ]
     await asyncio.gather(*tasks)

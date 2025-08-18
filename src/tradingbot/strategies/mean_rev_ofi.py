@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, record_signal_metrics, load_params
 from ..data.features import order_flow_imbalance, returns
 
 
@@ -32,7 +32,14 @@ class MeanRevOFI(Strategy):
         zscore_threshold: float = 1.0,
         vol_window: int = 20,
         vol_threshold: float = 0.01,
+        config_path: str | None = None,
     ) -> None:
+        if config_path:
+            params = load_params(config_path)
+            ofi_window = params.get("ofi_window", ofi_window)
+            zscore_threshold = params.get("zscore_threshold", zscore_threshold)
+            vol_window = params.get("vol_window", vol_window)
+            vol_threshold = params.get("vol_threshold", vol_threshold)
         self.ofi_window = ofi_window
         self.zscore_threshold = zscore_threshold
         self.vol_window = vol_window

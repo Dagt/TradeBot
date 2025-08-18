@@ -119,12 +119,15 @@ consola del panel web.
 python -m tradingbot.cli <comando> [opciones]
 ```
 
+Los runners (`run-bot`, `real-run`, `paper-run`) aceptan una opción
+`--config` para cargar parámetros de la estrategia desde un archivo YAML.
+
 | Comando | Descripción | Ejemplo |
 |---------|-------------|---------|
 | `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest BTC/USDT --depth 20` |
 | `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
-| `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
-| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr` |
+| `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT --config cfg/estrategia.yaml` |
+| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr --config cfg/estrategia.yaml` |
 | `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
 | `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
 | `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |

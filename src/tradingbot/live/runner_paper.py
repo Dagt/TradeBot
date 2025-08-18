@@ -32,6 +32,7 @@ async def run_paper(
     strategy_name: str = "breakout_atr",
     *,
     metrics_port: int = 8000,
+    config: str | None = None,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
 
@@ -46,7 +47,10 @@ async def run_paper(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
-    strat = strat_cls()
+    if config:
+        strat = strat_cls(config_path=config)
+    else:
+        strat = strat_cls()
 
     server = await _start_metrics(metrics_port)
 
