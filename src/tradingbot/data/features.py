@@ -380,6 +380,18 @@ def returns(data: DataLike, log: bool = True) -> pd.Series:
     return pd.Series(out, index=df.index, name="returns")
 
 
+def donchian_channels(data: DataLike, n: int = 20):
+    """Donchian channel upper/lower bounds."""
+
+    if n < 1:
+        raise ValueError("n must be at least 1")
+
+    df = _to_dataframe(data, ["high", "low"])
+    upper = df["high"].rolling(n).max()
+    lower = df["low"].rolling(n).min()
+    return upper, lower
+
+
 def keltner_channels(
     data: DataLike,
     ema_n: int = 20,
@@ -405,5 +417,6 @@ __all__ = [
     "liquidity_gap",
     "returns",
     "keltner_channels",
+    "donchian_channels",
 ]
 

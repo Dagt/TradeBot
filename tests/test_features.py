@@ -8,6 +8,7 @@ from tradingbot.data.features import (
     rsi,
     atr,
     returns,
+    donchian_channels,
 )
 
 
@@ -190,5 +191,20 @@ def test_returns_snapshots(price_df, price_snapshots):
     ret_df = returns(price_df)
     ret_snaps = returns(price_snapshots)
     pd.testing.assert_series_equal(ret_df, ret_snaps)
+
+
+def test_donchian_channels_df(ohlc_df):
+    upper, lower = donchian_channels(ohlc_df, n=3)
+    expected_upper = pd.Series([np.nan, np.nan, 14, 14, 15], name="high")
+    expected_lower = pd.Series([np.nan, np.nan, 7, 8, 8], name="low")
+    pd.testing.assert_series_equal(upper, expected_upper)
+    pd.testing.assert_series_equal(lower, expected_lower)
+
+
+def test_donchian_channels_snapshots(ohlc_df, ohlc_snapshots):
+    u_df, l_df = donchian_channels(ohlc_df, n=3)
+    u_snaps, l_snaps = donchian_channels(ohlc_snapshots, n=3)
+    pd.testing.assert_series_equal(u_df, u_snaps)
+    pd.testing.assert_series_equal(l_df, l_snaps)
 
 
