@@ -161,14 +161,12 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        corr_pairs = guard.correlations()
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
             closed.c,
             strength=signal.strength,
             symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
-            correlations=corr_pairs,
             corr_threshold=0.8,
         )
         if not allowed or abs(delta) <= 1e-9:

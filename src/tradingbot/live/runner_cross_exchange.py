@@ -49,20 +49,17 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         qty = cfg.notional / last["spot"]
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
-        corr = risk.guard.correlations()
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
             last["spot"],
             strength=qty,
-            correlations=corr,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             last["perp"],
             strength=qty,
-            correlations=corr,
         )
         if not (ok1 and ok2):
             return
