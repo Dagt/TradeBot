@@ -49,14 +49,27 @@ Static assets are served from `monitoring/static/` for a quick HTML view.
 
 ### Plotly dashboard
 
-The API also exposes a lightweight dashboard at `/dashboard` which polls
-`/metrics/summary` every few seconds and renders basic graphs using
-Plotly. Launch the API and open the dashboard in a browser:
+The API exposes a lightweight dashboard at `/dashboard` built with Plotly.
+It visualizes PnL, slippage and order latency and lists all strategies with
+buttons to pause or resume them remotely. To launch the API and open the
+dashboard:
 
 ```bash
 uvicorn tradingbot.apps.api.main:app --reload
 # then visit http://localhost:8000/dashboard (use API_USER/API_PASS credentials)
 ```
+
+The dashboard polls the following endpoints every few seconds:
+
+- `GET /metrics/pnl`
+- `GET /metrics/slippage`
+- `GET /metrics/latency`
+- `GET /strategies/status`
+
+When the pause/resume buttons are used the dashboard sends POST requests to
+`/strategies/{name}/disable` or `/strategies/{name}/enable`.
+
+![Dashboard](https://via.placeholder.com/800x400.png?text=Monitoring%20Dashboard)
 
 ## Grafana dashboards
 

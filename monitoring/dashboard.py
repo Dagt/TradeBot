@@ -13,30 +13,70 @@ _HTML = """
 </head>
 <body>
 <h1>TradeBot Metrics Dashboard</h1>
-<div id="pnl" style="width:100%;height:400px;"></div>
-<div id="fills" style="width:100%;height:400px;"></div>
+<div id="pnl" style="width:100%;height:300px;"></div>
+<div id="slippage" style="width:100%;height:300px;"></div>
+<div id="latency" style="width:100%;height:300px;"></div>
+<h2>Strategies</h2>
+<table id="strategies" border="1" cellspacing="0" cellpadding="5">
+  <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="strategy-body"></tbody>
+</table>
 <script>
 const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
-const fillsTrace = {x: [], y: [], mode: 'lines', name: 'Fills'};
+const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
+const latencyTrace = {x: [], y: [], mode: 'lines', name: 'Order Latency'};
+
 Plotly.newPlot('pnl', [pnlTrace], {title: 'PnL'});
-Plotly.newPlot('fills', [fillsTrace], {title: 'Fills'});
-async function fetchData(){
+Plotly.newPlot('slippage', [slippageTrace], {title: 'Slippage (bps)'});
+Plotly.newPlot('latency', [latencyTrace], {title: 'Order Latency (s)'});
+
+async function updateMetrics(){
   try {
-    const resp = await fetch('/metrics/summary');
-    const data = await resp.json();
     const now = new Date();
+    const pnl = await fetch('/metrics/pnl').then(r => r.json());
+    const slip = await fetch('/metrics/slippage').then(r => r.json());
+    const lat = await fetch('/metrics/latency').then(r => r.json());
+
     pnlTrace.x.push(now);
-    pnlTrace.y.push(data.pnl || 0);
-    fillsTrace.x.push(now);
-    fillsTrace.y.push(data.fills || 0);
+    pnlTrace.y.push(pnl.pnl || 0);
+    slippageTrace.x.push(now);
+    slippageTrace.y.push(slip.avg_slippage_bps || 0);
+    latencyTrace.x.push(now);
+    latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
+
     Plotly.update('pnl', {x: [pnlTrace.x], y: [pnlTrace.y]});
-    Plotly.update('fills', {x: [fillsTrace.x], y: [fillsTrace.y]});
+    Plotly.update('slippage', {x: [slippageTrace.x], y: [slippageTrace.y]});
+    Plotly.update('latency', {x: [latencyTrace.x], y: [latencyTrace.y]});
   } catch(err) {
     console.error('Error fetching metrics', err);
   }
 }
-setInterval(fetchData, 5000);
-fetchData();
+
+async function updateStrategies(){
+  try {
+    const data = await fetch('/strategies/status').then(r => r.json());
+    const tbody = document.getElementById('strategy-body');
+    tbody.innerHTML = '';
+    for (const [name, status] of Object.entries(data.strategies || {})) {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${name}</td><td>${status}</td>` +
+        `<td><button onclick="controlStrategy('${name}','disable')">Pause</button>` +
+        `<button onclick="controlStrategy('${name}','enable')">Resume</button></td>`;
+      tbody.appendChild(row);
+    }
+  } catch(err) {
+    console.error('Error fetching strategies', err);
+  }
+}
+
+async function controlStrategy(name, action){
+  await fetch(`/strategies/${name}/${action}`, {method: 'POST'});
+  updateStrategies();
+}
+
+setInterval(() => {updateMetrics(); updateStrategies();}, 5000);
+updateMetrics();
+updateStrategies();
 </script>
 </body>
 </html>
@@ -45,5 +85,5 @@ fetchData();
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
-    """Serve a simple Plotly dashboard polling /metrics/summary."""
+    """Serve the Plotly dashboard with live metrics and controls."""
     return HTMLResponse(content=_HTML)
