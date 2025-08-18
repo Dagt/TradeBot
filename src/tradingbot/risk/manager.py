@@ -276,13 +276,22 @@ class RiskManager:
     ) -> list[tuple[str, str]]:
         """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
 
-        Devuelve la lista de pares que excedieron ``threshold``.
+        Los símbolos con correlaciones que exceden ``threshold`` se agrupan
+        mediante :mod:`correlation_guard` y ``max_pos`` se reduce en proporción
+        al tamaño del grupo más grande.  Se devuelve la lista de pares que
+        superaron el umbral.
         """
+
+        from .correlation_guard import group_correlated, global_cap
+
         exceeded: list[tuple[str, str]] = [
             pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
         ]
+
+        groups = group_correlated(symbol_pairs, threshold)
+        self.max_pos = global_cap(groups, self._base_max_pos)
+
         if exceeded:
-            self.max_pos *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
