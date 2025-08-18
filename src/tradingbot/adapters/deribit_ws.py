@@ -74,6 +74,50 @@ class DeribitWSAdapter(ExchangeAdapter):
 
     stream_orderbook = stream_order_book
 
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
+        """Stream best bid/ask levels for ``symbol``."""
+
+        async for ob in self.stream_order_book(symbol, depth=1):
+            bid_px = ob.get("bid_px", [])
+            ask_px = ob.get("ask_px", [])
+            bid_qty = ob.get("bid_qty", [])
+            ask_qty = ob.get("ask_qty", [])
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid_px[0] if bid_px else None,
+                "bid_qty": bid_qty[0] if bid_qty else 0.0,
+                "ask_px": ask_px[0] if ask_px else None,
+                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+            }
+
+    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        """Stream order book deltas relative to previous snapshots."""
+
+        prev: dict | None = None
+        async for ob in self.stream_order_book(symbol, depth):
+            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
+            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
+            if prev is None:
+                delta_bids = curr_bids
+                delta_asks = curr_asks
+            else:
+                prev_bids = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
+                prev_asks = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
+                delta_bids = [[p, q] for p, q in curr_bids if prev_bids.get(p) != q]
+                delta_bids += [[p, 0.0] for p in prev_bids.keys() - {p for p, _ in curr_bids}]
+                delta_asks = [[p, q] for p, q in curr_asks if prev_asks.get(p) != q]
+                delta_asks += [[p, 0.0] for p in prev_asks.keys() - {p for p, _ in curr_asks}]
+            prev = ob
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": [p for p, _ in delta_bids],
+                "bid_qty": [q for _, q in delta_bids],
+                "ask_px": [p for p, _ in delta_asks],
+                "ask_qty": [q for _, q in delta_asks],
+            }
+
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
