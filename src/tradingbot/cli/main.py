@@ -204,6 +204,30 @@ def paper_run(
     asyncio.run(run_paper(symbol=symbol, strategy_name=strategy, metrics_port=metrics_port))
 
 
+@app.command("real-run")
+def real_run(
+    symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
+    trade_qty: float = typer.Option(0.001, help="Order size"),
+    dry_run: bool = typer.Option(False, help="Execute without sending real orders"),
+    i_know_what_im_doing: bool = typer.Option(
+        ..., "--i-know-what-im-doing", help="Acknowledge live trading risk"
+    ),
+) -> None:
+    """Run the live trader against real exchange endpoints."""
+
+    setup_logging()
+    from ..live.runner_real import run_real
+
+    asyncio.run(
+        run_real(
+            symbol=symbol,
+            trade_qty=trade_qty,
+            dry_run=dry_run,
+            i_know_what_im_doing=i_know_what_im_doing,
+        )
+    )
+
+
 @app.command("daemon")
 def run_daemon(config: str = "config/config.yaml") -> None:
     """Launch the :class:`TradeBotDaemon` using a Hydra configuration."""
