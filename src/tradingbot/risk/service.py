@@ -7,6 +7,7 @@ from typing import Dict, Tuple
 from .manager import RiskManager
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
+from .correlation_service import CorrelationService
 from ..storage import timescale
 
 log = logging.getLogger(__name__)
@@ -27,12 +28,14 @@ class RiskService:
         manager: RiskManager,
         guard: PortfolioGuard,
         daily: DailyGuard | None = None,
+        corr_service: CorrelationService | None = None,
         *,
         engine=None,
     ) -> None:
         self.rm = manager
         self.guard = guard
         self.daily = daily
+        self.corr = corr_service
         self.engine = engine
 
     # ------------------------------------------------------------------
@@ -50,6 +53,8 @@ class RiskService:
     # Price tracking and risk checks
     def mark_price(self, symbol: str, price: float) -> None:
         self.guard.mark_price(symbol, price)
+        if self.corr is not None:
+            self.corr.update_price(symbol, price)
 
     def check_order(
         self,
@@ -59,7 +64,6 @@ class RiskService:
         strength: float = 1.0,
         *,
         symbol_vol: float | None = None,
-        correlations: Dict[Tuple[str, str], float] | None = None,
         corr_threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
@@ -71,12 +75,16 @@ class RiskService:
         if symbol_vol is None or symbol_vol <= 0:
             symbol_vol = self.guard.volatility(symbol)
 
+        correlations: Dict[Tuple[str, str], float] = {}
+        if self.corr is not None:
+            correlations = self.corr.get_correlations()
+
         delta = self.rm.size(
             side,
             strength,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,
-            correlations=correlations or {},
+            correlations=correlations,
             threshold=corr_threshold,
         )
         qty = abs(delta)

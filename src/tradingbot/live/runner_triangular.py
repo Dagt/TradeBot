@@ -117,28 +117,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
 
                     # Ejecutar 3 patas en PAPER
                     if edge.direction == "b->m":
-                        corr = risk.guard.correlations()
                         checks = [
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "buy",
                                 last["bq"],
                                 strength=q["base_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                         ]
                         if not all(c[0] for c in checks):
@@ -167,28 +163,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                             ("sell", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[2][2]), resp3),
                         ]
                     else:
-                        corr = risk.guard.correlations()
                         checks = [
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "buy",
                                 last["mq"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
                                 strength=q["base_qty"],
-                                correlations=corr,
                             ),
                         ]
                         if not all(c[0] for c in checks):
