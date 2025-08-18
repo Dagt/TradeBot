@@ -27,6 +27,8 @@ from ..strategies.breakout_atr import BreakoutATR
 from ..risk.manager import RiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.correlation_service import CorrelationService
+from ..risk.service import RiskService
 from ..execution.paper import PaperAdapter
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
@@ -87,6 +89,7 @@ async def _run_symbol(
     daily_max_loss_usdt: float,
     daily_max_drawdown_pct: float,
     max_consecutive_losses: int,
+    corr_threshold: float,
     config_path: str | None = None,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
@@ -98,7 +101,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_pos=1.0)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_usdt=total_cap_usdt,
@@ -117,6 +120,8 @@ async def _run_symbol(
         ),
         venue=venue,
     )
+    corr = CorrelationService()
+    risk = RiskService(risk_core, guard, dguard, corr_service=corr)
     broker = PaperAdapter(fee_bps=1.5)
 
     async for t in ws.stream_trades(cfg.symbol):
@@ -124,12 +129,9 @@ async def _run_symbol(
         px: float = float(t["price"])
         qty: float = float(t.get("qty") or 0.0)
         broker.update_last_price(cfg.symbol, px)
-        guard.mark_price(cfg.symbol, px)
-        dguard.on_mark(
-            datetime.now(timezone.utc),
-            equity_now=broker.equity(mark_prices={cfg.symbol: px}),
-        )
-        halted, reason = dguard.check_halt(broker)
+        risk.mark_price(cfg.symbol, px)
+        risk.update_correlation(corr_threshold)
+        halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
@@ -142,27 +144,27 @@ async def _run_symbol(
         sig = strat.on_bar({"window": df})
         if sig is None:
             continue
-        delta = risk.size(sig.side, sig.strength)
-        if abs(delta) < 1e-9:
+        allowed, reason, delta = risk.check_order(
+            cfg.symbol,
+            sig.side,
+            closed.c,
+            strength=sig.strength,
+            corr_threshold=corr_threshold,
+        )
+        if not allowed or abs(delta) <= 0:
+            if reason:
+                log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
             continue
         side = "buy" if delta > 0 else "sell"
-        if not risk.check_limits(closed.c):
-            log.warning("RiskManager disabled; kill switch activated")
-            continue
-        action, reason, _ = guard.soft_cap_decision(
-            cfg.symbol, side, abs(cfg.trade_qty), closed.c
-        )
-        if action == "block":
-            log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
-            continue
+        qty = abs(delta)
         if dry_run:
-            resp = await broker.place_order(cfg.symbol, side, "market", cfg.trade_qty)
+            resp = await broker.place_order(cfg.symbol, side, "market", qty)
         else:
             resp = await exec_adapter.place_order(
-                cfg.symbol, side, "market", cfg.trade_qty, mark_price=closed.c
+                cfg.symbol, side, "market", qty, mark_price=closed.c
             )
         log.info("LIVE FILL %s", resp)
-        risk.add_fill(side, cfg.trade_qty)
+        risk.on_fill(cfg.symbol, side, qty, venue=venue if not dry_run else "paper")
 
 
 async def run_live_real(
@@ -181,6 +183,7 @@ async def run_live_real(
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
+    corr_threshold: float = 0.8,
     config_path: str | None = None,
 ) -> None:
     """Run a simple live loop on a real crypto exchange."""
@@ -211,6 +214,7 @@ async def run_live_real(
             daily_max_loss_usdt,
             daily_max_drawdown_pct,
             max_consecutive_losses,
+            corr_threshold,
             config_path=config_path,
         )
         for c in cfgs
