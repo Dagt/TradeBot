@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import order_flow_imbalance, returns
+from ..data.features import calc_ofi, returns
 
 
 class MeanRevOFI(Strategy):
@@ -46,7 +46,7 @@ class MeanRevOFI(Strategy):
         if not needed.issubset(df.columns) or len(df) < min_len:
             return None
 
-        ofi_series = order_flow_imbalance(df[["bid_qty", "ask_qty"]])
+        ofi_series = calc_ofi(df[["bid_qty", "ask_qty"]])
         rolling_mean = ofi_series.rolling(self.ofi_window).mean()
         rolling_std = ofi_series.rolling(self.ofi_window).std(ddof=0).replace(0, np.nan)
         zscore = ((ofi_series - rolling_mean) / rolling_std).iloc[-1]

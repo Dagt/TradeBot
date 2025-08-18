@@ -5,7 +5,7 @@ from tradingbot.execution.router import ExecutionRouter
 from tradingbot.execution.slippage import impact_by_depth, queue_position
 from tradingbot.utils.metrics import SLIPPAGE
 from tradingbot.backtesting.engine import SlippageModel
-from tradingbot.data.features import order_flow_imbalance
+from tradingbot.data.features import calc_ofi
 import pandas as pd
 
 
@@ -126,7 +126,7 @@ def test_slippage_model_ofi_impact():
             "ask_qty": [1.0, 1.0],
         }
     )
-    df["order_flow_imbalance"] = order_flow_imbalance(df[["bid_qty", "ask_qty"]])
+    df["order_flow_imbalance"] = calc_ofi(df[["bid_qty", "ask_qty"]])
     bar = df.iloc[1]
     model = SlippageModel(volume_impact=0.0, spread_mult=0.0, ofi_impact=0.5)
     price = 100.0
