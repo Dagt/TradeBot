@@ -15,6 +15,9 @@ Open <http://localhost:8000/> to access a lightweight React dashboard. The
 SPA connects to the `/ws/summary` WebSocket for real‑time metrics, PnL and
 risk updates.
 
+The dashboard includes a **Bots** tab where strategies can be launched or
+stopped visually without typing CLI commands.
+
 If the trading API is hosted on another URL, set `API_URL` before launching
 the panel so risk endpoints can be polled correctly:
 
