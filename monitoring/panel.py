@@ -6,6 +6,8 @@ from pathlib import Path
 import logging
 import asyncio
 import shlex
+import importlib
+import inspect
 
 import httpx
 import yaml
@@ -72,6 +74,44 @@ def list_strategies() -> dict:
     """Return the names of all registered strategies."""
 
     return available_strategies()
+
+
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str) -> dict:
+    """Inspect a strategy's ``__init__`` signature.
+
+    Returns parameter names, annotated types and default values so the
+    frontend can render a form for configuring the strategy.
+    """
+
+    try:
+        module = importlib.import_module(f"tradingbot.strategies.{name}")
+    except ModuleNotFoundError:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    strategy_cls = None
+    for attr in dir(module):
+        obj = getattr(module, attr)
+        if inspect.isclass(obj) and getattr(obj, "name", None) == name:
+            strategy_cls = obj
+            break
+    if strategy_cls is None:
+        raise HTTPException(status_code=404, detail="Strategy class not found")
+
+    sig = inspect.signature(strategy_cls.__init__)
+    params = []
+    for p in list(sig.parameters.values())[1:]:  # skip ``self``
+        if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        if p.annotation is inspect._empty:
+            annotation = "Any"
+        elif isinstance(p.annotation, type):
+            annotation = p.annotation.__name__
+        else:
+            annotation = str(p.annotation)
+        default = None if p.default is inspect._empty else p.default
+        params.append({"name": p.name, "type": annotation, "default": default})
+    return {"strategy": name, "params": params}
 
 # ---------------------------------------------------------------------------
 # Configuration storage
