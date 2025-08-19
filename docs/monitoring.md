@@ -33,6 +33,7 @@ credentials via the `API_USER` and `API_PASS` environment variables
 Available endpoints:
 
 - `GET /metrics` – aggregated metrics in JSON format.
+- `GET /metrics/summary` – minimal summary of key metrics.
 - `GET /metrics/prometheus` – Prometheus metrics.
 - `GET /pnl` – current trading PnL.
 - `GET /orders` – open orders with id, symbol, side and status.
