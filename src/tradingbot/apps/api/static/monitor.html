@@ -4,28 +4,13 @@
   <meta charset="utf-8"/>
   <title>Monitoreo - TradingBot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
-    h1, h2 { margin: 0.2rem 0; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
-    table { width:100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
-    th { background:#0f1622; position: sticky; top:0; }
-    .muted { color:#94a3b8; }
-    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .kv { background:#0f1622; border:1px solid #1f2937; border-radius:10px; padding:10px; }
-    .kv .k { font-size:12px; color:#94a3b8 }
-    .kv .v { font-size:18px; margin-top:4px }
-    nav { margin-bottom:20px; }
-    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
-    nav a:hover { text-decoration:underline; }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
   <nav>
     <a href="/">Configuración</a>
     <a href="/monitor">Monitoreo</a>
+    <a href="/bots">Bots</a>
   </nav>
   <h1>Monitoreo</h1>
   <div class="grid3" style="margin:14px 0 20px">
@@ -38,7 +23,11 @@
   </div>
   <div class="card">
     <h2>PnL Spot (6h)</h2>
-    <canvas id="chart-pnl" height="120"></canvas>
+    <canvas id="chart-pnl-spot" height="120"></canvas>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>PnL Futuros (6h)</h2>
+    <canvas id="chart-pnl-fut" height="120"></canvas>
   </div>
   <div class="card" style="margin-top:20px">
     <h2>Posiciones</h2>
@@ -79,19 +68,29 @@ async function refreshPositions(){
 function buildPnlChart(ctx, labels, upnl, rpnl, net){
   new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
 }
-async function refreshPnlChart(){
+async function refreshPnlChartSpot(){
   try{
     const r=await fetch('/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6');
     const j=await r.json();
     const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
     const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl').getContext('2d'),labels,upnl,rpnl,net);
+    buildPnlChart(document.getElementById('chart-pnl-spot').getContext('2d'),labels,upnl,rpnl,net);
   }catch(e){}
 }
-refreshMetrics(); refreshPositions(); refreshPnlChart();
+async function refreshPnlChartFut(){
+  try{
+    const r=await fetch('/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6');
+    const j=await r.json();
+    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
+    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
+    buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
+  }catch(e){}
+}
+refreshMetrics(); refreshPositions(); refreshPnlChartSpot(); refreshPnlChartFut();
 setInterval(refreshMetrics,5000);
 setInterval(refreshPositions,5000);
-setInterval(refreshPnlChart,10000);
+setInterval(refreshPnlChartSpot,10000);
+setInterval(refreshPnlChartFut,10000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </body>

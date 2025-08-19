@@ -1,15 +1,17 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
+from fastapi import FastAPI, Query, HTTPException, Depends, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import time
-from starlette.requests import Request
+from fastapi.responses import HTMLResponse
 import os
 import secrets
 import subprocess
 import sys
 import shlex
+import asyncio
+import signal
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -401,4 +403,141 @@ def run_cli(req: CLIRequest):
         }
     except Exception as exc:  # pragma: no cover - subprocess failures
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# --- Bot lifecycle --------------------------------------------------------------
+
+
+class BotConfig(BaseModel):
+    """Configuration for launching a trading bot."""
+
+    strategy: str
+    pairs: list[str] | None = None
+    notional: float | None = None
+    exchange: str | None = None
+    market: str | None = None
+    trade_qty: float | None = None
+    leverage: int | None = None
+    testnet: bool | None = None
+    dry_run: bool | None = None
+
+
+_BOTS: dict[int, dict] = {}
+
+
+def _build_bot_args(cfg: BotConfig) -> list[str]:
+    args = [
+        sys.executable,
+        "-m",
+        "tradingbot.cli",
+        "run-bot",
+        "--strategy",
+        cfg.strategy,
+    ]
+    for pair in cfg.pairs or []:
+        args.extend(["--symbol", pair])
+    if cfg.notional is not None:
+        args.extend(["--notional", str(cfg.notional)])
+    if cfg.exchange:
+        args.extend(["--exchange", cfg.exchange])
+    if cfg.market:
+        args.extend(["--market", cfg.market])
+    if cfg.trade_qty is not None:
+        args.extend(["--trade-qty", str(cfg.trade_qty)])
+    if cfg.leverage is not None:
+        args.extend(["--leverage", str(cfg.leverage)])
+    if cfg.testnet is not None:
+        args.append("--testnet" if cfg.testnet else "--no-testnet")
+    if cfg.dry_run is not None:
+        args.append("--dry-run" if cfg.dry_run else "--no-dry-run")
+    return args
+
+
+@app.post("/bots")
+async def start_bot(cfg: BotConfig):
+    """Launch a bot process using the provided configuration."""
+
+    args = _build_bot_args(cfg)
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _BOTS[proc.pid] = {"process": proc, "config": cfg.dict()}
+    return {"pid": proc.pid, "status": "started"}
+
+
+@app.get("/bots")
+def list_bots(request: Request):
+    """Return bot HTML or JSON list depending on Accept header."""
+    if "text/html" in request.headers.get("accept", ""):
+        try:
+            html = (_static_dir / "bots.html").read_text(encoding="utf-8")
+            return HTMLResponse(content=html)
+        except Exception:
+            return HTMLResponse(content="Sube el dashboard en /static/bots.html")
+
+    items = []
+    for pid, info in _BOTS.items():
+        proc = info["process"]
+        status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
+        items.append({"pid": pid, "status": status, "config": info["config"]})
+    return {"bots": items}
+
+
+@app.post("/bots/{pid}/stop")
+async def stop_bot(pid: int):
+    """Terminate a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.terminate()
+    await proc.wait()
+    return {"pid": pid, "status": "stopped", "returncode": proc.returncode}
+
+
+@app.post("/bots/{pid}/pause")
+def pause_bot(pid: int):
+    """Send SIGSTOP to a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.send_signal(signal.SIGSTOP)
+    return {"pid": pid, "status": "paused"}
+
+
+@app.post("/bots/{pid}/resume")
+def resume_bot(pid: int):
+    """Send SIGCONT to resume a paused bot."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.send_signal(signal.SIGCONT)
+    return {"pid": pid, "status": "running"}
+
+
+@app.delete("/bots/{pid}")
+async def delete_bot(pid: int):
+    """Remove process information and terminate if still running."""
+
+    info = _BOTS.pop(pid, None)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is None:
+        proc.terminate()
+        await proc.wait()
+    return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 
