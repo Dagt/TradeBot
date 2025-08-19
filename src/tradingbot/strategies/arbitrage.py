@@ -1,6 +1,38 @@
-"""Simple spread based arbitrage strategy."""
+"""Simple spread based arbitrage strategy.
+
+This module exposes a minimal ``Strategy`` subclass so the arbitrage
+implementation becomes available in the dashboard's strategy selector.  The
+runtime strategy is intentionally simplistic – it merely checks the spread
+between two assets and never issues live orders – but it allows operators to
+experiment and extend it further.
+"""
+
+from typing import Any
 
 import pandas as pd
+
+from .base import Strategy, Signal
+
+
+class Arbitrage(Strategy):
+    """Placeholder arbitrage strategy used for live experimentation."""
+
+    name = "arbitrage"
+
+    def __init__(self, **_: Any) -> None:
+        """Accept arbitrary parameters for future extensions."""
+
+        # No configuration required for the placeholder implementation.
+
+    def on_bar(self, bar: dict[str, Any]) -> Signal | None:  # pragma: no cover -
+        """Inspect ``bar`` data and return ``Signal`` if conditions met.
+
+        The current implementation does not produce trading signals. It serves
+        as a stub so the arbitrage strategy appears in the UI.  Users can
+        replace this with a real implementation later on.
+        """
+
+        return Signal("flat", 0.0)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
@@ -42,5 +74,5 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     return df[["signal", "position", "stop_loss", "take_profit", "fee", "slippage"]]
 
 
-__all__ = ["generate_signals"]
+__all__ = ["Arbitrage", "generate_signals"]
 

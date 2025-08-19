@@ -18,15 +18,15 @@
     .kv .k { font-size:12px; color:#94a3b8 }
     .kv .v { font-size:18px; margin-top:4px }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    nav { margin-bottom:20px; }
-    nav img { height:40px; vertical-align:middle; margin-right:15px; }
+    nav { margin-bottom:20px; text-align:center; }
     nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
     nav a:hover { text-decoration:underline; }
+    .logo { height:80px; display:block; margin:0 auto 20px; }
   </style>
 </head>
 <body>
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo"/>
   <nav>
-    <img src="/static/logo.png" alt="DMI Bot Trading"/>
     <a href="/">Monitoreo</a>
     <a href="/bots">Bots</a>
     <a href="/stats">Estadísticas operativas</a>
@@ -36,9 +36,6 @@
     <div class="kv"><div class="k">PnL</div><div class="v" id="m-pnl">—</div></div>
     <div class="kv"><div class="k">Fills</div><div class="v" id="m-fills">—</div></div>
     <div class="kv"><div class="k">Risk Events</div><div class="v" id="m-risk">—</div></div>
-    <div class="kv"><div class="k">Reject Rate</div><div class="v" id="m-reject">—</div></div>
-    <div class="kv"><div class="k">CPU %</div><div class="v" id="m-cpu">—</div></div>
-    <div class="kv"><div class="k">Mem (MB)</div><div class="v" id="m-mem">—</div></div>
   </div>
   <div class="card">
     <h2>PnL Spot (6h)</h2>
@@ -48,6 +45,27 @@
     <h2>PnL Futuros (6h)</h2>
     <canvas id="chart-pnl-fut" height="120"></canvas>
   </div>
+  <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Spot)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-spot">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Futuros)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-fut">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   <div class="card" style="margin-top:20px">
     <h2>Posiciones</h2>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
@@ -57,10 +75,6 @@
       </table>
     </div>
   </div>
-  <div class="card" style="margin-top:20px">
-    <h2>Logs</h2>
-    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
-  </div>
 <script>
 async function refreshMetrics(){
   try{
@@ -69,9 +83,6 @@ async function refreshMetrics(){
     document.getElementById('m-pnl').textContent = (j.pnl||0).toFixed(2);
     document.getElementById('m-fills').textContent = j.fills||0;
     document.getElementById('m-risk').textContent = j.risk_events||0;
-    document.getElementById('m-reject').textContent = ((j.order_reject_rate||0)*100).toFixed(2)+'%';
-    document.getElementById('m-cpu').textContent = (j.cpu_percent||0).toFixed(1);
-    document.getElementById('m-mem').textContent = ((j.memory_bytes||0)/1048576).toFixed(1);
   }catch(e){}
 }
 async function refreshPositions(){
@@ -109,23 +120,44 @@ async function refreshPnlFut(){
     buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
   }catch(e){}
 }
-async function refreshLogs(){
+async function refreshPnlSummarySpot(){
   try{
-    const r=await fetch('/logs?lines=200');
+    const r=await fetch('/pnl/summary?venue=binance_spot_testnet');
     const j=await r.json();
-    document.getElementById('logs').textContent=(j.items||[]).join('\n');
+    const body=document.querySelector('#tbl-pnl-spot tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${Number(it.qty).toFixed(4)}</td><td>${Number(it.avg_price).toFixed(4)}</td><td>${Number(it.upnl||0).toFixed(2)}</td><td>${Number(it.realized_pnl||0).toFixed(2)}</td><td>${Number(it.fees_paid||0).toFixed(2)}</td><td>${Number(it.total_pnl||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshPnlSummaryFut(){
+  try{
+    const r=await fetch('/pnl/summary?venue=binance_futures_um_testnet');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-pnl-fut tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${Number(it.qty).toFixed(4)}</td><td>${Number(it.avg_price).toFixed(4)}</td><td>${Number(it.upnl||0).toFixed(2)}</td><td>${Number(it.realized_pnl||0).toFixed(2)}</td><td>${Number(it.fees_paid||0).toFixed(2)}</td><td>${Number(it.total_pnl||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
   }catch(e){}
 }
 refreshMetrics();
 refreshPositions();
 refreshPnlSpot();
 refreshPnlFut();
-refreshLogs();
+refreshPnlSummarySpot();
+refreshPnlSummaryFut();
 setInterval(refreshMetrics,5000);
 setInterval(refreshPositions,5000);
 setInterval(refreshPnlSpot,10000);
 setInterval(refreshPnlFut,10000);
-setInterval(refreshLogs,5000);
+setInterval(refreshPnlSummarySpot,10000);
+setInterval(refreshPnlSummaryFut,10000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </body>
