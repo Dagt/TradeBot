@@ -22,8 +22,10 @@ def test_bot_endpoints(monkeypatch):
             return None
 
     procs: list[DummyProc] = []
+    calls = {}
 
     async def fake_exec(*args, **kwargs):
+        calls["args"] = args
         proc = DummyProc(100 + len(procs))
         procs.append(proc)
         return proc
@@ -37,6 +39,10 @@ def test_bot_endpoints(monkeypatch):
         "market": "spot",
         "trade_qty": 1.0,
         "leverage": 1,
+        "stop_loss": 0.02,
+        "take_profit": 0.05,
+        "stop_loss_pct": 0.03,
+        "max_drawdown_pct": 0.1,
         "testnet": True,
         "dry_run": False,
     }
@@ -44,6 +50,11 @@ def test_bot_endpoints(monkeypatch):
     resp = client.post("/bots", json=payload, auth=("admin", "admin"))
     assert resp.status_code == 200
     pid = resp.json()["pid"]
+    argv = list(calls["args"])
+    assert "--stop-loss" in argv and "0.02" in argv
+    assert "--take-profit" in argv and "0.05" in argv
+    assert "--stop-loss-pct" in argv and "0.03" in argv
+    assert "--max-drawdown-pct" in argv and "0.1" in argv
 
     lst = client.get("/bots", auth=("admin", "admin"))
     assert lst.status_code == 200
@@ -84,6 +95,10 @@ def test_cross_arbitrage_start(monkeypatch):
         "perp": "binance_futures",
         "notional": 25.0,
         "threshold": 0.001,
+        "stop_loss": 0.02,
+        "take_profit": 0.05,
+        "stop_loss_pct": 0.03,
+        "max_drawdown_pct": 0.1,
     }
 
     resp = client.post("/bots", json=payload, auth=("admin", "admin"))

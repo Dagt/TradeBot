@@ -305,6 +305,10 @@ def run_bot(
     trade_qty: float = typer.Option(0.001, help="Order size"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
+    stop_loss: float = typer.Option(0.0, "--stop-loss", help="Strategy stop loss percentage"),
+    take_profit: float = typer.Option(0.0, "--take-profit", help="Strategy take profit percentage"),
+    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk manager stop loss percentage"),
+    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk manager max drawdown percentage"),
 ) -> None:
     """Run the live trading bot with configurable exchange and symbols."""
 
