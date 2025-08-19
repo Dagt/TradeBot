@@ -206,11 +206,11 @@ def risk_reset():
     return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
 @app.get("/pnl/summary")
-def pnl_summary(venue: str = "binance_spot_testnet"):
+def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     if not _CAN_PG:
-        return {"venue": venue, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
+        return {"venue": venue, "symbol": symbol, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
     from ...storage.timescale import select_pnl_summary
-    return select_pnl_summary(_ENGINE, venue=venue)
+    return select_pnl_summary(_ENGINE, venue=venue, symbol=symbol)
 
 @app.get("/pnl/timeseries")
 def pnl_timeseries(
@@ -235,6 +235,18 @@ def fills_recent(
         return {"venue": venue, "items": []}
     items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
     return {"venue": venue, "symbol": symbol, "items": items}
+
+@app.get("/fills/summary")
+def fills_summary(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None),
+    strategy: str | None = Query(None),
+):
+    if not _CAN_PG:
+        return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": []}
+    from ...storage.timescale import select_fills_summary
+    items = select_fills_summary(_ENGINE, venue=venue, symbol=symbol, strategy=strategy)
+    return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": items}
 
 @app.get("/positions/rebuild_preview")
 def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
