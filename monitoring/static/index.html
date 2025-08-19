@@ -69,10 +69,10 @@
           </div>
           <div class="field is-grouped">
             <div class="control is-expanded">
-              <button class="button is-success is-fullwidth" onclick="startBot()">Start</button>
+              <button id="btn-start" class="button is-success is-fullwidth" onclick="startBot()">Start</button>
             </div>
             <div class="control is-expanded">
-              <button class="button is-danger is-fullwidth" onclick="stopBot()">Stop</button>
+              <button id="btn-stop" class="button is-danger is-fullwidth" onclick="stopBot()">Stop</button>
             </div>
           </div>
           <p id="cfg-result" class="has-text-light"></p>
@@ -122,6 +122,8 @@
           `<button class="button is-small is-warning" onclick="controlStrategy('${name}','disable')">Stop</button></td>`;
         tbody.appendChild(tr);
       }
+      const isRunning = Object.values(data.strategies || {}).some(s => s === 'running');
+      document.getElementById('btn-start').disabled = isRunning;
     } catch(err){ console.error(err); }
   }
 
@@ -142,20 +144,34 @@
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({strategy, pairs})
       });
-      await fetch('/bot/start', {method:'POST'});
-      document.getElementById('cfg-result').textContent = 'Bot started';
+      const res = await fetch('/bot/start', {method:'POST'});
+      if(res.ok){
+        document.getElementById('cfg-result').textContent = 'Bot started';
+        document.getElementById('btn-start').disabled = true;
+      } else {
+        const err = await res.json();
+        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+      }
     } catch(err) {
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
     }
+    updateStrategies();
   }
 
   async function stopBot(){
     try {
-      await fetch('/bot/stop', {method:'POST'});
-      document.getElementById('cfg-result').textContent = 'Bot stopped';
+      const res = await fetch('/bot/stop', {method:'POST'});
+      if(res.ok){
+        document.getElementById('cfg-result').textContent = 'Bot stopped';
+        document.getElementById('btn-start').disabled = false;
+      } else {
+        const err = await res.json();
+        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+      }
     } catch(err) {
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
     }
+    updateStrategies();
   }
 
   updateMetrics();
