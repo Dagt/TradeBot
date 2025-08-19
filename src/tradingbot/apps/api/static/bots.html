@@ -96,6 +96,7 @@
         <label for="bot-threshold">Threshold</label>
         <input id="bot-threshold" type="number" step="0.0001" value="0.001"/>
       </div>
+      <div id="strategy-params" style="display:contents"></div>
       <div>
         <label for="bot-stop-loss">Stop loss %</label>
         <input id="bot-stop-loss" type="number" step="0.0001" required/>
@@ -156,30 +157,61 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
-async function loadStrategies(){
-  try{
-    const r = await fetch(api('/strategies/status'));
-    const j = await r.json();
-    const sel = document.getElementById('bot-strategy');
-    sel.innerHTML='';
-    Object.keys(j.strategies || {}).forEach(s=>{
-      const o=document.createElement('option');
-      o.value=s; o.textContent=s; sel.appendChild(o);
-    });
+  async function loadStrategies(){
+    try{
+      const r = await fetch(api('/strategies/status'));
+      const j = await r.json();
+      const sel = document.getElementById('bot-strategy');
+      sel.innerHTML='';
+      Object.keys(j.strategies || {}).forEach(s=>{
+        const o=document.createElement('option');
+        o.value=s; o.textContent=s; sel.appendChild(o);
+      });
     updateForm();
-  }catch(e){}
-}
+    }catch(e){}
+  }
 
-function updateForm(){
-  const strat=document.getElementById('bot-strategy').value;
-  const cross=strat==='cross_arbitrage';
-  ['field-exchange','field-market','field-trade-qty','field-leverage'].forEach(id=>{
-    document.getElementById(id).style.display = cross ? 'none' : '';
-  });
-  ['field-spot','field-perp','field-threshold'].forEach(id=>{
-    document.getElementById(id).style.display = cross ? '' : 'none';
-  });
-}
+  async function loadStrategyParams(name){
+    const container=document.getElementById('strategy-params');
+    container.innerHTML='';
+    try{
+      const r=await fetch(api(`/strategies/${name}/schema`));
+      const j=await r.json();
+      (j.params||[]).forEach(p=>{
+        const div=document.createElement('div');
+        const label=document.createElement('label');
+        label.htmlFor=`param-${p.name}`;
+        label.textContent=p.name;
+        const input=document.createElement('input');
+        input.id=`param-${p.name}`;
+        input.dataset.name=p.name;
+        input.dataset.type=p.type||'';
+        let type = (p.type||'').toLowerCase();
+        if(type.includes('int') || type.includes('float') || type.includes('number')){
+          input.type='number';
+          input.step='0.0001';
+        }else{
+          input.type='text';
+        }
+        if(p.default!==undefined && p.default!==null) input.value=p.default;
+        div.appendChild(label);
+        div.appendChild(input);
+        container.appendChild(div);
+      });
+    }catch(e){}
+  }
+
+  async function updateForm(){
+    const strat=document.getElementById('bot-strategy').value;
+    const cross=strat==='cross_arbitrage';
+    ['field-exchange','field-market','field-trade-qty','field-leverage'].forEach(id=>{
+      document.getElementById(id).style.display = cross ? 'none' : '';
+    });
+    ['field-spot','field-perp','field-threshold'].forEach(id=>{
+      document.getElementById(id).style.display = cross ? '' : 'none';
+    });
+    await loadStrategyParams(strat);
+  }
 
 async function startBot(){
   const strategy = document.getElementById('bot-strategy').value;
@@ -196,27 +228,40 @@ async function startBot(){
   const env = document.getElementById('bot-env').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
-  const spot = document.getElementById('bot-spot').value;
-  const perp = document.getElementById('bot-perp').value;
-  const threshold = document.getElementById('bot-threshold').value;
-  const payload = {strategy, pairs, exchange, market, testnet, dry_run};
-  if(notional) payload.notional = Number(notional);
-  if(trade_qty) payload.trade_qty = Number(trade_qty);
-  if(leverage) payload.leverage = Number(leverage);
-  if(stop_loss) payload.stop_loss = Number(stop_loss);
+    const spot = document.getElementById('bot-spot').value;
+    const perp = document.getElementById('bot-perp').value;
+    const threshold = document.getElementById('bot-threshold').value;
+    const paramEls=document.querySelectorAll('#strategy-params input');
+    const params={};
+    paramEls.forEach(el=>{
+      if(!el.value) return;
+      const t=(el.dataset.type||'').toLowerCase();
+      let v=el.value;
+      if(t.includes('int')) v=parseInt(v,10);
+      else if(t.includes('float') || t.includes('number')) v=parseFloat(v);
+      params[el.dataset.name]=v;
+    });
+    const payload = {strategy, pairs, exchange, market, testnet, dry_run};
+    if(notional) payload.notional = Number(notional);
+    if(trade_qty) payload.trade_qty = Number(trade_qty);
+    if(leverage) payload.leverage = Number(leverage);
+    if(stop_loss) payload.stop_loss = Number(stop_loss);
   if(take_profit) payload.take_profit = Number(take_profit);
   if(stop_loss_pct) payload.stop_loss_pct = Number(stop_loss_pct);
   if(max_drawdown_pct) payload.max_drawdown_pct = Number(max_drawdown_pct);
   if(strategy==='cross_arbitrage'){
     payload.spot = spot;
-    payload.perp = perp;
-    if(threshold) payload.threshold = Number(threshold);
-  }
-  try{
-    const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    const j = await r.json();
-    document.getElementById('bot-output').textContent = JSON.stringify(j,null,2);
-    refreshBots();
+      payload.perp = perp;
+      if(threshold) payload.threshold = Number(threshold);
+    }
+    if(Object.keys(params).length){
+      try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
+    }
+    try{
+      const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const j = await r.json();
+      document.getElementById('bot-output').textContent = JSON.stringify(j,null,2);
+      refreshBots();
   }catch(e){ document.getElementById('bot-output').textContent = String(e); }
 }
 
