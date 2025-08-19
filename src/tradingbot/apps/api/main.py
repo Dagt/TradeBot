@@ -335,9 +335,11 @@ def strategies_status():
     """Return the status of all known strategies."""
     from ...strategies import STRATEGIES
 
+    extras = {"cross_arbitrage"}
+    all_names = list(STRATEGIES.keys()) + list(extras)
     return {
         "strategies": {
-            name: _strategies_state.get(name, "stopped") for name in STRATEGIES
+            name: _strategies_state.get(name, "stopped") for name in all_names
         }
     }
 
@@ -443,12 +445,36 @@ class BotConfig(BaseModel):
     leverage: int | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
+    spot: str | None = None
+    perp: str | None = None
+    threshold: float | None = None
 
 
 _BOTS: dict[int, dict] = {}
 
 
 def _build_bot_args(cfg: BotConfig) -> list[str]:
+    # Special runner for cross exchange arbitrage / cash and carry
+    if cfg.strategy == "cross_arbitrage":
+        if not cfg.pairs:
+            raise ValueError("pairs required for cross_arbitrage")
+        if not (cfg.spot and cfg.perp):
+            raise ValueError("spot and perp adapters required")
+        args = [
+            sys.executable,
+            "-m",
+            "tradingbot.cli",
+            "run-cross-arb",
+            cfg.pairs[0],
+            cfg.spot,
+            cfg.perp,
+        ]
+        if cfg.threshold is not None:
+            args.extend(["--threshold", str(cfg.threshold)])
+        if cfg.notional is not None:
+            args.extend(["--notional", str(cfg.notional)])
+        return args
+
     args = [
         sys.executable,
         "-m",
