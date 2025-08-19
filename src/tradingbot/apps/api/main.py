@@ -1,8 +1,7 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, Response, HTTPException, Depends, status
+from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pathlib import Path
 import time
 from starlette.requests import Request
@@ -14,7 +13,6 @@ import shlex
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from monitoring.metrics import metrics_summary as _metrics_summary
 from monitoring.metrics import router as metrics_router
 from monitoring.dashboard import router as dashboard_router
 
@@ -76,18 +74,6 @@ async def _metrics_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
-
-
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-@app.get("/metrics/summary")
-def metrics_summary():
-    """Expose a summarized view of key metrics."""
-    return _metrics_summary()
-
 
 @app.get("/logs")
 def logs(lines: int = Query(200, ge=1, le=1000)):

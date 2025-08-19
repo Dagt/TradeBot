@@ -18,7 +18,8 @@ def test_metrics_endpoint_exposed():
     client = _client()
     resp = client.get("/metrics")
     assert resp.status_code == 200
-    assert "python_info" in resp.text
+    data = resp.json()
+    assert "pnl" in data
 
 
 def test_cli_endpoint_runs_help():
