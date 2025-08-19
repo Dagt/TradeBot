@@ -25,6 +25,7 @@ from monitoring.metrics import (
     BASIS,
 )
 from tradingbot.apps.api.main import app as api_app
+import types
 
 
 def test_panel_endpoints_and_metrics():
@@ -54,7 +55,7 @@ def test_panel_endpoints_and_metrics():
 
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "TradeBot Monitoring" in resp.text
+    assert "TradeBot Dashboard" in resp.text
     assert "Funding" in resp.text
     assert "Open Interest" in resp.text
 
@@ -110,6 +111,36 @@ def test_orders_endpoint(monkeypatch):
         {"id": "1", "symbol": "BTCUSDT", "side": "buy", "status": "open"},
         {"id": "2", "symbol": "ETHUSDT", "side": "sell", "status": "new"},
     ]
+
+
+def test_trade_endpoint(monkeypatch):
+    client = TestClient(app)
+
+    class DummyResp:
+        def json(self):
+            return {"id": "abc"}
+
+        def raise_for_status(self):
+            return None
+
+    class DummyClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json):
+            return DummyResp()
+
+    monkeypatch.setattr(panel, "httpx", types.SimpleNamespace(AsyncClient=DummyClient))
+
+    resp = client.post("/trade", json={"symbol": "BTCUSDT", "side": "buy", "qty": 1})
+    assert resp.status_code == 200
+    assert resp.json()["order"] == {"id": "abc"}
 
 
 def test_strategy_control_endpoints():
@@ -175,9 +206,9 @@ def test_websocket_summary(monkeypatch):
     with client.websocket_connect("/ws/summary") as ws:
         data = ws.receive_json()
         assert data["pnl"]["pnl"] == 42
-        assert data["risk"]["exposure"] == {"BTCUSD": 1}
-        assert data["metrics"]["funding_rates"] == {"BTCUSD": 0.02}
-        assert data["metrics"]["open_interest"] == {"BTCUSD": 1234.0}
+    assert data["risk"]["exposure"] == {"BTCUSD": 1}
+    assert data["metrics"]["funding_rates"] == {"BTCUSD": 0.02}
+    assert data["metrics"]["open_interest"] == {"BTCUSD": 1234.0}
 
 
 def test_api_funding_basis_and_params():

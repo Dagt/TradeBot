@@ -213,6 +213,33 @@ async def orders() -> dict:
     return {"orders": await fetch_orders()}
 
 
+class TradeRequest(BaseModel):
+    """Payload for placing a manual trade from the dashboard."""
+
+    symbol: str
+    side: str
+    qty: float
+    price: float | None = None
+
+
+@app.post("/trade")
+async def place_trade(order: TradeRequest) -> dict:
+    """Forward a trade request to the trading API."""
+
+    payload = {"symbol": order.symbol, "side": order.side, "qty": order.qty}
+    if order.price is not None:
+        payload["price"] = order.price
+    async with httpx.AsyncClient(auth=(API_USER, API_PASS), timeout=5.0) as client:
+        try:
+            resp = await client.post(f"{API_URL}/orders", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=500, detail=f"trade failed: {exc}")
+    STRATEGY_ACTIONS.labels(strategy="manual", action="trade").inc()
+    return {"order": data}
+
+
 @app.get("/positions")
 def positions() -> dict:
     """Return current open positions by symbol."""
