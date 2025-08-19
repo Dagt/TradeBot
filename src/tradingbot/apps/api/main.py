@@ -1,5 +1,6 @@
 # src/tradingbot/apps/api/main.py
 from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -468,8 +469,15 @@ async def start_bot(cfg: BotConfig):
 
 
 @app.get("/bots")
-def list_bots():
+def list_bots(request: Request):
     """Return information about running bot processes."""
+
+    if "text/html" in request.headers.get("accept", ""):
+        try:
+            html = (_static_dir / "bots.html").read_text(encoding="utf-8")
+            return HTMLResponse(content=html)
+        except Exception:
+            return HTMLResponse(content="Bots dashboard not found", status_code=404)
 
     items = []
     for pid, info in _BOTS.items():
