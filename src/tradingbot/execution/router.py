@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 import inspect
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
 from .order_types import Order
+from .slippage import impact_by_depth, queue_position
 from ..utils.metrics import (
     SLIPPAGE,
     ORDER_LATENCY,
@@ -18,8 +18,12 @@ from ..utils.metrics import (
     QUEUE_POSITION,
 )
 from ..storage import timescale
+from ..utils.logging import get_logger
 
-log = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from ..risk.manager import RiskManager
+
+log = get_logger(__name__)
 
 
 class ExecutionRouter:
@@ -31,7 +35,13 @@ class ExecutionRouter:
     ``prefer`` accepts ``"maker"`` or ``"taker"``.
     """
 
-    def __init__(self, adapters: Iterable, storage_engine=None, prefer: str | None = None):
+    def __init__(
+        self,
+        adapters: Iterable,
+        storage_engine=None,
+        prefer: str | None = None,
+        risk_manager: "RiskManager | None" = None,
+    ):
         if isinstance(adapters, dict):
             self.adapters: Dict[str, object] = adapters  # type: ignore[assignment]
         elif isinstance(adapters, (list, tuple, set)):
@@ -46,6 +56,7 @@ class ExecutionRouter:
         self._engine = storage_engine
         self._prefer = prefer
         self._last_maker = False
+        self.risk_manager = risk_manager
 
     # ------------------------------------------------------------------
     def _is_maker(self, order: Order) -> bool:
@@ -80,7 +91,9 @@ class ExecutionRouter:
 
             maker = maker_pref
             fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
-            fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
+            fee_bps = float(
+                getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
+            )
             fee = price * fee_bps / 10000.0
             latency = getattr(adapter, "latency", 0.0)
             direction = 1 if order.side == "buy" else -1
@@ -122,6 +135,10 @@ class ExecutionRouter:
         dict | list[dict]
             Result(s) from the adapter or algorithm.
         """
+
+        if self.risk_manager is not None and not self.risk_manager.enabled:
+            log.warning("Risk manager disabled; rejecting order %s", order)
+            return {"status": "rejected", "reason": "risk_disabled"}
 
         if algo:
             from . import algos
@@ -165,22 +182,11 @@ class ExecutionRouter:
                 book["asks"] if maker and order.side == "sell" else
                 book["asks"] if order.side == "buy" else book["bids"]
             )
-            top_px, top_qty = levels[0]
             if maker:
-                queue_pos = top_qty / (top_qty + order.qty) if top_qty else 0.0
+                queue_pos = queue_position(order.qty, levels)
                 QUEUE_POSITION.labels(symbol=order.symbol, side=order.side).observe(queue_pos)
             else:
-                remaining = order.qty
-                cost = 0.0
-                for px, qty in levels:
-                    take = min(remaining, qty)
-                    cost += px * take
-                    remaining -= take
-                    if remaining <= 0:
-                        break
-                if remaining == 0:
-                    avg_px = cost / order.qty
-                    est_slippage = (avg_px - top_px) / top_px * 10000
+                est_slippage = impact_by_depth(order.side, order.qty, levels)
 
         start = time.monotonic()
         kwargs = dict(
@@ -191,6 +197,7 @@ class ExecutionRouter:
             price=order.price,
             post_only=order.post_only,
             time_in_force=order.time_in_force,
+            reduce_only=order.reduce_only,
         )
         if order.iceberg_qty is not None:
             sig = inspect.signature(adapter.place_order)
@@ -201,15 +208,20 @@ class ExecutionRouter:
             ):
                 kwargs["iceberg_qty"] = order.iceberg_qty
 
-        res = await adapter.place_order(**kwargs)
+        try:
+            res = await adapter.place_order(**kwargs)
+        except Exception as exc:  # pragma: no cover - logging only
+            log.exception("Order placement failed on %s", venue)
+            return {"status": "error", "reason": str(exc), "venue": venue}
+
         latency = time.monotonic() - start
         ORDER_LATENCY.labels(venue=venue).observe(latency)
-        if est_slippage is not None:
-            res.setdefault("est_slippage_bps", est_slippage)
-        if queue_pos is not None:
-            res.setdefault("queue_position", queue_pos)
+        res.setdefault("est_slippage_bps", est_slippage)
+        res.setdefault("queue_position", queue_pos)
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
-        fee_bps = getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0))
+        fee_bps = float(
+            getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
+        )
         res.setdefault("fee_type", "maker" if maker else "taker")
         res.setdefault("fee_bps", fee_bps)
         if res.get("status") == "filled":
@@ -227,10 +239,14 @@ class ExecutionRouter:
                         px=res.get("price"),
                         status=res.get("status", "unknown"),
                         ext_order_id=res.get("order_id"),
-                        notes={"fee_type": "maker" if maker else "taker", "fee_bps": fee_bps},
+                        notes={
+                            "fee_type": "maker" if maker else "taker",
+                            "fee_bps": fee_bps,
+                            "reduce_only": order.reduce_only,
+                        },
                     )
-                except Exception:
-                    pass
+                except Exception:  # pragma: no cover - logging only
+                    log.exception("Persist failure: insert_order")
 
         exec_price = res.get("price")
         expected = order.price

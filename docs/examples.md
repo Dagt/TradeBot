@@ -57,6 +57,9 @@ stats = run_parameter_sweep(bars, ma_signal, {"fast": [5], "slow": [20]})
 print(stats)
 ```
 
+Más ejemplos de estrategias avanzadas y uso del panel web se encuentran
+en [extra_features.md](extra_features.md).
+
 ## Backtest rápido
 ```bash
 python -m tradingbot.cli backtest data/examples/btcusdt_1m.csv \
@@ -161,3 +164,24 @@ wf_results = walk_forward_optimize(
 )
 print(wf_results)
 ```
+
+## Optimización walk-forward con MLflow
+
+La utilidad `bin/walk_forward_example.py` ejecuta un ciclo de optimización
+por ventana y registra los resultados en MLflow.  Primero inicia la interfaz
+de usuario de MLflow:
+
+```bash
+mlflow ui --backend-store-uri ./mlruns
+```
+
+En otra terminal ejecuta la optimización:
+
+```bash
+python bin/walk_forward_example.py data/examples/btcusdt_1m.csv BTC/USDT \
+    --mlflow-uri ./mlruns --experiment walk-forward-demo
+```
+
+Cada ventana queda registrada como un run separado con métricas como
+`test_equity`, `test_sharpe` y `test_drawdown`.  En el dashboard se pueden
+comparar fácilmente los resultados promedio y por ventana.

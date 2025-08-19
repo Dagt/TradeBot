@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
-"""Example script running walk-forward analysis with vectorbt."""
+"""Example CLI running walk-forward optimisation with MLflow logging."""
 
-import numpy as np
-import pandas as pd
-import vectorbt as vbt
+import argparse
+import mlflow
 
-from tradingbot.backtest.vectorbt_engine import walk_forward
+from tradingbot.experiments.walk_forward import run_walk_forward_experiment
 
 
-class MAStrategy:
-    @staticmethod
-    def signal(close, fast, slow):
-        fast_ma = vbt.MA.run(close, fast)
-        slow_ma = vbt.MA.run(close, slow)
-        entries = fast_ma.ma_crossed_above(slow_ma)
-        exits = fast_ma.ma_crossed_below(slow_ma)
-        return entries, exits
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("data", help="CSV file with historical OHLCV data")
+    parser.add_argument("symbol", help="Trading symbol, e.g. BTC/USDT")
+    parser.add_argument(
+        "--experiment", default="walk-forward", help="MLflow experiment name"
+    )
+    parser.add_argument(
+        "--mlflow-uri",
+        default="./mlruns",
+        help="MLflow tracking URI (directory for local runs)",
+    )
+    return parser.parse_args()
 
 
 def main() -> None:
-    data = pd.read_csv("data/examples/btcusdt_1m.csv")
-    params = {"fast": [5, 10], "slow": [20]}
-    res = walk_forward(data, MAStrategy, params, train_size=60, test_size=30)
+    args = parse_args()
+    mlflow.set_tracking_uri(args.mlflow_uri)
+
+    param_grid = [
+        {"rsi_n": 10, "rsi_threshold": 55},
+        {"rsi_n": 14, "rsi_threshold": 60},
+    ]
+    res = run_walk_forward_experiment(
+        args.data,
+        args.symbol,
+        "momentum",
+        param_grid,
+        n_splits=3,
+        experiment=args.experiment,
+    )
     print(res)
 
 

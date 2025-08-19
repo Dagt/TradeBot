@@ -3,11 +3,14 @@ import numpy as np
 import pytest
 
 from tradingbot.data.features import (
+    calc_ofi,
     order_flow_imbalance,
     depth_imbalance,
     rsi,
     atr,
+    atr_ewma,
     returns,
+    donchian_channels,
 )
 
 
@@ -104,13 +107,15 @@ def ohlc_snapshots(ohlc_df):
 # Order book features
 
 
-def test_order_flow_imbalance_df(orderbook_df):
-    ofi = order_flow_imbalance(orderbook_df)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_df(orderbook_df, func):
+    ofi = func(orderbook_df)
     assert list(ofi) == [0, 4, -3, -1]
 
 
-def test_order_flow_imbalance_snapshots(orderbook_snapshots):
-    ofi = order_flow_imbalance(orderbook_snapshots)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_snapshots(orderbook_snapshots, func):
+    ofi = func(orderbook_snapshots)
     assert list(ofi) == [0, 4, -3, -1]
 
 
@@ -136,8 +141,9 @@ def test_depth_imbalance_snapshots(orderbook_snapshots):
     assert all(abs(a - b) < 1e-9 for a, b in zip(di, expected))
 
 
-def test_order_flow_imbalance_l2(l2_snapshots):
-    ofi = order_flow_imbalance(l2_snapshots, depth=2)
+@pytest.mark.parametrize("func", [order_flow_imbalance, calc_ofi])
+def test_order_flow_imbalance_l2(l2_snapshots, func):
+    ofi = func(l2_snapshots, depth=2)
     assert list(ofi) == [0.0, 13.0, 0.0]
 
 
@@ -179,6 +185,18 @@ def test_atr_snapshots(ohlc_df, ohlc_snapshots):
     pd.testing.assert_series_equal(atr_df, atr_snaps)
 
 
+def test_atr_ewma_df(ohlc_df):
+    # EWMA variant produces a smoother estimate of true range
+    val = atr_ewma(ohlc_df, n=3).iloc[-1]
+    assert abs(val - 3.6296296296296293) < 1e-9
+
+
+def test_atr_ewma_snapshots(ohlc_df, ohlc_snapshots):
+    atr_df = atr_ewma(ohlc_df, n=3)
+    atr_snaps = atr_ewma(ohlc_snapshots, n=3)
+    pd.testing.assert_series_equal(atr_df, atr_snaps)
+
+
 def test_returns_df(price_df):
     ret = returns(price_df)
     expected = np.log(price_df.close / price_df.close.shift(1))
@@ -190,5 +208,20 @@ def test_returns_snapshots(price_df, price_snapshots):
     ret_df = returns(price_df)
     ret_snaps = returns(price_snapshots)
     pd.testing.assert_series_equal(ret_df, ret_snaps)
+
+
+def test_donchian_channels_df(ohlc_df):
+    upper, lower = donchian_channels(ohlc_df, n=3)
+    expected_upper = pd.Series([np.nan, np.nan, 14, 14, 15], name="high")
+    expected_lower = pd.Series([np.nan, np.nan, 7, 8, 8], name="low")
+    pd.testing.assert_series_equal(upper, expected_upper)
+    pd.testing.assert_series_equal(lower, expected_lower)
+
+
+def test_donchian_channels_snapshots(ohlc_df, ohlc_snapshots):
+    u_df, l_df = donchian_channels(ohlc_df, n=3)
+    u_snaps, l_snaps = donchian_channels(ohlc_snapshots, n=3)
+    pd.testing.assert_series_equal(u_df, u_snaps)
+    pd.testing.assert_series_equal(l_df, l_snaps)
 
 

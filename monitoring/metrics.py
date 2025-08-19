@@ -14,6 +14,8 @@ from tradingbot.utils.metrics import (
     SLIPPAGE,
     RISK_EVENTS,
     ORDER_LATENCY,
+    ORDER_SENT,
+    ORDER_REJECTS,
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
@@ -72,14 +74,83 @@ STRATEGY_ACTIONS = Counter(
 router = APIRouter()
 
 
-@router.get("/metrics")
-def metrics() -> Response:
-    """Expose Prometheus metrics."""
-    update_process_metrics()
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+def _collect_by_symbol(metric, sample_name: str) -> dict[str, float]:
+    """Collect gauge samples keyed by symbol."""
+
+    return {
+        sample.labels["symbol"]: sample.value
+        for metric_obj in metric.collect()
+        for sample in metric_obj.samples
+        if sample.name == sample_name
+    }
 
 
-@router.get("/metrics/summary")
+def _avg_slippage() -> float:
+    """Compute average slippage in basis points."""
+
+    slippage_samples = [
+        sample
+        for metric in SLIPPAGE.collect()
+        for sample in metric.samples
+    ]
+    slippage_sum = sum(
+        s.value for s in slippage_samples if s.name.endswith("_sum")
+    )
+    slippage_count = sum(
+        s.value for s in slippage_samples if s.name.endswith("_count")
+    )
+    return slippage_sum / slippage_count if slippage_count else 0.0
+
+
+def _avg_order_latency() -> float:
+    """Compute average order execution latency across venues."""
+
+    latency_samples = [
+        sample
+        for metric in ORDER_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    latency_sum = sum(
+        s.value for s in latency_samples if s.name.endswith("_sum")
+    )
+    latency_count = sum(
+        s.value for s in latency_samples if s.name.endswith("_count")
+    )
+    return latency_sum / latency_count if latency_count else 0.0
+
+
+def _avg_market_latency() -> float:
+    """Compute average market data latency."""
+
+    market_samples = [
+        sample
+        for metric in MARKET_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    market_sum = sum(
+        s.value for s in market_samples if s.name.endswith("_sum")
+    )
+    market_count = sum(
+        s.value for s in market_samples if s.name.endswith("_count")
+    )
+    return market_sum / market_count if market_count else 0.0
+
+
+def _avg_e2e_latency() -> float:
+    """Compute average end-to-end latency."""
+
+    e2e_samples = [
+        sample
+        for metric in E2E_LATENCY.collect()
+        for sample in metric.samples
+    ]
+    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
+    e2e_count = sum(
+        s.value for s in e2e_samples if s.name.endswith("_count")
+    )
+    return e2e_sum / e2e_count if e2e_count else 0.0
+
+
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
 
@@ -101,47 +172,14 @@ def metrics_summary() -> dict:
         if sample.name.endswith("_total")
     )
 
-    # Compute average slippage in basis points
-    slippage_samples = [
-        sample
-        for metric in SLIPPAGE.collect()
-        for sample in metric.samples
-    ]
-    slippage_sum = sum(
-        s.value for s in slippage_samples if s.name.endswith("_sum")
-    )
-    slippage_count = sum(
-        s.value for s in slippage_samples if s.name.endswith("_count")
-    )
-    avg_slippage = slippage_sum / slippage_count if slippage_count else 0.0
+    avg_slippage = _avg_slippage()
+    avg_latency = _avg_order_latency()
+    avg_market_latency = _avg_market_latency()
+    avg_e2e = _avg_e2e_latency()
 
-    # Compute average order execution latency across venues
-    latency_samples = [
-        sample
-        for metric in ORDER_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    latency_sum = sum(
-        s.value for s in latency_samples if s.name.endswith("_sum")
-    )
-    latency_count = sum(
-        s.value for s in latency_samples if s.name.endswith("_count")
-    )
-    avg_latency = latency_sum / latency_count if latency_count else 0.0
-
-    # Compute average market data latency
-    market_samples = [
-        sample
-        for metric in MARKET_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    market_sum = sum(
-        s.value for s in market_samples if s.name.endswith("_sum")
-    )
-    market_count = sum(
-        s.value for s in market_samples if s.name.endswith("_count")
-    )
-    avg_market_latency = market_sum / market_count if market_count else 0.0
+    orders_sent = ORDER_SENT._value.get()
+    order_rejects = ORDER_REJECTS._value.get()
+    reject_rate = order_rejects / orders_sent if orders_sent else 0.0
 
     # Compute average maker/taker ratio across venues
     ratio_samples = [
@@ -153,18 +191,6 @@ def metrics_summary() -> dict:
     avg_ratio = (
         sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
     )
-
-    # Compute average end-to-end latency
-    e2e_samples = [
-        sample
-        for metric in E2E_LATENCY.collect()
-        for sample in metric.samples
-    ]
-    e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
-    e2e_count = sum(
-        s.value for s in e2e_samples if s.name.endswith("_count")
-    )
-    avg_e2e = e2e_sum / e2e_count if e2e_count else 0.0
 
     # Aggregate websocket failures across adapters
     ws_failures_total = sum(
@@ -182,33 +208,17 @@ def metrics_summary() -> dict:
         if sample.name == "strategy_state"
     }
 
-    positions = {
-        sample.labels["symbol"]: sample.value
-        for metric in OPEN_POSITIONS.collect()
-        for sample in metric.samples
-        if sample.name == "open_position"
-    }
+    positions = _collect_by_symbol(OPEN_POSITIONS, "open_position")
 
-    funding_rates: dict[str, float] = {
-        sample.labels["symbol"]: sample.value
-        for metric in FUNDING_RATE.collect()
-        for sample in metric.samples
-        if sample.name == "funding_rate"
-    }
+    funding_rates: dict[str, float] = _collect_by_symbol(
+        FUNDING_RATE, "funding_rate"
+    )
 
-    open_interest: dict[str, float] = {
-        sample.labels["symbol"]: sample.value
-        for metric in OPEN_INTEREST.collect()
-        for sample in metric.samples
-        if sample.name == "open_interest"
-    }
+    open_interest: dict[str, float] = _collect_by_symbol(
+        OPEN_INTEREST, "open_interest"
+    )
 
-    basis = {
-        sample.labels["symbol"]: sample.value
-        for metric in BASIS.collect()
-        for sample in metric.samples
-        if sample.name == "basis"
-    }
+    basis = _collect_by_symbol(BASIS, "basis")
 
     return {
         "pnl": TRADING_PNL._value.get(),
@@ -219,6 +229,9 @@ def metrics_summary() -> dict:
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
+        "orders_sent": orders_sent,
+        "order_rejects": order_rejects,
+        "order_reject_rate": reject_rate,
         "kill_switch_active": KILL_SWITCH_ACTIVE._value.get(),
         "avg_slippage_bps": avg_slippage,
         "avg_market_latency_seconds": avg_market_latency,
@@ -230,4 +243,61 @@ def metrics_summary() -> dict:
         "cpu_percent": PROCESS_CPU._value.get(),
         "memory_bytes": PROCESS_MEMORY._value.get(),
         "process_uptime_seconds": PROCESS_UPTIME._value.get(),
+    }
+
+
+@router.get("/metrics")
+def metrics() -> dict:
+    """Expose aggregated metrics in JSON format."""
+
+    return metrics_summary()
+
+
+@router.get("/metrics/summary")
+def metrics_summary_route() -> dict:
+    """Expose a minimal summary of key metrics."""
+
+    return metrics_summary()
+
+
+@router.get("/metrics/prometheus")
+def metrics_prometheus() -> Response:
+    """Expose Prometheus metrics for scraping."""
+    update_process_metrics()
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@router.get("/metrics/pnl")
+def metrics_pnl() -> dict:
+    """Expose current trading PnL."""
+
+    return {"pnl": TRADING_PNL._value.get()}
+
+
+@router.get("/metrics/slippage")
+def metrics_slippage() -> dict:
+    """Expose aggregated slippage information."""
+
+    return {"avg_slippage_bps": _avg_slippage()}
+
+
+@router.get("/metrics/latency")
+def metrics_latency() -> dict:
+    """Expose order and market latency metrics."""
+
+    return {
+        "avg_order_latency_seconds": _avg_order_latency(),
+        "avg_market_latency_seconds": _avg_market_latency(),
+        "avg_e2e_latency_seconds": _avg_e2e_latency(),
+    }
+
+
+@router.get("/metrics/positions")
+def metrics_positions() -> dict:
+    """Expose current positions with funding rates and basis."""
+
+    return {
+        "positions": _collect_by_symbol(OPEN_POSITIONS, "open_position"),
+        "funding_rates": _collect_by_symbol(FUNDING_RATE, "funding_rate"),
+        "basis": _collect_by_symbol(BASIS, "basis"),
     }

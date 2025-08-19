@@ -32,11 +32,16 @@ credentials via the `API_USER` and `API_PASS` environment variables
 
 Available endpoints:
 
-- `GET /metrics` – Prometheus metrics.
-- `GET /metrics/summary` – compact JSON snapshot of key metrics.
+- `GET /metrics` – aggregated metrics in JSON format.
+- `GET /metrics/summary` – minimal summary of key metrics.
+- `GET /metrics/prometheus` – Prometheus metrics.
 - `GET /pnl` – current trading PnL.
+- `GET /orders` – open orders with id, symbol, side and status.
 - `GET /positions` – open positions by symbol.
 - `GET /kill-switch` – kill switch active flag.
+
+Para un resumen de todas las capacidades adicionales del panel y la API
+consulta [extra_features.md](extra_features.md).
 - `GET /strategies/status` – current strategy states.
 - `POST /strategies/{name}/{status}` – update a strategy state.
 - `GET /summary` – metrics and strategy states combined.
@@ -49,14 +54,25 @@ Static assets are served from `monitoring/static/` for a quick HTML view.
 
 ### Plotly dashboard
 
-The API also exposes a lightweight dashboard at `/dashboard` which polls
-`/metrics/summary` every few seconds and renders basic graphs using
-Plotly. Launch the API and open the dashboard in a browser:
+The API exposes a lightweight dashboard at `/dashboard` built with Plotly.
+It visualizes PnL, slippage and order latency and lists all strategies with
+buttons to pause or resume them remotely. To launch the API and open the
+dashboard:
 
 ```bash
 uvicorn tradingbot.apps.api.main:app --reload
 # then visit http://localhost:8000/dashboard (use API_USER/API_PASS credentials)
 ```
+
+The dashboard polls the following endpoints every few seconds:
+
+- `GET /metrics`
+- `GET /strategies/status`
+
+When the pause/resume buttons are used the dashboard sends POST requests to
+`/strategies/{name}/disable` or `/strategies/{name}/enable`.
+
+![Dashboard](https://via.placeholder.com/800x400.png?text=Monitoring%20Dashboard)
 
 ## Grafana dashboards
 
@@ -149,3 +165,43 @@ docker-compose up -d --force-recreate prometheus alertmanager
 
 The monitoring panel exposes active alerts at `GET /alerts` and also
 includes them in `GET /summary`.
+
+## Production deployment
+
+The `docker-compose.prod.yml` file launches Prometheus, Alertmanager and
+Grafana with persistent volumes. Grafana credentials are read from the
+`GF_ADMIN_USER` and `GF_ADMIN_PASSWORD` environment variables, and
+dashboards, data sources and users under `monitoring/grafana/` are provisioned
+automatically.
+
+Run the stack:
+
+```bash
+make monitoring-up
+```
+
+Update to the latest images:
+
+```bash
+make monitoring-update
+```
+
+Stop all services:
+
+```bash
+make monitoring-down
+```
+
+Prometheus retention can be tuned with `PROMETHEUS_RETENTION` (defaults to
+`30d`).
+
+### TLS and authentication
+
+Enable HTTPS in Grafana by setting `GF_SERVER_PROTOCOL=https` and providing
+`GF_SERVER_CERT_FILE` and `GF_SERVER_CERT_KEY`. User sign-ups are disabled via
+`GF_USERS_ALLOW_SIGN_UP=false`; additional accounts can be defined in
+`monitoring/grafana/users/users.yml`.
+
+Prometheus and Alertmanager do not ship with TLS or authentication. Place
+them behind a reverse proxy such as Nginx or Traefik configured with TLS
+certificates and optional HTTP basic authentication to secure access.

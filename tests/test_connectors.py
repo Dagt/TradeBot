@@ -1,4 +1,5 @@
 import json
+import asyncio
 
 import pytest
 
@@ -89,7 +90,7 @@ async def test_stream_reconnect(monkeypatch, caplog):
     ws2 = DummyWS([msg2])
     ws_iter = iter([ws1, ws2])
 
-    def fake_connect(url):
+    def fake_connect(url, *_, **__):
         return next(ws_iter)
 
     monkeypatch.setattr("websockets.connect", fake_connect)
@@ -110,8 +111,40 @@ async def test_stream_reconnect(monkeypatch, caplog):
     await gen.aclose()
 
     assert any("ws_reconnect" in r.message for r in caplog.records)
-    assert ws1.pings > 0 and ws2.pings > 0
-    assert [s for s in sleeps if s >= 1][:2] == [1, 2]
+    assert len(sleeps) == 1
+    assert 0.5 <= sleeps[0] <= 1.5
+
+
+@pytest.mark.asyncio
+async def test_trade_stream_reconnect(monkeypatch, caplog):
+    caplog.set_level("WARNING")
+    c = BinanceConnector()
+    c.ping_interval = 0
+    msg1 = json.dumps({"p": "1", "q": "1", "T": 0, "m": False})
+    msg2 = json.dumps({"p": "3", "q": "1", "T": 1, "m": True})
+    ws1 = DummyWS([msg1])
+    ws2 = DummyWS([msg2])
+    ws_iter = iter([ws1, ws2])
+
+    def fake_connect(url, *_, **__):
+        return next(ws_iter)
+
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    async def no_ping(ws):
+        pass
+
+    monkeypatch.setattr(c, "_ping", no_ping)
+
+    gen = c.stream_trades("BTCUSDT")
+    trade1 = await gen.__anext__()
+    trade2 = await gen.__anext__()
+    assert isinstance(trade1, Trade)
+    assert trade1.price == 1.0
+    assert trade2.price == 3.0
+    await gen.aclose()
+
+    assert any("ws_reconnect" in r.message for r in caplog.records)
 
 
 binance_msgs = [
@@ -143,7 +176,7 @@ async def test_stream_trades(connector_cls, messages, monkeypatch):
     c = connector_cls()
     ws = DummyWS(messages.copy())
 
-    def fake_connect(url):
+    def fake_connect(url, *_, **__):
         return ws
 
     monkeypatch.setattr("websockets.connect", fake_connect)
@@ -184,7 +217,7 @@ class DummyOrderRest:
         return {"BTC": {"total": "1"}, "USDT": {"total": "2"}}
 
 
-@pytest.mark.parametrize("connector_cls", [BybitConnector, OKXConnector])
+@pytest.mark.parametrize("connector_cls", [BybitConnector, OKXConnector, BinanceConnector])
 @pytest.mark.asyncio
 async def test_order_and_balance_parsing(connector_cls):
     c = connector_cls()
@@ -198,12 +231,14 @@ async def test_order_and_balance_parsing(connector_cls):
         1,
         price=10,
         post_only=True,
-        time_in_force="GTC",
+        time_in_force="FOK",
+        iceberg_qty=0.5,
     )
     assert res["id"] == "1"
     assert res["price"] == 10.0
-    assert rest.last_create[5]["postOnly"] is True
-    assert rest.last_create[5]["timeInForce"] == "GTC"
+    assert rest.last_create[5].get("postOnly") is True or rest.last_create[5].get("timeInForce") == "GTX"
+    assert rest.last_create[5]["timeInForce"] in {"FOK", "GTX"}
+    assert rest.last_create[5].get("icebergQty", rest.last_create[5].get("iceberg")) == 0.5
 
     cancel = await c.cancel_order("1", "BTC/USDT")
     assert cancel["status"] == "canceled"

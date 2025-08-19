@@ -21,4 +21,4 @@ jobs:
       - name: Run unit tests
         run: pytest --cov=src --cov-report=xml -m "not integration"
       - name: Run integration tests
-        run: pytest -m integration
+        run: pytest tests -m integration

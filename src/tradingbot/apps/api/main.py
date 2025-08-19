@@ -1,8 +1,7 @@
 # src/tradingbot/apps/api/main.py
-from fastapi import FastAPI, Query, Response, HTTPException, Depends, status
+from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pathlib import Path
 import time
 from starlette.requests import Request
@@ -14,15 +13,21 @@ import shlex
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from monitoring.metrics import metrics_summary as _metrics_summary
+from monitoring.metrics import router as metrics_router
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from ...config import settings
 
 # Persistencia
 try:
-    from ...storage.timescale import get_engine, select_recent_tri_signals, select_recent_orders
+    from ...storage.timescale import (
+        get_engine,
+        select_recent_tri_signals,
+        select_recent_orders,
+        select_order_history,
+    )
     _CAN_PG = True
     _ENGINE = get_engine()
 except Exception:
@@ -52,6 +57,7 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+app.include_router(metrics_router)
 app.include_router(dashboard_router)
 
 
@@ -69,16 +75,17 @@ async def _metrics_middleware(request: Request, call_next):
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
 
-
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-@app.get("/metrics/summary")
-def metrics_summary():
-    """Expose a summarized view of key metrics."""
-    return _metrics_summary()
+@app.get("/logs")
+def logs(lines: int = Query(200, ge=1, le=1000)):
+    """Return recent lines from the log file."""
+    log_file = Path(settings.log_file or "tradingbot.log")
+    if not log_file.exists():
+        return {"items": [], "warning": "log file not found"}
+    try:
+        content = log_file.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return {"items": [], "warning": "unable to read log file"}
+    return {"items": content[-lines:]}
 
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
@@ -91,6 +98,22 @@ def orders(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_orders(_ENGINE, limit=limit)}
+
+
+@app.get("/orders/history")
+def orders_history(
+    limit: int = Query(100, ge=1, le=1000),
+    search: str | None = None,
+    symbol: str | None = None,
+    status: str | None = None,
+):
+    if not _CAN_PG:
+        return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
+    return {
+        "items": select_order_history(
+            _ENGINE, limit=limit, search=search, symbol=symbol, status=status
+        )
+    }
 
 @app.get("/tri/summary")
 def tri_summary(limit: int = Query(200, ge=1, le=5000)):
@@ -139,6 +162,31 @@ def risk_events(venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1
     from ...storage.timescale import select_recent_risk_events
     items = select_recent_risk_events(_ENGINE, venue=venue, limit=limit)
     return {"venue": venue, "items": items}
+
+
+class HaltRequest(BaseModel):
+    reason: str
+
+
+@app.post("/risk/halt")
+async def risk_halt(payload: HaltRequest):
+    bus = getattr(app.state, "bus", None)
+    if bus is None:
+        rm = getattr(app.state, "risk_manager", None)
+        bus = getattr(rm, "bus", None) if rm else None
+    if bus is None:
+        raise HTTPException(status_code=500, detail="bus not configured")
+    await bus.publish("control:halt", {"reason": payload.reason})
+    return {"status": "halt"}
+
+
+@app.post("/risk/reset")
+def risk_reset():
+    rm = getattr(app.state, "risk_manager", None)
+    if rm is None:
+        raise HTTPException(status_code=500, detail="risk manager not configured")
+    rm.reset()
+    return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
 @app.get("/pnl/summary")
 def pnl_summary(venue: str = "binance_spot_testnet"):

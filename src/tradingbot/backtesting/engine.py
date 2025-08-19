@@ -8,11 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+import numpy as np
 import pandas as pd
+import random
 
 from ..risk.manager import RiskManager
 from ..strategies import STRATEGIES
-from ..data.features import returns, order_flow_imbalance
+from ..data.features import returns, calc_ofi
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ class SlippageModel:
             ofi_val = float(bar["order_flow_imbalance"])
         elif {"bid_qty", "ask_qty"}.issubset(bar.index):
             ofi_val = float(
-                order_flow_imbalance(
+                calc_ofi(
                     pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
                 ).iloc[-1]
             )
@@ -140,6 +142,7 @@ class EventDrivenBacktestEngine:
         partial_fills: bool = True,
         cancel_unfilled: bool = False,
         stress: StressConfig | None = None,
+        seed: int | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -149,6 +152,12 @@ class EventDrivenBacktestEngine:
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
         self.stress = stress or StressConfig()
+
+        # Set global random seeds for reproducibility
+        self.seed = seed
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
 
         # Apply spread multiplier to slippage model if provided
         if self.slippage and hasattr(self.slippage, "spread_mult"):
@@ -367,7 +376,7 @@ class EventDrivenBacktestEngine:
                     funding_total += cash
 
             # Track equity after processing each bar
-            equity_curve.append(equity)
+        equity_curve.append(equity)
 
         # Liquidate remaining positions
         for (strat_name, symbol), risk in self.risk.items():
@@ -379,9 +388,14 @@ class EventDrivenBacktestEngine:
         # Final equity value
         equity_curve.append(equity)
 
+        equity_series = pd.Series(equity_curve)
         # Compute simple Sharpe ratio from equity changes
-        rets = pd.Series(equity_curve).diff().dropna()
+        rets = equity_series.diff().dropna()
         sharpe = float(rets.mean() / rets.std()) if not rets.empty and rets.std() else 0.0
+        # Maximum drawdown from the equity curve
+        running_max = equity_series.cummax()
+        drawdown = (equity_series - running_max) / running_max
+        max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
 
         orders_summary = [
             {
@@ -404,6 +418,8 @@ class EventDrivenBacktestEngine:
             "slippage": slippage_total,
             "funding": funding_total,
             "sharpe": sharpe,
+            "max_drawdown": max_drawdown,
+            "equity_curve": equity_curve,
         }
         log.info("Backtest result: %s", result)
         return result
@@ -420,6 +436,7 @@ def run_backtest_csv(
     partial_fills: bool = True,
     cancel_unfilled: bool = False,
     stress: StressConfig | None = None,
+    seed: int | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -435,6 +452,7 @@ def run_backtest_csv(
         partial_fills=partial_fills,
         cancel_unfilled=cancel_unfilled,
         stress=stress,
+        seed=seed,
     )
     return engine.run()
 
@@ -455,6 +473,7 @@ def run_backtest_mlflow(
     run_name: str = "backtest",
     params: Dict[str, Any] | None = None,
     stress: StressConfig | None = None,
+    seed: int | None = None,
     experiment: str = "backtest",
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
@@ -484,6 +503,7 @@ def run_backtest_mlflow(
             partial_fills=partial_fills,
             cancel_unfilled=cancel_unfilled,
             stress=stress,
+            seed=seed,
         )
         log_backtest_metrics(result)
         return result
@@ -633,6 +653,7 @@ def walk_forward_optimize(
 
             best_params: Dict[str, Any] | None = None
             best_equity = -float("inf")
+            best_res: Dict[str, Any] | None = None
             for params in param_grid:
                 strat = strat_cls(**params)
                 engine = EventDrivenBacktestEngine(
@@ -647,6 +668,7 @@ def walk_forward_optimize(
                 if eq > best_equity:
                     best_equity = eq
                     best_params = params
+                    best_res = res
 
             strat = strat_cls(**(best_params or {}))
             engine = EventDrivenBacktestEngine(
@@ -661,6 +683,11 @@ def walk_forward_optimize(
                 "train_equity": best_equity,
                 "test_equity": float(test_res.get("equity", 0.0)),
             }
+            if best_res is not None:
+                rec["train_sharpe"] = float(best_res.get("sharpe", 0.0))
+                rec["train_drawdown"] = float(best_res.get("max_drawdown", 0.0))
+            rec["test_sharpe"] = float(test_res.get("sharpe", 0.0))
+            rec["test_drawdown"] = float(test_res.get("max_drawdown", 0.0))
             log.info("walk-forward split %s: %s", split, rec)
             results.append(rec)
         return results
@@ -676,6 +703,7 @@ def walk_forward_optimize(
 
         best_params: Dict[str, Any] | None = None
         best_equity = -float("inf")
+        best_res: Dict[str, Any] | None = None
         for params in param_grid:
             strat = strat_cls(**params)
             engine = EventDrivenBacktestEngine(
@@ -687,6 +715,7 @@ def walk_forward_optimize(
             if eq > best_equity:
                 best_equity = eq
                 best_params = params
+                best_res = res
 
         strat = strat_cls(**(best_params or {}))
         engine = EventDrivenBacktestEngine(
@@ -701,6 +730,11 @@ def walk_forward_optimize(
             "train_equity": best_equity,
             "test_equity": float(test_res.get("equity", 0.0)),
         }
+        if best_res is not None:
+            rec["train_sharpe"] = float(best_res.get("sharpe", 0.0))
+            rec["train_drawdown"] = float(best_res.get("max_drawdown", 0.0))
+        rec["test_sharpe"] = float(test_res.get("sharpe", 0.0))
+        rec["test_drawdown"] = float(test_res.get("max_drawdown", 0.0))
         log.info("walk-forward split %s: %s", split, rec)
         results.append(rec)
 

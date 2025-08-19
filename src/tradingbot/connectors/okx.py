@@ -1,10 +1,25 @@
-"""OKX connector using CCXT REST and native websockets."""
+"""OKX connector using CCXT REST and native websockets.
+
+Examples
+--------
+>>> c = OKXConnector()
+>>> await c.place_order(
+...     "BTC-USDT", "buy", "limit", 1,
+...     price=20_000, post_only=True, iceberg_qty=0.3
+... )
+
+Limitations
+-----------
+Advanced order types depend on instrument support. Iceberg quantity maps
+to the ``iceberg`` parameter and may require specific account settings.
+"""
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
 from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
+from ..execution.venue_adapter import translate_order_flags
 
 
 class OKXConnector(ExchangeConnector):
@@ -74,6 +89,10 @@ class OKXConnector(ExchangeConnector):
         *,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Place an order via the underlying CCXT client.
 
@@ -82,12 +101,15 @@ class OKXConnector(ExchangeConnector):
         respective CCXT parameters when provided.
         """
 
-        params: dict[str, object] = {}
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if post_only:
-            # CCXT para OKX soporta ``postOnly`` booleano
-            params["postOnly"] = True
+        params = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+            reduce_only=reduce_only,
+        )
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

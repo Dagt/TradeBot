@@ -4,12 +4,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 from datetime import datetime
 from typing import Any, Awaitable, Callable, List, Tuple
 
 import ccxt.async_support as ccxt
 import websockets
 from pydantic import BaseModel
+from tradingbot.execution.retry import with_retries
 
 
 class Trade(BaseModel):
@@ -62,10 +64,18 @@ class ExchangeConnector:
         self.reconnect_delay = 1
         self.ping_interval = 20
 
-    async def _rest_call(self, fn: Callable[..., Awaitable[Any]], *a, **k) -> Any:
+    async def _rest_call(
+        self,
+        fn: Callable[..., Awaitable[Any]],
+        *a,
+        max_attempts: int = 5,
+        **k,
+    ) -> Any:
         async with self._sem:
             try:
-                return await fn(*a, **k)
+                return await with_retries(
+                    lambda: fn(*a, **k), max_attempts=max_attempts
+                )
             except Exception as e:  # pragma: no cover - logging only
                 self.log.error("rest_error", extra={"err": str(e)})
                 raise
@@ -157,13 +167,14 @@ class ExchangeConnector:
                             yield self._parse_order_book(msg, symbol)
                     finally:
                         ping_task.cancel()
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(BaseException):
                             await ping_task
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(backoff)
+                delay = backoff * random.uniform(0.5, 1.5)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 60)
 
     async def stream_trades(self, symbol: str):
@@ -183,13 +194,14 @@ class ExchangeConnector:
                             yield self._parse_trade(msg, symbol)
                     finally:
                         ping_task.cancel()
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(BaseException):
                             await ping_task
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
-                await asyncio.sleep(backoff)
+                delay = backoff * random.uniform(0.5, 1.5)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 60)
 
     # --- methods to be implemented by subclasses ---

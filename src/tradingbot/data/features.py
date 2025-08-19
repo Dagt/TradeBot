@@ -138,6 +138,36 @@ def atr(data: DataLike, n: int = 14) -> pd.Series:
     return tr.rolling(n).mean()
 
 
+def atr_ewma(data: DataLike, n: int = 14) -> pd.Series:
+    """Average True Range using an exponential moving average.
+
+    This variant applies an exponentially weighted moving average (EWMA)
+    to the sequence of true ranges, mirroring the original formulation by
+    Welles Wilder.  It offers a smoother estimate of volatility compared to
+    the simple moving average used in :func:`atr`.
+
+    Parameters
+    ----------
+    data:
+        Source data containing ``high``, ``low`` and ``close`` columns.
+    n:
+        Lookback window for the exponential mean of true ranges.
+
+    Returns
+    -------
+    pandas.Series
+        The EWMA-based ATR values.
+    """
+
+    df = _to_dataframe(data, ["high", "low", "close"])
+    high, low, close = df["high"], df["low"], df["close"]
+    tr = np.maximum(
+        high - low,
+        np.maximum((high - close.shift(1)).abs(), (low - close.shift(1)).abs()),
+    )
+    return tr.ewm(alpha=1 / n, adjust=False).mean()
+
+
 def rsi(data: DataLike, n: int = 14) -> pd.Series:
     """Relative Strength Index of the ``close`` column.
 
@@ -166,6 +196,30 @@ def rsi(data: DataLike, n: int = 14) -> pd.Series:
     rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(100)
+
+
+# Wrappers -----------------------------------------------------------------
+
+def calc_ofi(data: DataLike, depth: int = 1) -> pd.Series:
+    """Wrapper for :func:`order_flow_imbalance` to maintain backwards
+    compatibility.
+
+    Parameters
+    ----------
+    data:
+        Input exposing order book fields.
+    depth:
+        Number of levels to include in the calculation. Defaults to ``1``
+        (top of book).
+
+    Returns
+    -------
+    pandas.Series
+        Sequence of OFI values where positive numbers indicate buying
+        pressure.
+    """
+
+    return order_flow_imbalance(data, depth=depth)
 
 
 def order_flow_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
@@ -245,24 +299,8 @@ def order_flow_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
     return pd.Series(out, index=df.index, name="ofi")
 
 
-def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
-    """Depth imbalance between bid and ask queues.
-
-    Parameters
-    ----------
-    data:
-        Input exposing ``bid_qty`` and ``ask_qty`` fields.
-    depth:
-        Number of levels to aggregate when quantities are provided as lists.
-        Defaults to ``1`` (top of book).
-
-    Returns
-    -------
-    pandas.Series
-        Values in the ``[-1, 1]`` range where positive numbers signal more
-        depth on the bid side.
-    """
-
+# Existing implementation kept private for backwards compatibility
+def _depth_imbalance_impl(data: DataLike, depth: int = 1) -> pd.Series:
     if depth < 1:
         raise ValueError("depth must be at least 1")
 
@@ -280,6 +318,27 @@ def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
 
     di = _depth_jit(bid.astype(np.float64), ask.astype(np.float64))
     return pd.Series(di, index=df.index, name="depth_imbalance")
+
+
+def depth_imbalance(data: DataLike, depth: int = 1) -> pd.Series:
+    """Wrapper around the depth imbalance computation.
+
+    Parameters
+    ----------
+    data:
+        Input exposing ``bid_qty`` and ``ask_qty`` fields.
+    depth:
+        Number of levels to aggregate when quantities are provided as lists.
+        Defaults to ``1`` (top of book).
+
+    Returns
+    -------
+    pandas.Series
+        Values in the ``[-1, 1]`` range where positive numbers signal more
+        depth on the bid side.
+    """
+
+    return _depth_imbalance_impl(data, depth)
 
 
 def book_vacuum(data: DataLike, threshold: float = 0.5) -> pd.Series:
@@ -380,6 +439,18 @@ def returns(data: DataLike, log: bool = True) -> pd.Series:
     return pd.Series(out, index=df.index, name="returns")
 
 
+def donchian_channels(data: DataLike, n: int = 20):
+    """Donchian channel upper/lower bounds."""
+
+    if n < 1:
+        raise ValueError("n must be at least 1")
+
+    df = _to_dataframe(data, ["high", "low"])
+    upper = df["high"].rolling(n).max()
+    lower = df["low"].rolling(n).min()
+    return upper, lower
+
+
 def keltner_channels(
     data: DataLike,
     ema_n: int = 20,
@@ -398,6 +469,7 @@ def keltner_channels(
 
 __all__ = [
     "atr",
+    "atr_ewma",
     "rsi",
     "order_flow_imbalance",
     "depth_imbalance",
@@ -405,5 +477,6 @@ __all__ = [
     "liquidity_gap",
     "returns",
     "keltner_channels",
+    "donchian_channels",
 ]
 

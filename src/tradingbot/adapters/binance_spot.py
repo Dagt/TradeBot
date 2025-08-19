@@ -1,7 +1,6 @@
 # src/tradingbot/adapters/binance_spot.py
 from __future__ import annotations
 import asyncio
-import os
 import logging, time, uuid
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
@@ -13,6 +12,7 @@ except Exception:
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..market.exchange_meta import ExchangeMeta
 from .binance_errors import parse_binance_error_code  # si no lo tienes, ver notas abajo
 from ..execution.retry import with_retries, AmbiguousOrderError
@@ -32,6 +32,8 @@ class BinanceSpotAdapter(ExchangeAdapter):
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
         testnet: bool = False,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
     ):
         super().__init__()
         if ccxt is None:
@@ -46,7 +48,24 @@ class BinanceSpotAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "spot"},
         })
-        self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS", "10.0"))
+        self.maker_fee_bps = float(
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else (
+                settings.binance_spot_testnet_maker_fee_bps
+                if testnet
+                else settings.binance_spot_maker_fee_bps
+            )
+        )
+        self.taker_fee_bps = float(
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else (
+                settings.binance_spot_testnet_taker_fee_bps
+                if testnet
+                else settings.binance_spot_taker_fee_bps
+            )
+        )
         self.rest.set_sandbox_mode(testnet)
 
         # Advertir si faltan scopes necesarios o si hay permisos peligrosos
@@ -62,7 +81,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
             for t in trades or []:
@@ -85,6 +104,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         client_order_id: str | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ):
         """
         Envía orden con idempotencia (NEW CLIENT ORDER ID) + retries.
@@ -186,7 +206,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
                 }
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
             ts_ms = ob.get("timestamp")
@@ -198,28 +218,50 @@ class BinanceSpotAdapter(ExchangeAdapter):
             await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchFundingRate", None)
-        if method is None:
-            raise NotImplementedError("Funding no soportado en spot")
-        data = await self._request(method, sym)
-        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
-        ts = int(ts)
-        if ts > 1e12:
-            ts /= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        """Return current funding rate for ``symbol``.
 
-    async def fetch_basis(self, symbol: str):
-        """Spot markets no tienen *basis* definida.
-
-        Se implementa únicamente para cumplir la interfaz del adaptador y
-        lanzar un ``NotImplementedError`` claro indicando que Binance Spot no
-        ofrece este dato.
+        Binance expone la tasa de funding del contrato perpetuo equivalente en
+        ``fapi/v1/fundingRate``.  Consultamos ese endpoint y normalizamos la
+        respuesta a ``{"ts": datetime, "rate": float}``.
         """
 
-        raise NotImplementedError("Basis no soportado en spot")
+        sym = normalize(symbol)
+        method = getattr(self.rest, "fapiPublicGetFundingRate", None)
+        if method is None:
+            raise NotImplementedError("Funding no soportado")
+
+        data = await self._request(method, {"symbol": sym, "limit": 1})
+        item = data[0] if isinstance(data, list) and data else data
+        ts_ms = int(
+            item.get("fundingTime")
+            or item.get("timestamp")
+            or item.get("time")
+            or 0
+        )
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
+
+    async def fetch_basis(self, symbol: str):
+        """Return the basis (mark - index) for ``symbol``.
+
+        El endpoint ``fapi/v1/premiumIndex`` expone tanto el ``indexPrice``
+        como el ``markPrice`` del contrato perpetuo.  La diferencia entre ambos
+        es la *basis*.
+        """
+
+        sym = normalize(symbol)
+        method = getattr(self.rest, "fapiPublicGetPremiumIndex", None)
+        if method is None:
+            raise NotImplementedError("Basis no soportado")
+
+        data = await self._request(method, {"symbol": sym})
+        ts_ms = int(data.get("time") or data.get("timestamp") or 0)
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        mark_px = float(data.get("markPrice") or data.get("mark_price") or 0.0)
+        index_px = float(data.get("indexPrice") or data.get("index_price") or 0.0)
+        basis = mark_px - index_px
+        return {"ts": ts, "basis": basis}
 
     async def fetch_oi(self, symbol: str):
         """Fetch futures open interest for the given spot ``symbol``.
@@ -230,7 +272,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
         store it directly.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest no soportado")
@@ -242,5 +284,5 @@ class BinanceSpotAdapter(ExchangeAdapter):
         return {"ts": ts, "oi": oi}
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        symbol_ex = symbol and self.normalize_symbol(symbol)
+        symbol_ex = symbol and normalize(symbol)
         return await self._request(self.rest.cancel_order, order_id, symbol_ex)

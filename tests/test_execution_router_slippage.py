@@ -2,9 +2,10 @@ import pytest
 
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
+from tradingbot.execution.slippage import impact_by_depth, queue_position
 from tradingbot.utils.metrics import SLIPPAGE
 from tradingbot.backtesting.engine import SlippageModel
-from tradingbot.data.features import order_flow_imbalance
+from tradingbot.data.features import calc_ofi
 import pandas as pd
 
 
@@ -60,6 +61,17 @@ async def test_router_selects_lowest_cost_venue_maker():
     )
     selected = await router.best_venue(order)
     assert selected is a1
+
+
+@pytest.mark.asyncio
+async def test_execute_reports_fee_info():
+    ob = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)]}}
+    adapter = MockAdapter("a", order_book=ob, taker_fee_bps=12.0)
+    router = ExecutionRouter(adapter)
+    order = Order(symbol="XYZ", side="buy", type_="market", qty=1.0)
+    res = await router.execute(order)
+    assert res["fee_type"] == "taker"
+    assert res["fee_bps"] == 12.0
 
 
 @pytest.mark.asyncio
@@ -125,7 +137,7 @@ def test_slippage_model_ofi_impact():
             "ask_qty": [1.0, 1.0],
         }
     )
-    df["order_flow_imbalance"] = order_flow_imbalance(df[["bid_qty", "ask_qty"]])
+    df["order_flow_imbalance"] = calc_ofi(df[["bid_qty", "ask_qty"]])
     bar = df.iloc[1]
     model = SlippageModel(volume_impact=0.0, spread_mult=0.0, ofi_impact=0.5)
     price = 100.0
@@ -133,3 +145,13 @@ def test_slippage_model_ofi_impact():
     adj_sell = model.adjust("sell", 1.0, price, bar)
     assert adj_buy == pytest.approx(price + 0.5, rel=1e-9)
     assert adj_sell == pytest.approx(price - 0.5, rel=1e-9)
+
+
+def test_slippage_helpers():
+    asks = [(100.0, 1.0), (101.0, 1.0)]
+    bps = impact_by_depth("buy", 1.5, asks)
+    assert bps == pytest.approx(33.333, rel=1e-3)
+
+    bids = [(99.0, 2.0)]
+    pos = queue_position(0.5, bids)
+    assert pos == pytest.approx(0.8, rel=1e-3)

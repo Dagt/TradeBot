@@ -94,6 +94,88 @@ def persist_orderbooks(orderbooks: Iterable[OrderBook], *, backend: Backends = "
             log.debug("Orderbook insert failed: %s", exc)
 
 
+def persist_bba(records: Iterable[dict[str, Any]], *, backend: Backends = "timescale", path: Path | None = None) -> None:
+    """Persist best bid/ask snapshots."""
+
+    if backend == "csv":
+        csv_path = _csv_path("bba", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for r in records:
+                writer.writerow(
+                    [
+                        r["ts"].isoformat(),
+                        r["exchange"],
+                        r["symbol"],
+                        r.get("bid_px"),
+                        r.get("bid_qty"),
+                        r.get("ask_px"),
+                        r.get("ask_qty"),
+                    ]
+                )
+        return
+
+    storage = _get_storage(backend)
+    if storage is None or not hasattr(storage, "insert_bba"):
+        return
+    engine = storage.get_engine()
+    for r in records:
+        try:
+            storage.insert_bba(
+                engine,
+                ts=r["ts"],
+                exchange=r["exchange"],
+                symbol=r["symbol"],
+                bid_px=r.get("bid_px"),
+                bid_qty=r.get("bid_qty"),
+                ask_px=r.get("ask_px"),
+                ask_qty=r.get("ask_qty"),
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("BBA insert failed: %s", exc)
+
+
+def persist_book_delta(records: Iterable[dict[str, Any]], *, backend: Backends = "timescale", path: Path | None = None) -> None:
+    """Persist order book delta updates."""
+
+    if backend == "csv":
+        csv_path = _csv_path("book_delta", path)
+        with csv_path.open("a", newline="") as fh:
+            writer = csv.writer(fh)
+            for r in records:
+                writer.writerow(
+                    [
+                        r["ts"].isoformat(),
+                        r["exchange"],
+                        r["symbol"],
+                        ";".join(map(str, r.get("bid_px", []))),
+                        ";".join(map(str, r.get("bid_qty", []))),
+                        ";".join(map(str, r.get("ask_px", []))),
+                        ";".join(map(str, r.get("ask_qty", []))),
+                    ]
+                )
+        return
+
+    storage = _get_storage(backend)
+    if storage is None or not hasattr(storage, "insert_book_delta"):
+        return
+    engine = storage.get_engine()
+    for r in records:
+        try:
+            storage.insert_book_delta(
+                engine,
+                ts=r["ts"],
+                exchange=r["exchange"],
+                symbol=r["symbol"],
+                bid_px=r.get("bid_px", []),
+                bid_qty=r.get("bid_qty", []),
+                ask_px=r.get("ask_px", []),
+                ask_qty=r.get("ask_qty", []),
+            )
+        except Exception as exc:  # pragma: no cover - logging only
+            log.debug("Book delta insert failed: %s", exc)
+
+
 def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: Path | None = None) -> None:
     """Persist OHLCV bars to the selected backend or CSV file."""
     if backend == "csv":
@@ -238,14 +320,38 @@ async def download_funding(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    retries: int = 3,
     **params: Any,
 ) -> None:
-    """Fetch a funding rate using *connector* and persist it."""
+    """Fetch a funding rate using *connector* and persist it.
 
-    info: Any = await connector.fetch_funding(symbol, **params)
+    Parameters
+    ----------
+    retries:
+        Number of retry attempts when the connector raises an exception.
+    """
+
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            info: Any = await connector.fetch_funding(symbol, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_funding failed")
+
     ts = getattr(info, "timestamp", None) or getattr(info, "ts", None) or info.get("ts")
     rate = getattr(info, "rate", None) or info.get("rate") or info.get("fundingRate")
-    interval = getattr(info, "interval_sec", None) or info.get("interval_sec") or info.get("interval") or 0
+    interval = (
+        getattr(info, "interval_sec", None)
+        or info.get("interval_sec")
+        or info.get("interval")
+        or 0
+    )
     if isinstance(ts, (int, float)):
         ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
     record = {
@@ -374,11 +480,25 @@ async def download_kaiko_open_interest(
     pair: str,
     *,
     backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
     **params: Any,
 ) -> None:
     """Fetch open interest from Kaiko and persist it."""
 
-    raw = await connector.fetch_open_interest(exchange, pair, **params)
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_open_interest(exchange, pair, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_open_interest failed")
+
     records = []
     for r in raw if isinstance(raw, Iterable) else [raw]:
         ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
@@ -386,7 +506,60 @@ async def download_kaiko_open_interest(
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
         records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
-    persist_open_interest(records, backend=backend)
+
+    for i in range(0, len(records), batch_size):
+        persist_open_interest(records[i : i + batch_size], backend=backend)
+
+
+async def download_kaiko_funding(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
+    **params: Any,
+) -> None:
+    """Fetch funding rates from Kaiko and persist them."""
+
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_funding(exchange, pair, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_funding failed")
+
+    records = []
+    for r in raw if isinstance(raw, Iterable) else [raw]:
+        ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
+        rate = getattr(r, "rate", None) or r.get("rate") or r.get("fundingRate")
+        interval = (
+            getattr(r, "interval_sec", None)
+            or r.get("interval_sec")
+            or r.get("interval")
+            or 0
+        )
+        if isinstance(ts, (int, float)):
+            ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
+        records.append(
+            {
+                "ts": ts,
+                "exchange": exchange,
+                "symbol": pair,
+                "rate": float(rate or 0.0),
+                "interval_sec": int(interval),
+            }
+        )
+
+    for i in range(0, len(records), batch_size):
+        persist_funding(records[i : i + batch_size], backend=backend)
 
 
 async def fetch_trades_coinapi(
@@ -491,11 +664,25 @@ async def download_coinapi_open_interest(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    batch_size: int = 1000,
+    retries: int = 3,
     **params: Any,
 ) -> None:
     """Fetch open interest from CoinAPI and persist it."""
 
-    raw = await connector.fetch_open_interest(symbol, **params)
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            raw = await connector.fetch_open_interest(symbol, **params)
+            break
+        except Exception as exc:  # pragma: no cover - network errors
+            last_exc = exc
+            if attempt + 1 >= retries:
+                raise
+            await asyncio.sleep(2 ** attempt)
+    else:  # pragma: no cover - defensive
+        raise last_exc or RuntimeError("fetch_open_interest failed")
+
     records = []
     for r in raw if isinstance(raw, Iterable) else [raw]:
         ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
@@ -503,7 +690,9 @@ async def download_coinapi_open_interest(
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
         records.append({"ts": ts, "exchange": connector.name, "symbol": symbol, "oi": float(oi or 0.0)})
-    persist_open_interest(records, backend=backend)
+
+    for i in range(0, len(records), batch_size):
+        persist_open_interest(records[i : i + batch_size], backend=backend)
 
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
@@ -525,33 +714,71 @@ async def run_orderbook_stream(
     symbol: str,
     depth: int,
     bus: EventBus,
-    engine: Any,
+    engine: Any | None,
     *,
+    persist: bool = False,
     backend: Backends = "timescale",
+    emit_bba: bool = False,
+    emit_delta: bool = False,
 ) -> None:
-    """Publish and persist order book snapshots."""
-    storage = _get_storage(backend)
-    async for d in adapter.stream_order_book(symbol, depth):
-        ob = OrderBook(
-            ts=d.get("ts", datetime.now(timezone.utc)),
-            exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
-            bid_px=d.get("bid_px") or [],
-            bid_qty=d.get("bid_qty") or [],
-            ask_px=d.get("ask_px") or [],
-            ask_qty=d.get("ask_qty") or [],
-        )
-        await bus.publish("orderbook", ob)
-        storage.insert_orderbook(
-            engine,
-            ts=ob.ts,
-            exchange=ob.exchange,
-            symbol=ob.symbol,
-            bid_px=ob.bid_px,
-            bid_qty=ob.bid_qty,
-            ask_px=ob.ask_px,
-            ask_qty=ob.ask_qty,
-        )
+    """Publish and optionally persist order book snapshots.
+
+    Parameters
+    ----------
+    adapter: object providing ``stream_order_book``
+    symbol: market symbol to subscribe.
+    depth: order book depth to request.
+    bus: event bus for publishing ``OrderBook`` objects.
+    engine: database engine or ``None`` to disable persistence.
+    persist: if ``True`` persist snapshots using the selected backend.
+    backend: storage backend name.
+    emit_bba: if ``True`` also publish best bid/ask updates.
+    emit_delta: if ``True`` also publish order book deltas.
+    """
+
+    storage = _get_storage(backend) if persist else None
+
+    async def _orderbook() -> None:
+        async for d in adapter.stream_order_book(symbol, depth):
+            ob = OrderBook(
+                ts=d.get("ts", datetime.now(timezone.utc)),
+                exchange=getattr(adapter, "name", "unknown"),
+                symbol=symbol,
+                bid_px=d.get("bid_px") or [],
+                bid_qty=d.get("bid_qty") or [],
+                ask_px=d.get("ask_px") or [],
+                ask_qty=d.get("ask_qty") or [],
+            )
+            await bus.publish("orderbook", ob)
+            if storage is not None and engine is not None:
+                storage.insert_orderbook(
+                    engine,
+                    ts=ob.ts,
+                    exchange=ob.exchange,
+                    symbol=ob.symbol,
+                    bid_px=ob.bid_px,
+                    bid_qty=ob.bid_qty,
+                    ask_px=ob.ask_px,
+                    ask_qty=ob.ask_qty,
+                )
+
+    tasks = [asyncio.create_task(_orderbook())]
+
+    if emit_bba and hasattr(adapter, "stream_bba"):
+        async def _bba() -> None:
+            async for b in adapter.stream_bba(symbol):
+                await bus.publish("bba", b)
+
+        tasks.append(asyncio.create_task(_bba()))
+
+    if emit_delta and hasattr(adapter, "stream_book_delta"):
+        async def _delta() -> None:
+            async for d in adapter.stream_book_delta(symbol, depth):
+                await bus.publish("book_delta", d)
+
+        tasks.append(asyncio.create_task(_delta()))
+
+    await asyncio.gather(*tasks)
 
 async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "timescale"):
     """Stream trades from *adapter* and persist each tick.

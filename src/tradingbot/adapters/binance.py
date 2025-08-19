@@ -10,6 +10,7 @@ except Exception:  # pragma: no cover - si falta ccxt
     ccxt = None
 
 from .base import ExchangeAdapter
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class BinanceWSAdapter(ExchangeAdapter):
             })
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        stream = _binance_symbol_stream(self.normalize_symbol(symbol))
+        stream = _binance_symbol_stream(normalize(symbol))
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -64,7 +65,7 @@ class BinanceWSAdapter(ExchangeAdapter):
             yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _binance_symbol_stream(self.normalize_symbol(symbol)).replace("@trade", f"@depth{depth}@100ms")
+        stream = _binance_symbol_stream(normalize(symbol)).replace("@trade", f"@depth{depth}@100ms")
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -86,7 +87,7 @@ class BinanceWSAdapter(ExchangeAdapter):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para funding")
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:  # pragma: no cover - depende de ccxt
             raise NotImplementedError("Funding no soportado")
@@ -116,7 +117,7 @@ class BinanceWSAdapter(ExchangeAdapter):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para basis")
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetPremiumIndex", None)
         if method is None:  # pragma: no cover - depende de ccxt
             raise NotImplementedError("Basis no soportado")
@@ -138,7 +139,7 @@ class BinanceWSAdapter(ExchangeAdapter):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para open interest")
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
         if method is None:  # pragma: no cover - depende de ccxt
             raise NotImplementedError("Open interest no soportado")
@@ -158,6 +159,7 @@ class BinanceWSAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Envía una orden usando el adaptador REST si está disponible."""
 

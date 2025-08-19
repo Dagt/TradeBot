@@ -4,9 +4,11 @@ import asyncio
 import contextlib
 import logging
 import time
+import random
 
 import websockets
 
+from ..core.symbols import normalize as normalize_symbol
 from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 
@@ -81,9 +83,15 @@ class ExchangeAdapter(ABC):
 
     # ------------------------------------------------------------------
     # Normalization helpers
-    def normalize_symbol(self, symbol: str) -> str:
-        """Default symbol normalisation removing separators."""
-        return symbol.replace("/", "")
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Normalise ``symbol`` using :func:`tradingbot.core.symbols.normalize`.
+
+        This wrapper maintains backwards compatibility with older code
+        invoking :meth:`normalize_symbol` on adapters directly while the
+        actual implementation lives in :mod:`tradingbot.core.symbols`.
+        """
+        return normalize_symbol(symbol)
 
     def normalize_trade(self, symbol, ts, price, qty, side) -> dict:
         return {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
@@ -132,12 +140,16 @@ class ExchangeAdapter(ABC):
 
     async def _ws_messages(self, url: str, subscribe: str | None = None) -> AsyncIterator[str]:
         backoff = 1.0
+        successes = 0
         while True:
             try:
                 async with websockets.connect(url, ping_interval=None) as ws:
                     if subscribe:
                         await ws.send(subscribe)
-                    backoff = 1.0
+                    successes += 1
+                    if successes >= 3:
+                        backoff = 1.0
+                        successes = 0
                     ping_task = asyncio.create_task(self._ping(ws))
                     try:
                         while True:
@@ -152,8 +164,10 @@ class ExchangeAdapter(ABC):
             except Exception as e:
                 WS_FAILURES.labels(adapter=self.name).inc()
                 WS_RECONNECTS.labels(adapter=self.name).inc()
-                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, backoff)
-                await asyncio.sleep(backoff)
+                successes = 0
+                delay = backoff * random.uniform(0.5, 1.5)
+                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, delay)
+                await asyncio.sleep(delay)
                 backoff = min(backoff * 2, 30.0)
 
     # ------------------------------------------------------------------
@@ -205,6 +219,7 @@ class ExchangeAdapter(ABC):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Return provider response (paper/live)."""
 

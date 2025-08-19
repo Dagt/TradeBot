@@ -10,6 +10,7 @@ binance_ws_stub.BinanceWSAdapter = object
 sys.modules.setdefault("tradingbot.adapters.binance_ws", binance_ws_stub)
 
 from tradingbot.live import runner_testnet as rt
+from tradingbot.core import normalize
 
 
 class DummyWS:
@@ -97,7 +98,7 @@ async def test_bybit_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec, "bybit_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol="BTC/USDT", trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
     await rt._run_symbol(
         "bybit",
         "futures",
@@ -116,7 +117,79 @@ async def test_bybit_futures_order(monkeypatch):
     inst = DummyExec.last_instance
     assert inst.leverage == 5
     assert inst.testnet is True
-    assert inst.orders[0][:4] == ("BTC/USDT", "buy", "market", 1.0)
+    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
+
+
+class DummyExecReal:
+    last_instance = None
+
+    def __init__(self, api_key=None, api_secret=None, leverage=None):
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.leverage = leverage
+        self.orders = []
+        DummyExecReal.last_instance = self
+
+    async def place_order(self, symbol, side, type_, qty, mark_price=None):
+        self.orders.append((symbol, side, type_, qty))
+        return {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_run_real(monkeypatch):
+    monkeypatch.setenv("BINANCE_API_KEY", "k")
+    monkeypatch.setenv("BINANCE_API_SECRET", "s")
+    import importlib, sys
+    import tradingbot.config as config
+    config = importlib.reload(config)
+    sys.modules["tradingbot.config"] = config
+    import tradingbot.live.runner_real as rr
+    rr = importlib.reload(rr)
+    monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rr, "BreakoutATR", lambda: DummyStrat())
+    monkeypatch.setattr(rr, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
+    monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
+    monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
+    monkeypatch.setitem(
+        rr.ADAPTERS,
+        ("binance", "spot"),
+        (lambda: DummyWS(), DummyExecReal, "binance_spot"),
+    )
+
+    cfg = rr._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
+    await rr._run_symbol(
+        "binance",
+        "spot",
+        cfg,
+        leverage=1,
+        dry_run=False,
+        total_cap_usdt=1000.0,
+        per_symbol_cap_usdt=500.0,
+        soft_cap_pct=0.1,
+        soft_cap_grace_sec=30,
+        daily_max_loss_usdt=100.0,
+        daily_max_drawdown_pct=0.05,
+        max_consecutive_losses=3,
+    )
+
+    inst = DummyExecReal.last_instance
+    assert inst.api_key == "k"
+    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
+
+
+@pytest.mark.asyncio
+async def test_real_requires_flag(monkeypatch):
+    monkeypatch.setenv("BINANCE_API_KEY", "x")
+    monkeypatch.setenv("BINANCE_API_SECRET", "y")
+    import importlib, sys
+    import tradingbot.config as config
+    config = importlib.reload(config)
+    sys.modules["tradingbot.config"] = config
+    import tradingbot.live.runner_real as rr
+    rr = importlib.reload(rr)
+    with pytest.raises(ValueError):
+        await rr.run_live_real(symbols=["BTC/USDT"], i_know_what_im_doing=False)
 
 
 class DummyExec2(DummyExec):
@@ -138,7 +211,7 @@ async def test_okx_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec2, "okx_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol="BTC/USDT", trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
     await rt._run_symbol(
         "okx",
         "futures",
@@ -157,4 +230,4 @@ async def test_okx_futures_order(monkeypatch):
     inst = DummyExec2.last_instance
     assert inst.leverage == 7
     assert inst.testnet is True
-    assert inst.orders[0][:4] == ("BTC/USDT", "buy", "market", 1.0)
+    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)

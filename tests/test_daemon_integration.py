@@ -79,3 +79,21 @@ async def test_daemon_adjusts_size_for_correlation():
     await daemon._on_signal({"signal": sig, "trade": trade})
 
     assert router.orders and router.orders[0].qty == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_daemon_emits_event_on_high_correlation():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:paused", lambda e: events.append(e))
+    risk = RiskManager(max_pos=2.0, bus=bus)
+    router = ExecutionRouter(PaperAdapter())
+    daemon = TradeBotDaemon({}, [], risk, router, ["AAA", "BBB"], returns_window=5)
+    daemon.price_history["AAA"] = deque([1, 2, 3], maxlen=5)
+    daemon.price_history["BBB"] = deque([2, 4, 6], maxlen=5)
+    trade = type("T", (), {"symbol": "AAA", "price": 4.0})
+    sig = Signal("buy", 1.0)
+    await daemon._on_signal({"signal": sig, "trade": trade})
+    await asyncio.sleep(0)
+    assert risk.max_pos == pytest.approx(0.5)
+    assert events and events[0]["reason"] == "correlation"

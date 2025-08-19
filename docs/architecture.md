@@ -28,4 +28,6 @@ raíz del repositorio.
 
 Para una explicación detallada de los componentes y su interacción
 consulta [docs/usage.md](usage.md) y los ejemplos de
-[docs/examples.md](examples.md).
+[docs/examples.md](examples.md).  Las funcionalidades adicionales que
+no forman parte del MVP se describen en
+[extra_features.md](extra_features.md).

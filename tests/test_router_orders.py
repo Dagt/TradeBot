@@ -1,3 +1,4 @@
+import logging
 import pytest
 
 from tradingbot.execution.order_types import Order
@@ -46,6 +47,7 @@ async def test_best_venue_selection():
         {"type_": "limit", "price": 100.0, "time_in_force": "IOC"},
         {"type_": "limit", "price": 100.0, "time_in_force": "FOK"},
         {"type_": "limit", "price": 100.0, "iceberg_qty": 0.1},
+        {"type_": "market", "reduce_only": True},
     ],
 )
 async def test_order_type_support(kwargs):
@@ -60,3 +62,21 @@ async def test_order_type_support(kwargs):
         assert adapter.kwargs[key] == val
     assert "queue_position" in res
     assert "est_slippage_bps" in res
+
+
+class FailingAdapter:
+    name = "failing"
+
+    async def place_order(self, **_):
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_router_logs_order_error(caplog):
+    adapter = FailingAdapter()
+    router = ExecutionRouter(adapter)
+    order = Order(symbol="XYZ", side="buy", type_="market", qty=1.0)
+    with caplog.at_level(logging.ERROR):
+        res = await router.execute(order)
+    assert res["status"] == "error"
+    assert "order placement failed" in caplog.text.lower()

@@ -19,14 +19,21 @@ from ..bus import EventBus
 from ..connectors.base import ExchangeConnector
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard
+from ..risk.oco import OcoBook, load_active_oco
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
 from ..utils.metrics import BASIS, FUNDING_RATE, OPEN_INTEREST
+
+try:
+    from ..storage.timescale import get_engine
+    _CAN_PG = True
+except Exception:  # pragma: no cover
+    _CAN_PG = False
 
 log = logging.getLogger(__name__)
 
@@ -182,6 +189,7 @@ class TradeBotDaemon:
         )
         # Últimos precios conocidos por símbolo/asset
         self.last_prices: Dict[str, float] = {}
+        self.oco_book = OcoBook()
 
         # Bus subscriptions
         self.bus.subscribe("trade", self._dispatch_trade)
@@ -249,6 +257,24 @@ class TradeBotDaemon:
                     self.guard.mark_price(symbol, float(price))
                 except Exception:  # pragma: no cover - defensive
                     pass
+
+    # ------------------------------------------------------------------
+    def _rehydrate_state(self) -> None:
+        """Cargar posiciones y órdenes OCO activas desde la base de datos."""
+        if not _CAN_PG:
+            return
+        try:
+            engine = get_engine()
+        except Exception:  # pragma: no cover
+            return
+        venue = self.guard.cfg.venue if self.guard else ""
+        pos_map = load_positions(engine, venue)
+        for sym, data in pos_map.items():
+            self.risk.update_position(venue, sym, data.get("qty", 0.0))
+            if self.guard:
+                self.guard.set_position(venue, sym, data.get("qty", 0.0))
+        symbols = list(self.symbols)
+        self.oco_book.preload(load_active_oco(engine, venue=venue, symbols=symbols))
 
     # ------------------------------------------------------------------
     async def _balance_worker(self) -> None:
@@ -489,7 +515,13 @@ class TradeBotDaemon:
         if price is not None and not self.risk.check_limits(price):
             log.warning("risk_halt", extra={"price": price})
             return
-        order = Order(symbol=symbol, side="buy" if delta > 0 else "sell", type_="market", qty=abs(delta))
+        order = Order(
+            symbol=symbol,
+            side="buy" if delta > 0 else "sell",
+            type_="market",
+            qty=abs(delta),
+            reduce_only=getattr(signal, "reduce_only", False),
+        )
         res = await self.router.execute(order)
         venue = res.get("venue")
         await self.bus.publish("fill", {"symbol": symbol, "side": order.side, "qty": order.qty, "venue": venue, **res})
@@ -525,6 +557,7 @@ class TradeBotDaemon:
     async def run(self) -> None:
         """Entry point for running the daemon until halted."""
         await self.refresh_balances()
+        self._rehydrate_state()
         # periodic balance reconciliation
         task = asyncio.create_task(self._balance_worker())
         task.add_done_callback(_report_task_error)

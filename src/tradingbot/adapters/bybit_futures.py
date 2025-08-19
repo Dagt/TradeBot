@@ -17,7 +17,9 @@ except Exception:  # pragma: no cover - ccxt optional durante tests
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
+from ..execution.venue_adapter import translate_order_flags
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +61,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -73,7 +75,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -90,7 +92,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:  # pragma: no cover - depends on ccxt support
             raise NotImplementedError("Funding not supported")
@@ -114,7 +116,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
         raised to signal that the venue does not support basis retrieval.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "publicGetV5MarketPremiumIndexPrice", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -148,7 +150,7 @@ class BybitFuturesAdapter(ExchangeAdapter):
         structure.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "publicGetV5MarketOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")
@@ -171,15 +173,22 @@ class BybitFuturesAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        reduce_only: bool = False,
         params: dict | None = None,
     ) -> dict:
         params = params or {}
-        if post_only:
-            params["postOnly"] = True
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if iceberg_qty is not None:
-            params["iceberg"] = iceberg_qty
+        extra = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+            reduce_only=reduce_only,
+        )
+        params.update(extra)
         backoff = 1.0
         while True:
             try:

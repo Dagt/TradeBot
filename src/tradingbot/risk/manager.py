@@ -25,6 +25,9 @@ import numpy as np
 
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
+from .limits import RiskLimits, LimitTracker
+from .position_sizing import vol_target
+from sqlalchemy import text
 
 
 @dataclass
@@ -52,6 +55,7 @@ class RiskManager:
         *,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
+        limits: RiskLimits | None = None,
         bus: EventBus | None = None,
     ):
         """Create a :class:`RiskManager`.
@@ -77,6 +81,7 @@ class RiskManager:
         self._daily_peak: float = 0.0
 
         self.enabled = True
+        self.last_kill_reason: str | None = None
         self.pos = Position()
         # Multi-exchange position book: {exchange: {symbol: qty}}
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -95,6 +100,9 @@ class RiskManager:
             self.bus.subscribe("fill", self._on_fill_event)
             self.bus.subscribe("price", self._on_price_event)
             self.bus.subscribe("pnl", self._on_pnl_event)
+            self.bus.subscribe("risk:blocked", self._on_block_event)
+
+        self.limits = LimitTracker(limits, bus) if limits is not None else None
 
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
@@ -115,6 +123,18 @@ class RiskManager:
         # Si se cerró o se invirtió la posición, reinicia trackers de precio
         if prev == 0 or prev * self.pos.qty <= 0:
             self._reset_price_trackers()
+
+    # ------------------------------------------------------------------
+    # Order limit helpers
+    def register_order(self, notional: float) -> bool:
+        """Registrar una nueva orden verificando límites opcionales."""
+        if self.limits is None:
+            return True
+        return self.limits.register_order(notional)
+
+    def complete_order(self) -> None:
+        if self.limits is not None:
+            self.limits.complete_order()
 
     # ------------------------------------------------------------------
     # Multi-exchange position helpers
@@ -196,6 +216,12 @@ class RiskManager:
         if not self._check_daily_limits() and self.bus is not None:
             await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
 
+    async def _on_block_event(self, evt: dict) -> None:
+        reason = evt.get("reason", "limit")
+        self.enabled = False
+        self.last_kill_reason = reason
+        self.close_all_positions()
+
     def size(
         self,
         signal_side: str,
@@ -247,8 +273,8 @@ class RiskManager:
         """
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
-        scale = self.vol_target / symbol_vol
-        target_abs = min(self.max_pos, self.max_pos * scale)
+        budget = self.max_pos * self.vol_target
+        target_abs = vol_target(symbol_vol, budget, self.max_pos)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
@@ -259,13 +285,22 @@ class RiskManager:
     ) -> list[tuple[str, str]]:
         """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
 
-        Devuelve la lista de pares que excedieron ``threshold``.
+        Los símbolos con correlaciones que exceden ``threshold`` se agrupan
+        mediante :mod:`correlation_guard` y ``max_pos`` se reduce en proporción
+        al tamaño del grupo más grande.  Se devuelve la lista de pares que
+        superaron el umbral.
         """
+
+        from .correlation_guard import group_correlated, global_cap
+
         exceeded: list[tuple[str, str]] = [
             pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
         ]
+
+        groups = group_correlated(symbol_pairs, threshold)
+        self.max_pos = global_cap(groups, self._base_max_pos)
+
         if exceeded:
-            self.max_pos *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -354,6 +389,23 @@ class RiskManager:
             # dispatch asynchronously without awaiting
             asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
 
+    def reset(self) -> None:
+        """Reinicia el gestor tras una activación del *kill switch*."""
+        self.enabled = True
+        self.last_kill_reason = None
+        self.close_all_positions()
+        self.positions_multi.clear()
+        self.pnl_multi.clear()
+        self.daily_pnl = 0.0
+        self._daily_peak = 0.0
+        self.max_pos = self._base_max_pos
+        self.vol_target = self._base_vol_target
+        self._de_risk_stage = 0
+        self._reset_price_trackers()
+        KILL_SWITCH_ACTIVE.set(0)
+        if self.limits is not None:
+            self.limits.reset()
+
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
     def de_risk(self) -> None:
@@ -380,6 +432,8 @@ class RiskManager:
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
         self.de_risk()
+        if self.limits is not None:
+            self.limits.update_pnl(delta)
 
     def _check_daily_limits(self) -> bool:
         self.de_risk()
@@ -404,6 +458,8 @@ class RiskManager:
         """
 
         if not self.enabled:
+            return False
+        if self.limits is not None and self.limits.blocked:
             return False
 
         qty = self.pos.qty
@@ -447,3 +503,43 @@ class RiskManager:
             return False
 
         return self._check_daily_limits()
+
+
+# ---------------------------------------------------------------------------
+# Rehidratación desde base de datos
+def load_positions(engine, venue: str) -> dict:
+    """Cargar posiciones persistidas para ``venue``.
+
+    Devuelve un diccionario ``{symbol: {qty, avg_price, ...}}`` obtenido de la
+    capa de almacenamiento.  Si ``engine`` es ``None`` o ocurre algún error se
+    retorna un mapeo vacío para evitar que la carga falle en entornos sin base
+    de datos.
+    """
+
+    if engine is None:
+        return {}
+    try:  # pragma: no cover - si faltan dependencias simplemente ignoramos
+        from ..storage.timescale import load_positions as _load
+        return _load(engine, venue)
+    except Exception:
+        try:  # fallback para motores sin esquema Timescale (ej. SQLite)
+            with engine.begin() as conn:
+                rows = conn.execute(
+                    text(
+                        'SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid'
+                        ' FROM "market.positions" WHERE venue = :venue'
+                    ),
+                    {"venue": venue},
+                ).mappings().all()
+            out: dict = {}
+            for r in rows:
+                out[r["symbol"]] = {
+                    "qty": float(r["qty"]),
+                    "avg_price": float(r["avg_price"]),
+                    "realized_pnl": float(r["realized_pnl"]),
+                    "fees_paid": float(r["fees_paid"]),
+                }
+            return out
+        except Exception:
+            return {}
+

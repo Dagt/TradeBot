@@ -1,6 +1,8 @@
 import pandas as pd
+import yaml
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
+from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
 from hypothesis import given, strategies as st
 
 
@@ -28,6 +30,39 @@ def test_order_flow_signals():
     assert sig_buy.side == "buy"
     sig_sell = strat.on_bar({"window": df_sell})
     assert sig_sell.side == "sell"
+
+
+def test_mean_rev_ofi_signals():
+    cfg = yaml.safe_load(
+        """
+ofi_window: 2
+zscore_threshold: 0.5
+vol_window: 2
+vol_threshold: 1.0
+"""
+    )
+    strat = MeanRevOFI(**cfg)
+
+    df_sell = pd.DataFrame(
+        {
+            "bid_qty": [1, 2, 10],
+            "ask_qty": [3, 1, 0],
+            "close": [100, 100, 100],
+        }
+    )
+    df_buy = pd.DataFrame(
+        {
+            "bid_qty": [3, 1, 0],
+            "ask_qty": [1, 2, 10],
+            "close": [100, 100, 100],
+        }
+    )
+
+    sig_sell = strat.on_bar({"window": df_sell})
+    assert sig_sell.side == "sell"
+
+    sig_buy = strat.on_bar({"window": df_buy})
+    assert sig_buy.side == "buy"
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))

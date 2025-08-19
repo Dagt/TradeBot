@@ -5,6 +5,56 @@ scalping y arbitraje sobre criptomonedas.  Incluye todo lo necesario para
 ingerir datos, realizar backtesting y ejecutar estrategias en modo
 ``paper`` o real desde una interfaz web.
 
+La correspondencia entre el blueprint original y los módulos del código se documenta en [docs/blueprint_map.md](docs/blueprint_map.md).
+
+## Quickstart
+
+1. **Clonar el repositorio**
+   ```bash
+   git clone https://github.com/<tu_usuario>/TradeBot.git
+   cd TradeBot
+   ```
+
+2. **Crear `.env`**
+   Copia el archivo `.env.example` a `.env` y completa las credenciales.
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Levantar los servicios**
+   ```bash
+   make up
+   ```
+
+4. **Ingerir datos**
+   ```bash
+   tradingbot ingest
+   ```
+
+5. **Ejecutar backtesting**
+   ```bash
+   tradingbot backtest
+   ```
+
+Al terminar, consulta [docs/blueprint_map.md](docs/blueprint_map.md) para entender la correspondencia entre el blueprint y el código.
+
+## Errores comunes
+
+| Error | Solución |
+|-------|----------|
+| `tradingbot: command not found` | Ejecuta los comandos dentro del contenedor o añade `src` al `PYTHONPATH`. |
+| Falta el archivo `.env` | Crea uno con `cp .env.example .env` y completa las variables requeridas. |
+| `make: *** No rule to make target 'up'` | Ejecuta `make` desde la raíz del proyecto donde está el `Makefile`. |
+| `tradingbot backtest` sin datos | Ejecuta `tradingbot ingest` primero para descargar los datos necesarios. |
+
+### Explicación para principiantes
+
+Un bot de trading es como un "piloto automático" que compra y vende
+criptomonedas siguiendo un conjunto de reglas.  Tú defines las reglas y el
+programa las ejecuta de forma rápida y sin emociones.  TradeBot ya trae
+estrategias listas para usar y permite probarlas sin arriesgar dinero
+gracias al **paper trading** (simulación).
+
 ## Características principales
 
 - Ingesta de datos en tiempo real (WebSocket y REST) para Binance, Bybit,
@@ -15,7 +65,77 @@ ingerir datos, realizar backtesting y ejecutar estrategias en modo
 - Router de ejecución con algoritmos TWAP/VWAP/POV y soporte maker/taker.
 - Backtester vectorizado y motor event‑driven con modelado de slippage.
 - **Panel web** con métricas en vivo y un **ejecutor de comandos CLI** que
-  permite lanzar cualquier comando desde el navegador.
+  permite lanzar cualquier comando desde el navegador.  Incluye formularios
+  para configurar exchanges, claves API y estrategias sin usar la terminal.
+
+## Funcionalidades extra
+
+TradeBot incluye una serie de capacidades adicionales más allá del MVP
+original. Entre ellas se destacan las estrategias de arbitraje
+triangular y entre exchanges, señales basadas en microestructura,
+adaptadores para múltiples venues con soporte de testnet, un panel web
+que permite ejecutar comandos de la CLI y una API para control remoto.
+La descripción completa y ejemplos de uso se encuentran en
+[docs/extra_features.md](docs/extra_features.md).
+
+## Funcionalidades extra
+
+TradeBot incluye una serie de capacidades adicionales más allá del MVP
+original. Entre ellas se destacan las estrategias de arbitraje
+triangular y entre exchanges, señales basadas en microestructura,
+adaptadores para múltiples venues con soporte de testnet, un panel web
+que permite ejecutar comandos de la CLI y una API para control remoto.
+La descripción completa y ejemplos de uso se encuentran en
+[docs/extra_features.md](docs/extra_features.md).
+
+## Exchanges y pares soportados
+
+- **Exchanges**: [Binance](https://www.binance.com),
+  [Bybit](https://www.bybit.com) y [OKX](https://www.okx.com).  El diseño es
+  modular y pueden añadirse más.
+- **Mercados**: pares spot y contratos perpetuos disponibles en esos
+  exchanges.
+- **Pares populares**: BTC/USDT, ETH/USDT, BNB/USDT, SOL/USDT y cualquier
+  otro listado por los exchanges anteriores.
+
+## Estrategias incluidas
+
+Cada estrategia se puede ejecutar en modo simulación o real.  A
+continuación se explica la idea teórica y cómo la implementa TradeBot.
+
+### Momentum intradía
+**Idea**: cuando un precio sube con fuerza, suele seguir subiendo a corto
+plazo.
+**Implementación**: el bot calcula el retorno de los últimos minutos y
+compra si supera un umbral; vende cuando el impulso se agota o cambia de
+signo.
+
+### Mean reversion
+**Idea**: los precios tienden a volver a su promedio después de moverse
+demasiado.
+**Implementación**: se calcula una media móvil y su desviación.  Si el
+precio está muy por encima, se vende; si está por debajo, se compra.
+
+### Breakout de volatilidad
+**Idea**: tras un periodo de calma, un movimiento brusco puede iniciar una
+nuevo recorrido de precios.
+**Implementación**: se observa la volatilidad (ATR) y se activan órdenes
+cuando el precio rompe un canal predefinido.
+
+### Arbitraje triangular
+**Idea**: en un mismo exchange, las tasas de cambio entre tres pares pueden
+quedar desalineadas.  Al hacer la ruta A→B→C→A se obtiene una ganancia
+sin exposición direccional.
+**Implementación**: el bot revisa continuamente rutas como BTC‑ETH‑USDT y
+ejecuta las tres operaciones si el beneficio neto supera las comisiones.
+
+### Arbitraje entre exchanges / cash‑and‑carry
+**Idea**: un mismo activo puede tener precios distintos entre exchanges o
+entre mercado spot y perp.  Comprar donde está barato y vender donde está
+caro permite capturar la diferencia o el pago de funding.
+**Implementación**: el bot compara precios de los exchanges conectados y
+abre posiciones opuestas (spot vs perp o exchange vs exchange) cuando la
+brecha supera un umbral configurado.
 
 ## Requisitos
 
@@ -32,53 +152,66 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # completa con tus claves
 ```
+## Arranque rápido
 
-## Ejecución del panel web
-
-El panel expone métricas, PnL y una consola para ejecutar comandos de la
-CLI.
+Inicia y detén los servicios de Docker con el Makefile:
 
 ```bash
-uvicorn tradingbot.apps.api.main:app --reload --port 8000
+make up    # levanta los servicios en segundo plano
+make logs  # sigue los logs de todos los contenedores
+make down  # detiene y elimina los servicios
 ```
+## Configuración inicial
 
-Visita `http://localhost:8000` e inicia sesión con las credenciales
-definidas en `API_USER`/`API_PASS` (por defecto `admin`/`admin`).
+1. Copia `.env.example` a `.env` y completa tus claves API (`BINANCE_KEY`,
+   `BINANCE_SECRET`, etc.). Para pruebas en modo papel puedes dejar los
+   valores vacíos.
+2. (Opcional) Levanta la base de datos y el stack de monitoreo con Docker:
 
-### Consola de comandos
+   ```bash
+   make up
+   ```
 
-En la sección **Comandos CLI** del panel puedes ejecutar cualquier comando
-de `tradingbot.cli`.  Ejemplos:
+3. Inicia el panel web con métricas y consola de comandos:
 
-1. Escribe `backtest-cfg data/examples/backtest.yaml` y pulsa **Ejecutar**.
-2. Usa `tri-arb BTC-ETH-USDT --notional 50` para disparar un arbitraje
-   triangular de prueba.
+   ```bash
+   uvicorn monitoring.panel:app --reload --port 8000
+   ```
 
-La salida de `stdout` y `stderr` aparecerá debajo del formulario.
+   Luego visita `http://localhost:8000` en tu navegador.
 
-## Uso desde la línea de comandos
+## Comandos CLI
 
-La CLI está basada en [Typer](https://typer.tiangolo.com/) y ofrece
-subcomandos para las distintas tareas del proyecto.
+Todos los comandos están disponibles tanto desde la terminal como desde la
+consola del panel web.
 
 ```bash
-python -m tradingbot.cli --help
-
-# Ingesta de libro de órdenes
-python -m tradingbot.cli ingest BTC/USDT --depth 20
-
-# Descarga histórica desde Kaiko
-python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades
-
-# Backtest a partir de un YAML de configuración
-python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml
-
-# Arbitraje triangular
-python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50
+python -m tradingbot.cli <comando> [opciones]
 ```
 
-Todos estos comandos pueden ejecutarse también desde el panel web gracias a
-la nueva sección de **Comandos CLI**.
+| Comando | Descripción | Ejemplo |
+|---------|-------------|---------|
+| `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20` |
+| `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
+| `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
+| `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr --config params.yaml` |
+| `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
+| `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
+| `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |
+| `backtest-cfg` | Backtest desde un YAML de configuración | `python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml` |
+| `walk-forward` | Optimización walk-forward | `python -m tradingbot.cli walk-forward cfg/wf.yaml` |
+| `report` | Resumen de PnL en TimescaleDB | `python -m tradingbot.cli report` |
+| `train-ml` | Entrena una estrategia con ML | `python -m tradingbot.cli train-ml datos.csv target modelo.pkl` |
+| `tri-arb` | Arbitraje triangular | `python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 50` |
+| `cross-arb` | Arbitraje spot vs perp entre exchanges | `python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures` |
+| `run-cross-arb` | Runner de arbitraje usando ExecutionRouter | `python -m tradingbot.cli run-cross-arb BTC/USDT binance_spot binance_futures` |
+| `cfg-validate` | Valida archivos YAML y reporta campos faltantes | `python -m tradingbot.cli cfg-validate data/examples/backtest.yaml` |
+
+La salida de cada comando aparecerá tanto en la terminal como en la consola
+del panel web.
+
+Las estrategias que lo permitan aceptan parámetros externos a través de un
+archivo YAML pasado con el flag `--config`.
 
 ## Ejecutar pruebas
 

@@ -1,14 +1,23 @@
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+
+from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import keltner_channels
 
 class BreakoutATR(Strategy):
     name = "breakout_atr"
 
-    def __init__(self, ema_n: int = 20, atr_n: int = 14, mult: float = 1.5):
-        self.ema_n = ema_n
-        self.atr_n = atr_n
-        self.mult = mult
+    def __init__(
+        self,
+        ema_n: int = 20,
+        atr_n: int = 14,
+        mult: float = 1.5,
+        *,
+        config_path: str | None = None,
+    ):
+        params = load_params(config_path)
+        self.ema_n = int(params.get("ema_n", ema_n))
+        self.atr_n = int(params.get("atr_n", atr_n))
+        self.mult = float(params.get("mult", mult))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:

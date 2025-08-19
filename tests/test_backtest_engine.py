@@ -172,3 +172,20 @@ def test_funding_payment(tmp_path, monkeypatch):
     assert pytest.approx(res["funding"], rel=1e-9) == 1.0
     assert pytest.approx(res["equity"], rel=1e-9) == -1.0
 
+
+def test_seed_reproducibility(tmp_path, monkeypatch):
+    csv_path = _make_csv(tmp_path)
+    monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
+    strategies = [("dummy", "SYM")]
+    data = {"SYM": str(csv_path)}
+
+    seeds = [1, 7, 42]
+    equities = []
+    for s in seeds:
+        res = run_backtest_csv(data, strategies, latency=1, window=1, seed=s)
+        equities.append(res["equity"])
+
+    base = equities[0]
+    for eq in equities[1:]:
+        assert abs(eq - base) <= abs(base) * 0.005
+

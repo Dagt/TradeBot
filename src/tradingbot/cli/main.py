@@ -30,8 +30,10 @@ from typing import List
 
 import typer
 
+from .. import adapters
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
+from tradingbot.core.symbols import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
 
 
@@ -52,29 +54,165 @@ except Exception as exc:  # pragma: no cover - network failures
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
-@app.command()
-def ingest(symbol: str = "BTC/USDT", depth: int = 10) -> None:
-    """Stream order book data from Binance testnet into storage.
+def _get_available_venues() -> set[str]:
+    """Return venue names exposed by :mod:`tradingbot.adapters`.
 
-    The command runs until interrupted and persists snapshots using
-    the Timescale helper if available.
+    The adapters package exposes classes via ``__all__``.  Each adapter class
+    defines a ``name`` attribute used throughout the project.  We derive the
+    CLI choices from those values so that users can only select valid venues.
     """
 
+    names: set[str] = set()
+    for cls_name in getattr(adapters, "__all__", []):
+        cls = getattr(adapters, cls_name, None)
+        if cls is None:
+            continue
+        name = getattr(cls, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    return names
+
+
+_AVAILABLE_VENUES = _get_available_venues()
+
+
+@app.command()
+def ingest(
+    venue: str = typer.Option(
+        "binance_spot", help=f"Data venue adapter ({', '.join(sorted(_AVAILABLE_VENUES))})"
+    ),
+    symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
+    depth: int = typer.Option(10, help="Order book depth"),
+    kind: str = typer.Option(
+        "orderbook", "--kind", help="Data kind: trades,orderbook,bba,delta,funding,oi"
+    ),
+    persist: bool = typer.Option(False, "--persist", help="Persist data"),
+) -> None:
+    """Stream market data from a venue and optionally persist it."""
+
     setup_logging()
-    from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
+    from importlib import import_module
+
     from ..bus import EventBus
-    from ..data.ingestion import run_orderbook_stream
+    from ..data import ingestion as ing
+    from ..types import Tick
     from ..storage.timescale import get_engine
 
-    adapter = BinanceSpotWSAdapter()
-    bus = EventBus()
-    engine = get_engine()
+    if venue not in _AVAILABLE_VENUES:
+        choices = ", ".join(sorted(_AVAILABLE_VENUES))
+        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
 
-    typer.echo(f"Streaming {symbol} order book ... (Ctrl+C to stop)")
+    module = import_module(f"tradingbot.adapters.{venue}")
+    cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
+    adapter = getattr(module, cls_name)()
+
+    symbols = [normalize(s) for s in symbols]
+    bus = EventBus()
+    engine = get_engine() if persist else None
+
+    if kind == "orderbook":
+        bus.subscribe("orderbook", lambda ob: typer.echo(str(ob)))
+
+    async def _run() -> None:
+        tasks = []
+        for sym in symbols:
+            if kind == "orderbook":
+                tasks.append(
+                    asyncio.create_task(
+                        ing.run_orderbook_stream(
+                            adapter,
+                            sym,
+                            depth,
+                            bus,
+                            engine,
+                            persist=persist,
+                        )
+                    )
+                )
+            elif kind == "trades":
+                async def _t(symbol: str) -> None:
+                    async for d in adapter.stream_trades(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            tick = Tick(
+                                ts=d.get("ts"),
+                                exchange=adapter.name,
+                                symbol=symbol,
+                                price=float(d.get("price") or 0.0),
+                                qty=float(d.get("qty") or 0.0),
+                                side=d.get("side"),
+                            )
+                            ing.persist_trades([tick])
+
+                tasks.append(asyncio.create_task(_t(sym)))
+            elif kind == "bba":
+                async def _b(symbol: str) -> None:
+                    async for d in adapter.stream_bba(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_bba([data])
+
+                tasks.append(asyncio.create_task(_b(sym)))
+            elif kind == "delta":
+                async def _d(symbol: str) -> None:
+                    async for d in adapter.stream_book_delta(symbol, depth):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_book_delta([data])
+
+                tasks.append(asyncio.create_task(_d(sym)))
+            elif kind == "funding":
+                async def _f(symbol: str) -> None:
+                    async for d in adapter.stream_funding(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_funding([data])
+
+                tasks.append(asyncio.create_task(_f(sym)))
+            elif kind in ("oi", "open_interest"):
+                async def _oi(symbol: str) -> None:
+                    async for d in adapter.stream_open_interest(symbol):
+                        typer.echo(str(d))
+                        if persist:
+                            data = dict(d)
+                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            ing.persist_open_interest([data])
+
+                tasks.append(asyncio.create_task(_oi(sym)))
+            else:  # pragma: no cover - CLI validation
+                raise typer.BadParameter("invalid kind")
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    typer.echo(
+        f"Streaming {', '.join(symbols)} {kind} from {venue} ... (Ctrl+C to stop)"
+    )
     try:
-        asyncio.run(run_orderbook_stream(adapter, symbol, depth, bus, engine))
+        asyncio.run(_run())
     except KeyboardInterrupt:
         typer.echo("stopped")
+
+
+@app.command()
+def backfill(
+    days: int = typer.Option(1, "--days", help="Number of days to backfill"),
+    symbols: List[str] = typer.Option(
+        ["BTC/USDT"], "--symbols", help="Symbols to download"
+    ),
+) -> None:
+    """Backfill OHLCV and trades for symbols with rate limiting."""
+
+    setup_logging()
+    from ..jobs.backfill import backfill as run_backfill
+
+    asyncio.run(run_backfill(days=days, symbols=symbols))
 
 
 @app.command("ingest-historical")
@@ -188,6 +326,63 @@ def run_bot(
         from ..live.runner import run_live_binance
 
         asyncio.run(run_live_binance(symbol=symbols[0]))
+
+
+@app.command("paper-run")
+def paper_run(
+    symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
+    strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
+    config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
+) -> None:
+    """Run a strategy in paper trading mode with metrics."""
+
+    setup_logging()
+    from ..live.runner_paper import run_paper
+
+    asyncio.run(
+        run_paper(
+            symbol=symbol,
+            strategy_name=strategy,
+            config_path=config,
+            metrics_port=metrics_port,
+        )
+    )
+
+
+@app.command("real-run")
+def real_run(
+    exchange: str = typer.Option("binance", help="Exchange name"),
+    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
+    trade_qty: float = typer.Option(0.001, help="Order size"),
+    leverage: int = typer.Option(1, help="Leverage for futures"),
+    dry_run: bool = typer.Option(False, help="Simulate orders without sending"),
+    i_know_what_im_doing: bool = typer.Option(
+        False,
+        "--i-know-what-im-doing",
+        help="Acknowledge that this will trade on a real exchange",
+    ),
+) -> None:
+    """Run the live trading bot on real exchange endpoints."""
+
+    if not i_know_what_im_doing:
+        raise typer.BadParameter("pass --i-know-what-im-doing to enable real trading")
+
+    setup_logging()
+    from ..live.runner_real import run_live_real
+
+    asyncio.run(
+        run_live_real(
+            exchange=exchange,
+            market=market,
+            symbols=symbols,
+            trade_qty=trade_qty,
+            leverage=leverage,
+            dry_run=dry_run,
+            i_know_what_im_doing=i_know_what_im_doing,
+        )
+    )
 
 
 @app.command("daemon")
@@ -314,6 +509,35 @@ def run_ingestion_workers(
 
 
 
+@app.command("cfg-validate")
+def cfg_validate(path: str) -> None:
+    """Validate a YAML configuration file.
+
+    Ensures required fields exist for known sections such as ``backtest`` and
+    ``walk_forward``.
+    """
+
+    import yaml
+
+    with open(path) as fh:
+        cfg = yaml.safe_load(fh) or {}
+
+    required = {
+        "backtest": ["data", "symbol", "strategy"],
+        "walk_forward": ["data", "symbol", "strategy", "param_grid"],
+    }
+    missing: list[str] = []
+    for section, keys in required.items():
+        section_cfg = cfg.get(section, {}) or {}
+        for key in keys:
+            if key not in section_cfg:
+                missing.append(f"{section}.{key}")
+    if missing:
+        raise typer.BadParameter("Missing required fields: " + ", ".join(missing))
+
+    typer.echo("Configuration valid")
+
+
 @app.command()
 def backtest(
     data: str,
@@ -387,21 +611,30 @@ def walk_forward_cfg(config: str) -> None:
 
     @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
     def _run(cfg) -> None:  # type: ignore[override]
-        from ..backtesting.engine import walk_forward_optimize
+        from ..backtesting.walk_forward import walk_forward_backtest
 
         wf_cfg = cfg.walk_forward
-        results = walk_forward_optimize(
+        df = walk_forward_backtest(
             wf_cfg.data,
             wf_cfg.symbol,
             wf_cfg.strategy,
             wf_cfg.param_grid,
+            train_size=getattr(wf_cfg, "train_size", 1000),
+            test_size=getattr(wf_cfg, "test_size", 250),
             latency=getattr(wf_cfg, "latency", 1),
             window=getattr(wf_cfg, "window", 120),
-            n_splits=getattr(wf_cfg, "n_splits", 3),
-            embargo=getattr(wf_cfg, "embargo", 0.0),
         )
+
+        reports_dir = Path("reports")
+        reports_dir.mkdir(exist_ok=True)
+        csv_path = reports_dir / "walk_forward.csv"
+        html_path = reports_dir / "walk_forward.html"
+        df.to_csv(csv_path, index=False)
+        df.to_html(html_path, index=False)
+
         typer.echo(OmegaConf.to_yaml(cfg))
-        typer.echo(results)
+        typer.echo(df.to_string(index=False))
+        typer.echo(f"Reports saved to {csv_path} and {html_path}")
 
     old_argv = sys.argv
     sys.argv = [sys.argv[0]]

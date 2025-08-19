@@ -12,10 +12,11 @@ import pandas as pd
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..risk.oco import OcoBook, load_active_oco
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -93,6 +94,8 @@ async def run_live_binance(
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
+    *,
+    config_path: str | None = None,
 ):
     """
     Pipeline en vivo:
@@ -101,7 +104,7 @@ async def run_live_binance(
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     risk_core = RiskManager(max_pos=1.0)
-    strat = BreakoutATR()
+    strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,
@@ -117,6 +120,14 @@ async def run_live_binance(
     ), venue="binance")
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
     risk = RiskService(risk_core, guard, dguard, engine=pg_engine)
+    oco_book = OcoBook()
+    if pg_engine is not None:
+        pos_map = load_positions(pg_engine, guard.cfg.venue)
+        for sym, data in pos_map.items():
+            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
+            risk.rm._entry_price = data.get("avg_price")
+        oco_items = load_active_oco(pg_engine, venue=guard.cfg.venue, symbols=[symbol])
+        oco_book.preload(oco_items)
     if persist_pg and not _CAN_PG:
         log.warning("Persistencia Timescale no disponible (sqlalchemy/psycopg2 no cargados).")
 
@@ -161,14 +172,12 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        corr_pairs = guard.correlations()
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
             closed.c,
             strength=signal.strength,
             symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
-            correlations=corr_pairs,
             corr_threshold=0.8,
         )
         if not allowed or abs(delta) <= 1e-9:

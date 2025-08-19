@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 import logging
 import asyncio
+import shlex
+import importlib
+import inspect
 
 import httpx
 import yaml
@@ -12,6 +15,7 @@ import sentry_sdk
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from .metrics import (
@@ -26,7 +30,15 @@ from .metrics import (
     PROCESS_UPTIME,
     update_process_metrics,
 )
-from .strategies import strategies_status, set_strategy_status
+from .strategies import (
+    strategies_status,
+    set_strategy_status,
+    register_strategy,
+    update_strategy_params as set_strategy_params,
+    get_strategy_params,
+    available_strategies,
+)
+from .alerts import evaluate_alerts
 
 config_path = Path(__file__).with_name("sentry.yml")
 if config_path.exists():
@@ -39,12 +51,109 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="TradeBot Monitoring")
 app.include_router(metrics_router)
 
-_strategy_params: dict[str, dict] = {}
+
+# ---------------------------------------------------------------------------
+# Strategy discovery
+# ---------------------------------------------------------------------------
+# On startup, automatically register all strategy modules found under
+# ``tradingbot/strategies`` so they become available via the API.
+
+STRATEGIES_DIR = Path(__file__).resolve().parents[1] / "src" / "tradingbot" / "strategies"
+
+
+@app.on_event("startup")
+def discover_strategies() -> None:
+    for path in STRATEGIES_DIR.glob("*.py"):
+        if path.name in {"base.py", "__init__.py"}:
+            continue
+        register_strategy(path.stem)
+
+
+@app.get("/strategies")
+def list_strategies() -> dict:
+    """Return the names of all registered strategies."""
+
+    return available_strategies()
+
+
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str) -> dict:
+    """Inspect a strategy's ``__init__`` signature.
+
+    Returns parameter names, annotated types and default values so the
+    frontend can render a form for configuring the strategy.
+    """
+
+    try:
+        module = importlib.import_module(f"tradingbot.strategies.{name}")
+    except ModuleNotFoundError:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    strategy_cls = None
+    for attr in dir(module):
+        obj = getattr(module, attr)
+        if inspect.isclass(obj) and getattr(obj, "name", None) == name:
+            strategy_cls = obj
+            break
+    if strategy_cls is None:
+        raise HTTPException(status_code=404, detail="Strategy class not found")
+
+    sig = inspect.signature(strategy_cls.__init__)
+    params = []
+    for p in list(sig.parameters.values())[1:]:  # skip ``self``
+        if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        if p.annotation is inspect._empty:
+            annotation = "Any"
+        elif isinstance(p.annotation, type):
+            annotation = p.annotation.__name__
+        else:
+            annotation = str(p.annotation)
+        default = None if p.default is inspect._empty else p.default
+        params.append({"name": p.name, "type": annotation, "default": default})
+    return {"strategy": name, "params": params}
+
+# ---------------------------------------------------------------------------
+# Configuration storage
+# ---------------------------------------------------------------------------
+# ``_config`` holds the current bot settings as provided via the ``/config``
+# endpoint.  ``_bot_process`` stores the subprocess handle for an actively
+# running strategy so it can later be terminated.
+
+_config: dict[str, object] = {
+    "strategy": None,
+    "pairs": [],
+    "notional": None,
+    "params": {},
+    "exchange": "binance",
+    "market": "spot",
+    "trade_qty": 0.001,
+    "leverage": 1,
+    "testnet": True,
+    "dry_run": False,
+}
+_bot_process: asyncio.subprocess.Process | None = None
+
+# Persist configuration to a JSON file so values survive restarts.  The file
+# lives alongside this module to avoid requiring any additional directory
+# structure.
+CONFIG_FILE = Path(__file__).with_name("config.json")
+
+# Load existing configuration if available.  Errors are logged but ignored so a
+# corrupt config does not prevent the panel from starting.
+if CONFIG_FILE.exists():
+    try:
+        with CONFIG_FILE.open() as fh:
+            _config.update(json.load(fh) or {})
+    except Exception:  # pragma: no cover - extremely unlikely
+        logger.warning("Failed to load config file", exc_info=True)
 
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_USER = os.getenv("API_USER", "admin")
+API_PASS = os.getenv("API_PASS", "admin")
 
 dashboards_dir = Path(__file__).parent / "grafana" / "dashboards"
 GRAFANA_DASHBOARDS: dict[str, str] = {}
@@ -80,14 +189,9 @@ def dashboard_link(name: str) -> RedirectResponse:
 
 
 def fetch_alerts() -> list[dict]:
-    """Return current alerts from Prometheus."""
+    """Return current alerts evaluated by :mod:`monitoring.alerts`."""
 
-    try:
-        resp = httpx.get(f"{PROMETHEUS_URL}/api/v1/alerts", timeout=5.0)
-        resp.raise_for_status()
-        return resp.json().get("data", {}).get("alerts", [])
-    except httpx.HTTPError:
-        return []
+    return evaluate_alerts()
 
 
 async def fetch_risk() -> dict:
@@ -112,6 +216,174 @@ async def fetch_risk() -> dict:
         "exposure": exposure.get("exposure"),
         "events": events.get("events", []),
     }
+
+
+async def fetch_orders() -> list[dict]:
+    """Return open orders from the trading API."""
+
+    orders: list[dict] = []
+    async with httpx.AsyncClient(timeout=5.0, auth=(API_USER, API_PASS)) as client:
+        try:
+            resp = await client.get(f"{API_URL}/orders?limit=100")
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError:
+            data = {}
+    items = data.get("items", [])
+    for o in items:
+        status = (o.get("status") or "").lower()
+        if status not in {"filled", "canceled", "rejected"}:
+            orders.append(
+                {
+                    "id": o.get("ext_order_id") or o.get("id"),
+                    "symbol": o.get("symbol"),
+                    "side": o.get("side"),
+                    "status": o.get("status"),
+                }
+            )
+    return orders
+
+
+# ---------------------------------------------------------------------------
+# Configuration endpoints
+# ---------------------------------------------------------------------------
+
+
+class BotConfig(BaseModel):
+    """Pydantic model for bot configuration updates."""
+
+    strategy: str | None = None
+    pairs: list[str] | None = None
+    notional: float | None = None
+    params: dict | None = None
+    exchange: str | None = None
+    market: str | None = None
+    trade_qty: float | None = None
+    leverage: int | None = None
+    testnet: bool | None = None
+    dry_run: bool | None = None
+
+
+@app.get("/config")
+def get_config() -> dict:
+    """Return the current bot configuration."""
+
+    return {"config": _config}
+
+
+@app.post("/config")
+def update_config(cfg: BotConfig) -> dict:
+    """Update the in-memory bot configuration and persist it to disk."""
+
+    data = cfg.dict(exclude_unset=True)
+
+    # Remove ``None`` values so partial updates work as expected and run a few
+    # basic validations.  FastAPI/Pydantic already ensures types but we enforce
+    # simple domain rules such as positive notionals.
+    for key, value in list(data.items()):
+        if value is None:
+            data.pop(key)
+            continue
+        if key == "notional" and value <= 0:
+            raise HTTPException(status_code=400, detail="notional must be positive")
+        if key == "trade_qty" and value <= 0:
+            raise HTTPException(status_code=400, detail="trade_qty must be positive")
+        if key == "leverage" and value <= 0:
+            raise HTTPException(status_code=400, detail="leverage must be positive")
+        if key == "pairs":
+            if not isinstance(value, list) or not all(isinstance(p, str) and p for p in value):
+                raise HTTPException(status_code=400, detail="pairs must be a list of symbols")
+        if key == "strategy" and not value:
+            raise HTTPException(status_code=400, detail="strategy must be provided")
+        if key == "market" and value not in {"spot", "futures"}:
+            raise HTTPException(status_code=400, detail="market must be 'spot' or 'futures'")
+        if key == "exchange" and not value:
+            raise HTTPException(status_code=400, detail="exchange must be provided")
+
+    _config.update(data)
+
+    # Persist configuration so the state survives restarts.
+    try:
+        with CONFIG_FILE.open("w") as fh:
+            json.dump(_config, fh)
+    except OSError as exc:  # pragma: no cover - unlikely in tests
+        logger.error("Failed to persist config", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed to persist config") from exc
+
+    strategy = _config.get("strategy")
+    params = _config.get("params") or {}
+    if strategy:
+        register_strategy(strategy, params if params else None)
+        if params:
+            set_strategy_params(strategy, params)
+    return {"config": _config}
+
+
+# ---------------------------------------------------------------------------
+# Bot lifecycle endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/bot/start")
+async def bot_start() -> dict:
+    """Launch the configured strategy via ``tradingbot.cli``."""
+
+    global _bot_process
+    if _bot_process and _bot_process.returncode is None:
+        raise HTTPException(status_code=400, detail="Bot already running")
+    strategy = _config.get("strategy")
+    if not strategy:
+        raise HTTPException(status_code=400, detail="Strategy not configured")
+    args = [
+        "python",
+        "-m",
+        "tradingbot.cli",
+        "run-bot",
+        "--strategy",
+        strategy,
+    ]
+    for pair in _config.get("pairs") or []:
+        args.extend(["--symbol", pair])
+    if _config.get("notional") is not None:
+        args.extend(["--notional", str(_config["notional"])])
+    if _config.get("exchange"):
+        args.extend(["--exchange", str(_config["exchange"])])
+    if _config.get("market"):
+        args.extend(["--market", str(_config["market"])])
+    if _config.get("trade_qty") is not None:
+        args.extend(["--trade-qty", str(_config["trade_qty"])])
+    if _config.get("leverage") is not None:
+        args.extend(["--leverage", str(_config["leverage"])])
+    testnet = _config.get("testnet")
+    if testnet is not None:
+        args.append("--testnet" if testnet else "--no-testnet")
+    dry_run = _config.get("dry_run")
+    if dry_run is not None:
+        args.append("--dry-run" if dry_run else "--no-dry-run")
+    _bot_process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    set_strategy_status(strategy, "running")
+    return {"status": "started", "pid": _bot_process.pid}
+
+
+@app.post("/bot/stop")
+async def bot_stop() -> dict:
+    """Terminate a running strategy process."""
+
+    global _bot_process
+    if not _bot_process or _bot_process.returncode is not None:
+        raise HTTPException(status_code=400, detail="Bot is not running")
+    _bot_process.terminate()
+    await _bot_process.wait()
+    rc = _bot_process.returncode
+    _bot_process = None
+    strategy = _config.get("strategy")
+    if strategy:
+        set_strategy_status(strategy, "stopped")
+    return {"status": "stopped", "returncode": rc}
 
 
 @app.get("/alerts")
@@ -180,6 +452,13 @@ def pnl() -> dict:
     return {"pnl": TRADING_PNL._value.get()}
 
 
+@app.get("/orders")
+async def orders() -> dict:
+    """Return currently open orders."""
+
+    return {"orders": await fetch_orders()}
+
+
 @app.get("/positions")
 def positions() -> dict:
     """Return current open positions by symbol."""
@@ -205,11 +484,12 @@ def enable_strategy(name: str, params: dict | None = None) -> dict:
     """Enable a strategy and optionally update its parameters."""
 
     logger.info("Enabling strategy %s", name)
-    res = set_strategy_status(name, "running")
+    register_strategy(name, params)
     if params:
-        _strategy_params[name] = params
+        set_strategy_params(name, params)
+    res = set_strategy_status(name, "running")
     STRATEGY_ACTIONS.labels(strategy=name, action="enable").inc()
-    res["params"] = _strategy_params.get(name, {})
+    res["params"] = get_strategy_params(name)["params"]
     return res
 
 
@@ -220,17 +500,18 @@ def disable_strategy(name: str) -> dict:
     logger.info("Disabling strategy %s", name)
     res = set_strategy_status(name, "stopped")
     STRATEGY_ACTIONS.labels(strategy=name, action="disable").inc()
+    res["params"] = get_strategy_params(name).get("params", {})
     return res
 
 
 @app.post("/strategies/{name}/params")
-def update_strategy_params(name: str, params: dict) -> dict:
+def update_strategy_params_endpoint(name: str, params: dict) -> dict:
     """Update parameters for a strategy."""
 
     logger.info("Updating params for %s: %s", name, params)
-    _strategy_params[name] = params
+    res = set_strategy_params(name, params)
     STRATEGY_ACTIONS.labels(strategy=name, action="params").inc()
-    return {"strategy": name, "params": params}
+    return res
 
 
 @app.get("/strategies/status")
@@ -238,6 +519,33 @@ def get_strategies_status() -> dict:
     """Return the status of all strategies."""
 
     return strategies_status()
+
+
+class CLICommand(BaseModel):
+    """Payload for executing a CLI command from the dashboard."""
+
+    command: str
+
+
+@app.post("/run-cli")
+async def run_cli(cmd: CLICommand) -> dict:
+    """Execute a ``tradingbot.cli`` command and return its output."""
+
+    args = shlex.split(cmd.command)
+    proc = await asyncio.create_subprocess_exec(
+        "python",
+        "-m",
+        "tradingbot.cli",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    return {
+        "stdout": out.decode(),
+        "stderr": err.decode(),
+        "returncode": proc.returncode,
+    }
 
 
 static_dir = Path(__file__).parent / "static"

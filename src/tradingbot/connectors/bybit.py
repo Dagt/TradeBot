@@ -1,10 +1,26 @@
-"""Bybit connector using CCXT REST and native websockets."""
+"""Bybit connector using CCXT REST and native websockets.
+
+Examples
+--------
+>>> c = BybitConnector()
+>>> await c.place_order(
+...     "BTC/USDT", "sell", "limit", 1,
+...     price=25_000, time_in_force="IOC", iceberg_qty=0.2
+... )
+
+Limitations
+-----------
+Post-only, IOC/FOK and iceberg orders are supported only where Bybit's
+API exposes the respective parameters. The connector targets spot
+markets by default.
+"""
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
 from .base import ExchangeConnector, OrderBook, Trade, Funding, OpenInterest
+from ..execution.venue_adapter import translate_order_flags
 
 
 class BybitConnector(ExchangeConnector):
@@ -74,14 +90,22 @@ class BybitConnector(ExchangeConnector):
         *,
         post_only: bool = False,
         time_in_force: str | None = None,
+        iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         """Submit an order through the CCXT Bybit client."""
 
-        params: dict[str, object] = {}
-        if time_in_force:
-            params["timeInForce"] = time_in_force
-        if post_only:
-            params["postOnly"] = True
+        params = translate_order_flags(
+            self.name,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=iceberg_qty,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+            reduce_only=reduce_only,
+        )
 
         data = await self._rest_call(
             self.rest.create_order, symbol, type_, side, qty, price, params

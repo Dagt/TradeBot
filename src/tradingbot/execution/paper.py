@@ -8,6 +8,7 @@ import csv
 
 from ..adapters.base import ExchangeAdapter
 from .order_types import Order
+from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -31,11 +32,24 @@ class PaperAdapter(ExchangeAdapter):
     """
     name = "paper"
 
-    def __init__(self, maker_fee_bps: float = 0.0, taker_fee_bps: float | None = None):
+    def __init__(
+        self,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
+        fee_bps: float | None = None,
+    ):
         self.state = PaperState()
-        self.maker_fee_bps = float(maker_fee_bps)
+        mf = maker_fee_bps
+        if mf is None:
+            mf = fee_bps if fee_bps is not None else settings.paper_maker_fee_bps
+        self.maker_fee_bps = float(mf)
+        default_taker = (
+            settings.paper_taker_fee_bps
+            if settings.paper_taker_fee_bps is not None
+            else self.maker_fee_bps
+        )
         self.taker_fee_bps = float(
-            taker_fee_bps if taker_fee_bps is not None else maker_fee_bps
+            taker_fee_bps if taker_fee_bps is not None else default_taker
         )
 
     def update_last_price(self, symbol: str, px: float):
@@ -145,6 +159,7 @@ class PaperAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         order_id = self._next_order_id()
         last = self.state.last_px.get(symbol)

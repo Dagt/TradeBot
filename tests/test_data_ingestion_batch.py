@@ -5,7 +5,9 @@ import pytest
 from tradingbot.workers import OrderBookBatchWorker, run_orderbook_ingestion
 from tradingbot.data.ingestion import (
     download_coinapi_open_interest,
+    download_kaiko_open_interest,
     download_funding,
+    download_kaiko_funding,
 )
 
 
@@ -92,7 +94,7 @@ async def test_run_orderbook_ingestion_batches(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_download_open_interest_persists(monkeypatch):
+async def test_download_coinapi_open_interest_persists(monkeypatch):
     ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
     class DummyConnector:
@@ -115,6 +117,32 @@ async def test_download_open_interest_persists(monkeypatch):
     )
     await download_coinapi_open_interest(DummyConnector(), "BTCUSDT")
     assert inserted and inserted[0]["oi"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_download_kaiko_open_interest_persists(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConnector:
+        name = "dummy"
+
+        async def fetch_open_interest(self, exchange, pair, **params):
+            return [{"timestamp": ts, "oi": 5.0}]
+
+    inserted = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_open_interest(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(
+        "tradingbot.data.ingestion._get_storage", lambda backend: DummyStorage()
+    )
+    await download_kaiko_open_interest(DummyConnector(), "ex", "BTCUSD")
+    assert inserted and inserted[0]["oi"] == 5.0
 
 
 @pytest.mark.asyncio
@@ -141,3 +169,62 @@ async def test_download_funding_persists(monkeypatch):
     )
     await download_funding(DummyConnector(), "BTCUSDT")
     assert inserted and inserted[0]["rate"] == 0.05
+
+
+@pytest.mark.asyncio
+async def test_download_kaiko_funding_persists(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    class DummyConnector:
+        name = "dummy"
+
+        async def fetch_funding(self, exchange, pair, **params):
+            return [{"timestamp": ts, "rate": 0.02, "interval_sec": 12}]
+
+    inserted = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_funding(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(
+        "tradingbot.data.ingestion._get_storage", lambda backend: DummyStorage()
+    )
+    await download_kaiko_funding(DummyConnector(), "ex", "BTCUSD")
+    assert inserted and inserted[0]["rate"] == 0.02
+
+
+@pytest.mark.asyncio
+async def test_backfill_applies_rate_limit(monkeypatch):
+    from tradingbot.jobs import backfill as backfill_job
+
+    calls: list[str] = []
+
+    class DummyExchange:
+        rateLimit = 1200
+
+        async def fetch_ohlcv(self, symbol, timeframe, since, limit):
+            calls.append(symbol)
+            return []
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(
+        backfill_job.ccxt, "binance", lambda params=None: DummyExchange()
+    )
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(backfill_job.asyncio, "sleep", fake_sleep)
+
+    await backfill_job.backfill(1, ["BTC/USDT", "ETH/USDT"])
+
+    assert calls == ["BTC/USDT", "ETH/USDT"]
+    assert sleeps == [DummyExchange.rateLimit / 1000] * 2

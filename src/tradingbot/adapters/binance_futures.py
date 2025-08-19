@@ -1,7 +1,6 @@
 # src/tradingbot/adapters/binance_futures.py
 from __future__ import annotations
 import asyncio
-import os
 import logging, time, uuid
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Any, Dict
@@ -13,8 +12,10 @@ except Exception:
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 from ..market.exchange_meta import ExchangeMeta
 from ..execution.normalize import adjust_order
+from ..execution.venue_adapter import translate_order_flags
 from .binance_errors import parse_binance_error_code
 from ..execution.retry import with_retries, AmbiguousOrderError
 from ..utils.secrets import validate_scopes
@@ -30,6 +31,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         api_secret: Optional[str] = None,
         testnet: bool = True,
         leverage: int = 5,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
     ):
         super().__init__()
         if ccxt is None:
@@ -44,7 +47,24 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             "enableRateLimit": True,
             "options": {"defaultType": "future"},
         })
-        self.taker_fee_bps = float(os.getenv("TRADING_TAKER_FEE_BPS_FUT", "5.0"))
+        self.maker_fee_bps = float(
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else (
+                settings.binance_futures_testnet_maker_fee_bps
+                if testnet
+                else settings.binance_futures_maker_fee_bps
+            )
+        )
+        self.taker_fee_bps = float(
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else (
+                settings.binance_futures_testnet_taker_fee_bps
+                if testnet
+                else settings.binance_futures_taker_fee_bps
+            )
+        )
         self.rest.set_sandbox_mode(testnet)
 
         # Advertir si faltan scopes necesarios o sobran permisos
@@ -66,7 +86,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             log.debug("No se pudo fijar position_mode (one-way): %s", e)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
             for t in trades or []:
@@ -91,6 +111,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -104,25 +126,30 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         async def _send():
             try:
                 send_type = type_u
-                params = {
-                    "symbol": symbol_ex,
-                    "side": side_u,
-                    "type": send_type,
-                    "quantity": qty,
-                    "newClientOrderId": cid,
-                }
+                params = translate_order_flags(
+                    self.name,
+                    post_only=post_only,
+                    time_in_force=time_in_force,
+                    iceberg_qty=iceberg_qty,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                )
+                params.update(
+                    {
+                        "symbol": symbol_ex,
+                        "side": side_u,
+                        "type": send_type,
+                        "quantity": qty,
+                        "newClientOrderId": cid,
+                    }
+                )
                 if reduce_only:
                     params["reduceOnly"] = True
-                if iceberg_qty is not None:
-                    params["icebergQty"] = float(iceberg_qty)
                 if send_type == "LIMIT":
                     if price is None:
                         raise ValueError("LIMIT requiere price")
                     params["price"] = float(price)
-                    tif = time_in_force or ("GTX" if post_only else "GTC")
-                    params["timeInForce"] = tif
-                if post_only and send_type != "LIMIT":
-                    params["timeInForce"] = "GTX"
+                    params.setdefault("timeInForce", "GTC")
 
                 resp = await self.rest.futures_order_new(**params)
                 return {
@@ -189,7 +216,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                 }
 
     async def cancel_order(self, order_id: str, symbol: str | None = None) -> dict:
-        symbol_ex = symbol and self.normalize_symbol(symbol)
+        symbol_ex = symbol and normalize(symbol)
         try:
             return await self._request(self.rest.futures_cancel_order, symbol_ex, orderId=order_id)
         except Exception as e:  # pragma: no cover - logging only
@@ -197,7 +224,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
             ts_ms = ob.get("timestamp")
@@ -209,7 +236,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             await asyncio.sleep(1)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding no soportado")
@@ -232,7 +259,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         ``NotImplementedError`` para dejar claro que el venue no lo soporta.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "public_get_premiumindex", None)
         if method is None:
             raise NotImplementedError("Basis no soportado")
@@ -258,7 +285,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         callers can persist it without further transformation.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         method = getattr(self.rest, "fapiPublicGetOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest no soportado")

@@ -13,9 +13,10 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge, compute_qtys_for_route
 )
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..risk.oco import OcoBook, load_active_oco
 
 # Persistencia opcional
 try:
@@ -55,6 +56,18 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
         )
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
+    oco_book = OcoBook()
+    if engine is not None:
+        pos_map = load_positions(engine, risk.guard.cfg.venue)
+        for sym, data in pos_map.items():
+            risk.update_position(risk.guard.cfg.venue, sym, data.get("qty", 0.0))
+        oco_book.preload(
+            load_active_oco(
+                engine,
+                venue=risk.guard.cfg.venue,
+                symbols=[syms.bq, syms.mq, syms.mb],
+            )
+        )
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero SQL no disponible (sqlalchemy/psycopg2).")
 
@@ -117,28 +130,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
 
                     # Ejecutar 3 patas en PAPER
                     if edge.direction == "b->m":
-                        corr = risk.guard.correlations()
                         checks = [
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "buy",
                                 last["bq"],
                                 strength=q["base_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                         ]
                         if not all(c[0] for c in checks):
@@ -167,28 +176,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                             ("sell", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[2][2]), resp3),
                         ]
                     else:
-                        corr = risk.guard.correlations()
                         checks = [
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "buy",
                                 last["mq"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
                                 strength=q["mid_qty"],
-                                correlations=corr,
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
                                 strength=q["base_qty"],
-                                correlations=corr,
                             ),
                         ]
                         if not all(c[0] for c in checks):

@@ -3,17 +3,28 @@
 Este proyecto incluye una interfaz de línea de comandos y una API para
 controlar estrategias.  A continuación algunos ejemplos rápidos.
 
+Las funcionalidades adicionales (arbitrajes, panel web con CLI, API de
+control) se documentan en [extra_features.md](extra_features.md).
+
 ## CLI
 
 ```bash
 python -m tradingbot.cli ingest --symbol BTC/USDT
 python -m tradingbot.cli run-bot --symbol BTC/USDT
 python -m tradingbot.cli backtest data/btcusdt_1m.csv --symbol BTC/USDT --strategy breakout_atr
+python -m tradingbot.cli paper-run --strategy breakout_atr --symbol BTC/USDT
 python -m tradingbot.cli backtest-cfg src/tradingbot/config/config.yaml
 python -m tradingbot.cli report --venue binance_spot_testnet
 python -m tradingbot.cli tri-arb BTC-ETH-USDT --notional 100
 python -m tradingbot.cli cross-arb BTC/USDT binance_spot binance_futures --threshold 0.001 --notional 50
+python bin/download_history.py funding kaiko BTC-USD --exchange binance --backend csv
+python bin/download_history.py open-interest coinapi BTCUSD --backend csv
 ```
+
+Los nuevos comandos `funding` y `open-interest` de `bin/download_history.py`
+permiten descargar tasas de funding y datos de open interest utilizando
+conectores REST de Kaiko o CoinAPI y persistirlos en TimescaleDB, QuestDB o
+archivos CSV.
 
 `tri-arb` lanza un pequeño lazo de arbitraje triangular en Binance. La ruta se
 especifica como ``BASE-MID-QUOTE`` (p.ej. ``BTC-ETH-USDT``) y ``--notional``
@@ -22,6 +33,13 @@ define el capital en la divisa ``quote``.
 `cross-arb` busca oportunidades de arbitraje entre un mercado spot y otro
 perpetuo utilizando los adapters indicados. El umbral de premium se controla con
 ``--threshold`` y ``--notional`` establece el tamaño por pata.
+
+`paper-run` permite ejecutar cualquier estrategia en modo papel y expone las
+métricas de Prometheus en `http://localhost:8000/metrics/prometheus`.
+
+```bash
+python -m tradingbot.cli paper-run --strategy breakout_atr --symbol BTC/USDT
+```
 
 El **daemon en vivo** ahora puede ejecutar este arbitraje cruzado de manera
 automática entre Binance, Bybit y OKX.  El proceso concilia periódicamente los
@@ -96,7 +114,7 @@ docker compose up
 
 Una vez levantados los servicios:
 
-* API y dashboard estático: <http://localhost:8000> (`/metrics` expone métricas de Prometheus)
+* API y dashboard estático: <http://localhost:8000> (`/metrics` devuelve métricas agregadas, Prometheus en `/metrics/prometheus`)
 * Prometheus: <http://localhost:9090>
 * Grafana: <http://localhost:3000> (usuario `admin`, contraseña `admin`)
 
@@ -166,8 +184,9 @@ print(study.best_params)
 
 ## Interfaz mínima de monitoreo
 
-`monitoring/panel.py` levanta una aplicación FastAPI que expone las métricas en
-`/metrics` y el estado de las estrategias en `/strategies/status`.  Al montar el
-directorio estático se incluye un `index.html` sencillo que consulta ambos
-endpoints para mostrar un resumen rápido.
+`monitoring/panel.py` levanta una aplicación FastAPI que expone métricas
+agregadas en `/metrics` (Prometheus en `/metrics/prometheus`) y el estado de las
+estrategias en `/strategies/status`.  Al montar el directorio estático se incluye
+un `index.html` sencillo que consulta ambos endpoints para mostrar un resumen
+rápido.
 

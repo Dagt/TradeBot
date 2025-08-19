@@ -1,0 +1,57 @@
+/* Global color palette */
+:root {
+  --color-dark-blue: #001f3f;
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-yellow: #ffd60a;
+  --color-green: #2ecc71;
+  --color-red: #e3342f;
+}
+
+html,
+body {
+  background-color: var(--color-dark-blue);
+  color: var(--color-white);
+}
+
+.box {
+  background-color: var(--color-black);
+}
+
+/* Status and alert colors */
+.status-warning {
+  color: var(--color-yellow);
+}
+
+.status-success {
+  color: var(--color-green);
+}
+
+.status-danger {
+  color: var(--color-red);
+}
+
+/* Override Bulma button colors for better contrast */
+.button.is-success {
+  background-color: var(--color-green);
+  color: var(--color-black);
+}
+
+.button.is-warning {
+  background-color: var(--color-yellow);
+  color: var(--color-black);
+}
+
+.button.is-danger {
+  background-color: var(--color-red);
+  color: var(--color-white);
+}
+
+.navbar.is-dark {
+  background-color: var(--color-black);
+}
+
+.table.is-dark {
+  background-color: var(--color-black);
+  color: var(--color-white);
+}

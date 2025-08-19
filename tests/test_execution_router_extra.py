@@ -50,3 +50,43 @@ async def test_execute_persists_fee_type(monkeypatch):
     await router.execute(order)
     assert captured["notes"]["fee_type"] == "taker"
     assert captured["notes"]["fee_bps"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_execute_persists_maker_fee(monkeypatch):
+    captured = {}
+
+    def fake_insert_order(engine, **kwargs):
+        nonlocal captured
+        captured = kwargs
+
+    monkeypatch.setattr(timescale, "insert_order", fake_insert_order)
+    adapter = DummyAdapter(maker_fee_bps=1.5)
+    router = ExecutionRouter(adapter, storage_engine="eng")
+    order = Order(
+        symbol="X",
+        side="buy",
+        type_="limit",
+        qty=1.0,
+        price=1.0,
+        post_only=True,
+    )
+    await router.execute(order)
+    assert captured["notes"]["fee_type"] == "maker"
+    assert captured["notes"]["fee_bps"] == 1.5
+
+
+@pytest.mark.asyncio
+async def test_execute_persists_reduce_only(monkeypatch):
+    captured = {}
+
+    def fake_insert_order(engine, **kwargs):
+        nonlocal captured
+        captured = kwargs
+
+    monkeypatch.setattr(timescale, "insert_order", fake_insert_order)
+    adapter = DummyAdapter()
+    router = ExecutionRouter(adapter, storage_engine="eng")
+    order = Order(symbol="X", side="buy", type_="market", qty=1.0, reduce_only=True)
+    await router.execute(order)
+    assert captured["notes"]["reduce_only"] is True

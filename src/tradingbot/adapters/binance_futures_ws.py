@@ -7,6 +7,7 @@ from typing import AsyncIterator, Iterable
 
 from .base import ExchangeAdapter
 from ..config import settings
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             )
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
-        streams = "/".join(_stream_name(self.normalize_symbol(s), channel) for s in symbols)
+        streams = "/".join(_stream_name(normalize(s), channel) for s in symbols)
         url = self.ws_base + streams
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -77,7 +78,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             yield t
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
-        stream = _stream_name(self.normalize_symbol(symbol), f"depth{depth}@100ms")
+        stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
@@ -93,10 +94,89 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
 
     stream_orderbook = stream_order_book
 
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
+        """Yield best bid/ask updates derived from order book snapshots."""
+
+        async for ob in self.stream_order_book(symbol, depth=1):
+            bid_px = ob.get("bid_px", [])
+            ask_px = ob.get("ask_px", [])
+            bid_qty = ob.get("bid_qty", [])
+            ask_qty = ob.get("ask_qty", [])
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid_px[0] if bid_px else None,
+                "bid_qty": bid_qty[0] if bid_qty else 0.0,
+                "ask_px": ask_px[0] if ask_px else None,
+                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+            }
+
+    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        """Yield order book deltas relative to the previous snapshot."""
+
+        prev: dict | None = None
+        async for ob in self.stream_order_book(symbol, depth):
+            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
+            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
+            if prev is None:
+                delta_bids = curr_bids
+                delta_asks = curr_asks
+            else:
+                prev_bids = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
+                prev_asks = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
+                delta_bids = [[p, q] for p, q in curr_bids if prev_bids.get(p) != q]
+                delta_bids += [[p, 0.0] for p in prev_bids.keys() - {p for p, _ in curr_bids}]
+                delta_asks = [[p, q] for p, q in curr_asks if prev_asks.get(p) != q]
+                delta_asks += [[p, 0.0] for p in prev_asks.keys() - {p for p, _ in curr_asks}]
+            prev = ob
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": [p for p, _ in delta_bids],
+                "bid_qty": [q for _, q in delta_bids],
+                "ask_px": [p for p, _ in delta_asks],
+                "ask_qty": [q for _, q in delta_asks],
+            }
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        """Stream funding rate updates for ``symbol``."""
+
+        stream = _stream_name(normalize(symbol), "markPrice@1s")
+        url = self.ws_base + stream
+        async for raw in self._ws_messages(url):
+            msg = json.loads(raw)
+            d = msg.get("data") or msg
+            rate = d.get("r") or d.get("fundingRate")
+            if rate is None:
+                continue
+            ts_ms = d.get("E") or d.get("T") or 0
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            yield {
+                "symbol": symbol,
+                "ts": ts,
+                "rate": float(rate),
+                "interval_sec": int(d.get("i") or 0),
+            }
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        """Stream open interest updates for ``symbol``."""
+
+        stream = _stream_name(normalize(symbol), "openInterest")
+        url = self.ws_base + stream
+        async for raw in self._ws_messages(url):
+            msg = json.loads(raw)
+            d = msg.get("data") or msg
+            oi = d.get("oi") or d.get("openInterest")
+            if oi is None:
+                continue
+            ts_ms = d.get("E") or d.get("T") or 0
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            yield {"symbol": symbol, "ts": ts, "oi": float(oi)}
+
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
 
         def _fetch():
@@ -118,7 +198,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         if self.rest:
             return await self.rest.fetch_basis(symbol)
 
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}"
 
         def _fetch():
@@ -138,7 +218,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def fetch_oi(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_oi(symbol)
-        sym = self.normalize_symbol(symbol)
+        sym = normalize(symbol)
         url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={sym}"
 
         def _fetch():
