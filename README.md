@@ -5,7 +5,11 @@ scalping y arbitraje sobre criptomonedas.  Incluye todo lo necesario para
 ingerir datos, realizar backtesting y ejecutar estrategias en modo
 ``paper`` o real desde una interfaz web.
 
-La correspondencia entre el blueprint original y los módulos del código se documenta en [docs/blueprint_map.md](docs/blueprint_map.md).
+Un panorama general de la arquitectura se explica en
+[blueprint_trading_bot.md](blueprint_trading_bot.md) y la correspondencia con
+el código se detalla en
+[docs/blueprint_map.md](docs/blueprint_map.md).  El diseño técnico completo
+del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
 
 ## Quickstart
 
@@ -109,42 +113,61 @@ La descripción completa y ejemplos de uso se encuentran en
 
 ## Estrategias incluidas
 
-Cada estrategia se puede ejecutar en modo simulación o real.  A
-continuación se explica la idea teórica y cómo la implementa TradeBot.
+Cada estrategia puede correrse en modo **paper trading** o con órdenes
+reales.  A continuación se resume la idea y se indica cómo ejecutarla desde
+la CLI.  Todas aceptan parámetros opcionales mediante ``--config``.
 
-### Momentum intradía
-**Idea**: cuando un precio sube con fuerza, suele seguir subiendo a corto
-plazo.
-**Implementación**: el bot calcula el retorno de los últimos minutos y
-compra si supera un umbral; vende cuando el impulso se agota o cambia de
-signo.
+### Momentum intradía (`momentum`)
+**Idea**: seguir la tendencia reciente.  Cuando el RSI supera un umbral y el
+OFI confirma presión compradora, se compra; lo inverso genera venta.
 
-### Mean reversion
-**Idea**: los precios tienden a volver a su promedio después de moverse
-demasiado.
-**Implementación**: se calcula una media móvil y su desviación.  Si el
-precio está muy por encima, se vende; si está por debajo, se compra.
+```
+python -m tradingbot.cli paper-run --strategy momentum --symbol BTC/USDT
+```
 
-### Breakout de volatilidad
-**Idea**: tras un periodo de calma, un movimiento brusco puede iniciar una
-nuevo recorrido de precios.
-**Implementación**: se observa la volatilidad (ATR) y se activan órdenes
-cuando el precio rompe un canal predefinido.
+### Reversión a la media (`mean_reversion`)
+**Idea**: los precios vuelven a su media tras desviarse demasiado.
+**Implementación**: RSI con niveles superior/inferior para vender o comprar.
 
-### Arbitraje triangular
-**Idea**: en un mismo exchange, las tasas de cambio entre tres pares pueden
-quedar desalineadas.  Al hacer la ruta A→B→C→A se obtiene una ganancia
-sin exposición direccional.
-**Implementación**: el bot revisa continuamente rutas como BTC‑ETH‑USDT y
-ejecuta las tres operaciones si el beneficio neto supera las comisiones.
+### Breakout ATR (`breakout_atr`)
+**Idea**: rupturas de un canal de Keltner anuncian movimientos fuertes.
+**Implementación**: compra si el cierre supera la banda superior del canal,
+vende si cae por debajo de la inferior.
 
-### Arbitraje entre exchanges / cash‑and‑carry
-**Idea**: un mismo activo puede tener precios distintos entre exchanges o
-entre mercado spot y perp.  Comprar donde está barato y vender donde está
-caro permite capturar la diferencia o el pago de funding.
-**Implementación**: el bot compara precios de los exchanges conectados y
-abre posiciones opuestas (spot vs perp o exchange vs exchange) cuando la
-brecha supera un umbral configurado.
+### Breakout de volatilidad (`breakout_vol`)
+**Idea**: una subida brusca tras un período tranquilo puede iniciar un
+recorrido.  Usa media y desviación estándar.
+
+### Order Flow (`order_flow`)
+**Idea**: el promedio del OFI revela desequilibrio de órdenes.
+**Implementación**: si el OFI medio es positivo se compra, si es negativo se
+vende.
+
+### Mean Reversion OFI (`mean_rev_ofi`)
+**Idea**: cuando el z‑score del OFI es extremo y la volatilidad es baja, el
+precio suele corregir.
+
+### Depth Imbalance (`depth_imbalance`)
+**Idea**: grandes diferencias entre las colas del libro anticipan el
+movimiento.
+
+### Eventos de liquidez (`liquidity_events`)
+**Idea**: vaciados del libro o gaps amplios indican movimientos inminentes.
+
+### Arbitraje simple (`arbitrage`)
+Plantilla para experimentar con spreads entre dos activos.
+
+### Arbitraje triangular (`triangular_arb`)
+**Idea**: recorrer rutas A→B→C→A dentro de un exchange para capturar
+desalineaciones de precio.
+
+### Arbitraje entre exchanges (`cross_exchange_arbitrage`) y Cash‑and‑Carry (`cash_and_carry`)
+**Idea**: aprovechar diferencias entre spot y perp o entre dos exchanges.
+El bot abre posiciones opuestas cuando la prima supera un umbral.
+
+### Triple Barrera con ML (`triple_barrier`)
+Genera labels de triple barrera y entrena un modelo de **gradient boosting**
+para decidir si tomar la señal principal.
 
 ## Requisitos
 

@@ -53,11 +53,27 @@
 
 ### 2.3 Señal / Estrategia
 
-- **Breakout ATR** (canal Keltner)
-- **Momentum** intradía (retornos acumulados 1–5–15 m)
-- **Mean Reversion** (extremos OFI/volatilidad)
-- **Arbitraje**: triangular intra‑exchange, **cross‑exchange**, **cash‑and‑carry/funding‑basis**
-- (Fase posterior) ML: triple barrier/meta‑labeling, DSR
+Las estrategias se implementan como clases pluggables y se pueden ejecutar en
+``paper trading`` o en vivo.  La lista completa incluye:
+
+| Estrategia | Idea principal | Archivo |
+|------------|----------------|---------|
+| Momentum intradía | Seguir la tendencia mediante RSI y filtro OFI. | `strategies/momentum.py` |
+| Mean Reversion | Regreso a la media con RSI. | `strategies/mean_reversion.py` |
+| Breakout ATR | Rompimiento de canal de Keltner. | `strategies/breakout_atr.py` |
+| Breakout de volatilidad | Rupturas basadas en desviación estándar. | `strategies/breakout_vol.py` |
+| Order Flow | Promedio de OFI para detectar presión. | `strategies/order_flow.py` |
+| Mean Rev OFI | Z‑score de OFI con control de volatilidad. | `strategies/mean_rev_ofi.py` |
+| Depth Imbalance | Desequilibrio de profundidad del libro. | `strategies/depth_imbalance.py` |
+| Liquidity Events | Vacíos y gaps de liquidez. | `strategies/liquidity_events.py` |
+| Cash‑and‑Carry | Captura de basis/funding entre spot y perp. | `strategies/cash_and_carry.py` |
+| Cross Exchange Arb | Arbitraje entre exchanges. | `strategies/cross_exchange_arbitrage.py` |
+| Triangular Arb | Ruta A→B→C→A para capturar desalineaciones. | `strategies/arbitrage_triangular.py` |
+| Arbitrage (stub) | Plantilla simple para spreads. | `strategies/arbitrage.py` |
+| Triple Barrier | Etiquetado de triple barrera + meta‑labeling. | `strategies/triple_barrier.py` |
+
+Todas aceptan parámetros externos vía YAML (`--config`) y exponen métricas de
+señales para monitoreo.
 
 ### 2.4 Gestión de cartera y riesgo
 
