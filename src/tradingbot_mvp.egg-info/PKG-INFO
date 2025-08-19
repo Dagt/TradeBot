@@ -4,3 +4,5 @@ Version: 0.1.0
 Summary: MVP de bot de trading intradía/scalping/arbitraje (local)
 Author-email: Tu Nombre <you@example.com>
 Requires-Python: >=3.11
+Provides-Extra: vectorbt
+Requires-Dist: vectorbt>=0.26; extra == "vectorbt"

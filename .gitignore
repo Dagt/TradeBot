@@ -1,3 +1,21 @@
+#Entorno virtual
+.venv/
+venv/
+
+#Python cache
 __pycache__/
 *.pyc
-src/tradingbot/apps/api/static/logo.png
+
+#Configuracion de entorno
+.env
+
+#Herramientas y logs
+*.log
+*.sqlite
+*.db
+
+#IDEs
+.vscode/
+.idea/
+
+
