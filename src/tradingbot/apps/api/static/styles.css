@@ -150,3 +150,11 @@ button.ghost{
 /* ====== Helpers ====== */
 .row{ display:grid; grid-template-columns: 1fr 1fr; gap:16px }
 .center{ text-align:center }
+
+/* formateo de bloques preformateados */
+pre{
+  background:#0f1622;
+  padding:10px;
+  border-radius:8px;
+  overflow:auto;
+}

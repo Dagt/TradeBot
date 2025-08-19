@@ -4,25 +4,7 @@
   <meta charset="utf-8"/>
   <title>Estadísticas - TradingBot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
-    h1, h2 { margin: 0.2rem 0; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
-    table { width:100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
-    th { background:#0f1622; position: sticky; top:0; }
-    .muted { color:#94a3b8; }
-    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .kv { background:#0f1622; border:1px solid #1f2937; border-radius:10px; padding:10px; }
-    .kv .k { font-size:12px; color:#94a3b8 }
-    .kv .v { font-size:18px; margin-top:4px }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    nav { margin-bottom:20px; text-align:center; }
-    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
-    nav a:hover { text-decoration:underline; }
-    .logo { height:80px; display:block; margin:0 auto 20px; }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
 <header class="center" style="margin-bottom:8px">
@@ -35,9 +17,31 @@
 </header>
 
   <h1>Estadísticas operativas</h1>
-  <div class="grid3" style="margin:14px 0 20px">
-    <div class="kv"><div class="k">PnL</div><div class="v" id="m-pnl">—</div></div>
-    <div class="kv"><div class="k">Fills</div><div class="v" id="m-fills">—</div></div>
+  <div class="grid5" style="margin:14px 0 10px">
+    <div class="kv"><div class="k">PnL bruto</div><div class="v" id="m-pnl-gross">—</div></div>
+    <div class="kv"><div class="k">PnL neto</div><div class="v" id="m-pnl-net">—</div></div>
+    <div class="kv"><div class="k">Fees</div><div class="v" id="m-fees">—</div></div>
+    <div class="kv"><div class="k">Funding</div><div class="v" id="m-funding">—</div></div>
+    <div class="kv"><div class="k">Borrow</div><div class="v" id="m-borrow">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Sharpe</div><div class="v" id="m-sharpe">—</div></div>
+    <div class="kv"><div class="k">Sortino</div><div class="v" id="m-sortino">—</div></div>
+    <div class="kv"><div class="k">Calmar</div><div class="v" id="m-calmar">—</div></div>
+    <div class="kv"><div class="k">Max DD</div><div class="v" id="m-maxdd">—</div></div>
+    <div class="kv"><div class="k">TUW</div><div class="v" id="m-tuw">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Hit Rate</div><div class="v" id="m-hit">—</div></div>
+    <div class="kv"><div class="k">Expectancy</div><div class="v" id="m-expectancy">—</div></div>
+    <div class="kv"><div class="k">Payoff</div><div class="v" id="m-payoff">—</div></div>
+    <div class="kv"><div class="k">Trades/día</div><div class="v" id="m-trades-day">—</div></div>
+    <div class="kv"><div class="k">Notional medio</div><div class="v" id="m-notional">—</div></div>
+  </div>
+  <div class="grid4" style="margin:0 0 20px">
+    <div class="kv"><div class="k">DSR</div><div class="v" id="m-dsr">—</div></div>
+    <div class="kv"><div class="k">Alpha vol</div><div class="v" id="m-alpha-vol">—</div></div>
+    <div class="kv"><div class="k">Benchmark</div><div class="v" id="m-benchmark">—</div></div>
     <div class="kv"><div class="k">Risk Events</div><div class="v" id="m-risk">—</div></div>
   </div>
   <div class="card">
@@ -101,13 +105,59 @@
       </table>
     </div>
   </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Ejecución (microestructura)</h2>
+    <div class="muted">Implementation shortfall, slippage y fill ratio</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-exec">
+        <thead><tr><th>symbol</th><th>IS</th><th>slippage</th><th>fill_ratio</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Calidad de señales</h2>
+    <div class="muted">Precision/Recall y AUC</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-signals">
+        <thead><tr><th>signal</th><th>precision</th><th>recall</th><th>AUC</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Riesgo</h2>
+    <div class="muted">Activaciones de guardas y correlaciones</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-risk-events">
+        <thead><tr><th>tipo</th><th>count</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
 <script>
 async function refreshMetrics(){
   try{
     const r = await fetch('/metrics');
     const j = await r.json();
-    document.getElementById('m-pnl').textContent = (j.pnl||0).toFixed(2);
-    document.getElementById('m-fills').textContent = j.fills||0;
+    document.getElementById('m-pnl-gross').textContent = (j.pnl_gross||0).toFixed(2);
+    document.getElementById('m-pnl-net').textContent = (j.pnl_net||0).toFixed(2);
+    document.getElementById('m-fees').textContent = (j.fees||0).toFixed(2);
+    document.getElementById('m-funding').textContent = (j.funding||0).toFixed(2);
+    document.getElementById('m-borrow').textContent = (j.borrow||0).toFixed(2);
+    document.getElementById('m-sharpe').textContent = (j.sharpe||0).toFixed(2);
+    document.getElementById('m-sortino').textContent = (j.sortino||0).toFixed(2);
+    document.getElementById('m-calmar').textContent = (j.calmar||0).toFixed(2);
+    document.getElementById('m-maxdd').textContent = (j.max_drawdown||0).toFixed(2);
+    document.getElementById('m-tuw').textContent = (j.time_under_water||0).toFixed(2);
+    document.getElementById('m-hit').textContent = ((j.hit_rate||0)*100).toFixed(1)+'%';
+    document.getElementById('m-expectancy').textContent = (j.expectancy||0).toFixed(2);
+    document.getElementById('m-payoff').textContent = (j.payoff_ratio||0).toFixed(2);
+    document.getElementById('m-trades-day').textContent = (j.trades_per_day||0).toFixed(2);
+    document.getElementById('m-notional').textContent = (j.avg_notional||0).toFixed(2);
+    document.getElementById('m-dsr').textContent = (j.dsr||0).toFixed(2);
+    document.getElementById('m-alpha-vol').textContent = (j.alpha_vol||0).toFixed(2);
+    document.getElementById('m-benchmark').textContent = (j.benchmark||0).toFixed(2);
     document.getElementById('m-risk').textContent = j.risk_events||0;
   }catch(e){}
 }
@@ -194,6 +244,45 @@ async function refreshFillsSummary(){
     }
   }catch(e){}
 }
+async function refreshExecution(){
+  try{
+    const r=await fetch('/metrics/execution');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-exec tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${(it.is||0).toFixed(2)}</td><td>${(it.slippage||0).toFixed(2)}</td><td>${(it.fill_ratio||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshSignals(){
+  try{
+    const r=await fetch('/metrics/signals');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-signals tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.name}</td><td>${(it.precision||0).toFixed(2)}</td><td>${(it.recall||0).toFixed(2)}</td><td>${(it.auc||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshRiskStats(){
+  try{
+    const r=await fetch('/metrics/risk');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-risk-events tbody');
+    body.innerHTML='';
+    Object.entries(j.triggers||{}).forEach(([k,v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${k}</td><td>${v}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
 function applyFilters(){
   currentSymbol=document.getElementById('fl-symbol').value.trim();
   refreshPnlSpot();
@@ -201,6 +290,9 @@ function applyFilters(){
   refreshPnlSummarySpot();
   refreshPnlSummaryFut();
   refreshFillsSummary();
+  refreshExecution();
+  refreshSignals();
+  refreshRiskStats();
 }
 refreshMetrics();
 refreshPositions();
@@ -209,6 +301,9 @@ refreshPnlFut();
 refreshPnlSummarySpot();
 refreshPnlSummaryFut();
 refreshFillsSummary();
+refreshExecution();
+refreshSignals();
+refreshRiskStats();
 setInterval(refreshMetrics,5000);
 setInterval(refreshPositions,5000);
 setInterval(refreshPnlSpot,10000);
@@ -216,6 +311,9 @@ setInterval(refreshPnlFut,10000);
 setInterval(refreshPnlSummarySpot,10000);
 setInterval(refreshPnlSummaryFut,10000);
 setInterval(refreshFillsSummary,10000);
+setInterval(refreshExecution,10000);
+setInterval(refreshSignals,10000);
+setInterval(refreshRiskStats,10000);
 document.getElementById('fl-apply').addEventListener('click',applyFilters);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>

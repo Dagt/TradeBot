@@ -4,27 +4,7 @@
   <meta charset="utf-8"/>
   <title>Bots - TradingBot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
-    h1, h2 { margin: 0.2rem 0; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
-    table { width:100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
-    th { background:#0f1622; position: sticky; top:0; }
-    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .muted { color:#94a3b8; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
-    button:hover { background:#1d4ed8; }
-    input, select { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
-    label { font-size:12px; color:#94a3b8; display:block; margin-top:8px; margin-bottom:4px; }
-    nav { margin-bottom:20px; text-align:center; }
-    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
-    nav a:hover { text-decoration:underline; }
-    .logo { height:80px; display:block; margin:0 auto 20px; }
-    pre { background:#0f1622; padding:10px; border-radius:8px; overflow:auto; }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
 <header class="center" style="margin-bottom:8px">
@@ -125,7 +105,7 @@
     <div class="muted">Auto-refresh 5s</div>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
       <table id="tbl-bots">
-        <thead><tr><th>PID</th><th>Estrategia</th><th>Pares</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>PID</th><th>Estrategia</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Error</th><th>Acciones</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -262,13 +242,28 @@ async function refreshBots(){
     const body = document.querySelector('#tbl-bots tbody');
     body.innerHTML='';
     (j.bots||[]).forEach(b=>{
-      const tr=document.createElement('tr');
+      const stats=b.stats||{};
       const pairs=(b.config?.pairs||[]).join(',');
+      const tr=document.createElement('tr');
       tr.innerHTML=`<td>${b.pid}</td><td>${b.config?.strategy||''}</td><td>${pairs}</td><td>${b.status}</td>
+      <td>${stats.orders_sent||0}/${stats.fills||0}</td>
+      <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
+      <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
+      <td>${(stats.fees_usd||0).toFixed(2)}</td>
+      <td>${(stats.slippage_bps||0).toFixed(2)}</td>
+      <td>${((stats.hit_rate||0)*100).toFixed(1)}%</td>
+      <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
+      <td>${(stats.inventory||0).toFixed(4)}</td>
+      <td>${(stats.leverage||0).toFixed(2)}</td>
+      <td>${stats.risk_triggers||0}</td>
+      <td>${b.last_error||''}</td>
       <td>
-        <button onclick="stopBot(${b.pid})">Stop</button>
         <button onclick="pauseBot(${b.pid})">Pause</button>
         <button onclick="resumeBot(${b.pid})">Resume</button>
+        <button class='warn' onclick="haltBot(${b.pid})">Halt</button>
+        <button class='danger' onclick="flattenBot(${b.pid})">Flatten</button>
+        <button onclick="reloadBot(${b.pid})">Reload</button>
+        <button onclick="stopBot(${b.pid})">Stop</button>
         <button onclick="deleteBot(${b.pid})">Delete</button>
       </td>`;
       body.appendChild(tr);
@@ -293,6 +288,9 @@ async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+async function haltBot(pid){ await fetch(api(`/bots/${pid}/halt`), {method:'POST'}); refreshBots(); }
+async function flattenBot(pid){ await fetch(api(`/bots/${pid}/flatten`), {method:'POST'}); refreshBots(); }
+async function reloadBot(pid){ await fetch(api(`/bots/${pid}/reload`), {method:'POST'}); refreshBots(); }
 
 async function refreshRisk(){
   try{
