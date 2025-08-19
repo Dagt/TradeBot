@@ -27,9 +27,16 @@
     button:hover { background:#1d4ed8; }
     textarea, input, select { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
     label { font-size:12px; color:#94a3b8; display:block; margin-top:8px; margin-bottom:4px; }
+    nav { margin-bottom:20px; }
+    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
+    nav a:hover { text-decoration:underline; }
     </style>
   </head>
   <body>
+  <nav>
+    <a href="/">Configuración</a>
+    <a href="/monitor">Monitoreo</a>
+  </nav>
   <h1>TradingBot Dashboard</h1>
   <div class="muted" id="health">Comprobando estado…</div>
 
@@ -57,10 +64,18 @@
       <div>
         <label for="cfg-strategy">Estrategia</label>
         <select id="cfg-strategy">
+          <option value="breakout_atr">Breakout ATR</option>
+          <option value="breakout_vol">Breakout Vol</option>
           <option value="momentum">Momentum</option>
           <option value="mean_reversion">Mean Reversion</option>
-          <option value="breakout">Breakout</option>
-          <option value="tri_arb">Tri-Arb</option>
+          <option value="triangular_arb">Tri-Arb</option>
+          <option value="cash_and_carry">Cash &amp; Carry</option>
+          <option value="order_flow">Order Flow</option>
+          <option value="depth_imbalance">Depth Imbalance</option>
+          <option value="liquidity_events">Liquidity Events</option>
+          <option value="triple_barrier">Triple Barrier</option>
+          <option value="ml">ML Strategy</option>
+          <option value="mean_rev_ofi">Mean Rev OFI</option>
         </select>
       </div>
       <div>
