@@ -150,6 +150,8 @@ git clone <repo>
 cd TradeBot
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# Opcional: habilita el backtester vectorizado
+pip install "vectorbt>=0.26"
 cp .env.example .env   # completa con tus claves
 ```
 ## Arranque rápido
