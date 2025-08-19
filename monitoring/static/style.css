@@ -1,12 +1,12 @@
-/* Light, clean color palette */
+/* Dark professional color palette */
 :root {
-  --color-bg: #f5f5f5;
-  --color-text: #222222;
-  --color-card: #ffffff;
-  --color-primary: #3273dc;
-  --color-success: #48c774;
-  --color-warning: #ffdd57;
-  --color-danger: #f14668;
+  --color-bg: #1e2a38;
+  --color-text: #e0e0e0;
+  --color-card: #2b3848;
+  --color-primary: #209cee;
+  --color-success: #2ecc71;
+  --color-warning: #f1c40f;
+  --color-danger: #e74c3c;
 }
 
 html,
@@ -16,8 +16,8 @@ body {
 }
 
 .navbar {
-  background-color: var(--color-primary);
-  color: #fff;
+  background-color: var(--color-card);
+  color: var(--color-text);
 }
 
 .box {
@@ -28,6 +28,19 @@ body {
 .table {
   background-color: var(--color-card);
   color: var(--color-text);
+}
+
+/* Simple card and chart helpers */
+.chart-box {
+  height: 250px;
+}
+
+.stat-box {
+  text-align: center;
+}
+
+.stat-box .stat-value {
+  font-size: 1.5rem;
 }
 
 /* Status and alert colors */
