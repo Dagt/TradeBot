@@ -98,14 +98,6 @@
       </div>
       <div id="strategy-params" style="display:contents"></div>
       <div>
-        <label for="bot-stop-loss">Stop loss %</label>
-        <input id="bot-stop-loss" type="number" step="0.0001" required/>
-      </div>
-      <div>
-        <label for="bot-take-profit">Take profit %</label>
-        <input id="bot-take-profit" type="number" step="0.0001" required/>
-      </div>
-      <div>
         <label for="bot-stop-loss-pct">Risk stop loss %</label>
         <input id="bot-stop-loss-pct" type="number" step="0.0001" required/>
       </div>
@@ -221,8 +213,6 @@ async function startBot(){
   const market = document.getElementById('bot-market').value;
   const trade_qty = document.getElementById('bot-trade-qty').value;
   const leverage = document.getElementById('bot-leverage').value;
-  const stop_loss = document.getElementById('bot-stop-loss').value;
-  const take_profit = document.getElementById('bot-take-profit').value;
   const stop_loss_pct = document.getElementById('bot-stop-loss-pct').value;
   const max_drawdown_pct = document.getElementById('bot-max-drawdown-pct').value;
   const env = document.getElementById('bot-env').value;
@@ -245,10 +235,8 @@ async function startBot(){
     if(notional) payload.notional = Number(notional);
     if(trade_qty) payload.trade_qty = Number(trade_qty);
     if(leverage) payload.leverage = Number(leverage);
-    if(stop_loss) payload.stop_loss = Number(stop_loss);
-  if(take_profit) payload.take_profit = Number(take_profit);
-  if(stop_loss_pct) payload.stop_loss_pct = Number(stop_loss_pct);
-  if(max_drawdown_pct) payload.max_drawdown_pct = Number(max_drawdown_pct);
+    if(stop_loss_pct) payload.stop_loss_pct = Number(stop_loss_pct);
+    if(max_drawdown_pct) payload.max_drawdown_pct = Number(max_drawdown_pct);
   if(strategy==='cross_arbitrage'){
     payload.spot = spot;
       payload.perp = perp;
