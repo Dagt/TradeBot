@@ -28,7 +28,14 @@ from .metrics import (
     PROCESS_UPTIME,
     update_process_metrics,
 )
-from .strategies import strategies_status, set_strategy_status
+from .strategies import (
+    router as strategies_router,
+    strategies_status,
+    set_strategy_status,
+    register_strategy,
+    update_strategy_params as set_strategy_params,
+    get_strategy_params,
+)
 from .alerts import evaluate_alerts
 
 config_path = Path(__file__).with_name("sentry.yml")
@@ -41,8 +48,22 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TradeBot Monitoring")
 app.include_router(metrics_router)
+app.include_router(strategies_router)
 
-_strategy_params: dict[str, dict] = {}
+# ---------------------------------------------------------------------------
+# Configuration storage
+# ---------------------------------------------------------------------------
+# ``_config`` holds the current bot settings as provided via the ``/config``
+# endpoint.  ``_bot_process`` stores the subprocess handle for an actively
+# running strategy so it can later be terminated.
+
+_config: dict[str, object] = {
+    "strategy": None,
+    "pairs": [],
+    "notional": None,
+    "params": {},
+}
+_bot_process: asyncio.subprocess.Process | None = None
 
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
@@ -138,6 +159,99 @@ async def fetch_orders() -> list[dict]:
                 }
             )
     return orders
+
+
+# ---------------------------------------------------------------------------
+# Configuration endpoints
+# ---------------------------------------------------------------------------
+
+
+class BotConfig(BaseModel):
+    """Pydantic model for bot configuration updates."""
+
+    strategy: str | None = None
+    pairs: list[str] | None = None
+    notional: float | None = None
+    params: dict | None = None
+
+
+@app.get("/config")
+def get_config() -> dict:
+    """Return the current bot configuration."""
+
+    return {"config": _config}
+
+
+@app.post("/config")
+def update_config(cfg: BotConfig) -> dict:
+    """Update the in-memory bot configuration."""
+
+    data = cfg.dict(exclude_unset=True)
+    # Remove ``None`` values so partial updates work as expected
+    for key, value in list(data.items()):
+        if value is None:
+            data.pop(key)
+    _config.update(data)
+    strategy = _config.get("strategy")
+    params = _config.get("params") or {}
+    if strategy:
+        register_strategy(strategy, params if params else None)
+        if params:
+            set_strategy_params(strategy, params)
+    return {"config": _config}
+
+
+# ---------------------------------------------------------------------------
+# Bot lifecycle endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/bot/start")
+async def bot_start() -> dict:
+    """Launch the configured strategy via ``tradingbot.cli``."""
+
+    global _bot_process
+    if _bot_process and _bot_process.returncode is None:
+        raise HTTPException(status_code=400, detail="Bot already running")
+    strategy = _config.get("strategy")
+    if not strategy:
+        raise HTTPException(status_code=400, detail="Strategy not configured")
+    args = [
+        "python",
+        "-m",
+        "tradingbot.cli",
+        "run-bot",
+        "--strategy",
+        strategy,
+    ]
+    for pair in _config.get("pairs") or []:
+        args.extend(["--symbol", pair])
+    if _config.get("notional") is not None:
+        args.extend(["--notional", str(_config["notional"])])
+    _bot_process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    set_strategy_status(strategy, "running")
+    return {"status": "started", "pid": _bot_process.pid}
+
+
+@app.post("/bot/stop")
+async def bot_stop() -> dict:
+    """Terminate a running strategy process."""
+
+    global _bot_process
+    if not _bot_process or _bot_process.returncode is not None:
+        raise HTTPException(status_code=400, detail="Bot is not running")
+    _bot_process.terminate()
+    await _bot_process.wait()
+    rc = _bot_process.returncode
+    _bot_process = None
+    strategy = _config.get("strategy")
+    if strategy:
+        set_strategy_status(strategy, "stopped")
+    return {"status": "stopped", "returncode": rc}
 
 
 @app.get("/alerts")
@@ -238,11 +352,12 @@ def enable_strategy(name: str, params: dict | None = None) -> dict:
     """Enable a strategy and optionally update its parameters."""
 
     logger.info("Enabling strategy %s", name)
-    res = set_strategy_status(name, "running")
+    register_strategy(name, params)
     if params:
-        _strategy_params[name] = params
+        set_strategy_params(name, params)
+    res = set_strategy_status(name, "running")
     STRATEGY_ACTIONS.labels(strategy=name, action="enable").inc()
-    res["params"] = _strategy_params.get(name, {})
+    res["params"] = get_strategy_params(name)["params"]
     return res
 
 
@@ -253,17 +368,18 @@ def disable_strategy(name: str) -> dict:
     logger.info("Disabling strategy %s", name)
     res = set_strategy_status(name, "stopped")
     STRATEGY_ACTIONS.labels(strategy=name, action="disable").inc()
+    res["params"] = get_strategy_params(name).get("params", {})
     return res
 
 
 @app.post("/strategies/{name}/params")
-def update_strategy_params(name: str, params: dict) -> dict:
+def update_strategy_params_endpoint(name: str, params: dict) -> dict:
     """Update parameters for a strategy."""
 
     logger.info("Updating params for %s: %s", name, params)
-    _strategy_params[name] = params
+    res = set_strategy_params(name, params)
     STRATEGY_ACTIONS.labels(strategy=name, action="params").inc()
-    return {"strategy": name, "params": params}
+    return res
 
 
 @app.get("/strategies/status")
