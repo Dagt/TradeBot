@@ -43,6 +43,8 @@ app = FastAPI(title="TradeBot Monitoring")
 app.include_router(metrics_router)
 
 _strategy_params: dict[str, dict] = {}
+_bot_config: dict[str, str] = {}
+_bot_status = "stopped"
 
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
@@ -258,6 +260,39 @@ def kill_switch() -> dict:
     """Return whether the kill switch is active."""
 
     return {"kill_switch_active": bool(KILL_SWITCH_ACTIVE._value.get())}
+
+
+@app.get("/config")
+def get_config() -> dict:
+    """Return stored bot configuration."""
+
+    return {"config": _bot_config}
+
+
+@app.post("/config")
+def update_config(cfg: dict) -> dict:
+    """Update bot configuration values."""
+
+    _bot_config.update(cfg)
+    return {"config": _bot_config}
+
+
+@app.post("/bot/start")
+def start_bot() -> dict:
+    """Mark the trading bot as running."""
+
+    global _bot_status
+    _bot_status = "running"
+    return {"status": _bot_status}
+
+
+@app.post("/bot/stop")
+def stop_bot() -> dict:
+    """Mark the trading bot as stopped."""
+
+    global _bot_status
+    _bot_status = "stopped"
+    return {"status": _bot_status}
 
 
 @app.post("/strategies/{name}/enable")
