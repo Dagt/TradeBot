@@ -65,6 +65,20 @@ _config: dict[str, object] = {
 }
 _bot_process: asyncio.subprocess.Process | None = None
 
+# Persist configuration to a JSON file so values survive restarts.  The file
+# lives alongside this module to avoid requiring any additional directory
+# structure.
+CONFIG_FILE = Path(__file__).with_name("config.json")
+
+# Load existing configuration if available.  Errors are logged but ignored so a
+# corrupt config does not prevent the panel from starting.
+if CONFIG_FILE.exists():
+    try:
+        with CONFIG_FILE.open() as fh:
+            _config.update(json.load(fh) or {})
+    except Exception:  # pragma: no cover - extremely unlikely
+        logger.warning("Failed to load config file", exc_info=True)
+
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
@@ -184,14 +198,35 @@ def get_config() -> dict:
 
 @app.post("/config")
 def update_config(cfg: BotConfig) -> dict:
-    """Update the in-memory bot configuration."""
+    """Update the in-memory bot configuration and persist it to disk."""
 
     data = cfg.dict(exclude_unset=True)
-    # Remove ``None`` values so partial updates work as expected
+
+    # Remove ``None`` values so partial updates work as expected and run a few
+    # basic validations.  FastAPI/Pydantic already ensures types but we enforce
+    # simple domain rules such as positive notionals.
     for key, value in list(data.items()):
         if value is None:
             data.pop(key)
+            continue
+        if key == "notional" and value <= 0:
+            raise HTTPException(status_code=400, detail="notional must be positive")
+        if key == "pairs":
+            if not isinstance(value, list) or not all(isinstance(p, str) and p for p in value):
+                raise HTTPException(status_code=400, detail="pairs must be a list of symbols")
+        if key == "strategy" and not value:
+            raise HTTPException(status_code=400, detail="strategy must be provided")
+
     _config.update(data)
+
+    # Persist configuration so the state survives restarts.
+    try:
+        with CONFIG_FILE.open("w") as fh:
+            json.dump(_config, fh)
+    except OSError as exc:  # pragma: no cover - unlikely in tests
+        logger.error("Failed to persist config", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed to persist config") from exc
+
     strategy = _config.get("strategy")
     params = _config.get("params") or {}
     if strategy:
