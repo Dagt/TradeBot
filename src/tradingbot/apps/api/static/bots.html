@@ -50,7 +50,7 @@
         <label for="bot-notional">Notional (USDT)</label>
         <input id="bot-notional" type="number" step="0.01"/>
       </div>
-      <div>
+      <div id="field-exchange">
         <label for="bot-exchange">Exchange</label>
         <select id="bot-exchange">
           <option value="binance">Binance</option>
@@ -58,20 +58,43 @@
           <option value="okx">OKX</option>
         </select>
       </div>
-      <div>
+      <div id="field-market">
         <label for="bot-market">Mercado</label>
         <select id="bot-market">
           <option value="spot">Spot</option>
           <option value="futures">Futuros</option>
         </select>
       </div>
-      <div>
+      <div id="field-trade-qty">
         <label for="bot-trade-qty">Trade qty</label>
         <input id="bot-trade-qty" type="number" step="0.0001"/>
       </div>
-      <div>
+      <div id="field-leverage">
         <label for="bot-leverage">Leverage</label>
         <input id="bot-leverage" type="number" step="1"/>
+      </div>
+      <div id="field-spot" style="display:none">
+        <label for="bot-spot">Spot adapter</label>
+        <select id="bot-spot">
+          <option value="binance_spot">Binance Spot</option>
+          <option value="binance_futures">Binance Futures</option>
+          <option value="bybit_spot">Bybit Spot</option>
+          <option value="bybit_futures">Bybit Futures</option>
+          <option value="okx_spot">OKX Spot</option>
+          <option value="okx_futures">OKX Futures</option>
+        </select>
+      </div>
+      <div id="field-perp" style="display:none">
+        <label for="bot-perp">Perp adapter</label>
+        <select id="bot-perp">
+          <option value="binance_futures">Binance Futures</option>
+          <option value="bybit_futures">Bybit Futures</option>
+          <option value="okx_futures">OKX Futures</option>
+        </select>
+      </div>
+      <div id="field-threshold" style="display:none">
+        <label for="bot-threshold">Threshold</label>
+        <input id="bot-threshold" type="number" step="0.0001" value="0.001"/>
       </div>
       <div>
         <label for="bot-env">Entorno</label>
@@ -127,7 +150,19 @@ async function loadStrategies(){
       const o=document.createElement('option');
       o.value=s; o.textContent=s; sel.appendChild(o);
     });
+    updateForm();
   }catch(e){}
+}
+
+function updateForm(){
+  const strat=document.getElementById('bot-strategy').value;
+  const cross=strat==='cross_arbitrage';
+  ['field-exchange','field-market','field-trade-qty','field-leverage'].forEach(id=>{
+    document.getElementById(id).style.display = cross ? 'none' : '';
+  });
+  ['field-spot','field-perp','field-threshold'].forEach(id=>{
+    document.getElementById(id).style.display = cross ? '' : 'none';
+  });
 }
 
 async function startBot(){
@@ -141,10 +176,18 @@ async function startBot(){
   const env = document.getElementById('bot-env').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
+  const spot = document.getElementById('bot-spot').value;
+  const perp = document.getElementById('bot-perp').value;
+  const threshold = document.getElementById('bot-threshold').value;
   const payload = {strategy, pairs, exchange, market, testnet, dry_run};
   if(notional) payload.notional = Number(notional);
   if(trade_qty) payload.trade_qty = Number(trade_qty);
   if(leverage) payload.leverage = Number(leverage);
+  if(strategy==='cross_arbitrage'){
+    payload.spot = spot;
+    payload.perp = perp;
+    if(threshold) payload.threshold = Number(threshold);
+  }
   try{
     const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const j = await r.json();
@@ -223,6 +266,7 @@ async function resetRisk(){
 }
 
 document.getElementById('bot-start').addEventListener('click', startBot);
+document.getElementById('bot-strategy').addEventListener('change', updateForm);
 loadStrategies();
 refreshBots();
 setInterval(refreshBots,5000);

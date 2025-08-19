@@ -54,3 +54,42 @@ def test_bot_endpoints(monkeypatch):
     assert client.post(f"/bots/{pid}/stop", auth=("admin", "admin")).status_code == 200
     assert client.delete(f"/bots/{pid}", auth=("admin", "admin")).status_code == 200
 
+
+def test_cross_arbitrage_start(monkeypatch):
+    client = TestClient(app)
+
+    calls = {}
+
+    class DummyProc:
+        def __init__(self):
+            self.pid = 321
+            self.returncode = None
+
+        async def wait(self):
+            self.returncode = 0
+
+        def terminate(self):
+            self.returncode = 0
+
+    async def fake_exec(*args, **kwargs):
+        calls["args"] = args
+        return DummyProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    payload = {
+        "strategy": "cross_arbitrage",
+        "pairs": ["BTC/USDT"],
+        "spot": "binance_spot",
+        "perp": "binance_futures",
+        "notional": 25.0,
+        "threshold": 0.001,
+    }
+
+    resp = client.post("/bots", json=payload, auth=("admin", "admin"))
+    assert resp.status_code == 200
+    assert resp.json()["pid"] == 321
+    argv = list(calls["args"])
+    assert "run-cross-arb" in argv
+    assert "binance_spot" in argv and "binance_futures" in argv
+
