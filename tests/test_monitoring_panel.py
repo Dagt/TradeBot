@@ -1,5 +1,6 @@
 import pathlib
 import sys
+from unittest.mock import AsyncMock
 
 root = pathlib.Path(__file__).resolve().parents[1]
 sys.path.append(str(root))
@@ -25,7 +26,6 @@ from monitoring.metrics import (
     BASIS,
 )
 from tradingbot.apps.api.main import app as api_app
-import types
 
 
 def test_panel_endpoints_and_metrics():
@@ -58,6 +58,8 @@ def test_panel_endpoints_and_metrics():
     assert "TradeBot Dashboard" in resp.text
     assert "Funding" in resp.text
     assert "Open Interest" in resp.text
+    assert "Bot Config" in resp.text
+    assert "Order Entry" not in resp.text
 
     resp = client.get("/metrics")
     assert resp.status_code == 200
@@ -113,34 +115,27 @@ def test_orders_endpoint(monkeypatch):
     ]
 
 
-def test_trade_endpoint(monkeypatch):
+def test_config_and_bot_control_endpoints(monkeypatch):
     client = TestClient(app)
 
-    class DummyResp:
-        def json(self):
-            return {"id": "abc"}
-
-        def raise_for_status(self):
-            return None
-
-    class DummyClient:
-        def __init__(self, *a, **kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def post(self, url, json):
-            return DummyResp()
-
-    monkeypatch.setattr(panel, "httpx", types.SimpleNamespace(AsyncClient=DummyClient))
-
-    resp = client.post("/trade", json={"symbol": "BTCUSDT", "side": "buy", "qty": 1})
+    # Update configuration
+    cfg = {"strategy": "alpha", "pairs": ["BTCUSDT"]}
+    resp = client.post("/config", json=cfg)
     assert resp.status_code == 200
-    assert resp.json()["order"] == {"id": "abc"}
+
+    # Retrieve configuration
+    resp = client.get("/config")
+    assert resp.status_code == 200
+
+    # Mock CLI execution to avoid spawning processes
+    fake_run_cli = AsyncMock(return_value={"stdout": "", "stderr": "", "returncode": 0})
+    monkeypatch.setattr(panel, "run_cli", fake_run_cli, raising=False)
+
+    resp = client.post("/bot/start")
+    assert resp.status_code == 200
+
+    resp = client.post("/bot/stop")
+    assert resp.status_code == 200
 
 
 def test_strategy_control_endpoints():
