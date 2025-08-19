@@ -7,19 +7,20 @@
   <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo"/>
   <nav>
-    <img src="/static/logo.png" alt="DMI Bot Trading"/>
     <a href="/">Monitoreo</a>
     <a href="/bots">Bots</a>
     <a href="/stats">Estadísticas operativas</a>
   </nav>
   <h1>Monitoreo</h1>
   <div class="muted" id="health">Comprobando estado…</div>
-  <div class="grid4" style="margin:14px 0 20px">
+  <div class="grid5" style="margin:14px 0 20px">
     <div class="kv"><div class="k">Reject Rate</div><div class="v" id="m-reject">—</div></div>
     <div class="kv"><div class="k">CPU %</div><div class="v" id="m-cpu">—</div></div>
     <div class="kv"><div class="k">Mem (MB)</div><div class="v" id="m-mem">—</div></div>
     <div class="kv"><div class="k">Uptime (s)</div><div class="v" id="m-uptime">—</div></div>
+    <div class="kv"><div class="k">Latencia (s)</div><div class="v" id="m-latency">—</div></div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -47,6 +48,11 @@
     <pre id="cfg-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
+  <div class="card" style="margin-top:16px">
+    <h2>Logs</h2>
+    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
+  </div>
+
 <script>
 const api = (path) => `${location.origin}${path}`;
 
@@ -70,6 +76,11 @@ async function refreshMetrics(){
     document.getElementById('m-cpu').textContent = (j.cpu_percent||0).toFixed(1);
     document.getElementById('m-mem').textContent = ((j.memory_bytes||0)/1048576).toFixed(1);
     document.getElementById('m-uptime').textContent = (j.process_uptime_seconds||0).toFixed(0);
+    try{
+      const l = await fetch(api('/metrics/latency'));
+      const lj = await l.json();
+      document.getElementById('m-latency').textContent = (lj.avg_order_latency_seconds||0).toFixed(3);
+    }catch(e){}
   }catch(e){}
 }
 
@@ -96,6 +107,16 @@ refreshHealth();
 setInterval(refreshHealth, 5000);
 refreshMetrics();
 setInterval(refreshMetrics, 5000);
+
+async function refreshLogs(){
+  try{
+    const r=await fetch(api('/logs?lines=200'));
+    const j=await r.json();
+    document.getElementById('logs').textContent=(j.items||[]).join('\n');
+  }catch(e){}
+}
+refreshLogs();
+setInterval(refreshLogs,5000);
 
 document.getElementById('cfg-save').addEventListener('click', saveConfig);
 </script>
