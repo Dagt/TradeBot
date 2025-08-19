@@ -74,6 +74,17 @@ STRATEGY_ACTIONS = Counter(
 router = APIRouter()
 
 
+def _collect_by_symbol(metric, sample_name: str) -> dict[str, float]:
+    """Collect gauge samples keyed by symbol."""
+
+    return {
+        sample.labels["symbol"]: sample.value
+        for metric_obj in metric.collect()
+        for sample in metric_obj.samples
+        if sample.name == sample_name
+    }
+
+
 def _avg_slippage() -> float:
     """Compute average slippage in basis points."""
 
@@ -197,33 +208,17 @@ def metrics_summary() -> dict:
         if sample.name == "strategy_state"
     }
 
-    positions = {
-        sample.labels["symbol"]: sample.value
-        for metric in OPEN_POSITIONS.collect()
-        for sample in metric.samples
-        if sample.name == "open_position"
-    }
+    positions = _collect_by_symbol(OPEN_POSITIONS, "open_position")
 
-    funding_rates: dict[str, float] = {
-        sample.labels["symbol"]: sample.value
-        for metric in FUNDING_RATE.collect()
-        for sample in metric.samples
-        if sample.name == "funding_rate"
-    }
+    funding_rates: dict[str, float] = _collect_by_symbol(
+        FUNDING_RATE, "funding_rate"
+    )
 
-    open_interest: dict[str, float] = {
-        sample.labels["symbol"]: sample.value
-        for metric in OPEN_INTEREST.collect()
-        for sample in metric.samples
-        if sample.name == "open_interest"
-    }
+    open_interest: dict[str, float] = _collect_by_symbol(
+        OPEN_INTEREST, "open_interest"
+    )
 
-    basis = {
-        sample.labels["symbol"]: sample.value
-        for metric in BASIS.collect()
-        for sample in metric.samples
-        if sample.name == "basis"
-    }
+    basis = _collect_by_symbol(BASIS, "basis")
 
     return {
         "pnl": TRADING_PNL._value.get(),
@@ -287,4 +282,15 @@ def metrics_latency() -> dict:
         "avg_order_latency_seconds": _avg_order_latency(),
         "avg_market_latency_seconds": _avg_market_latency(),
         "avg_e2e_latency_seconds": _avg_e2e_latency(),
+    }
+
+
+@router.get("/metrics/positions")
+def metrics_positions() -> dict:
+    """Expose current positions with funding rates and basis."""
+
+    return {
+        "positions": _collect_by_symbol(OPEN_POSITIONS, "open_position"),
+        "funding_rates": _collect_by_symbol(FUNDING_RATE, "funding_rate"),
+        "basis": _collect_by_symbol(BASIS, "basis"),
     }
