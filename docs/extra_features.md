@@ -55,7 +55,7 @@ Ejemplos:
 
 ## Backtesting y análisis
 
-- Motor **vectorizado** basado en `vectorbt` para exploración rápida.
+- Motor **vectorizado** basado en `vectorbt` para exploración rápida (instalar con `pip install "vectorbt>=0.26"`).
 - Motor **event-driven** que simula profundidad L2, slippage y latencia.
 - Utilidades de **walk-forward** y generación de reportes con métricas
   como Sharpe, Sortino y drawdown.

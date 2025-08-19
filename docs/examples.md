@@ -96,7 +96,7 @@ Consulta el notebook [docs/notebooks/breakout_atr.ipynb](notebooks/breakout_atr.
 para ver un flujo de trabajo completo de un backtest.
 
 ## Barrido de parámetros con vectorbt
-Se requiere instalar la dependencia opcional `vectorbt`.
+Se requiere instalar la dependencia opcional `vectorbt` (por ejemplo, `pip install "vectorbt>=0.26"`).
 
 ```python
 import numpy as np
