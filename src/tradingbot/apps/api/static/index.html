@@ -109,8 +109,9 @@
     </div>
 
     <div class="card">
-      <h2>Órdenes</h2>
+      <h2>Historial de Órdenes</h2>
       <div class="muted">Auto‑refresh 5s</div>
+      <input id="order-search" placeholder="buscar…" style="margin-top:8px"/>
       <div style="overflow:auto; max-height: 60vh; margin-top:10px">
         <table id="tbl-orders">
           <thead>
@@ -195,6 +196,11 @@
     </div>
   </div>
   <div class="card" style="margin-top:16px">
+    <h2>Logs</h2>
+    <div class="muted">Auto‑refresh 5s</div>
+    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
+  </div>
+  <div class="card" style="margin-top:16px">
     <h2>Comandos CLI</h2>
     <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
     <textarea id="cli-input" rows="2" placeholder="--help"></textarea>
@@ -205,6 +211,7 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 let pnlChart;
+let orderQuery = "";
 
 function fmtEdge(x){ if(x==null) return "—"; return (x*100).toFixed(3)+"%"; }
 function fmtNum(x, d=6){ if(x==null) return "—"; const n=Number(x); return isFinite(n)? n.toFixed(d): x; }
@@ -271,17 +278,22 @@ function renderOrders(items){
   }
 }
 
+async function refreshOrders(){
+  try{
+    const q = orderQuery ? `&search=${encodeURIComponent(orderQuery)}` : "";
+    const r = await fetch(api(`/orders/history?limit=120${q}`));
+    const j = await r.json();
+    renderOrders(j.items || []);
+  }catch(e){}
+}
+
 async function refreshTables(){
   try {
     const r1 = await fetch(api("/tri/signals?limit=100"));
     const j1 = await r1.json();
     renderSignals(j1.items || []);
   } catch(e){}
-  try {
-    const r2 = await fetch(api("/orders?limit=120"));
-    const j2 = await r2.json();
-    renderOrders(j2.items || []);
-  } catch(e){}
+  refreshOrders();
 }
 
 async function refreshExposure(){
@@ -410,6 +422,15 @@ async function refreshFuturePnL(){
   }catch(e){}
 }
 
+async function refreshLogs(){
+  try{
+    const r = await fetch(api("/logs?lines=200"));
+    const j = await r.json();
+    const pre = document.getElementById("logs");
+    pre.textContent = (j.items || []).join("\n");
+  }catch(e){}
+}
+
 function buildPnlChart(ctx, labels, upnl, rpnl, net){
   if(pnlChart){ pnlChart.destroy(); }
   pnlChart = new Chart(ctx, {
@@ -528,6 +549,7 @@ setInterval(refreshExposureFut, 5000); refreshExposureFut();
 setInterval(refreshRisk, 5000); refreshRisk();
 setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
 setInterval(refreshFuturePnL, 5000); refreshFuturePnL();
+setInterval(refreshLogs, 5000); refreshLogs();
 setInterval(refreshPnlChart, 10000); refreshPnlChart();
 setInterval(refreshPnlChartFut, 10000); refreshPnlChartFut();
 setInterval(refreshHealth, 5000);
@@ -536,6 +558,7 @@ setInterval(refreshTables, 5000);
 
   document.getElementById("cli-run").addEventListener("click", runCli);
   document.getElementById("cfg-save").addEventListener("click", saveConfig);
+  document.getElementById("order-search").addEventListener("input", (e)=>{ orderQuery = e.target.value; refreshOrders(); });
 
   </script>
 </body>
