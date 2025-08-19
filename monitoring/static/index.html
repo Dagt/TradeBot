@@ -58,23 +58,42 @@
       <div class="column is-one-third">
         <h2 class="subtitle has-text-light">Bot Config</h2>
         <div class="box">
-          <div class="field">
-            <label class="label has-text-light">Strategy</label>
-            <div class="control">
-              <div class="select is-fullwidth">
-                <select id="cfg-strategy">
-                  <option value="breakout_atr">Breakout ATR</option>
-                  <option value="momentum">Momentum</option>
-                </select>
+          <form id="config-form">
+            <div class="field">
+              <label class="label has-text-light">Strategy</label>
+              <div class="control">
+                <div class="select is-fullwidth">
+                  <select id="cfg-strategy" name="strategy">
+                    <option value="breakout_atr">Breakout ATR</option>
+                    <option value="momentum">Momentum</option>
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="field">
-            <label class="label has-text-light">Pairs (comma separated)</label>
-            <div class="control">
-              <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
+            <div class="field">
+              <label class="label has-text-light">Pairs (comma separated)</label>
+              <div class="control">
+                <input id="cfg-pairs" name="pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
+              </div>
             </div>
-          </div>
+            <div class="field">
+              <label class="label has-text-light">Notional</label>
+              <div class="control">
+                <input id="cfg-notional" name="notional" type="number" step="any" class="input" placeholder="1000" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label has-text-light">Params (JSON)</label>
+              <div class="control">
+                <textarea id="cfg-params" name="params" class="textarea" placeholder='{"key": "value"}'></textarea>
+              </div>
+            </div>
+            <div class="field">
+              <div class="control">
+                <button type="submit" class="button is-link is-fullwidth">Save Config</button>
+              </div>
+            </div>
+          </form>
           <div class="field is-grouped">
             <div class="control is-expanded">
               <button class="button is-success is-fullwidth" onclick="startBot()">Start</button>
@@ -138,18 +157,49 @@
     updateStrategies();
   }
 
-  async function startBot(){
+  async function loadConfig(){
+    try {
+      const data = await fetch('/config').then(r => r.json());
+      const cfg = data.config || {};
+      document.getElementById('cfg-strategy').value = cfg.strategy || 'breakout_atr';
+      document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
+      document.getElementById('cfg-notional').value = cfg.notional ?? '';
+      document.getElementById('cfg-params').value = cfg.params ? JSON.stringify(cfg.params) : '';
+    } catch(err){ console.error(err); }
+  }
+
+  document.getElementById('config-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
     const strategy = document.getElementById('cfg-strategy').value;
     const pairs = document.getElementById('cfg-pairs').value
       .split(',')
       .map(p => p.trim())
       .filter(Boolean);
+    const notionalVal = document.getElementById('cfg-notional').value;
+    const paramsText = document.getElementById('cfg-params').value;
+    const payload = {strategy, pairs};
+    if(notionalVal) payload.notional = parseFloat(notionalVal);
+    if(paramsText){
+      try{ payload.params = JSON.parse(paramsText); }
+      catch(err){
+        document.getElementById('cfg-result').textContent = 'Invalid params JSON';
+        return;
+      }
+    }
     try {
       await fetch('/config', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({strategy, pairs})
+        body: JSON.stringify(payload)
       });
+      document.getElementById('cfg-result').textContent = 'Config saved';
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
+  });
+
+  async function startBot(){
+    try {
       await fetch('/bot/start', {method:'POST'});
       document.getElementById('cfg-result').textContent = 'Bot started';
     } catch(err) {
@@ -166,6 +216,7 @@
     }
   }
 
+  loadConfig();
   updateMetrics();
   updateStrategies();
   setInterval(()=>{updateMetrics(); updateStrategies();},5000);
