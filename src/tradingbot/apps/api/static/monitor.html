@@ -39,7 +39,11 @@
   </div>
   <div class="card">
     <h2>PnL Spot (6h)</h2>
-    <canvas id="chart-pnl" height="120"></canvas>
+    <canvas id="chart-pnl-spot" height="120"></canvas>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>PnL Futuros (6h)</h2>
+    <canvas id="chart-pnl-fut" height="120"></canvas>
   </div>
   <div class="card" style="margin-top:20px">
     <h2>Posiciones</h2>
@@ -49,6 +53,10 @@
         <tbody></tbody>
       </table>
     </div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>Logs</h2>
+    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
   </div>
 <script>
 async function refreshMetrics(){
@@ -80,19 +88,41 @@ async function refreshPositions(){
 function buildPnlChart(ctx, labels, upnl, rpnl, net){
   new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
 }
-async function refreshPnlChart(){
+async function refreshPnlSpot(){
   try{
     const r=await fetch('/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6');
     const j=await r.json();
     const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
     const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl').getContext('2d'),labels,upnl,rpnl,net);
+    buildPnlChart(document.getElementById('chart-pnl-spot').getContext('2d'),labels,upnl,rpnl,net);
   }catch(e){}
 }
-refreshMetrics(); refreshPositions(); refreshPnlChart();
+async function refreshPnlFut(){
+  try{
+    const r=await fetch('/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6');
+    const j=await r.json();
+    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
+    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
+    buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
+  }catch(e){}
+}
+async function refreshLogs(){
+  try{
+    const r=await fetch('/logs?lines=200');
+    const j=await r.json();
+    document.getElementById('logs').textContent=(j.items||[]).join('\n');
+  }catch(e){}
+}
+refreshMetrics();
+refreshPositions();
+refreshPnlSpot();
+refreshPnlFut();
+refreshLogs();
 setInterval(refreshMetrics,5000);
 setInterval(refreshPositions,5000);
-setInterval(refreshPnlChart,10000);
+setInterval(refreshPnlSpot,10000);
+setInterval(refreshPnlFut,10000);
+setInterval(refreshLogs,5000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </body>

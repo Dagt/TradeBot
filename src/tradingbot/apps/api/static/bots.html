@@ -71,10 +71,12 @@
         <input id="bot-leverage" type="number" step="1"/>
       </div>
       <div>
-        <label><input type="checkbox" id="bot-testnet" checked/> Testnet</label>
-      </div>
-      <div>
-        <label><input type="checkbox" id="bot-dry-run"/> Dry run</label>
+        <label for="bot-env">Entorno</label>
+        <select id="bot-env">
+          <option value="live">Live</option>
+          <option value="paper">Paper trading</option>
+          <option value="testnet" selected>Testnet</option>
+        </select>
       </div>
     </div>
     <button id="bot-start" style="margin-top:10px">Start</button>
@@ -90,6 +92,14 @@
         <tbody></tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <textarea id="cli-input" rows="2" placeholder="--help"></textarea>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
 <script>
@@ -116,8 +126,9 @@ async function startBot(){
   const market = document.getElementById('bot-market').value;
   const trade_qty = document.getElementById('bot-trade-qty').value;
   const leverage = document.getElementById('bot-leverage').value;
-  const testnet = document.getElementById('bot-testnet').checked;
-  const dry_run = document.getElementById('bot-dry-run').checked;
+  const env = document.getElementById('bot-env').value;
+  const testnet = env === 'testnet';
+  const dry_run = env === 'paper';
   const payload = {strategy, pairs, exchange, market, testnet, dry_run};
   if(notional) payload.notional = Number(notional);
   if(trade_qty) payload.trade_qty = Number(trade_qty);
@@ -151,6 +162,19 @@ async function refreshBots(){
   }catch(e){}
 }
 
+async function runCli(){
+  const cmd = document.getElementById('cli-input').value;
+  if(!cmd.trim()) return;
+  try{
+    const r = await fetch(api('/cli/run'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: cmd})});
+    const j = await r.json();
+    const out = (j.stdout||'') + (j.stderr ? '\n'+j.stderr : '');
+    document.getElementById('cli-output').textContent = out;
+  }catch(e){
+    document.getElementById('cli-output').textContent = String(e);
+  }
+}
+
 async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
@@ -160,6 +184,7 @@ document.getElementById('bot-start').addEventListener('click', startBot);
 loadStrategies();
 refreshBots();
 setInterval(refreshBots,5000);
+document.getElementById('cli-run').addEventListener('click', runCli);
 </script>
 </body>
 </html>

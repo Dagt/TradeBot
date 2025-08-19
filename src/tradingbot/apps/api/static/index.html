@@ -5,8 +5,8 @@
   <title>TradingBot Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="/static/styles.css"/>
-  </head>
-  <body>
+</head>
+<body>
   <nav>
     <a href="/">Configuración</a>
     <a href="/monitor">Monitoreo</a>
@@ -16,8 +16,7 @@
   <div class="muted" id="health">Comprobando estado…</div>
 
   <div class="card" style="margin-top:16px">
-    <h2>Configuración</h2>
-    <div class="muted">Selecciona exchange, claves y estrategia sin usar la CLI</div>
+    <h2>Credenciales</h2>
     <div class="grid3" style="margin-top:10px">
       <div>
         <label for="cfg-exchange">Exchange</label>
@@ -36,521 +35,49 @@
         <label for="cfg-secret">API Secret</label>
         <input id="cfg-secret" type="password" placeholder="secreto"/>
       </div>
-      <div>
-        <label for="cfg-strategy">Estrategia</label>
-        <select id="cfg-strategy">
-          <option value="breakout_atr">Breakout ATR</option>
-          <option value="breakout_vol">Breakout Vol</option>
-          <option value="momentum">Momentum</option>
-          <option value="mean_reversion">Mean Reversion</option>
-          <option value="triangular_arb">Tri-Arb</option>
-          <option value="cash_and_carry">Cash &amp; Carry</option>
-          <option value="order_flow">Order Flow</option>
-          <option value="depth_imbalance">Depth Imbalance</option>
-          <option value="liquidity_events">Liquidity Events</option>
-          <option value="triple_barrier">Triple Barrier</option>
-          <option value="ml">ML Strategy</option>
-          <option value="mean_rev_ofi">Mean Rev OFI</option>
-        </select>
-      </div>
-      <div>
-        <label for="cfg-notional">Notional (USDT)</label>
-        <input id="cfg-notional" type="number" step="0.01" placeholder="100"/>
-      </div>
-      <div>
-        <label for="cfg-threshold">Umbral</label>
-        <input id="cfg-threshold" type="number" step="0.0001" placeholder="0.001"/>
-      </div>
     </div>
-    <button id="cfg-save" style="margin-top:10px">Guardar configuración</button>
+    <button id="cfg-save" style="margin-top:10px">Guardar credenciales</button>
     <pre id="cfg-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
-  <div class="grid3" style="margin:14px 0 20px">
-    <div class="kv"><div class="k">Señales (últimas)</div><div class="v" id="sum-count">—</div></div>
-    <div class="kv"><div class="k">Edge promedio</div><div class="v" id="sum-avg-edge">—</div></div>
-    <div class="kv"><div class="k">Último evento riesgo</div><div class="v" id="sum-risk-last">—</div></div>
-    <div class="kv"><div class="k">Notional promedio (QUOTE)</div><div class="v" id="sum-avg-notional">—</div></div>
-    <div class="kv"><div class="k">Exposición total (Spot)</div><div class="v" id="sum-expo-spot">—</div></div>
-    <div class="kv"><div class="k">Exposición total (Futuros)</div><div class="v" id="sum-expo-fut">—</div></div>
-    <div class="kv"><div class="k">UPnL (Spot)</div><div class="v" id="sum-upnl-spot">—</div></div>
-    <div class="kv"><div class="k">RPnL (Spot)</div><div class="v" id="sum-rpnl-spot">—</div></div>
-    <div class="kv"><div class="k">PnL Neto (Spot)</div><div class="v" id="sum-net-spot">—</div></div>
-    <div class="kv"><div class="k">UPnL (Futuros)</div><div class="v" id="sum-upnl-fut">—</div></div>
-    <div class="kv"><div class="k">RPnL (Futuros)</div><div class="v" id="sum-rpnl-fut">—</div></div>
-    <div class="kv"><div class="k">PnL Neto (Futuros)</div><div class="v" id="sum-net-fut">—</div></div>
-  </div>
-
-
-  <div class="row">
-    <div class="card">
-      <h2>Señales Triangulares</h2>
-      <div class="muted">Auto‑refresh 5s</div>
-      <div style="overflow:auto; max-height: 60vh; margin-top:10px">
-        <table id="tbl-signals">
-          <thead>
-            <tr>
-              <th>ts</th><th>paridad</th><th>dir</th><th>edge</th><th>notional</th><th>bq</th><th>mq</th><th>mb</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Historial de Órdenes</h2>
-      <div class="muted">Auto‑refresh 5s</div>
-      <input id="order-search" placeholder="buscar…" style="margin-top:8px"/>
-      <div style="overflow:auto; max-height: 60vh; margin-top:10px">
-        <table id="tbl-orders">
-          <thead>
-            <tr>
-              <th>ts</th><th>strategy</th><th>symbol</th><th>side</th><th>qty</th><th>px</th><th>status</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>Eventos de riesgo (Spot)</h2>
-      <div class="muted">Últimos 20</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-risk-events">
-          <thead><tr><th>ts</th><th>kind</th><th>symbol</th><th>message</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>Exposición por símbolo (Spot)</h2>
-      <div class="muted">Último snapshot por símbolo</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-expo-spot">
-          <thead><tr><th>symbol</th><th>position</th><th>px</th><th>notional</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>PnL por símbolo (Spot)</h2>
-      <div class="muted">Realizado, no realizado y neto</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-pnl-spot">
-          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>Exposición por símbolo (Futuros)</h2>
-      <div class="muted">Último snapshot por símbolo</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-expo-fut">
-          <thead><tr><th>symbol</th><th>position</th><th>px</th><th>notional</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>PnL por símbolo (Futuros)</h2>
-      <div class="muted">Realizado, no realizado y neto</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-pnl-fut">
-          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>PnL (Spot) – Serie temporal</h2>
-      <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
-      <div style="padding:10px">
-        <canvas id="chart-pnl-spot" height="120"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-      <h2>PnL (Futuros) – Serie temporal</h2>
-      <div class="muted">UPnL, RPnL y Neto (últimas 6h, 1m)</div>
-    <div style="padding:10px">
-      <canvas id="chart-pnl-fut" height="120"></canvas>
-    </div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <h2>Logs</h2>
-    <div class="muted">Auto‑refresh 5s</div>
-    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <h2>Comandos CLI</h2>
-    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
-    <textarea id="cli-input" rows="2" placeholder="--help"></textarea>
-    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
-    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
-  </div>
-</div>
 <script>
 const api = (path) => `${location.origin}${path}`;
-let pnlChart;
-let orderQuery = "";
-
-function fmtEdge(x){ if(x==null) return "—"; return (x*100).toFixed(3)+"%"; }
-function fmtNum(x, d=6){ if(x==null) return "—"; const n=Number(x); return isFinite(n)? n.toFixed(d): x; }
-function fmtUSD(x){ if(x==null) return "—"; const n=Number(x); if(!isFinite(n)) return x; return n.toLocaleString(undefined,{maximumFractionDigits:2}); }
 
 async function refreshHealth(){
   try {
-    const r = await fetch(api("/health"));
+    const r = await fetch(api('/health'));
     const j = await r.json();
-    const s = j.status === "ok" ? `<span class="ok">OK</span>` : `<span class="warn">WARN</span>`;
-    const db = j.db ? `<span class="ok">DB</span>` : `<span class="warn">no DB</span>`;
-    document.getElementById("health").innerHTML = `Estado: ${s} · ${db}`;
-  } catch (e) {
-    document.getElementById("health").innerHTML = `<span class="warn">Sin conexión</span>`;
+    const s = j.status === 'ok' ? '<span class="ok">OK</span>' : '<span class="warn">WARN</span>';
+    const db = j.db ? '<span class="ok">DB</span>' : '<span class="warn">no DB</span>';
+    document.getElementById('health').innerHTML = `Estado: ${s} · ${db}`;
+  } catch(e){
+    document.getElementById('health').innerHTML = '<span class="warn">Sin conexión</span>';
   }
 }
 
-async function refreshSummary(){
-  try {
-    const r = await fetch(api("/tri/summary?limit=200"));
-    const j = await r.json();
-    const s = j.summary || {};
-    document.getElementById("sum-count").textContent = s.count ?? "0";
-    document.getElementById("sum-avg-edge").textContent = fmtEdge(s.avg_edge);
-    document.getElementById("sum-avg-notional").textContent = fmtNum(s.avg_notional, 2);
-  } catch(e){}
-}
-
-function renderSignals(items){
-  const tb = document.querySelector("#tbl-signals tbody");
-  tb.innerHTML = "";
-  for(const r of items){
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${r.ts?.replace('T',' ').replace('Z','')}</td>
-      <td>${r.base}/${r.mid}/${r.quote}</td>
-      <td><span class="badge">${r.direction}</span></td>
-      <td>${fmtEdge(r.edge)}</td>
-      <td class="mono">${fmtNum(r.notional_quote,2)}</td>
-      <td class="mono">${fmtNum(r.bq,2)}</td>
-      <td class="mono">${fmtNum(r.mq,2)}</td>
-      <td class="mono">${fmtNum(r.mb,6)}</td>
-    `;
-    tb.appendChild(tr);
-  }
-}
-
-function renderOrders(items){
-  const tb = document.querySelector("#tbl-orders tbody");
-  tb.innerHTML = "";
-  for(const r of items){
-    const tr = document.createElement("tr");
-    const sideCls = (r.side||"").toLowerCase()==="buy" ? "buy" : "sell";
-    tr.innerHTML = `
-      <td class="mono">${r.ts?.replace('T',' ').replace('Z','')}</td>
-      <td>${r.strategy}</td>
-      <td class="mono">${r.symbol}</td>
-      <td class="${sideCls}">${r.side}</td>
-      <td class="mono">${fmtNum(r.qty,6)}</td>
-      <td class="mono">${fmtNum(r.px,4)}</td>
-      <td>${r.status}</td>
-    `;
-    tb.appendChild(tr);
-  }
-}
-
-async function refreshOrders(){
-  try{
-    const q = orderQuery ? `&search=${encodeURIComponent(orderQuery)}` : "";
-    const r = await fetch(api(`/orders/history?limit=120${q}`));
-    const j = await r.json();
-    renderOrders(j.items || []);
-  }catch(e){}
-}
-
-async function refreshTables(){
-  try {
-    const r1 = await fetch(api("/tri/signals?limit=100"));
-    const j1 = await r1.json();
-    renderSignals(j1.items || []);
-  } catch(e){}
-  refreshOrders();
-}
-
-async function refreshExposure(){
-  try{
-    const r = await fetch(api("/risk/exposure?venue=binance_spot_testnet"));
-    const j = await r.json();
-    document.getElementById("sum-expo-spot").textContent = "$ " + fmtUSD(j.total_notional || 0);
-    const tb = document.querySelector("#tbl-expo-spot tbody");
-    tb.innerHTML = "";
-    for(const it of (j.items || [])){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${it.symbol}</td>
-        <td class="mono">${fmtNum(it.position, 6)}</td>
-        <td class="mono">${fmtNum(it.price, 2)}</td>
-        <td class="mono">$ ${fmtUSD(it.notional_usd)}</td>
-      `;
-      tb.appendChild(tr);
-    }
-  }catch(e){}
-}
-
-async function refreshExposureFut(){
-  try{
-    const r = await fetch(api("/risk/exposure?venue=binance_futures_um_testnet"));
-    const j = await r.json();
-    document.getElementById("sum-expo-fut").textContent = "$ " + fmtUSD(j.total_notional || 0);
-    const tb = document.querySelector("#tbl-expo-fut tbody");
-    if(tb){
-      tb.innerHTML = "";
-      for(const it of (j.items || [])){
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-        <td>${it.symbol}</td>
-        <td class="mono">${fmtNum(it.position, 6)}</td>
-        <td class="mono">${fmtNum(it.price, 2)}</td>
-        <td class="mono">$ ${fmtUSD(it.notional_usd)}</td>
-        `;
-        tb.appendChild(tr);
-      }
-    }
-  }catch(e){}
-}
-
-async function refreshRisk(){
-  try{
-    const r = await fetch(api("/risk/events?venue=binance_spot_testnet&limit=20"));
-    const j = await r.json();
-    const items = j.items || [];
-    const tb = document.querySelector("#tbl-risk-events tbody");
-    tb.innerHTML = "";
-    for(const it of items){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${(it.ts||"").replace('T',' ').replace('Z','')}</td>
-        <td>${it.kind}</td>
-        <td>${it.symbol}</td>
-        <td>${it.message}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    // banner “último evento”
-    if(items.length){
-      const last = items[0];
-      const label = `[${last.kind}] ${last.symbol} – ${last.message}`;
-      document.getElementById("sum-risk-last").textContent = label;
-    } else {
-      document.getElementById("sum-risk-last").textContent = "—";
-    }
-  }catch(e){}
-}
-
-async function refreshSpotPnL(){
-  try{
-    const r = await fetch(api("/pnl/summary?venue=binance_spot_testnet"));
-    const j = await r.json();
-    const t = j.totals || {};
-    document.getElementById("sum-upnl-spot").textContent = "$ " + fmtUSD(t.upnl || 0);
-    document.getElementById("sum-rpnl-spot").textContent = "$ " + fmtUSD(t.rpnl || 0);
-    document.getElementById("sum-net-spot").textContent = "$ " + fmtUSD(t.net_pnl || 0);
-
-    const tb = document.querySelector("#tbl-pnl-spot tbody");
-    tb.innerHTML = "";
-    for(const it of (j.items || [])){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${it.symbol}</td>
-        <td class="mono">${fmtNum(it.qty,6)}</td>
-        <td class="mono">${fmtNum(it.avg_price,2)}</td>
-        <td class="mono">$ ${fmtUSD(it.upnl)}</td>
-        <td class="mono">$ ${fmtUSD(it.realized_pnl)}</td>
-        <td class="mono">$ ${fmtUSD(it.fees_paid)}</td>
-        <td class="mono">$ ${fmtUSD(it.total_pnl)}</td>
-      `;
-      tb.appendChild(tr);
-    }
-  }catch(e){}
-}
-
-async function refreshFuturePnL(){
-  try{
-    const r = await fetch(api("/pnl/summary?venue=binance_futures_um_testnet"));
-    const j = await r.json();
-    const t = j.totals || {};
-    document.getElementById("sum-upnl-fut").textContent = "$ " + fmtUSD(t.upnl || 0);
-    document.getElementById("sum-rpnl-fut").textContent = "$ " + fmtUSD(t.rpnl || 0);
-    document.getElementById("sum-net-fut").textContent = "$ " + fmtUSD(t.net_pnl || 0);
-
-    const tb = document.querySelector("#tbl-pnl-fut tbody");
-    if(tb){
-      tb.innerHTML = "";
-      for(const it of (j.items || [])){
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-        <td>${it.symbol}</td>
-        <td class="mono">${fmtNum(it.qty,6)}</td>
-        <td class="mono">${fmtNum(it.avg_price,2)}</td>
-        <td class="mono">$ ${fmtUSD(it.upnl)}</td>
-        <td class="mono">$ ${fmtUSD(it.realized_pnl)}</td>
-        <td class="mono">$ ${fmtUSD(it.fees_paid)}</td>
-        <td class="mono">$ ${fmtUSD(it.total_pnl)}</td>
-        `;
-        tb.appendChild(tr);
-      }
-    }
-  }catch(e){}
-}
-
-async function refreshLogs(){
-  try{
-    const r = await fetch(api("/logs?lines=200"));
-    const j = await r.json();
-    const pre = document.getElementById("logs");
-    pre.textContent = (j.items || []).join("\n");
-  }catch(e){}
-}
-
-function buildPnlChart(ctx, labels, upnl, rpnl, net){
-  if(pnlChart){ pnlChart.destroy(); }
-  pnlChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        { label: 'UPnL', data: upnl },
-        { label: 'RPnL', data: rpnl },
-        { label: 'Neto', data: net }
-      ]
-    },
-    options: {
-      responsive: true,
-      animation: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { ticks: { maxRotation: 0 }, grid: { display: false } },
-        y: { beginAtZero: false }
-      },
-      plugins: {
-        legend: { position: 'top' },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: $ ${Number(ctx.parsed.y).toLocaleString(undefined,{maximumFractionDigits:2})}`
-          }
-        }
-      }
-    }
-  });
-}
-
-async function refreshPnlChart(){
-  try{
-    // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
-    const r = await fetch(api("/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6"));
-    const j = await r.json();
-    const pts = j.points || [];
-    const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
-    const upnl = pts.map(p => p.upnl || 0);
-    const rpnl = pts.map(p => p.rpnl || 0);
-    const net  = pts.map(p => p.net || 0);
-    const ctx = document.getElementById("chart-pnl-spot").getContext("2d");
-    buildPnlChart(ctx, labels, upnl, rpnl, net);
-  }catch(e){}
-}
-
-async function refreshPnlChartFut(){
+async function saveConfig(){
+  const ex = document.getElementById('cfg-exchange').value;
+  const key = document.getElementById('cfg-key').value.trim();
+  const sec = document.getElementById('cfg-secret').value.trim();
+  let output = '';
+  if(key && sec){
     try{
-      // Spot, agregando todos los símbolos (symbol omitido), bucket 1m, 6h
-      const r = await fetch(api("/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6"));
-      const j = await r.json();
-      const pts = j.points || [];
-      const labels = pts.map(p => (p.ts||'').replace('T',' ').replace('Z',''));
-      const upnl = pts.map(p => p.upnl || 0);
-      const rpnl = pts.map(p => p.rpnl || 0);
-      const net  = pts.map(p => p.net || 0);
-      const ctx = document.getElementById("chart-pnl-fut").getContext("2d");
-      buildPnlChart(ctx, labels, upnl, rpnl, net);
-    }catch(e){}
-  }
-
-  async function runCli(){
-    const cmd = document.getElementById("cli-input").value;
-    if(!cmd.trim()) return;
-    try{
-      const r = await fetch(api("/cli/run"), {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({command: cmd})
+      const r = await fetch(api('/cli/run'), {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({command: `secrets set ${ex} ${key} ${sec}`})
       });
       const j = await r.json();
-      const out = (j.stdout || "") + (j.stderr ? "\n"+j.stderr : "");
-      document.getElementById("cli-output").textContent = out;
-    }catch(e){
-      document.getElementById("cli-output").textContent = String(e);
-    }
+      output = (j.stdout||'') + (j.stderr ? '\n'+j.stderr : '');
+    }catch(e){ output = String(e); }
   }
+  document.getElementById('cfg-output').textContent = output || 'Credenciales guardadas';
+}
 
-  async function saveConfig(){
-    const ex = document.getElementById("cfg-exchange").value;
-    const key = document.getElementById("cfg-key").value.trim();
-    const sec = document.getElementById("cfg-secret").value.trim();
-    const strat = document.getElementById("cfg-strategy").value;
-    const notional = document.getElementById("cfg-notional").value;
-    const threshold = document.getElementById("cfg-threshold").value;
-    let output = "";
-    if(key && sec){
-      try{
-        const r = await fetch(api("/cli/run"), {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({command: `secrets set ${ex} ${key} ${sec}`})
-        });
-        const j = await r.json();
-        output += (j.stdout||"") + (j.stderr?"\n"+j.stderr:"");
-      }catch(e){ output += String(e); }
-    }
-    const params = {};
-    if(notional) params.notional = Number(notional);
-    if(threshold) params.threshold = Number(threshold);
-    try{
-      await fetch(api(`/strategies/${strat}/params`), {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify(params)
-      });
-      if(!output) output = "Configuración guardada";
-    }catch(e){ output += `\n${e}`; }
-    document.getElementById("cfg-output").textContent = output;
-  }
-// boot
-refreshHealth(); refreshSummary(); refreshTables();
-setInterval(refreshExposure, 5000); refreshExposure();
-setInterval(refreshExposureFut, 5000); refreshExposureFut();
-setInterval(refreshRisk, 5000); refreshRisk();
-setInterval(refreshSpotPnL, 5000); refreshSpotPnL();
-setInterval(refreshFuturePnL, 5000); refreshFuturePnL();
-setInterval(refreshLogs, 5000); refreshLogs();
-setInterval(refreshPnlChart, 10000); refreshPnlChart();
-setInterval(refreshPnlChartFut, 10000); refreshPnlChartFut();
+refreshHealth();
 setInterval(refreshHealth, 5000);
-setInterval(refreshSummary, 5000);
-setInterval(refreshTables, 5000);
 
-  document.getElementById("cli-run").addEventListener("click", runCli);
-  document.getElementById("cfg-save").addEventListener("click", saveConfig);
-  document.getElementById("order-search").addEventListener("input", (e)=>{ orderQuery = e.target.value; refreshOrders(); });
-
-  </script>
+document.getElementById('cfg-save').addEventListener('click', saveConfig);
+</script>
 </body>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </html>

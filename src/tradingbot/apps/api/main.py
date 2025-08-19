@@ -316,8 +316,13 @@ def stop_strategy(name: str):
 @app.get("/strategies/status")
 def strategies_status():
     """Return the status of all known strategies."""
+    from ...strategies import STRATEGIES
 
-    return {"strategies": _strategies_state}
+    return {
+        "strategies": {
+            name: _strategies_state.get(name, "stopped") for name in STRATEGIES
+        }
+    }
 
 
 # --- Funding and basis endpoints ------------------------------------------------
