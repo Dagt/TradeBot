@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Bots - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
+    h1, h2 { margin: 0.2rem 0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+    table { width:100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
+    th { background:#0f1622; position: sticky; top:0; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .muted { color:#94a3b8; }
+    button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    button:hover { background:#1d4ed8; }
+    input, select { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
+    label { font-size:12px; color:#94a3b8; display:block; margin-top:8px; margin-bottom:4px; }
+    nav { margin-bottom:20px; }
+    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
+    nav a:hover { text-decoration:underline; }
+    pre { background:#0f1622; padding:10px; border-radius:8px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Configuración</a>
+    <a href="/monitor">Monitoreo</a>
+    <a href="/bots">Bots</a>
+  </nav>
+  <h1>Bots</h1>
+
+  <div class="card">
+    <h2>Nuevo bot</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="bot-strategy">Estrategia</label>
+        <select id="bot-strategy"></select>
+      </div>
+      <div>
+        <label for="bot-pairs">Pares (coma)</label>
+        <input id="bot-pairs" placeholder="BTC/USDT,ETH/USDT"/>
+      </div>
+      <div>
+        <label for="bot-notional">Notional (USDT)</label>
+        <input id="bot-notional" type="number" step="0.01"/>
+      </div>
+      <div>
+        <label for="bot-exchange">Exchange</label>
+        <select id="bot-exchange">
+          <option value="binance">Binance</option>
+          <option value="bybit">Bybit</option>
+          <option value="okx">OKX</option>
+        </select>
+      </div>
+      <div>
+        <label for="bot-market">Mercado</label>
+        <select id="bot-market">
+          <option value="spot">Spot</option>
+          <option value="futures">Futuros</option>
+        </select>
+      </div>
+      <div>
+        <label for="bot-trade-qty">Trade qty</label>
+        <input id="bot-trade-qty" type="number" step="0.0001"/>
+      </div>
+      <div>
+        <label for="bot-leverage">Leverage</label>
+        <input id="bot-leverage" type="number" step="1"/>
+      </div>
+      <div>
+        <label><input type="checkbox" id="bot-testnet" checked/> Testnet</label>
+      </div>
+      <div>
+        <label><input type="checkbox" id="bot-dry-run"/> Dry run</label>
+      </div>
+    </div>
+    <button id="bot-start" style="margin-top:10px">Start</button>
+    <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Bots activos</h2>
+    <div class="muted">Auto-refresh 5s</div>
+    <div style="overflow:auto; max-height:60vh; margin-top:10px">
+      <table id="tbl-bots">
+        <thead><tr><th>PID</th><th>Estrategia</th><th>Pares</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+
+async function loadStrategies(){
+  try{
+    const r = await fetch(api('/strategies/status'));
+    const j = await r.json();
+    const sel = document.getElementById('bot-strategy');
+    sel.innerHTML='';
+    Object.keys(j.strategies || {}).forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s; o.textContent=s; sel.appendChild(o);
+    });
+  }catch(e){}
+}
+
+async function startBot(){
+  const strategy = document.getElementById('bot-strategy').value;
+  const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const notional = document.getElementById('bot-notional').value;
+  const exchange = document.getElementById('bot-exchange').value;
+  const market = document.getElementById('bot-market').value;
+  const trade_qty = document.getElementById('bot-trade-qty').value;
+  const leverage = document.getElementById('bot-leverage').value;
+  const testnet = document.getElementById('bot-testnet').checked;
+  const dry_run = document.getElementById('bot-dry-run').checked;
+  const payload = {strategy, pairs, exchange, market, testnet, dry_run};
+  if(notional) payload.notional = Number(notional);
+  if(trade_qty) payload.trade_qty = Number(trade_qty);
+  if(leverage) payload.leverage = Number(leverage);
+  try{
+    const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const j = await r.json();
+    document.getElementById('bot-output').textContent = JSON.stringify(j,null,2);
+    refreshBots();
+  }catch(e){ document.getElementById('bot-output').textContent = String(e); }
+}
+
+async function refreshBots(){
+  try{
+    const r = await fetch(api('/bots'));
+    const j = await r.json();
+    const body = document.querySelector('#tbl-bots tbody');
+    body.innerHTML='';
+    (j.bots||[]).forEach(b=>{
+      const tr=document.createElement('tr');
+      const pairs=(b.config?.pairs||[]).join(',');
+      tr.innerHTML=`<td>${b.pid}</td><td>${b.config?.strategy||''}</td><td>${pairs}</td><td>${b.status}</td>
+      <td>
+        <button onclick="stopBot(${b.pid})">Stop</button>
+        <button onclick="pauseBot(${b.pid})">Pause</button>
+        <button onclick="resumeBot(${b.pid})">Resume</button>
+        <button onclick="deleteBot(${b.pid})">Delete</button>
+      </td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+
+async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
+async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
+async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
+async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+
+document.getElementById('bot-start').addEventListener('click', startBot);
+loadStrategies();
+refreshBots();
+setInterval(refreshBots,5000);
+</script>
+</body>
+</html>
+

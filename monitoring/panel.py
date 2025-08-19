@@ -551,4 +551,5 @@ async def run_cli(cmd: CLICommand) -> dict:
 
 
 static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
