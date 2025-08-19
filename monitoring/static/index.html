@@ -91,7 +91,7 @@
         <div class="box">
           <form id="config-form" onsubmit="saveConfig(event)">
             <div class="field">
-              <label class="label has-text-light">Strategy</label>
+              <label class="label has-text-light">Strategy <span class="has-text-info" title="Breakout ATR follows volatility; Momentum trades price trends">?</span></label>
               <div class="control">
                 <div class="select is-fullwidth">
                   <select id="cfg-strategy">
@@ -100,24 +100,28 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-light">Choose the trading strategy.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Pairs (comma separated)</label>
+              <label class="label has-text-light">Pairs (comma separated) <span class="has-text-info" title="e.g. BTCUSDT,ETHUSDT">?</span></label>
               <div class="control">
                 <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
               </div>
+              <p class="help has-text-light">List symbols separated by commas.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Notional</label>
+              <label class="label has-text-light">Notional <span class="has-text-info" title="Amount in USD per trade">?</span></label>
               <div class="control">
                 <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
               </div>
+              <p class="help has-text-light">Must be a positive number.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Params (JSON)</label>
+              <label class="label has-text-light">Params (JSON) <span class="has-text-info" title="Strategy parameters in JSON">?</span></label>
               <div class="control">
                 <textarea id="cfg-params" class="textarea" placeholder='{"atr_period":14}'></textarea>
               </div>
+              <p class="help has-text-light">Example: {"atr_period":14}</p>
             </div>
             <div class="field">
               <div class="control">
@@ -140,6 +144,13 @@
     </div>
   </section>
 
+  <section class="section">
+    <div class="box">
+      <h2 class="subtitle has-text-light">Help / FAQ</h2>
+      <p class="has-text-light">Visit the <a href="/docs">API documentation</a> for more details.</p>
+    </div>
+  </section>
+
   <script>
   const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
   const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
@@ -151,6 +162,18 @@
   function formatBytes(bytes){
     if(bytes === undefined) return '--';
     return (bytes / (1024*1024)).toFixed(2) + ' MB';
+  }
+
+  function getErrorMessage(err){
+    if(!err) return 'Unknown error';
+    if(typeof err === 'string') return err;
+    if(err.detail){
+      if(Array.isArray(err.detail)){
+        return err.detail.map(e => `${(e.loc||[]).join('.')}: ${e.msg}`).join('; ');
+      }
+      return err.detail;
+    }
+    return JSON.stringify(err);
   }
 
   async function updateMetrics(){
@@ -246,11 +269,12 @@
       if(res.ok){
         document.getElementById('cfg-result').textContent = 'Config saved';
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let err;
+        try{ err = await res.json(); } catch{ err = {detail: res.statusText}; }
+        document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
       }
     } catch(err){
-      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+      document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
     }
   }
 
@@ -262,11 +286,12 @@
         document.getElementById('cfg-result').textContent = 'Bot started';
         document.getElementById('btn-start').disabled = true;
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let err;
+        try{ err = await res.json(); } catch{ err = {detail: res.statusText}; }
+        document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
       }
     } catch(err) {
-      if(err) console.error(err);
+      document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
     }
     updateStrategies();
   }
@@ -278,11 +303,12 @@
         document.getElementById('cfg-result').textContent = 'Bot stopped';
         document.getElementById('btn-start').disabled = false;
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let err;
+        try{ err = await res.json(); } catch{ err = {detail: res.statusText}; }
+        document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
       }
     } catch(err) {
-      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+      document.getElementById('cfg-result').textContent = 'Error: ' + getErrorMessage(err);
     }
     updateStrategies();
   }
