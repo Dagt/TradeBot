@@ -147,6 +147,39 @@ def select_recent_orders(engine, limit: int = 100) -> list[dict[str, Any]]:
         '''), dict(lim=limit)).mappings().all()
         return [dict(r) for r in rows]
 
+
+def select_order_history(
+    engine,
+    *,
+    limit: int = 100,
+    search: str | None = None,
+    symbol: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    query = [
+        "SELECT ts, strategy, exchange, symbol, side, type, qty, px, status, ext_order_id, notes",
+        "FROM market.orders",
+    ]
+    params: dict[str, Any] = {"lim": limit}
+    conditions: list[str] = []
+    if symbol:
+        conditions.append("symbol ILIKE :sym")
+        params["sym"] = f"%{symbol}%"
+    if status:
+        conditions.append("status ILIKE :stat")
+        params["stat"] = f"%{status}%"
+    if search:
+        conditions.append("(symbol ILIKE :search OR strategy ILIKE :search OR status ILIKE :search)")
+        params["search"] = f"%{search}%"
+    if conditions:
+        query.append("WHERE " + " AND ".join(conditions))
+    query.append("ORDER BY ts DESC")
+    query.append("LIMIT :lim")
+    sql = "\n".join(query)
+    with engine.begin() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(r) for r in rows]
+
 def insert_portfolio_snapshot(engine, *, venue: str, symbol: str, position: float, price: float, notional_usd: float):
     with engine.begin() as conn:
         conn.execute(text('''

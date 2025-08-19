@@ -20,10 +20,16 @@ from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from ...config import settings
 
 # Persistencia
 try:
-    from ...storage.timescale import get_engine, select_recent_tri_signals, select_recent_orders
+    from ...storage.timescale import (
+        get_engine,
+        select_recent_tri_signals,
+        select_recent_orders,
+        select_order_history,
+    )
     _CAN_PG = True
     _ENGINE = get_engine()
 except Exception:
@@ -82,6 +88,19 @@ def metrics_summary():
     """Expose a summarized view of key metrics."""
     return _metrics_summary()
 
+
+@app.get("/logs")
+def logs(lines: int = Query(200, ge=1, le=1000)):
+    """Return recent lines from the log file."""
+    log_file = Path(settings.log_file or "tradingbot.log")
+    if not log_file.exists():
+        return {"items": [], "warning": "log file not found"}
+    try:
+        content = log_file.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return {"items": [], "warning": "unable to read log file"}
+    return {"items": content[-lines:]}
+
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
@@ -93,6 +112,22 @@ def orders(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_orders(_ENGINE, limit=limit)}
+
+
+@app.get("/orders/history")
+def orders_history(
+    limit: int = Query(100, ge=1, le=1000),
+    search: str | None = None,
+    symbol: str | None = None,
+    status: str | None = None,
+):
+    if not _CAN_PG:
+        return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
+    return {
+        "items": select_order_history(
+            _ENGINE, limit=limit, search=search, symbol=symbol, status=status
+        )
+    }
 
 @app.get("/tri/summary")
 def tri_summary(limit: int = Query(200, ge=1, le=5000)):
