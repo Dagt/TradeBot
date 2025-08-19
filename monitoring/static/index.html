@@ -55,10 +55,7 @@
               <label class="label has-text-light">Strategy</label>
               <div class="control">
                 <div class="select is-fullwidth">
-                  <select id="cfg-strategy">
-                    <option value="breakout_atr">Breakout ATR</option>
-                    <option value="momentum">Momentum</option>
-                  </select>
+                  <select id="cfg-strategy"></select>
                 </div>
               </div>
             </div>
@@ -148,6 +145,20 @@
     updateStrategies();
   }
 
+  async function loadStrategies(){
+    try {
+      const data = await fetch('/strategies').then(r => r.json());
+      const select = document.getElementById('cfg-strategy');
+      select.innerHTML = '';
+      for (const name of data.strategies || []){
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      }
+    } catch(err){ console.error(err); }
+  }
+
   async function loadConfig(){
     try {
       const res = await fetch('/config').then(r => r.json());
@@ -229,7 +240,7 @@
 
   updateMetrics();
   updateStrategies();
-  loadConfig();
+  loadStrategies().then(loadConfig);
   setInterval(()=>{updateMetrics(); updateStrategies();},5000);
   </script>
 </body>
