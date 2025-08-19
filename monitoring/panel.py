@@ -29,12 +29,12 @@ from .metrics import (
     update_process_metrics,
 )
 from .strategies import (
-    router as strategies_router,
     strategies_status,
     set_strategy_status,
     register_strategy,
     update_strategy_params as set_strategy_params,
     get_strategy_params,
+    available_strategies,
 )
 from .alerts import evaluate_alerts
 
@@ -48,7 +48,30 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TradeBot Monitoring")
 app.include_router(metrics_router)
-app.include_router(strategies_router)
+
+
+# ---------------------------------------------------------------------------
+# Strategy discovery
+# ---------------------------------------------------------------------------
+# On startup, automatically register all strategy modules found under
+# ``tradingbot/strategies`` so they become available via the API.
+
+STRATEGIES_DIR = Path(__file__).resolve().parents[1] / "src" / "tradingbot" / "strategies"
+
+
+@app.on_event("startup")
+def discover_strategies() -> None:
+    for path in STRATEGIES_DIR.glob("*.py"):
+        if path.name in {"base.py", "__init__.py"}:
+            continue
+        register_strategy(path.stem)
+
+
+@app.get("/strategies")
+def list_strategies() -> dict:
+    """Return the names of all registered strategies."""
+
+    return available_strategies()
 
 # ---------------------------------------------------------------------------
 # Configuration storage
