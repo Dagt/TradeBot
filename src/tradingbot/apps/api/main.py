@@ -344,6 +344,63 @@ def strategies_status():
     }
 
 
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str):
+    """Return constructor parameters and defaults for a strategy.
+
+    The endpoint inspects the strategy's ``__init__`` signature and returns
+    parameter names, annotated types and default values.  Strategies that use
+    ``**kwargs`` with in-class defaults are instantiated so their attributes can
+    be discovered.
+    """
+
+    import importlib
+    import inspect
+
+    try:
+        module = importlib.import_module(f"tradingbot.strategies.{name}")
+    except ModuleNotFoundError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=404, detail="unknown strategy") from exc
+
+    strategy_cls = None
+    for attr in dir(module):
+        obj = getattr(module, attr)
+        if inspect.isclass(obj) and getattr(obj, "name", None) == name:
+            strategy_cls = obj
+            break
+    if strategy_cls is None:
+        raise HTTPException(status_code=404, detail="strategy class not found")
+
+    sig = inspect.signature(strategy_cls.__init__)
+    params: list[dict] = []
+    for p in list(sig.parameters.values())[1:]:  # skip ``self``
+        if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        default = None if p.default is inspect._empty else p.default
+        if p.annotation is inspect._empty:
+            annotation = "Any"
+        elif isinstance(p.annotation, type):
+            annotation = p.annotation.__name__
+        else:
+            annotation = str(p.annotation)
+        params.append({"name": p.name, "type": annotation, "default": default})
+
+    # Strategies relying solely on ``**kwargs`` won't expose parameters via the
+    # signature.  Attempt to instantiate the class and inspect its attributes to
+    # derive defaults in that case.
+    if not params:
+        try:  # pragma: no cover - best effort
+            inst = strategy_cls()
+            for k, v in vars(inst).items():
+                if k.startswith("_"):
+                    continue
+                params.append({"name": k, "type": type(v).__name__, "default": v})
+        except Exception:
+            pass
+
+    return {"strategy": name, "params": params}
+
+
 # --- Funding and basis endpoints ------------------------------------------------
 
 
