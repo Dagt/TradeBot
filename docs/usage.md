@@ -35,7 +35,7 @@ perpetuo utilizando los adapters indicados. El umbral de premium se controla con
 ``--threshold`` y ``--notional`` establece el tamaño por pata.
 
 `paper-run` permite ejecutar cualquier estrategia en modo papel y expone las
-métricas de Prometheus en `http://localhost:8000/metrics`.
+métricas de Prometheus en `http://localhost:8000/metrics/prometheus`.
 
 ```bash
 python -m tradingbot.cli paper-run --strategy breakout_atr --symbol BTC/USDT
@@ -114,7 +114,7 @@ docker compose up
 
 Una vez levantados los servicios:
 
-* API y dashboard estático: <http://localhost:8000> (`/metrics` expone métricas de Prometheus)
+* API y dashboard estático: <http://localhost:8000> (`/metrics` devuelve métricas agregadas, Prometheus en `/metrics/prometheus`)
 * Prometheus: <http://localhost:9090>
 * Grafana: <http://localhost:3000> (usuario `admin`, contraseña `admin`)
 
@@ -184,8 +184,9 @@ print(study.best_params)
 
 ## Interfaz mínima de monitoreo
 
-`monitoring/panel.py` levanta una aplicación FastAPI que expone las métricas en
-`/metrics` y el estado de las estrategias en `/strategies/status`.  Al montar el
-directorio estático se incluye un `index.html` sencillo que consulta ambos
-endpoints para mostrar un resumen rápido.
+`monitoring/panel.py` levanta una aplicación FastAPI que expone métricas
+agregadas en `/metrics` (Prometheus en `/metrics/prometheus`) y el estado de las
+estrategias en `/strategies/status`.  Al montar el directorio estático se incluye
+un `index.html` sencillo que consulta ambos endpoints para mostrar un resumen
+rápido.
 

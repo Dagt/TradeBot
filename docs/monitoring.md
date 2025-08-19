@@ -32,8 +32,8 @@ credentials via the `API_USER` and `API_PASS` environment variables
 
 Available endpoints:
 
-- `GET /metrics` – Prometheus metrics.
-- `GET /metrics/summary` – compact JSON snapshot of key metrics.
+- `GET /metrics` – aggregated metrics in JSON format.
+- `GET /metrics/prometheus` – Prometheus metrics.
 - `GET /pnl` – current trading PnL.
 - `GET /orders` – open orders with id, symbol, side and status.
 - `GET /positions` – open positions by symbol.
@@ -65,9 +65,7 @@ uvicorn tradingbot.apps.api.main:app --reload
 
 The dashboard polls the following endpoints every few seconds:
 
-- `GET /metrics/pnl`
-- `GET /metrics/slippage`
-- `GET /metrics/latency`
+- `GET /metrics`
 - `GET /strategies/status`
 
 When the pause/resume buttons are used the dashboard sends POST requests to

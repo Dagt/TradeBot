@@ -140,14 +140,6 @@ def _avg_e2e_latency() -> float:
     return e2e_sum / e2e_count if e2e_count else 0.0
 
 
-@router.get("/metrics")
-def metrics() -> Response:
-    """Expose Prometheus metrics."""
-    update_process_metrics()
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-@router.get("/metrics/summary")
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
 
@@ -257,6 +249,20 @@ def metrics_summary() -> dict:
         "memory_bytes": PROCESS_MEMORY._value.get(),
         "process_uptime_seconds": PROCESS_UPTIME._value.get(),
     }
+
+
+@router.get("/metrics")
+def metrics() -> dict:
+    """Expose aggregated metrics in JSON format."""
+
+    return metrics_summary()
+
+
+@router.get("/metrics/prometheus")
+def metrics_prometheus() -> Response:
+    """Expose Prometheus metrics for scraping."""
+    update_process_metrics()
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics/pnl")

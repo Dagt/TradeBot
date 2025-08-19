@@ -69,15 +69,13 @@ _HTML = """
   async function updateMetrics(){
     try {
       const now = new Date();
-      const pnl = await fetch('/metrics/pnl').then(r => r.json());
-      const slip = await fetch('/metrics/slippage').then(r => r.json());
-      const lat = await fetch('/metrics/latency').then(r => r.json());
+      const metrics = await fetch('/metrics').then(r => r.json());
       pnlTrace.x.push(now);
-      pnlTrace.y.push(pnl.pnl || 0);
+      pnlTrace.y.push(metrics.pnl || 0);
       slippageTrace.x.push(now);
-      slippageTrace.y.push(slip.avg_slippage_bps || 0);
+      slippageTrace.y.push(metrics.avg_slippage_bps || 0);
       latencyTrace.x.push(now);
-      latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
+      latencyTrace.y.push(metrics.avg_order_latency_seconds || 0);
       Plotly.update('pnl', {x:[pnlTrace.x], y:[pnlTrace.y]});
       Plotly.update('slippage', {x:[slippageTrace.x], y:[slippageTrace.y]});
       Plotly.update('latency', {x:[latencyTrace.x], y:[latencyTrace.y]});

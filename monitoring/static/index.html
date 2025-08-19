@@ -93,18 +93,15 @@
   async function updateMetrics(){
     try {
       const now = new Date();
-      const pnl = await fetch('/metrics/pnl').then(r => r.json());
-      const slip = await fetch('/metrics/slippage').then(r => r.json());
-      const lat = await fetch('/metrics/latency').then(r => r.json());
-      const summary = await fetch('/metrics/summary').then(r => r.json());
-      pnlTrace.x.push(now); pnlTrace.y.push(pnl.pnl || 0);
-      slippageTrace.x.push(now); slippageTrace.y.push(slip.avg_slippage_bps || 0);
-      latencyTrace.x.push(now); latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
+      const metrics = await fetch('/metrics').then(r => r.json());
+      pnlTrace.x.push(now); pnlTrace.y.push(metrics.pnl || 0);
+      slippageTrace.x.push(now); slippageTrace.y.push(metrics.avg_slippage_bps || 0);
+      latencyTrace.x.push(now); latencyTrace.y.push(metrics.avg_order_latency_seconds || 0);
       Plotly.update('pnl', {x: [pnlTrace.x], y: [pnlTrace.y]});
       Plotly.update('slippage', {x: [slippageTrace.x], y: [slippageTrace.y]});
       Plotly.update('latency', {x: [latencyTrace.x], y: [latencyTrace.y]});
-      const funding = Object.values(summary.funding_rates || {})[0];
-      const oi = Object.values(summary.open_interest || {})[0];
+      const funding = Object.values(metrics.funding_rates || {})[0];
+      const oi = Object.values(metrics.open_interest || {})[0];
       document.getElementById('funding-value').textContent = funding ?? '--';
       document.getElementById('open-interest-value').textContent = oi ?? '--';
     } catch(err){ console.error(err); }

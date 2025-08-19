@@ -53,7 +53,6 @@ def _counter_value(counter) -> float:
     return 0.0
 
 
-@app.get("/metrics/summary")
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
     return {
@@ -63,6 +62,12 @@ def metrics_summary() -> dict:
 
 
 @app.get("/metrics")
-def metrics() -> Response:
+def metrics() -> dict:
+    """Expose aggregated metrics in JSON format."""
+    return metrics_summary()
+
+
+@app.get("/metrics/prometheus")
+def metrics_prometheus() -> Response:
     """Expose Prometheus metrics for scraping."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
