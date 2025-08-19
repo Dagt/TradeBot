@@ -101,6 +101,7 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-light">Select the exchange to trade on.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Market</label>
@@ -112,30 +113,35 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-light">Choose spot or futures market.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Trade Qty</label>
               <div class="control">
                 <input id="cfg-trade-qty" class="input" type="number" min="0" step="any" placeholder="0.001" />
               </div>
+              <p class="help has-text-light">Base quantity per trade.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Leverage</label>
               <div class="control">
-                <input id="cfg-leverage" class="input" type="number" min="1" step="1" placeholder="1" />
+                <input id="cfg-leverage" class="input" type="number" min="1" max="125" step="1" placeholder="1" />
               </div>
+              <p class="help has-text-light">Leverage between 1 and 125.</p>
             </div>
             <div class="field">
               <label class="checkbox has-text-light">
                 <input type="checkbox" id="cfg-testnet" checked />
                 Testnet
               </label>
+              <p class="help has-text-light">Use exchange test environment.</p>
             </div>
             <div class="field">
               <label class="checkbox has-text-light">
                 <input type="checkbox" id="cfg-dry-run" />
                 Dry run
               </label>
+              <p class="help has-text-light">Simulate orders without execution.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Strategy</label>
@@ -144,18 +150,21 @@
                   <select id="cfg-strategy"></select>
                 </div>
               </div>
+              <p class="help has-text-light">Select the trading strategy.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Pairs (comma separated)</label>
               <div class="control">
                 <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
               </div>
+              <p class="help has-text-light">Comma-separated trading pairs.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Notional</label>
               <div class="control">
                 <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
               </div>
+              <p class="help has-text-light">Total notional position size.</p>
             </div>
             <div id="cfg-params-container"></div>
             <div class="field">
@@ -174,10 +183,17 @@
           </div>
           <p id="cfg-result" class="has-text-light"></p>
         </div>
-      </div>
+  </div>
 
-    </div>
-  </section>
+  </div>
+</section>
+
+ <section class="section">
+   <div class="box">
+     <h2 class="subtitle has-text-light">Help / FAQ</h2>
+     <p class="has-text-light">Need guidance? See the <a href="../docs/usage.md" target="_blank">documentation</a>.</p>
+   </div>
+ </section>
 
   <script>
   const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
@@ -195,7 +211,12 @@
   async function updateMetrics(){
     try {
       const now = new Date();
-      const metrics = await fetch('/metrics').then(r => r.json());
+      const res = await fetch('/metrics');
+      const metrics = await res.json().catch(()=>({}));
+      if(!res.ok){
+        document.getElementById('cfg-result').textContent = 'Error: ' + (metrics.detail || res.status);
+        return;
+      }
       pnlTrace.x.push(now); pnlTrace.y.push(metrics.pnl || 0);
       slippageTrace.x.push(now); slippageTrace.y.push(metrics.avg_slippage_bps || 0);
       latencyTrace.x.push(now); latencyTrace.y.push(metrics.avg_order_latency_seconds || 0);
@@ -227,7 +248,12 @@
 
   async function updateStrategies(){
     try {
-      const data = await fetch('/strategies/status').then(r => r.json());
+      const res = await fetch('/strategies/status');
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){
+        document.getElementById('cfg-result').textContent = 'Error: ' + (data.detail || res.status);
+        return;
+      }
       const tbody = document.querySelector('#strategy-table tbody');
       tbody.innerHTML = '';
       for (const [name, status] of Object.entries(data.strategies || {})){
@@ -239,17 +265,32 @@
       }
       const isRunning = Object.values(data.strategies || {}).some(s => s === 'running');
       document.getElementById('btn-start').disabled = isRunning;
-    } catch(err){ console.error(err); }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function controlStrategy(name, action){
-    await fetch(`/strategies/${name}/${action}`, {method:'POST'});
+    try {
+      const res = await fetch(`/strategies/${name}/${action}`, {method:'POST'});
+      if(!res.ok){
+        const err = await res.json().catch(()=>({}));
+        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+      }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
     updateStrategies();
   }
 
   async function loadStrategies(){
     try {
-      const data = await fetch('/strategies').then(r => r.json());
+      const res = await fetch('/strategies');
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){
+        document.getElementById('cfg-result').textContent = 'Error: ' + (data.detail || res.status);
+        return;
+      }
       const select = document.getElementById('cfg-strategy');
       select.innerHTML = '';
       for (const name of data.strategies || []){
@@ -259,7 +300,9 @@
         select.appendChild(opt);
       }
       select.addEventListener('change', () => loadStrategySchema(select.value));
-    } catch(err){ console.error(err); }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function loadStrategySchema(name, values={}){
@@ -267,13 +310,19 @@
     container.innerHTML = '';
     if(!name) return;
     try {
-      const res = await fetch(`/strategies/${name}/schema`).then(r => r.json());
-      for(const param of res.params || []){
+      const res = await fetch(`/strategies/${name}/schema`);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){
+        document.getElementById('cfg-result').textContent = 'Error: ' + (data.detail || res.status);
+        return;
+      }
+      for(const param of data.params || []){
         const field = document.createElement('div');
         field.className = 'field';
         const label = document.createElement('label');
         label.className = 'label has-text-light';
         label.textContent = param.name;
+        if(param.description){ label.title = param.description; }
         const control = document.createElement('div');
         control.className = 'control';
         let input;
@@ -296,15 +345,28 @@
         control.appendChild(input);
         field.appendChild(label);
         field.appendChild(control);
+        if(param.description){
+          const help = document.createElement('p');
+          help.className = 'help has-text-light';
+          help.textContent = param.description;
+          field.appendChild(help);
+        }
         container.appendChild(field);
       }
-    } catch(err){ console.error(err); }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function loadConfig(){
     try {
-      const res = await fetch('/config').then(r => r.json());
-      const cfg = res.config || {};
+      const res = await fetch('/config');
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){
+        document.getElementById('cfg-result').textContent = 'Error: ' + (data.detail || res.status);
+        return;
+      }
+      const cfg = data.config || {};
       document.getElementById('cfg-strategy').value = cfg.strategy || '';
       document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
       document.getElementById('cfg-notional').value = cfg.notional ?? '';
@@ -315,7 +377,9 @@
       document.getElementById('cfg-testnet').checked = cfg.testnet ?? true;
       document.getElementById('cfg-dry-run').checked = cfg.dry_run ?? false;
       await loadStrategySchema(cfg.strategy || '', cfg.params || {});
-    } catch(err){ console.error(err); }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function saveConfig(ev){
