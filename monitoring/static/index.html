@@ -56,43 +56,34 @@
       </div>
 
       <div class="column is-one-third">
-        <h2 class="subtitle has-text-light">Order Entry</h2>
+        <h2 class="subtitle has-text-light">Bot Config</h2>
         <div class="box">
           <div class="field">
-            <label class="label has-text-light">Symbol</label>
-            <div class="control">
-              <input id="order-symbol" class="input" placeholder="BTCUSDT" />
-            </div>
-          </div>
-          <div class="field">
-            <label class="label has-text-light">Side</label>
+            <label class="label has-text-light">Strategy</label>
             <div class="control">
               <div class="select is-fullwidth">
-                <select id="order-side">
-                  <option value="buy">Buy</option>
-                  <option value="sell">Sell</option>
+                <select id="cfg-strategy">
+                  <option value="breakout_atr">Breakout ATR</option>
+                  <option value="momentum">Momentum</option>
                 </select>
               </div>
             </div>
           </div>
           <div class="field">
-            <label class="label has-text-light">Quantity</label>
+            <label class="label has-text-light">Pairs (comma separated)</label>
             <div class="control">
-              <input id="order-qty" class="input" type="number" step="0.0001" />
+              <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
             </div>
           </div>
-          <div class="field">
-            <label class="label has-text-light">Price (optional)</label>
-            <div class="control">
-              <input id="order-price" class="input" type="number" step="0.01" />
+          <div class="field is-grouped">
+            <div class="control is-expanded">
+              <button class="button is-success is-fullwidth" onclick="startBot()">Start</button>
+            </div>
+            <div class="control is-expanded">
+              <button class="button is-danger is-fullwidth" onclick="stopBot()">Stop</button>
             </div>
           </div>
-          <div class="field">
-            <div class="control">
-              <button class="button is-primary is-fullwidth" onclick="placeTrade()">Submit</button>
-            </div>
-          </div>
-          <p id="trade-result" class="has-text-light"></p>
+          <p id="cfg-result" class="has-text-light"></p>
         </div>
       </div>
 
@@ -147,20 +138,32 @@
     updateStrategies();
   }
 
-  async function placeTrade(){
-    const symbol = document.getElementById('order-symbol').value;
-    const side = document.getElementById('order-side').value;
-    const qty = parseFloat(document.getElementById('order-qty').value);
-    const price = parseFloat(document.getElementById('order-price').value);
-    const payload = {symbol, side, qty};
-    if(!isNaN(price)) payload.price = price;
-    const res = await fetch('/trade', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    document.getElementById('trade-result').textContent = JSON.stringify(data);
+  async function startBot(){
+    const strategy = document.getElementById('cfg-strategy').value;
+    const pairs = document.getElementById('cfg-pairs').value
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean);
+    try {
+      await fetch('/config', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({strategy, pairs})
+      });
+      await fetch('/config/start', {method:'POST'});
+      document.getElementById('cfg-result').textContent = 'Bot started';
+    } catch(err) {
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
+  }
+
+  async function stopBot(){
+    try {
+      await fetch('/config/stop', {method:'POST'});
+      document.getElementById('cfg-result').textContent = 'Bot stopped';
+    } catch(err) {
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   updateMetrics();
