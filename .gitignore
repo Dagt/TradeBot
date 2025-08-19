@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+src/tradingbot/apps/api/static/logo.png
