@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 import asyncio
 import shlex
+import inspect
 
 import httpx
 import yaml
@@ -405,6 +406,40 @@ def disable_strategy(name: str) -> dict:
     STRATEGY_ACTIONS.labels(strategy=name, action="disable").inc()
     res["params"] = get_strategy_params(name).get("params", {})
     return res
+
+
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str) -> dict:
+    """Inspect a strategy class and expose its init parameters."""
+
+    try:
+        from tradingbot.strategies import STRATEGIES
+    except Exception as exc:  # pragma: no cover - import errors are rare
+        raise HTTPException(status_code=500, detail="strategies unavailable") from exc
+
+    cls = STRATEGIES.get(name)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    sig = inspect.signature(cls.__init__)
+    params: list[dict[str, object]] = []
+    for p in sig.parameters.values():
+        if p.name == "self" or p.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+        annotation = p.annotation
+        if annotation is inspect._empty:
+            type_name: str | None = None
+        elif isinstance(annotation, type):
+            type_name = annotation.__name__
+        else:
+            type_name = str(annotation).replace("typing.", "")
+        default = None if p.default is inspect._empty else p.default
+        params.append({"name": p.name, "type": type_name, "default": default})
+
+    return {"strategy": name, "params": params}
 
 
 @app.post("/strategies/{name}/params")

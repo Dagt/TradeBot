@@ -74,12 +74,7 @@
                 <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
               </div>
             </div>
-            <div class="field">
-              <label class="label has-text-light">Params (JSON)</label>
-              <div class="control">
-                <textarea id="cfg-params" class="textarea" placeholder='{"atr_period":14}'></textarea>
-              </div>
-            </div>
+            <div id="cfg-param-fields"></div>
             <div class="field">
               <div class="control">
                 <button type="submit" class="button is-info is-fullwidth">Save</button>
@@ -108,6 +103,48 @@
   Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'PnL'});
   Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Slippage (bps)'});
   Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Order Latency (s)'});
+
+  async function loadSchema(name, values = {}){
+    const container = document.getElementById('cfg-param-fields');
+    container.innerHTML = '';
+    if(!name) return;
+    try {
+      const schema = await fetch(`/strategies/${name}/schema`).then(r => r.json());
+      for (const p of schema.params || []){
+        const field = document.createElement('div');
+        field.className = 'field';
+        const label = document.createElement('label');
+        label.className = 'label has-text-light';
+        label.textContent = p.name;
+        const control = document.createElement('div');
+        control.className = 'control';
+        const input = document.createElement('input');
+        input.className = 'input';
+        input.dataset.name = p.name;
+        input.dataset.type = p.type || '';
+        const t = (p.type || '').toLowerCase();
+        if(t === 'int' || t === 'float' || t === 'number'){
+          input.type = 'number';
+          input.step = 'any';
+        } else if(t === 'bool' || t === 'boolean'){
+          input.type = 'checkbox';
+        } else {
+          input.type = 'text';
+        }
+        let val = values[p.name];
+        if(val === undefined) val = p.default;
+        if(input.type === 'checkbox'){
+          input.checked = Boolean(val);
+        } else if(val !== undefined && val !== null){
+          input.value = val;
+        }
+        control.appendChild(input);
+        field.appendChild(label);
+        field.appendChild(control);
+        container.appendChild(field);
+      }
+    } catch(err){ console.error(err); }
+  }
 
   async function updateMetrics(){
     try {
@@ -155,7 +192,7 @@
       document.getElementById('cfg-strategy').value = cfg.strategy || '';
       document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
       document.getElementById('cfg-notional').value = cfg.notional ?? '';
-      document.getElementById('cfg-params').value = JSON.stringify(cfg.params || {}, null, 2);
+      await loadSchema(cfg.strategy, cfg.params || {});
     } catch(err){ console.error(err); }
   }
 
@@ -169,14 +206,23 @@
     const notionalVal = document.getElementById('cfg-notional').value;
     const payload = {strategy, pairs};
     if(notionalVal){ payload.notional = parseFloat(notionalVal); }
-    const paramsText = document.getElementById('cfg-params').value.trim();
-    if(paramsText){
-      try { payload.params = JSON.parse(paramsText); }
-      catch(err){
-        document.getElementById('cfg-result').textContent = 'Invalid params JSON';
-        throw err;
+    const params = {};
+    document.querySelectorAll('#cfg-param-fields input').forEach(inp => {
+      const name = inp.dataset.name;
+      const type = (inp.dataset.type || '').toLowerCase();
+      let val;
+      if(inp.type === 'checkbox'){
+        val = inp.checked;
+      } else if(type === 'int'){
+        if(inp.value !== '') val = parseInt(inp.value, 10);
+      } else if(type === 'float' || type === 'number'){
+        if(inp.value !== '') val = parseFloat(inp.value);
+      } else {
+        if(inp.value !== '') val = inp.value;
       }
-    }
+      if(val !== undefined) params[name] = val;
+    });
+    if(Object.keys(params).length){ payload.params = params; }
     try {
       const res = await fetch('/config', {
         method:'POST',
@@ -227,6 +273,8 @@
     updateStrategies();
   }
 
+  document.getElementById('cfg-strategy').addEventListener('change', e => loadSchema(e.target.value));
+  loadSchema(document.getElementById('cfg-strategy').value);
   updateMetrics();
   updateStrategies();
   loadConfig();
