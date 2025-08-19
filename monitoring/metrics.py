@@ -151,6 +151,27 @@ def _avg_e2e_latency() -> float:
     return e2e_sum / e2e_count if e2e_count else 0.0
 
 
+def _histogram_percentile(metric, percentile: float) -> float:
+    """Approximate a percentile for a prometheus histogram."""
+
+    buckets: dict[float, float] = {}
+    for metric_obj in metric.collect():
+        for sample in metric_obj.samples:
+            if sample.name.endswith("_bucket"):
+                le = float(sample.labels.get("le", "inf"))
+                buckets[le] = buckets.get(le, 0.0) + sample.value
+
+    if not buckets:
+        return 0.0
+
+    total = max(buckets.values())
+    target = percentile * total
+    for le, count in sorted(buckets.items()):
+        if count >= target:
+            return le
+    return list(sorted(buckets.items()))[-1][0]
+
+
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
 
@@ -289,6 +310,8 @@ def metrics_latency() -> dict:
         "avg_order_latency_seconds": _avg_order_latency(),
         "avg_market_latency_seconds": _avg_market_latency(),
         "avg_e2e_latency_seconds": _avg_e2e_latency(),
+        "p90": _histogram_percentile(ORDER_LATENCY, 0.90),
+        "p99": _histogram_percentile(ORDER_LATENCY, 0.99),
     }
 
 
@@ -300,4 +323,73 @@ def metrics_positions() -> dict:
         "positions": _collect_by_symbol(OPEN_POSITIONS, "open_position"),
         "funding_rates": _collect_by_symbol(FUNDING_RATE, "funding_rate"),
         "basis": _collect_by_symbol(BASIS, "basis"),
+    }
+
+
+def _avg_slippage_by_symbol() -> dict[str, float]:
+    """Compute average slippage per symbol from histogram samples."""
+
+    sums: dict[str, float] = {}
+    counts: dict[str, float] = {}
+    for metric_obj in SLIPPAGE.collect():
+        for sample in metric_obj.samples:
+            sym = sample.labels.get("symbol")
+            if sample.name.endswith("_sum"):
+                sums[sym] = sums.get(sym, 0.0) + sample.value
+            elif sample.name.endswith("_count"):
+                counts[sym] = counts.get(sym, 0.0) + sample.value
+    return {sym: (sums.get(sym, 0.0) / counts.get(sym, 1.0)) for sym in sums}
+
+
+@router.get("/metrics/execution")
+def metrics_execution() -> dict:
+    """Expose basic execution quality stats."""
+
+    slips = _avg_slippage_by_symbol()
+    items = [
+        {"symbol": sym, "is": 0.0, "slippage": val, "fill_ratio": 0.0}
+        for sym, val in slips.items()
+    ]
+    return {"items": items}
+
+
+@router.get("/metrics/signals")
+def metrics_signals() -> dict:
+    """Expose signal quality metrics (placeholder)."""
+
+    return {"items": []}
+
+
+@router.get("/metrics/risk")
+def metrics_risk() -> dict:
+    """Expose counts of risk management events."""
+
+    triggers: dict[str, float] = {}
+    for metric_obj in RISK_EVENTS.collect():
+        for sample in metric_obj.samples:
+            if sample.name.endswith("_total"):
+                evt = sample.labels.get("event_type", "unknown")
+                triggers[evt] = triggers.get(evt, 0.0) + sample.value
+    return {"triggers": triggers}
+
+
+@router.get("/metrics/market")
+def metrics_market() -> dict:
+    """Expose basic market state information."""
+
+    basis_vals = _collect_by_symbol(BASIS, "basis")
+    avg_basis = (
+        sum(basis_vals.values()) / len(basis_vals) if basis_vals else 0.0
+    )
+    funding_vals = _collect_by_symbol(FUNDING_RATE, "funding_rate")
+    avg_funding = (
+        sum(funding_vals.values()) / len(funding_vals) if funding_vals else 0.0
+    )
+    return {
+        "spread": 0.0,
+        "depth": 0.0,
+        "funding_current": avg_funding,
+        "funding_next": 0.0,
+        "basis": avg_basis,
+        "basis_alert": abs(avg_basis) > 0.05,
     }
