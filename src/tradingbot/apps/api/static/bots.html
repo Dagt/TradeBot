@@ -14,11 +14,13 @@
     th { background:#0f1622; position: sticky; top:0; }
     .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .muted { color:#94a3b8; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
     button:hover { background:#1d4ed8; }
     input, select { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
     label { font-size:12px; color:#94a3b8; display:block; margin-top:8px; margin-bottom:4px; }
     nav { margin-bottom:20px; }
+    nav img { height:40px; vertical-align:middle; margin-right:15px; }
     nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
     nav a:hover { text-decoration:underline; }
     pre { background:#0f1622; padding:10px; border-radius:8px; overflow:auto; }
@@ -26,9 +28,10 @@
 </head>
 <body>
   <nav>
-    <a href="/">Configuración</a>
-    <a href="/monitor">Monitoreo</a>
+    <img src="/static/logo.png" alt="DMI Bot Trading"/>
+    <a href="/">Monitoreo</a>
     <a href="/bots">Bots</a>
+    <a href="/stats">Estadísticas operativas</a>
   </nav>
   <h1>Bots</h1>
 
@@ -97,9 +100,18 @@
   <div class="card" style="margin-top:16px">
     <h2>Comandos CLI</h2>
     <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
-    <textarea id="cli-input" rows="2" placeholder="--help"></textarea>
+    <input id="cli-input" class="mono" placeholder="--help"/>
     <button id="cli-run" style="margin-top:8px">Ejecutar</button>
     <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Gestión de riesgo</h2>
+    <div class="muted">Consultar exposiciones y eventos o ejecutar acciones</div>
+    <button id="risk-refresh">Consultar</button>
+    <button id="risk-halt">Halt</button>
+    <button id="risk-reset">Reset</button>
+    <pre id="risk-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
 <script>
@@ -180,11 +192,45 @@ async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'PO
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
 
+async function refreshRisk(){
+  try{
+    const ex = await fetch(api('/risk/exposure'));
+    const exj = await ex.json();
+    const ev = await fetch(api('/risk/events?limit=20'));
+    const evj = await ev.json();
+    document.getElementById('risk-output').textContent = JSON.stringify({exposure: exj, events: evj.items||evj.events||[]}, null,2);
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
+async function haltRisk(){
+  try{
+    await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
+    refreshRisk();
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
+async function resetRisk(){
+  try{
+    await fetch(api('/risk/reset'), {method:'POST'});
+    refreshRisk();
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
 document.getElementById('bot-start').addEventListener('click', startBot);
 loadStrategies();
 refreshBots();
 setInterval(refreshBots,5000);
 document.getElementById('cli-run').addEventListener('click', runCli);
+document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
+document.getElementById('risk-halt').addEventListener('click', haltRisk);
+document.getElementById('risk-reset').addEventListener('click', resetRisk);
+refreshRisk();
 </script>
 </body>
 </html>

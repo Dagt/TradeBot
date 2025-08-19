@@ -1,6 +1,6 @@
 # src/tradingbot/apps/api/main.py
 from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -145,14 +145,19 @@ def index():
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
 
-# Servir monitor.html en "/monitor"
-@app.get("/monitor")
-def monitor_page():
+# Servir stats.html en "/stats"
+@app.get("/stats")
+def stats_page():
     try:
-        html = (_static_dir / "monitor.html").read_text(encoding="utf-8")
+        html = (_static_dir / "stats.html").read_text(encoding="utf-8")
         return Response(content=html, media_type="text/html")
     except Exception:
-        return {"message": "Sube el dashboard en /static/monitor.html"}
+        return {"message": "Sube el dashboard en /static/stats.html"}
+
+# Compatibilidad: redirige "/monitor" a "/stats"
+@app.get("/monitor")
+def monitor_redirect():
+    return RedirectResponse("/stats")
 
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
