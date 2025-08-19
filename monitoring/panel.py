@@ -6,6 +6,7 @@ from pathlib import Path
 import logging
 import asyncio
 import shlex
+import inspect
 
 import httpx
 import yaml
@@ -37,6 +38,7 @@ from .strategies import (
     get_strategy_params,
 )
 from .alerts import evaluate_alerts
+from tradingbot.strategies import STRATEGIES
 
 config_path = Path(__file__).with_name("sentry.yml")
 if config_path.exists():
@@ -380,6 +382,28 @@ def kill_switch() -> dict:
     """Return whether the kill switch is active."""
 
     return {"kill_switch_active": bool(KILL_SWITCH_ACTIVE._value.get())}
+
+
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str) -> dict:
+    """Inspect a strategy's ``__init__`` signature to derive parameter schema."""
+
+    cls = STRATEGIES.get(name)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    sig = inspect.signature(cls.__init__)
+    params: list[dict[str, object]] = []
+    for p in list(sig.parameters.values())[1:]:  # skip ``self``
+        annot = p.annotation
+        if annot is inspect._empty:
+            annot_str = "Any"
+        elif isinstance(annot, type):
+            annot_str = annot.__name__
+        else:
+            annot_str = str(annot)
+        default = None if p.default is inspect._empty else p.default
+        params.append({"name": p.name, "type": annot_str, "default": default})
+    return {"strategy": name, "params": params}
 
 
 @app.post("/strategies/{name}/enable")
