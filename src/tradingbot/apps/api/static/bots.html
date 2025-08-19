@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Bots - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
+    h1, h2 { margin: 0.2rem 0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow:0 4px 12px rgba(0,0,0,0.25); }
+    table { width:100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
+    th { background:#0f1622; position: sticky; top:0; }
+    .muted { color:#94a3b8; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    button:hover { background:#1d4ed8; }
+    textarea, input, select { width:100%; background:#0f1622; border:1px solid #1f2937; border-radius:8px; color:#e8eef5; padding:8px; font-family:inherit; }
+    label { font-size:12px; color:#94a3b8; display:block; margin-top:8px; margin-bottom:4px; }
+    nav { margin-bottom:20px; }
+    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
+    nav a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Configuración</a>
+    <a href="/monitor">Monitoreo</a>
+    <a href="/bots">Bots</a>
+  </nav>
+  <h1>Bots</h1>
+  <div class="card">
+    <h2>Nuevo bot</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="bot-mode">Modo</label>
+        <select id="bot-mode">
+          <option value="paper">Paper</option>
+          <option value="testnet">Testnet</option>
+          <option value="live">Live</option>
+        </select>
+      </div>
+      <div>
+        <label for="bot-strategy">Estrategia</label>
+        <select id="bot-strategy">
+          <option value="breakout_atr">Breakout ATR</option>
+          <option value="breakout_vol">Breakout Vol</option>
+          <option value="momentum">Momentum</option>
+          <option value="mean_reversion">Mean Reversion</option>
+          <option value="triangular_arb">Tri-Arb</option>
+          <option value="cash_and_carry">Cash &amp; Carry</option>
+          <option value="order_flow">Order Flow</option>
+          <option value="depth_imbalance">Depth Imbalance</option>
+          <option value="liquidity_events">Liquidity Events</option>
+          <option value="triple_barrier">Triple Barrier</option>
+          <option value="ml">ML Strategy</option>
+          <option value="mean_rev_ofi">Mean Rev OFI</option>
+        </select>
+      </div>
+      <div>
+        <label for="bot-symbol">Símbolo</label>
+        <input id="bot-symbol" placeholder="BTC/USDT"/>
+      </div>
+      <div>
+        <label for="bot-notional">Notional (USDT)</label>
+        <input id="bot-notional" type="number" step="0.01" placeholder="100"/>
+      </div>
+      <div>
+        <label for="bot-threshold">Umbral</label>
+        <input id="bot-threshold" type="number" step="0.0001" placeholder="0.001"/>
+      </div>
+      <div>
+        <label for="bot-extra">Extra flags</label>
+        <input id="bot-extra" placeholder="--max-pos 1 --stop-loss 0.02"/>
+      </div>
+    </div>
+    <button id="bot-start" style="margin-top:10px">Start</button>
+    <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h2>Procesos activos</h2>
+    <div style="overflow:auto; max-height:60vh; margin-top:10px">
+      <table id="tbl-bots">
+        <thead><tr><th>ID</th><th>Comando</th><th>PID</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+function buildCommand(){
+  const mode = document.getElementById('bot-mode').value;
+  const strat = document.getElementById('bot-strategy').value;
+  const symbol = document.getElementById('bot-symbol').value || 'BTC/USDT';
+  const notional = document.getElementById('bot-notional').value;
+  const thr = document.getElementById('bot-threshold').value;
+  const extra = document.getElementById('bot-extra').value;
+  let cmd = '';
+  if(mode === 'paper'){
+    cmd = `paper-run --strategy ${strat} --symbol ${symbol}`;
+  }else if(mode === 'testnet'){
+    cmd = `run-bot --exchange binance --market spot --symbol ${symbol} --testnet`;
+  }else{
+    cmd = `real-run --exchange binance --market spot --symbol ${symbol} --i-know-what-im-doing`;
+  }
+  if(notional) cmd += ` --notional ${notional}`;
+  if(thr) cmd += ` --threshold ${thr}`;
+  if(extra) cmd += ` ${extra}`;
+  return cmd;
+}
+
+async function startBot(){
+  const cmd = buildCommand();
+  const r = await fetch('/bots/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: cmd})});
+  const j = await r.json();
+  document.getElementById('bot-output').textContent = j.error ? j.error : `Bot ${j.id} iniciado`;
+  refreshBots();
+}
+
+document.getElementById('bot-start').addEventListener('click', startBot);
+
+async function refreshBots(){
+  const r = await fetch('/bots/list');
+  const j = await r.json();
+  const body = document.querySelector('#tbl-bots tbody');
+  body.innerHTML = '';
+  (j.items || []).forEach(b => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${b.id}</td><td>${b.command}</td><td>${b.pid || ''}</td><td>${b.status}</td>`+
+      `<td><button onclick="botAction(${b.id},'pause')">Pause</button>`+
+      `<button onclick="botAction(${b.id},'resume')">Resume</button>`+
+      `<button onclick="botAction(${b.id},'stop')">Stop</button>`+
+      `<button onclick="botAction(${b.id},'delete')">Delete</button></td>`;
+    body.appendChild(tr);
+  });
+}
+
+async function botAction(id, action){
+  await fetch(`/bots/${id}/${action}`, {method:'POST'});
+  refreshBots();
+}
+
+refreshBots();
+setInterval(refreshBots, 5000);
+</script>
+</body>
+</html>
