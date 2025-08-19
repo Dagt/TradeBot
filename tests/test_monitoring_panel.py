@@ -10,7 +10,17 @@ def test_config_roundtrip():
     assert resp.status_code == 200
     assert "config" in resp.json()
 
-    payload = {"strategy": "mean_reversion", "pairs": ["BTC/USDT"], "notional": 50}
+    payload = {
+        "strategy": "mean_reversion",
+        "pairs": ["BTC/USDT"],
+        "notional": 50,
+        "exchange": "binance",
+        "market": "futures",
+        "trade_qty": 0.01,
+        "leverage": 3,
+        "testnet": True,
+        "dry_run": False,
+    }
     post_resp = client.post("/config", json=payload)
     assert post_resp.status_code == 200
     post_cfg = post_resp.json()["config"]
@@ -27,7 +37,18 @@ def test_config_roundtrip():
 
 def test_start_stop(monkeypatch):
     client = TestClient(app)
-    client.post("/config", json={"strategy": "dummy"})
+    client.post(
+        "/config",
+        json={
+            "strategy": "dummy",
+            "exchange": "binance",
+            "market": "spot",
+            "trade_qty": 0.001,
+            "leverage": 1,
+            "testnet": True,
+            "dry_run": False,
+        },
+    )
 
     calls = {}
 
@@ -54,6 +75,13 @@ def test_start_stop(monkeypatch):
     assert data["status"] == "started"
     assert data["pid"] == 123
     assert calls
+    argv = list(calls["args"])
+    assert "--exchange" in argv and argv[argv.index("--exchange") + 1] == "binance"
+    assert "--market" in argv and argv[argv.index("--market") + 1] == "spot"
+    assert "--trade-qty" in argv and argv[argv.index("--trade-qty") + 1] == "0.001"
+    assert "--leverage" in argv and argv[argv.index("--leverage") + 1] == "1"
+    assert "--testnet" in argv
+    assert "--no-dry-run" in argv
 
     resp = client.post("/bot/stop")
     assert resp.status_code == 200
