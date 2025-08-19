@@ -26,23 +26,62 @@
         <div id="latency" class="box" style="height:250px;"></div>
       </div>
 
-      <div class="column is-half">
-        <div class="box">
-          <h2 class="subtitle has-text-light">Funding</h2>
-          <p id="funding-value" class="has-text-light">--</p>
+        <div class="column is-half">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Funding</h2>
+            <p id="funding-value" class="has-text-light">--</p>
+          </div>
         </div>
-      </div>
-      <div class="column is-half">
-        <div class="box">
-          <h2 class="subtitle has-text-light">Open Interest</h2>
-          <p id="open-interest-value" class="has-text-light">--</p>
+        <div class="column is-half">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Open Interest</h2>
+            <p id="open-interest-value" class="has-text-light">--</p>
+          </div>
         </div>
-      </div>
 
-      <div class="column is-two-thirds">
-        <h2 class="subtitle has-text-light">Strategies</h2>
-        <table class="table is-fullwidth is-striped is-dark" id="strategy-table">
-          <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+        <div class="column is-one-fifth">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Fills</h2>
+            <p id="fills-value" class="has-text-light">--</p>
+          </div>
+        </div>
+        <div class="column is-one-fifth">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Risk Events</h2>
+            <p id="risk-events-value" class="has-text-light">--</p>
+          </div>
+        </div>
+        <div class="column is-one-fifth">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Reject Rate</h2>
+            <p id="reject-rate-value" class="has-text-light">--</p>
+          </div>
+        </div>
+        <div class="column is-one-fifth">
+          <div class="box">
+            <h2 class="subtitle has-text-light">CPU %</h2>
+            <p id="cpu-value" class="has-text-light">--</p>
+          </div>
+        </div>
+        <div class="column is-one-fifth">
+          <div class="box">
+            <h2 class="subtitle has-text-light">Memory</h2>
+            <p id="memory-value" class="has-text-light">--</p>
+          </div>
+        </div>
+
+        <div class="column is-full">
+          <h2 class="subtitle has-text-light">Positions</h2>
+          <table class="table is-fullwidth is-striped is-dark" id="positions-table">
+            <thead><tr><th>Symbol</th><th>Position</th><th>Funding Rate</th><th>Basis</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="column is-two-thirds">
+          <h2 class="subtitle has-text-light">Strategies</h2>
+          <table class="table is-fullwidth is-striped is-dark" id="strategy-table">
+            <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -109,6 +148,11 @@
   Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Slippage (bps)'});
   Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Order Latency (s)'});
 
+  function formatBytes(bytes){
+    if(bytes === undefined) return '--';
+    return (bytes / (1024*1024)).toFixed(2) + ' MB';
+  }
+
   async function updateMetrics(){
     try {
       const now = new Date();
@@ -123,6 +167,22 @@
       const oi = Object.values(metrics.open_interest || {})[0];
       document.getElementById('funding-value').textContent = funding ?? '--';
       document.getElementById('open-interest-value').textContent = oi ?? '--';
+      document.getElementById('fills-value').textContent = metrics.fills ?? '--';
+      document.getElementById('risk-events-value').textContent = metrics.risk_events ?? '--';
+      const rejectRate = metrics.order_reject_rate ?? 0;
+      document.getElementById('reject-rate-value').textContent = (rejectRate * 100).toFixed(2) + '%';
+      document.getElementById('cpu-value').textContent = (metrics.cpu_percent ?? 0).toFixed(2) + '%';
+      document.getElementById('memory-value').textContent = formatBytes(metrics.memory_bytes);
+      const posBody = document.querySelector('#positions-table tbody');
+      posBody.innerHTML = '';
+      const positions = metrics.positions || {};
+      const fundingRates = metrics.funding_rates || {};
+      const basis = metrics.basis || {};
+      for(const symbol of Object.keys(positions)){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${symbol}</td><td>${positions[symbol]}</td><td>${fundingRates[symbol] ?? '--'}</td><td>${basis[symbol] ?? '--'}</td>`;
+        posBody.appendChild(tr);
+      }
     } catch(err){ console.error(err); }
   }
 
