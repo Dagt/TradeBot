@@ -91,6 +91,53 @@
         <div class="box">
           <form id="config-form" onsubmit="saveConfig(event)">
             <div class="field">
+              <label class="label has-text-light">Exchange</label>
+              <div class="control">
+                <div class="select is-fullwidth">
+                  <select id="cfg-exchange">
+                    <option value="binance">Binance</option>
+                    <option value="bybit">Bybit</option>
+                    <option value="okx">OKX</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label has-text-light">Market</label>
+              <div class="control">
+                <div class="select is-fullwidth">
+                  <select id="cfg-market">
+                    <option value="spot">Spot</option>
+                    <option value="futures">Futures</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label has-text-light">Trade Qty</label>
+              <div class="control">
+                <input id="cfg-trade-qty" class="input" type="number" min="0" step="any" placeholder="0.001" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label has-text-light">Leverage</label>
+              <div class="control">
+                <input id="cfg-leverage" class="input" type="number" min="1" step="1" placeholder="1" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="checkbox has-text-light">
+                <input type="checkbox" id="cfg-testnet" checked />
+                Testnet
+              </label>
+            </div>
+            <div class="field">
+              <label class="checkbox has-text-light">
+                <input type="checkbox" id="cfg-dry-run" />
+                Dry run
+              </label>
+            </div>
+            <div class="field">
               <label class="label has-text-light">Strategy</label>
               <div class="control">
                 <div class="select is-fullwidth">
@@ -216,6 +263,12 @@
       document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
       document.getElementById('cfg-notional').value = cfg.notional ?? '';
       document.getElementById('cfg-params').value = JSON.stringify(cfg.params || {}, null, 2);
+      document.getElementById('cfg-exchange').value = cfg.exchange || 'binance';
+      document.getElementById('cfg-market').value = cfg.market || 'spot';
+      document.getElementById('cfg-trade-qty').value = cfg.trade_qty ?? '';
+      document.getElementById('cfg-leverage').value = cfg.leverage ?? '';
+      document.getElementById('cfg-testnet').checked = cfg.testnet ?? true;
+      document.getElementById('cfg-dry-run').checked = cfg.dry_run ?? false;
     } catch(err){ console.error(err); }
   }
 
@@ -226,8 +279,16 @@
       .split(',')
       .map(p => p.trim())
       .filter(Boolean);
+    const exchange = document.getElementById('cfg-exchange').value;
+    const market = document.getElementById('cfg-market').value;
+    const tradeQtyVal = document.getElementById('cfg-trade-qty').value;
+    const leverageVal = document.getElementById('cfg-leverage').value;
+    const testnet = document.getElementById('cfg-testnet').checked;
+    const dryRun = document.getElementById('cfg-dry-run').checked;
     const notionalVal = document.getElementById('cfg-notional').value;
-    const payload = {strategy, pairs};
+    const payload = {strategy, pairs, exchange, market, testnet, dry_run: dryRun};
+    if(tradeQtyVal){ payload.trade_qty = parseFloat(tradeQtyVal); }
+    if(leverageVal){ payload.leverage = parseInt(leverageVal); }
     if(notionalVal){ payload.notional = parseFloat(notionalVal); }
     const paramsText = document.getElementById('cfg-params').value.trim();
     if(paramsText){

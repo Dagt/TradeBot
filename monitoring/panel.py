@@ -62,6 +62,12 @@ _config: dict[str, object] = {
     "pairs": [],
     "notional": None,
     "params": {},
+    "exchange": "binance",
+    "market": "spot",
+    "trade_qty": 0.001,
+    "leverage": 1,
+    "testnet": True,
+    "dry_run": False,
 }
 _bot_process: asyncio.subprocess.Process | None = None
 
@@ -187,6 +193,12 @@ class BotConfig(BaseModel):
     pairs: list[str] | None = None
     notional: float | None = None
     params: dict | None = None
+    exchange: str | None = None
+    market: str | None = None
+    trade_qty: float | None = None
+    leverage: int | None = None
+    testnet: bool | None = None
+    dry_run: bool | None = None
 
 
 @app.get("/config")
@@ -211,11 +223,19 @@ def update_config(cfg: BotConfig) -> dict:
             continue
         if key == "notional" and value <= 0:
             raise HTTPException(status_code=400, detail="notional must be positive")
+        if key == "trade_qty" and value <= 0:
+            raise HTTPException(status_code=400, detail="trade_qty must be positive")
+        if key == "leverage" and value <= 0:
+            raise HTTPException(status_code=400, detail="leverage must be positive")
         if key == "pairs":
             if not isinstance(value, list) or not all(isinstance(p, str) and p for p in value):
                 raise HTTPException(status_code=400, detail="pairs must be a list of symbols")
         if key == "strategy" and not value:
             raise HTTPException(status_code=400, detail="strategy must be provided")
+        if key == "market" and value not in {"spot", "futures"}:
+            raise HTTPException(status_code=400, detail="market must be 'spot' or 'futures'")
+        if key == "exchange" and not value:
+            raise HTTPException(status_code=400, detail="exchange must be provided")
 
     _config.update(data)
 
@@ -263,6 +283,20 @@ async def bot_start() -> dict:
         args.extend(["--symbol", pair])
     if _config.get("notional") is not None:
         args.extend(["--notional", str(_config["notional"])])
+    if _config.get("exchange"):
+        args.extend(["--exchange", str(_config["exchange"])])
+    if _config.get("market"):
+        args.extend(["--market", str(_config["market"])])
+    if _config.get("trade_qty") is not None:
+        args.extend(["--trade-qty", str(_config["trade_qty"])])
+    if _config.get("leverage") is not None:
+        args.extend(["--leverage", str(_config["leverage"])])
+    testnet = _config.get("testnet")
+    if testnet is not None:
+        args.append("--testnet" if testnet else "--no-testnet")
+    dry_run = _config.get("dry_run")
+    if dry_run is not None:
+        args.append("--dry-run" if dry_run else "--no-dry-run")
     _bot_process = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
