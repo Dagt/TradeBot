@@ -11,7 +11,7 @@ Este documento enlaza los puntos del [blueprint inicial](../blueprint_trading_bo
 | **5. Ejecución** | `execution/router.py`, `execution/algos.py`, `execution/order_types.py` | `run-bot --algo`, `run-cross-arb` |
 | **6. Persistencia** | `storage/timescale.py`, `storage/quest.py` | `ingest`, `ingest-historical`, `ingestion-workers`, `report` |
 | **7. Backtesting & simulación** | `backtest/event_engine.py`, `backtesting/engine.py`, `backtesting/vectorbt_wrapper.py` | `backtest`, `backtest-cfg`, `walk-forward`, `paper-run` |
-| **8. Monitoreo & Ops** | `monitoring/metrics.py`, `src/tradingbot/apps/api/static/index.html`, `src/tradingbot/apps/api/static/monitor.html`, `utils/metrics.py` | `report` |
+| **8. Monitoreo & Ops** | `monitoring/metrics.py`, `src/tradingbot/apps/api/static/index.html`, `src/tradingbot/apps/api/static/monitor.html`, `src/tradingbot/apps/api/static/bots.html`, `utils/metrics.py` | `report` |
 
 ## Funcionalidades extra
 

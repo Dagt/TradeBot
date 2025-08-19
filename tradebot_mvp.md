@@ -91,7 +91,7 @@
 ### 2.8 Monitoreo & Ops
 
 - **Prometheus** exporters: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized/unrealized`
-- **Dashboards FastAPI**: vista de configuración y panel de monitoreo con salud WS, posiciones, PnL intradía y alertas
+- **Dashboards FastAPI**: vistas separadas para credenciales, monitoreo y bots (con CLI)
 - **Alertas**: falta de ticks, DD intradía, tasa de rechazos
 
 ---
@@ -155,8 +155,9 @@
 
 El repositorio actual expande este MVP con estrategias de arbitraje
 triangular y cross‑exchange, señales de microestructura como Order Flow
-Imbalance, adaptadores para testnets de Binance, Bybit y OKX, un panel
-web con ejecución de comandos de la CLI y una API de monitoreo/riesgo.
+Imbalance, adaptadores para testnets de Binance, Bybit y OKX y un panel
+web con secciones de monitoreo y gestión de bots que permite ejecutar
+comandos de la CLI.
 La descripción detallada y ejemplos de uso están en
 [docs/extra_features.md](docs/extra_features.md).
 
@@ -261,7 +262,7 @@ La descripción detallada y ejemplos de uso están en
 ## 10) Monitoreo y panel
 
 - **Exporters Prometheus**: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized`, `pnl_unrealized`
-- **Dashboards FastAPI**: endpoints REST y vistas web para configuración, salud WS, posiciones/órdenes activas, PnL intradía, alertas y logs
+- **Dashboards FastAPI**: endpoints REST y vistas web para credenciales, monitoreo y bots/CLI
 - **Alertas**: faltas de ticks (>30s), DD intradía, rechazos de órdenes
 
 ---

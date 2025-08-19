@@ -40,8 +40,9 @@ La correspondencia entre el blueprint original y los módulos del código se doc
    ```bash
    uvicorn tradingbot.apps.api.main:app --reload --port 8000
    ```
-   Visita `http://localhost:8000/` para la configuración del bot o
-   `http://localhost:8000/monitor` para el panel de monitoreo.
+   Visita `http://localhost:8000/` para gestionar credenciales,
+   `http://localhost:8000/monitor` para monitoreo y
+   `http://localhost:8000/bots` para lanzar bots o usar la CLI.
 
 Al terminar, consulta [docs/blueprint_map.md](docs/blueprint_map.md) para entender la correspondencia entre el blueprint y el código.
 
@@ -71,9 +72,10 @@ gracias al **paper trading** (simulación).
 - Gestión de riesgo y portafolio con límites de exposición y ``kill switch``.
 - Router de ejecución con algoritmos TWAP/VWAP/POV y soporte maker/taker.
 - Backtester vectorizado y motor event‑driven con modelado de slippage.
-- **Panel web** con métricas en vivo y un **ejecutor de comandos CLI** que
-  permite lanzar cualquier comando desde el navegador.  Incluye formularios
-  para configurar exchanges, claves API y estrategias sin usar la terminal.
+- **Panel web** dividido en secciones de credenciales, monitoreo y bots.
+  La sección de bots incorpora un **ejecutor de comandos CLI** para
+  lanzar cualquier comando desde el navegador y formularios para
+  configurar estrategias sin usar la terminal.
 
 ## Funcionalidades extra
 
@@ -187,8 +189,9 @@ make down  # detiene y elimina los servicios
    uvicorn tradingbot.apps.api.main:app --reload --port 8000
    ```
 
-   `http://localhost:8000/` abre el dashboard de configuración y
-   `http://localhost:8000/monitor` el de monitoreo.
+   `http://localhost:8000/` abre el panel de credenciales,
+   `http://localhost:8000/monitor` el de monitoreo y
+   `http://localhost:8000/bots` la gestión de bots.
 
 ## Comandos CLI
 
