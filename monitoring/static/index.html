@@ -6,96 +6,167 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <style>
-    body { padding: 20px; }
-    #cli-output { white-space: pre-wrap; }
+    html, body {
+      background-color: #1e1e2f;
+      color: #fff;
+    }
+    .box {
+      background-color: #2a2a40;
+    }
   </style>
 </head>
 <body>
+  <nav class="navbar is-dark" role="navigation">
+    <div class="navbar-brand">
+      <a class="navbar-item has-text-weight-bold">TradeBot Dashboard</a>
+    </div>
+  </nav>
+
   <section class="section">
-    <h1 class="title">TradeBot Monitoring</h1>
-    <div class="columns">
-      <div class="column">
-        <div id="pnl" class="box" style="height:300px;"></div>
-        <div id="slippage" class="box" style="height:300px;"></div>
-        <div id="latency" class="box" style="height:300px;"></div>
+    <div class="columns is-multiline">
+      <div class="column is-one-third">
+        <div id="pnl" class="box" style="height:250px;"></div>
       </div>
-    </div>
+      <div class="column is-one-third">
+        <div id="slippage" class="box" style="height:250px;"></div>
+      </div>
+      <div class="column is-one-third">
+        <div id="latency" class="box" style="height:250px;"></div>
+      </div>
 
-    <h2 class="subtitle">Estrategias</h2>
-    <table class="table is-fullwidth is-striped" id="strategy-table">
-      <thead><tr><th>Nombre</th><th>Estado</th><th>Acciones</th></tr></thead>
-      <tbody></tbody>
-    </table>
+      <div class="column is-half">
+        <div class="box">
+          <h2 class="subtitle has-text-light">Funding</h2>
+          <p id="funding-value" class="has-text-light">--</p>
+        </div>
+      </div>
+      <div class="column is-half">
+        <div class="box">
+          <h2 class="subtitle has-text-light">Open Interest</h2>
+          <p id="open-interest-value" class="has-text-light">--</p>
+        </div>
+      </div>
 
-    <h2 class="subtitle">Comandos CLI</h2>
-    <div class="field has-addons">
-      <div class="control is-expanded">
-        <input id="cli-cmd" class="input" placeholder="backtest-cfg data/examples/backtest.yaml" />
+      <div class="column is-two-thirds">
+        <h2 class="subtitle has-text-light">Strategies</h2>
+        <table class="table is-fullwidth is-striped is-dark" id="strategy-table">
+          <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <div class="control">
-        <button class="button is-primary" onclick="runCLI()">Ejecutar</button>
+
+      <div class="column is-one-third">
+        <h2 class="subtitle has-text-light">Order Entry</h2>
+        <div class="box">
+          <div class="field">
+            <label class="label has-text-light">Symbol</label>
+            <div class="control">
+              <input id="order-symbol" class="input" placeholder="BTCUSDT" />
+            </div>
+          </div>
+          <div class="field">
+            <label class="label has-text-light">Side</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select id="order-side">
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label has-text-light">Quantity</label>
+            <div class="control">
+              <input id="order-qty" class="input" type="number" step="0.0001" />
+            </div>
+          </div>
+          <div class="field">
+            <label class="label has-text-light">Price (optional)</label>
+            <div class="control">
+              <input id="order-price" class="input" type="number" step="0.01" />
+            </div>
+          </div>
+          <div class="field">
+            <div class="control">
+              <button class="button is-primary is-fullwidth" onclick="placeTrade()">Submit</button>
+            </div>
+          </div>
+          <p id="trade-result" class="has-text-light"></p>
+        </div>
       </div>
+
     </div>
-    <pre id="cli-output" class="box"></pre>
   </section>
 
-<script>
-const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
-const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
-const latencyTrace = {x: [], y: [], mode: 'lines', name: 'Latency'};
-Plotly.newPlot('pnl', [pnlTrace], {title: 'PnL'});
-Plotly.newPlot('slippage', [slippageTrace], {title: 'Slippage (bps)'});
-Plotly.newPlot('latency', [latencyTrace], {title: 'Order Latency (s)'});
+  <script>
+  const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
+  const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
+  const latencyTrace = {x: [], y: [], mode: 'lines', name: 'Latency'};
+  Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'PnL'});
+  Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Slippage (bps)'});
+  Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Order Latency (s)'});
 
-async function updateMetrics(){
-  try {
-    const now = new Date();
-    const pnl = await fetch('/metrics/pnl').then(r => r.json());
-    const slip = await fetch('/metrics/slippage').then(r => r.json());
-    const lat = await fetch('/metrics/latency').then(r => r.json());
-    pnlTrace.x.push(now); pnlTrace.y.push(pnl.pnl || 0);
-    slippageTrace.x.push(now); slippageTrace.y.push(slip.avg_slippage_bps || 0);
-    latencyTrace.x.push(now); latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
-    Plotly.update('pnl', {x: [pnlTrace.x], y: [pnlTrace.y]});
-    Plotly.update('slippage', {x: [slippageTrace.x], y: [slippageTrace.y]});
-    Plotly.update('latency', {x: [latencyTrace.x], y: [latencyTrace.y]});
-  } catch(err){ console.error(err); }
-}
+  async function updateMetrics(){
+    try {
+      const now = new Date();
+      const pnl = await fetch('/metrics/pnl').then(r => r.json());
+      const slip = await fetch('/metrics/slippage').then(r => r.json());
+      const lat = await fetch('/metrics/latency').then(r => r.json());
+      const summary = await fetch('/metrics/summary').then(r => r.json());
+      pnlTrace.x.push(now); pnlTrace.y.push(pnl.pnl || 0);
+      slippageTrace.x.push(now); slippageTrace.y.push(slip.avg_slippage_bps || 0);
+      latencyTrace.x.push(now); latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
+      Plotly.update('pnl', {x: [pnlTrace.x], y: [pnlTrace.y]});
+      Plotly.update('slippage', {x: [slippageTrace.x], y: [slippageTrace.y]});
+      Plotly.update('latency', {x: [latencyTrace.x], y: [latencyTrace.y]});
+      const funding = Object.values(summary.funding_rates || {})[0];
+      const oi = Object.values(summary.open_interest || {})[0];
+      document.getElementById('funding-value').textContent = funding ?? '--';
+      document.getElementById('open-interest-value').textContent = oi ?? '--';
+    } catch(err){ console.error(err); }
+  }
 
-async function updateStrategies(){
-  try {
-    const data = await fetch('/strategies/status').then(r => r.json());
-    const tbody = document.querySelector('#strategy-table tbody');
-    tbody.innerHTML = '';
-    for (const [name, status] of Object.entries(data.strategies || {})){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${name}</td><td>${status}</td>`+
-        `<td><button class="button is-small" onclick="controlStrategy('${name}','enable')">Run</button>`+
-        `<button class="button is-small is-warning" onclick="controlStrategy('${name}','disable')">Stop</button></td>`;
-      tbody.appendChild(tr);
-    }
-  } catch(err){ console.error(err); }
-}
+  async function updateStrategies(){
+    try {
+      const data = await fetch('/strategies/status').then(r => r.json());
+      const tbody = document.querySelector('#strategy-table tbody');
+      tbody.innerHTML = '';
+      for (const [name, status] of Object.entries(data.strategies || {})){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${name}</td><td>${status}</td>`+
+          `<td><button class="button is-small is-success" onclick="controlStrategy('${name}','enable')">Run</button>`+
+          `<button class="button is-small is-warning" onclick="controlStrategy('${name}','disable')">Stop</button></td>`;
+        tbody.appendChild(tr);
+      }
+    } catch(err){ console.error(err); }
+  }
 
-async function controlStrategy(name, action){
-  await fetch(`/strategies/${name}/${action}`, {method:'POST'});
+  async function controlStrategy(name, action){
+    await fetch(`/strategies/${name}/${action}`, {method:'POST'});
+    updateStrategies();
+  }
+
+  async function placeTrade(){
+    const symbol = document.getElementById('order-symbol').value;
+    const side = document.getElementById('order-side').value;
+    const qty = parseFloat(document.getElementById('order-qty').value);
+    const price = parseFloat(document.getElementById('order-price').value);
+    const payload = {symbol, side, qty};
+    if(!isNaN(price)) payload.price = price;
+    const res = await fetch('/trade', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    document.getElementById('trade-result').textContent = JSON.stringify(data);
+  }
+
+  updateMetrics();
   updateStrategies();
-}
-
-async function runCLI(){
-  const cmd = document.getElementById('cli-cmd').value;
-  const res = await fetch('/run-cli', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({command: cmd})
-  });
-  const data = await res.json();
-  document.getElementById('cli-output').textContent = (data.stdout || '') + '\n' + (data.stderr || '');
-}
-
-updateMetrics();
-updateStrategies();
-setInterval(() => {updateMetrics(); updateStrategies();}, 5000);
-</script>
+  setInterval(()=>{updateMetrics(); updateStrategies();},5000);
+  </script>
 </body>
 </html>
+
