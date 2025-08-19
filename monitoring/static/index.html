@@ -8,7 +8,7 @@
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body>
-  <nav class="navbar is-dark" role="navigation">
+  <nav class="navbar" role="navigation">
     <div class="navbar-brand">
       <a class="navbar-item has-text-weight-bold">TradeBot Dashboard</a>
     </div>
@@ -28,70 +28,70 @@
 
         <div class="column is-half">
           <div class="box">
-            <h2 class="subtitle has-text-light">Funding</h2>
-            <p id="funding-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Funding</h2>
+            <p id="funding-value">--</p>
           </div>
         </div>
         <div class="column is-half">
           <div class="box">
-            <h2 class="subtitle has-text-light">Open Interest</h2>
-            <p id="open-interest-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Open Interest</h2>
+            <p id="open-interest-value">--</p>
           </div>
         </div>
 
         <div class="column is-one-fifth">
           <div class="box">
-            <h2 class="subtitle has-text-light">Fills</h2>
-            <p id="fills-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Fills</h2>
+            <p id="fills-value">--</p>
           </div>
         </div>
         <div class="column is-one-fifth">
           <div class="box">
-            <h2 class="subtitle has-text-light">Risk Events</h2>
-            <p id="risk-events-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Risk Events</h2>
+            <p id="risk-events-value">--</p>
           </div>
         </div>
         <div class="column is-one-fifth">
           <div class="box">
-            <h2 class="subtitle has-text-light">Reject Rate</h2>
-            <p id="reject-rate-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Reject Rate</h2>
+            <p id="reject-rate-value">--</p>
           </div>
         </div>
         <div class="column is-one-fifth">
           <div class="box">
-            <h2 class="subtitle has-text-light">CPU %</h2>
-            <p id="cpu-value" class="has-text-light">--</p>
+            <h2 class="subtitle">CPU %</h2>
+            <p id="cpu-value">--</p>
           </div>
         </div>
         <div class="column is-one-fifth">
           <div class="box">
-            <h2 class="subtitle has-text-light">Memory</h2>
-            <p id="memory-value" class="has-text-light">--</p>
+            <h2 class="subtitle">Memory</h2>
+            <p id="memory-value">--</p>
           </div>
         </div>
 
         <div class="column is-full">
-          <h2 class="subtitle has-text-light">Positions</h2>
-          <table class="table is-fullwidth is-striped is-dark" id="positions-table">
+          <h2 class="subtitle">Positions</h2>
+          <table class="table is-fullwidth is-striped" id="positions-table">
             <thead><tr><th>Symbol</th><th>Position</th><th>Funding Rate</th><th>Basis</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
 
         <div class="column is-two-thirds">
-          <h2 class="subtitle has-text-light">Strategies</h2>
-          <table class="table is-fullwidth is-striped is-dark" id="strategy-table">
+          <h2 class="subtitle">Strategies</h2>
+          <table class="table is-fullwidth is-striped" id="strategy-table">
             <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
 
       <div class="column is-one-third">
-        <h2 class="subtitle has-text-light">Bot Config</h2>
+        <h2 class="subtitle">Bot Config</h2>
         <div class="box">
           <form id="config-form" onsubmit="saveConfig(event)">
             <div class="field">
-              <label class="label has-text-light">Exchange</label>
+              <label class="label">Exchange</label>
               <div class="control">
                 <div class="select is-fullwidth">
                   <select id="cfg-exchange">
@@ -101,10 +101,10 @@
                   </select>
                 </div>
               </div>
-              <p class="help has-text-light">Select the exchange to trade on.</p>
+              <p class="help">Select the exchange to trade on.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Market</label>
+              <label class="label">Market</label>
               <div class="control">
                 <div class="select is-fullwidth">
                   <select id="cfg-market">
@@ -113,58 +113,58 @@
                   </select>
                 </div>
               </div>
-              <p class="help has-text-light">Choose spot or futures market.</p>
+              <p class="help">Choose spot or futures market.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Trade Qty</label>
+              <label class="label">Trade Qty</label>
               <div class="control">
                 <input id="cfg-trade-qty" class="input" type="number" min="0" step="any" placeholder="0.001" />
               </div>
-              <p class="help has-text-light">Base quantity per trade.</p>
+              <p class="help">Base quantity per trade.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Leverage</label>
+              <label class="label">Leverage</label>
               <div class="control">
                 <input id="cfg-leverage" class="input" type="number" min="1" max="125" step="1" placeholder="1" />
               </div>
-              <p class="help has-text-light">Leverage between 1 and 125.</p>
+              <p class="help">Leverage between 1 and 125.</p>
             </div>
             <div class="field">
-              <label class="checkbox has-text-light">
+              <label class="checkbox">
                 <input type="checkbox" id="cfg-testnet" checked />
                 Testnet
               </label>
-              <p class="help has-text-light">Use exchange test environment.</p>
+              <p class="help">Use exchange test environment.</p>
             </div>
             <div class="field">
-              <label class="checkbox has-text-light">
+              <label class="checkbox">
                 <input type="checkbox" id="cfg-dry-run" />
                 Dry run
               </label>
-              <p class="help has-text-light">Simulate orders without execution.</p>
+              <p class="help">Simulate orders without execution.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Strategy</label>
+              <label class="label">Strategy</label>
               <div class="control">
                 <div class="select is-fullwidth">
                   <select id="cfg-strategy"></select>
                 </div>
               </div>
-              <p class="help has-text-light">Select the trading strategy.</p>
+              <p class="help">Select the trading strategy.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Pairs (comma separated)</label>
+              <label class="label">Pairs (comma separated)</label>
               <div class="control">
                 <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
               </div>
-              <p class="help has-text-light">Comma-separated trading pairs.</p>
+              <p class="help">Comma-separated trading pairs.</p>
             </div>
             <div class="field">
-              <label class="label has-text-light">Notional</label>
+              <label class="label">Notional</label>
               <div class="control">
                 <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
               </div>
-              <p class="help has-text-light">Total notional position size.</p>
+              <p class="help">Total notional position size.</p>
             </div>
             <div id="cfg-params-container"></div>
             <div class="field">
@@ -181,17 +181,50 @@
               <button id="btn-stop" class="button is-danger is-fullwidth" onclick="stopBot()">Stop</button>
             </div>
           </div>
-          <p id="cfg-result" class="has-text-light"></p>
+          <p id="cfg-result"></p>
         </div>
   </div>
+      <div class="column is-full">
+        <div class="box">
+          <h2 class="subtitle">System Metrics</h2>
+          <table class="table is-fullwidth" id="system-metrics-table">
+            <tbody>
+              <tr><th>Disconnects</th><td id="disconnects-value">--</td></tr>
+              <tr><th>Orders Sent</th><td id="orders-sent-value">--</td></tr>
+              <tr><th>Order Rejects</th><td id="order-rejects-value">--</td></tr>
+              <tr><th>WS Failures</th><td id="ws-failures-value">--</td></tr>
+              <tr><th>Kill Switch Active</th><td id="kill-switch-value">--</td></tr>
+              <tr><th>Avg Market Latency (s)</th><td id="market-latency-value">--</td></tr>
+              <tr><th>Avg E2E Latency (s)</th><td id="e2e-latency-value">--</td></tr>
+              <tr><th>Avg Maker/Taker Ratio</th><td id="maker-taker-value">--</td></tr>
+              <tr><th>Uptime (s)</th><td id="uptime-value">--</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="column is-full">
+        <div class="box">
+          <h2 class="subtitle">Run CLI Command</h2>
+          <div class="field has-addons">
+            <div class="control is-expanded">
+              <input id="cli-command" class="input" placeholder="e.g. ingest --venue binance" />
+            </div>
+            <div class="control">
+              <button class="button is-info" onclick="runCLI()">Run</button>
+            </div>
+          </div>
+          <pre id="cli-output" style="max-height:200px;overflow:auto;"></pre>
+        </div>
+      </div>
 
   </div>
 </section>
 
  <section class="section">
    <div class="box">
-     <h2 class="subtitle has-text-light">Help / FAQ</h2>
-     <p class="has-text-light">Need guidance? See the <a href="../docs/usage.md" target="_blank">documentation</a>.</p>
+     <h2 class="subtitle">Help / FAQ</h2>
+     <p>Need guidance? See the <a href="../docs/usage.md" target="_blank">documentation</a>.</p>
    </div>
  </section>
 
@@ -199,9 +232,9 @@
   const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
   const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
   const latencyTrace = {x: [], y: [], mode: 'lines', name: 'Latency'};
-  Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'PnL'});
-  Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Slippage (bps)'});
-  Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Order Latency (s)'});
+  Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'PnL'});
+  Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'Slippage (bps)'});
+  Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'Order Latency (s)'});
 
   function formatBytes(bytes){
     if(bytes === undefined) return '--';
@@ -233,6 +266,15 @@
       document.getElementById('reject-rate-value').textContent = (rejectRate * 100).toFixed(2) + '%';
       document.getElementById('cpu-value').textContent = (metrics.cpu_percent ?? 0).toFixed(2) + '%';
       document.getElementById('memory-value').textContent = formatBytes(metrics.memory_bytes);
+      document.getElementById('disconnects-value').textContent = metrics.disconnects ?? '--';
+      document.getElementById('orders-sent-value').textContent = metrics.orders_sent ?? '--';
+      document.getElementById('order-rejects-value').textContent = metrics.order_rejects ?? '--';
+      document.getElementById('ws-failures-value').textContent = metrics.ws_failures ?? '--';
+      document.getElementById('kill-switch-value').textContent = metrics.kill_switch_active ? 'Yes' : 'No';
+      document.getElementById('market-latency-value').textContent = (metrics.avg_market_latency_seconds ?? 0).toFixed(3);
+      document.getElementById('e2e-latency-value').textContent = (metrics.avg_e2e_latency_seconds ?? 0).toFixed(3);
+      document.getElementById('maker-taker-value').textContent = (metrics.avg_maker_taker_ratio ?? 0).toFixed(3);
+      document.getElementById('uptime-value').textContent = (metrics.process_uptime_seconds ?? 0).toFixed(0);
       const posBody = document.querySelector('#positions-table tbody');
       posBody.innerHTML = '';
       const positions = metrics.positions || {};
@@ -320,7 +362,7 @@
         const field = document.createElement('div');
         field.className = 'field';
         const label = document.createElement('label');
-        label.className = 'label has-text-light';
+        label.className = 'label';
         label.textContent = param.name;
         if(param.description){ label.title = param.description; }
         const control = document.createElement('div');
@@ -347,7 +389,7 @@
         field.appendChild(control);
         if(param.description){
           const help = document.createElement('p');
-          help.className = 'help has-text-light';
+          help.className = 'help';
           help.textContent = param.description;
           field.appendChild(help);
         }
@@ -466,6 +508,23 @@
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
     }
     updateStrategies();
+  }
+
+  async function runCLI(){
+    const cmd = document.getElementById('cli-command').value;
+    if(!cmd) return;
+    try {
+      const res = await fetch('/run-cli', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({command: cmd})
+      });
+      const data = await res.json();
+      document.getElementById('cli-output').textContent =
+        (data.stdout || '') + (data.stderr ? '\n' + data.stderr : '');
+    } catch(err){
+      document.getElementById('cli-output').textContent = 'Error: ' + err;
+    }
   }
 
   updateMetrics();
