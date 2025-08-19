@@ -142,6 +142,15 @@ def index():
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
 
+# Servir monitor.html en "/monitor"
+@app.get("/monitor")
+def monitor_page():
+    try:
+        html = (_static_dir / "monitor.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/monitor.html"}
+
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
@@ -379,8 +388,11 @@ def run_cli(req: CLIRequest):
 
     args = shlex.split(req.command)
     cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
         return {
             "command": req.command,
             "returncode": res.returncode,

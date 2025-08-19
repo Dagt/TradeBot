@@ -11,7 +11,25 @@ def pg_url() -> str:
     return f"postgresql+psycopg2://{settings.pg_user}:{settings.pg_password}@{settings.pg_host}:{settings.pg_port}/{settings.pg_db}"
 
 def get_engine():
-    return create_engine(pg_url(), pool_pre_ping=True)
+    """Return a SQLAlchemy engine if TimescaleDB is reachable.
+
+    By default ``create_engine`` does not actually establish a connection.
+    This caused the API to believe TimescaleDB was available even when the
+    database server was down, leading to runtime ``OperationalError``
+    exceptions for each request.  Here we try a simple ``SELECT 1`` query
+    during initialisation; if it fails we propagate the exception so the API
+    can disable database-backed endpoints gracefully.
+    """
+
+    engine = create_engine(pg_url(), pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        # Bubble up the exception so callers can handle the absence of the DB
+        # (e.g. by disabling Timescale-backed features).
+        raise
+    return engine
 
 def insert_trade(engine, t):
     with engine.begin() as conn:

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Monitoreo - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#0b0f14; color:#e8eef5; }
+    h1, h2 { margin: 0.2rem 0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background:#121826; border:1px solid #1f2937; border-radius:12px; padding:14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+    table { width:100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; text-align: left; }
+    th { background:#0f1622; position: sticky; top:0; }
+    .muted { color:#94a3b8; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .kv { background:#0f1622; border:1px solid #1f2937; border-radius:10px; padding:10px; }
+    .kv .k { font-size:12px; color:#94a3b8 }
+    .kv .v { font-size:18px; margin-top:4px }
+    nav { margin-bottom:20px; }
+    nav a { color:#e8eef5; margin-right:15px; text-decoration:none; }
+    nav a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/">Configuración</a>
+    <a href="/monitor">Monitoreo</a>
+  </nav>
+  <h1>Monitoreo</h1>
+  <div class="grid3" style="margin:14px 0 20px">
+    <div class="kv"><div class="k">PnL</div><div class="v" id="m-pnl">—</div></div>
+    <div class="kv"><div class="k">Fills</div><div class="v" id="m-fills">—</div></div>
+    <div class="kv"><div class="k">Risk Events</div><div class="v" id="m-risk">—</div></div>
+    <div class="kv"><div class="k">Reject Rate</div><div class="v" id="m-reject">—</div></div>
+    <div class="kv"><div class="k">CPU %</div><div class="v" id="m-cpu">—</div></div>
+    <div class="kv"><div class="k">Mem (MB)</div><div class="v" id="m-mem">—</div></div>
+  </div>
+  <div class="card">
+    <h2>PnL Spot (6h)</h2>
+    <canvas id="chart-pnl" height="120"></canvas>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>Posiciones</h2>
+    <div style="overflow:auto; max-height:60vh; margin-top:10px">
+      <table id="tbl-pos">
+        <thead><tr><th>Symbol</th><th>Position</th><th>Funding</th><th>Basis</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+<script>
+async function refreshMetrics(){
+  try{
+    const r = await fetch('/metrics');
+    const j = await r.json();
+    document.getElementById('m-pnl').textContent = (j.pnl||0).toFixed(2);
+    document.getElementById('m-fills').textContent = j.fills||0;
+    document.getElementById('m-risk').textContent = j.risk_events||0;
+    document.getElementById('m-reject').textContent = ((j.order_reject_rate||0)*100).toFixed(2)+'%';
+    document.getElementById('m-cpu').textContent = (j.cpu_percent||0).toFixed(1);
+    document.getElementById('m-mem').textContent = ((j.memory_bytes||0)/1048576).toFixed(1);
+  }catch(e){}
+}
+async function refreshPositions(){
+  try{
+    const r = await fetch('/metrics/positions');
+    const j = await r.json();
+    const body = document.querySelector('#tbl-pos tbody');
+    body.innerHTML='';
+    const pos=j.positions||{}; const fund=j.funding_rates||{}; const basis=j.basis||{};
+    Object.keys(pos).forEach(sym=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${sym}</td><td>${pos[sym].toFixed(4)}</td><td>${(fund[sym]||0).toFixed(4)}</td><td>${(basis[sym]||0).toFixed(4)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+function buildPnlChart(ctx, labels, upnl, rpnl, net){
+  new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
+}
+async function refreshPnlChart(){
+  try{
+    const r=await fetch('/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6');
+    const j=await r.json();
+    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
+    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
+    buildPnlChart(document.getElementById('chart-pnl').getContext('2d'),labels,upnl,rpnl,net);
+  }catch(e){}
+}
+refreshMetrics(); refreshPositions(); refreshPnlChart();
+setInterval(refreshMetrics,5000);
+setInterval(refreshPositions,5000);
+setInterval(refreshPnlChart,10000);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</body>
+</html>
