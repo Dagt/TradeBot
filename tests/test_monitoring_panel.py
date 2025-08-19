@@ -11,12 +11,18 @@ def test_config_roundtrip():
     assert "config" in resp.json()
 
     payload = {"strategy": "mean_reversion", "pairs": ["BTC/USDT"], "notional": 50}
-    resp = client.post("/config", json=payload)
-    assert resp.status_code == 200
-    data = resp.json()["config"]
-    assert data["strategy"] == "mean_reversion"
-    assert data["pairs"] == ["BTC/USDT"]
-    assert data["notional"] == 50
+    post_resp = client.post("/config", json=payload)
+    assert post_resp.status_code == 200
+    post_cfg = post_resp.json()["config"]
+    for key, value in payload.items():
+        assert post_cfg[key] == value
+
+    # Roundtrip: ensure the configuration persists
+    get_resp = client.get("/config")
+    assert get_resp.status_code == 200
+    get_cfg = get_resp.json()["config"]
+    for key, value in payload.items():
+        assert get_cfg[key] == value
 
 
 def test_start_stop(monkeypatch):
@@ -44,6 +50,9 @@ def test_start_stop(monkeypatch):
 
     resp = client.post("/bot/start")
     assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "started"
+    assert data["pid"] == 123
     assert calls
 
     resp = client.post("/bot/stop")
