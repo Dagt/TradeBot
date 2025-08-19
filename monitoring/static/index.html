@@ -101,6 +101,7 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-grey-light">Plataforma en la que se operará.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Market</label>
@@ -112,30 +113,35 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-grey-light">Tipo de mercado: spot o futuros.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Trade Qty</label>
               <div class="control">
                 <input id="cfg-trade-qty" class="input" type="number" min="0" step="any" placeholder="0.001" />
               </div>
+              <p class="help has-text-grey-light">Cantidad por operación. Debe ser mayor a 0.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Leverage</label>
               <div class="control">
                 <input id="cfg-leverage" class="input" type="number" min="1" step="1" placeholder="1" />
               </div>
+              <p class="help has-text-grey-light">Apalancamiento para futuros. Entero ≥ 1.</p>
             </div>
             <div class="field">
               <label class="checkbox has-text-light">
                 <input type="checkbox" id="cfg-testnet" checked />
                 Testnet
               </label>
+              <p class="help has-text-grey-light">Usar la red de pruebas del exchange.</p>
             </div>
             <div class="field">
               <label class="checkbox has-text-light">
                 <input type="checkbox" id="cfg-dry-run" />
                 Dry run
               </label>
+              <p class="help has-text-grey-light">Simular operaciones sin ejecutarlas.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Strategy</label>
@@ -147,24 +153,28 @@
                   </select>
                 </div>
               </div>
+              <p class="help has-text-grey-light">Estrategia de trading a utilizar.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Pairs (comma separated)</label>
               <div class="control">
                 <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
               </div>
+              <p class="help has-text-grey-light">Lista de pares separados por coma.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Notional</label>
               <div class="control">
                 <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
               </div>
+              <p class="help has-text-grey-light">Valor total en USD para la estrategia.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Params (JSON)</label>
               <div class="control">
                 <textarea id="cfg-params" class="textarea" placeholder='{"atr_period":14}'></textarea>
               </div>
+              <p class="help has-text-grey-light">Parámetros adicionales en formato JSON.</p>
             </div>
             <div class="field">
               <div class="control">
@@ -185,6 +195,11 @@
       </div>
 
     </div>
+  </section>
+
+  <section class="section">
+    <h2 class="subtitle has-text-light">Ayuda</h2>
+    <p class="has-text-light">Consulta la <a href="../docs/usage.md" target="_blank">documentación</a> para más información.</p>
   </section>
 
   <script>
@@ -251,25 +266,43 @@
   }
 
   async function controlStrategy(name, action){
-    await fetch(`/strategies/${name}/${action}`, {method:'POST'});
-    updateStrategies();
+    try {
+      const res = await fetch(`/strategies/${name}/${action}`, {method:'POST'});
+      if(!res.ok){
+        let msg = res.status;
+        try { const err = await res.json(); msg = err.detail || msg; } catch(e){}
+        document.getElementById('cfg-result').textContent = 'Error: ' + msg;
+      }
+      updateStrategies();
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function loadConfig(){
     try {
-      const res = await fetch('/config').then(r => r.json());
-      const cfg = res.config || {};
-      document.getElementById('cfg-strategy').value = cfg.strategy || '';
-      document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
-      document.getElementById('cfg-notional').value = cfg.notional ?? '';
-      document.getElementById('cfg-params').value = JSON.stringify(cfg.params || {}, null, 2);
-      document.getElementById('cfg-exchange').value = cfg.exchange || 'binance';
-      document.getElementById('cfg-market').value = cfg.market || 'spot';
-      document.getElementById('cfg-trade-qty').value = cfg.trade_qty ?? '';
-      document.getElementById('cfg-leverage').value = cfg.leverage ?? '';
-      document.getElementById('cfg-testnet').checked = cfg.testnet ?? true;
-      document.getElementById('cfg-dry-run').checked = cfg.dry_run ?? false;
-    } catch(err){ console.error(err); }
+      const res = await fetch('/config');
+      if(res.ok){
+        const data = await res.json();
+        const cfg = data.config || {};
+        document.getElementById('cfg-strategy').value = cfg.strategy || '';
+        document.getElementById('cfg-pairs').value = (cfg.pairs || []).join(',');
+        document.getElementById('cfg-notional').value = cfg.notional ?? '';
+        document.getElementById('cfg-params').value = JSON.stringify(cfg.params || {}, null, 2);
+        document.getElementById('cfg-exchange').value = cfg.exchange || 'binance';
+        document.getElementById('cfg-market').value = cfg.market || 'spot';
+        document.getElementById('cfg-trade-qty').value = cfg.trade_qty ?? '';
+        document.getElementById('cfg-leverage').value = cfg.leverage ?? '';
+        document.getElementById('cfg-testnet').checked = cfg.testnet ?? true;
+        document.getElementById('cfg-dry-run').checked = cfg.dry_run ?? false;
+      } else {
+        let msg = res.status;
+        try { const err = await res.json(); msg = err.detail || msg; } catch(e){}
+        document.getElementById('cfg-result').textContent = 'Error: ' + msg;
+      }
+    } catch(err){
+      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+    }
   }
 
   async function saveConfig(ev){
@@ -307,8 +340,9 @@
       if(res.ok){
         document.getElementById('cfg-result').textContent = 'Config saved';
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let msg = res.status;
+        try { const err = await res.json(); msg = err.detail || msg; } catch(e){}
+        document.getElementById('cfg-result').textContent = 'Error: ' + msg;
       }
     } catch(err){
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
@@ -323,8 +357,9 @@
         document.getElementById('cfg-result').textContent = 'Bot started';
         document.getElementById('btn-start').disabled = true;
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let msg = res.status;
+        try { const err = await res.json(); msg = err.detail || msg; } catch(e){}
+        document.getElementById('cfg-result').textContent = 'Error: ' + msg;
       }
     } catch(err) {
       if(err) console.error(err);
@@ -339,8 +374,9 @@
         document.getElementById('cfg-result').textContent = 'Bot stopped';
         document.getElementById('btn-start').disabled = false;
       } else {
-        const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        let msg = res.status;
+        try { const err = await res.json(); msg = err.detail || msg; } catch(e){}
+        document.getElementById('cfg-result').textContent = 'Error: ' + msg;
       }
     } catch(err) {
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
