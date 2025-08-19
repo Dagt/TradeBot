@@ -15,60 +15,59 @@
   </nav>
 
   <section class="section">
-    <div class="columns is-multiline">
-      <div class="column is-one-third">
-        <div id="pnl" class="box" style="height:250px;"></div>
-      </div>
-      <div class="column is-one-third">
-        <div id="slippage" class="box" style="height:250px;"></div>
-      </div>
-      <div class="column is-one-third">
-        <div id="latency" class="box" style="height:250px;"></div>
+    <div class="container">
+      <div class="columns">
+        <div class="column"><div id="pnl" class="box chart-box"></div></div>
+        <div class="column"><div id="slippage" class="box chart-box"></div></div>
+        <div class="column"><div id="latency" class="box chart-box"></div></div>
       </div>
 
-        <div class="column is-half">
-          <div class="box">
-            <h2 class="subtitle">Funding</h2>
-            <p id="funding-value">--</p>
+      <div class="columns is-multiline">
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Funding</h2>
+            <p id="funding-value" class="stat-value">--</p>
           </div>
         </div>
-        <div class="column is-half">
-          <div class="box">
-            <h2 class="subtitle">Open Interest</h2>
-            <p id="open-interest-value">--</p>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Open Interest</h2>
+            <p id="open-interest-value" class="stat-value">--</p>
           </div>
         </div>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Fills</h2>
+            <p id="fills-value" class="stat-value">--</p>
+          </div>
+        </div>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Risk Events</h2>
+            <p id="risk-events-value" class="stat-value">--</p>
+          </div>
+        </div>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Reject Rate</h2>
+            <p id="reject-rate-value" class="stat-value">--</p>
+          </div>
+        </div>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">CPU %</h2>
+            <p id="cpu-value" class="stat-value">--</p>
+          </div>
+        </div>
+        <div class="column is-one-quarter">
+          <div class="box stat-box">
+            <h2 class="subtitle is-6">Memory</h2>
+            <p id="memory-value" class="stat-value">--</p>
+          </div>
+        </div>
+      </div>
 
-        <div class="column is-one-fifth">
-          <div class="box">
-            <h2 class="subtitle">Fills</h2>
-            <p id="fills-value">--</p>
-          </div>
-        </div>
-        <div class="column is-one-fifth">
-          <div class="box">
-            <h2 class="subtitle">Risk Events</h2>
-            <p id="risk-events-value">--</p>
-          </div>
-        </div>
-        <div class="column is-one-fifth">
-          <div class="box">
-            <h2 class="subtitle">Reject Rate</h2>
-            <p id="reject-rate-value">--</p>
-          </div>
-        </div>
-        <div class="column is-one-fifth">
-          <div class="box">
-            <h2 class="subtitle">CPU %</h2>
-            <p id="cpu-value">--</p>
-          </div>
-        </div>
-        <div class="column is-one-fifth">
-          <div class="box">
-            <h2 class="subtitle">Memory</h2>
-            <p id="memory-value">--</p>
-          </div>
-        </div>
+      <div class="columns is-multiline">
 
         <div class="column is-full">
           <h2 class="subtitle">Positions</h2>
@@ -226,6 +225,7 @@
       </div>
 
   </div>
+    </div>
 </section>
 
  <section class="section">
@@ -239,9 +239,10 @@
   const pnlTrace = {x: [], y: [], mode: 'lines', name: 'PnL'};
   const slippageTrace = {x: [], y: [], mode: 'lines', name: 'Slippage'};
   const latencyTrace = {x: [], y: [], mode: 'lines', name: 'Latency'};
-  Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'PnL'});
-  Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'Slippage (bps)'});
-  Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff', font:{color:'#222'}, title:'Order Latency (s)'});
+  const plotLayout = {paper_bgcolor:'#2b3848', plot_bgcolor:'#2b3848', font:{color:'#e0e0e0'}};
+  Plotly.newPlot('pnl', [pnlTrace], {...plotLayout, title:'PnL'});
+  Plotly.newPlot('slippage', [slippageTrace], {...plotLayout, title:'Slippage (bps)'});
+  Plotly.newPlot('latency', [latencyTrace], {...plotLayout, title:'Order Latency (s)'});
 
   function formatBytes(bytes){
     if(bytes === undefined) return '--';
