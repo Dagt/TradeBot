@@ -55,30 +55,34 @@
               <label class="label has-text-light">Strategy</label>
               <div class="control">
                 <div class="select is-fullwidth">
-                  <select id="cfg-strategy">
-                    <option value="breakout_atr">Breakout ATR</option>
-                    <option value="momentum">Momentum</option>
+                  <select id="cfg-strategy" title="Select trading algorithm">
+                    <option value="breakout_atr" title="Breakout ATR: trades breakouts using ATR">Breakout ATR</option>
+                    <option value="momentum" title="Momentum: follows price trends">Momentum</option>
                   </select>
                 </div>
               </div>
+              <p class="help has-text-light">Choose how orders are generated.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Pairs (comma separated)</label>
               <div class="control">
-                <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" />
+                <input id="cfg-pairs" class="input" placeholder="BTCUSDT,ETHUSDT" title="List of symbols separated by commas" />
               </div>
+              <p class="help has-text-light">Example: BTCUSDT, ETHUSDT</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Notional</label>
               <div class="control">
-                <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" />
+                <input id="cfg-notional" class="input" type="number" min="0" step="any" placeholder="1000" title="Positive trade size per pair" />
               </div>
+              <p class="help has-text-light">Enter a positive number representing trade size.</p>
             </div>
             <div class="field">
               <label class="label has-text-light">Params (JSON)</label>
               <div class="control">
-                <textarea id="cfg-params" class="textarea" placeholder='{"atr_period":14}'></textarea>
+                <textarea id="cfg-params" class="textarea" placeholder='{"atr_period":14}' title="Strategy specific parameters in JSON"></textarea>
               </div>
+              <p class="help has-text-light">Provide a JSON object with strategy parameters.</p>
             </div>
             <div class="field">
               <div class="control">
@@ -94,7 +98,14 @@
               <button id="btn-stop" class="button is-danger is-fullwidth" onclick="stopBot()">Stop</button>
             </div>
           </div>
-          <p id="cfg-result" class="has-text-light"></p>
+          <p id="cfg-result"></p>
+        </div>
+      </div>
+
+      <div class="column is-full">
+        <h2 class="subtitle has-text-light">Help / FAQ</h2>
+        <div class="box">
+          <p class="has-text-light">Need assistance? Visit the <a href="../docs/index.html" target="_blank">documentation</a>.</p>
         </div>
       </div>
 
@@ -108,6 +119,20 @@
   Plotly.newPlot('pnl', [pnlTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'PnL'});
   Plotly.newPlot('slippage', [slippageTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Slippage (bps)'});
   Plotly.newPlot('latency', [latencyTrace], {paper_bgcolor:'#2a2a40', plot_bgcolor:'#2a2a40', font:{color:'#fff'}, title:'Order Latency (s)'});
+
+  function extractDetail(err){
+    if(!err) return '';
+    if(Array.isArray(err.detail)){
+      return err.detail.map(e => e.msg || JSON.stringify(e)).join(', ');
+    }
+    return err.detail || err.message || err;
+  }
+
+  function setResult(msg, isError = false){
+    const el = document.getElementById('cfg-result');
+    el.className = isError ? 'has-text-danger' : 'has-text-success';
+    el.textContent = msg;
+  }
 
   async function updateMetrics(){
     try {
@@ -173,7 +198,7 @@
     if(paramsText){
       try { payload.params = JSON.parse(paramsText); }
       catch(err){
-        document.getElementById('cfg-result').textContent = 'Invalid params JSON';
+        setResult('Invalid params JSON', true);
         throw err;
       }
     }
@@ -184,13 +209,13 @@
         body: JSON.stringify(payload)
       });
       if(res.ok){
-        document.getElementById('cfg-result').textContent = 'Config saved';
+        setResult('Config saved');
       } else {
         const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        setResult('Error: ' + extractDetail(err), true);
       }
     } catch(err){
-      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+      setResult('Error: ' + extractDetail(err), true);
     }
   }
 
@@ -199,14 +224,15 @@
       await saveConfig();
       const res = await fetch('/bot/start', {method:'POST'});
       if(res.ok){
-        document.getElementById('cfg-result').textContent = 'Bot started';
+        setResult('Bot started');
         document.getElementById('btn-start').disabled = true;
       } else {
         const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        setResult('Error: ' + extractDetail(err), true);
       }
     } catch(err) {
-      if(err) console.error(err);
+      console.error(err);
+      setResult('Error: ' + extractDetail(err), true);
     }
     updateStrategies();
   }
@@ -215,14 +241,14 @@
     try {
       const res = await fetch('/bot/stop', {method:'POST'});
       if(res.ok){
-        document.getElementById('cfg-result').textContent = 'Bot stopped';
+        setResult('Bot stopped');
         document.getElementById('btn-start').disabled = false;
       } else {
         const err = await res.json();
-        document.getElementById('cfg-result').textContent = 'Error: ' + (err.detail || res.status);
+        setResult('Error: ' + extractDetail(err), true);
       }
     } catch(err) {
-      document.getElementById('cfg-result').textContent = 'Error: ' + err;
+      setResult('Error: ' + extractDetail(err), true);
     }
     updateStrategies();
   }
