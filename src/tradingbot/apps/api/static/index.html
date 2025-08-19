@@ -17,12 +17,37 @@
 </header>
   <h1>Monitoreo</h1>
   <div class="muted" id="health">Comprobando estado…</div>
-  <div class="grid5" style="margin:14px 0 20px">
+  <div class="grid5" style="margin:14px 0 10px">
     <div class="kv"><div class="k">Reject Rate</div><div class="v" id="m-reject">—</div></div>
+    <div class="kv"><div class="k">Latency p90 (s)</div><div class="v" id="m-lat90">—</div></div>
+    <div class="kv"><div class="k">Latency p99 (s)</div><div class="v" id="m-lat99">—</div></div>
+    <div class="kv"><div class="k">WS Uptime %</div><div class="v" id="m-ws-up">—</div></div>
+    <div class="kv"><div class="k">Reconex/hr</div><div class="v" id="m-ws-rec">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Book Lag (ms)</div><div class="v" id="m-book-lag">—</div></div>
     <div class="kv"><div class="k">CPU %</div><div class="v" id="m-cpu">—</div></div>
     <div class="kv"><div class="k">Mem (MB)</div><div class="v" id="m-mem">—</div></div>
+    <div class="kv"><div class="k">FDs</div><div class="v" id="m-fds">—</div></div>
     <div class="kv"><div class="k">Uptime (s)</div><div class="v" id="m-uptime">—</div></div>
-    <div class="kv"><div class="k">Latencia (s)</div><div class="v" id="m-latency">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Ingest rate</div><div class="v" id="m-ingest">—</div></div>
+    <div class="kv"><div class="k">Persist backlog</div><div class="v" id="m-backlog">—</div></div>
+    <div class="kv"><div class="k">HTTP 4xx</div><div class="v" id="m-err-4xx">—</div></div>
+    <div class="kv"><div class="k">HTTP 5xx</div><div class="v" id="m-err-5xx">—</div></div>
+    <div class="kv"><div class="k">Timeouts</div><div class="v" id="m-err-timeout">—</div></div>
+  </div>
+  <div class="grid4" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Throttling</div><div class="v" id="m-err-throttle">—</div></div>
+    <div class="kv"><div class="k">Auth Errors</div><div class="v" id="m-err-auth">—</div></div>
+    <div class="kv"><div class="k">Spread</div><div class="v" id="m-spread">—</div></div>
+    <div class="kv"><div class="k">Depth</div><div class="v" id="m-depth">—</div></div>
+  </div>
+  <div class="grid4" style="margin:0 0 20px">
+    <div class="kv"><div class="k">Funding</div><div class="v" id="m-funding-now">—</div></div>
+    <div class="kv"><div class="k">Próx Funding</div><div class="v" id="m-funding-next">—</div></div>
+    <div class="kv"><div class="k">Basis</div><div class="v" id="m-basis">—</div></div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -52,7 +77,7 @@
 
   <div class="card" style="margin-top:16px">
     <h2>Logs</h2>
-    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh; background:#0f1622; padding:10px"></pre>
+    <pre id="logs" class="mono" style="overflow:auto; max-height:60vh"></pre>
   </div>
 
 <script>
@@ -75,14 +100,43 @@ async function refreshMetrics(){
     const r = await fetch(api('/metrics'));
     const j = await r.json();
     document.getElementById('m-reject').textContent = ((j.order_reject_rate||0)*100).toFixed(2)+'%';
+    document.getElementById('m-ws-up').textContent = ((j.ws_uptime||0)*100).toFixed(2)+'%';
+    document.getElementById('m-ws-rec').textContent = (j.ws_reconnections_per_hour||0).toFixed(2);
+    document.getElementById('m-book-lag').textContent = (j.book_lag_ms||0).toFixed(1);
     document.getElementById('m-cpu').textContent = (j.cpu_percent||0).toFixed(1);
     document.getElementById('m-mem').textContent = ((j.memory_bytes||0)/1048576).toFixed(1);
+    document.getElementById('m-fds').textContent = j.fd_count||0;
     document.getElementById('m-uptime').textContent = (j.process_uptime_seconds||0).toFixed(0);
+    document.getElementById('m-ingest').textContent = (j.ingest_rate||0).toFixed(1);
+    document.getElementById('m-backlog').textContent = j.persist_backlog||0;
+    document.getElementById('m-err-4xx').textContent = j.errors_4xx||0;
+    document.getElementById('m-err-5xx').textContent = j.errors_5xx||0;
+    document.getElementById('m-err-timeout').textContent = j.errors_timeout||0;
+    document.getElementById('m-err-throttle').textContent = j.errors_throttling||0;
+    document.getElementById('m-err-auth').textContent = j.errors_auth||0;
     try{
       const l = await fetch(api('/metrics/latency'));
       const lj = await l.json();
-      document.getElementById('m-latency').textContent = (lj.avg_order_latency_seconds||0).toFixed(3);
+      document.getElementById('m-lat90').textContent = (lj.p90||0).toFixed(3);
+      document.getElementById('m-lat99').textContent = (lj.p99||0).toFixed(3);
     }catch(e){}
+  }catch(e){}
+}
+
+async function refreshMarket(){
+  try{
+    const r = await fetch(api('/metrics/market'));
+    const j = await r.json();
+    document.getElementById('m-spread').textContent = (j.spread||0).toFixed(4);
+    document.getElementById('m-depth').textContent = (j.depth||0).toFixed(0);
+    document.getElementById('m-funding-now').textContent = (j.funding_current||0).toFixed(4);
+    document.getElementById('m-funding-next').textContent = (j.funding_next||0).toFixed(4);
+    document.getElementById('m-basis').textContent = (j.basis||0).toFixed(4);
+    if(j.basis_alert){
+      document.getElementById('m-basis').classList.add('warn');
+    }else{
+      document.getElementById('m-basis').classList.remove('warn');
+    }
   }catch(e){}
 }
 
@@ -109,6 +163,8 @@ refreshHealth();
 setInterval(refreshHealth, 5000);
 refreshMetrics();
 setInterval(refreshMetrics, 5000);
+refreshMarket();
+setInterval(refreshMarket, 5000);
 
 async function refreshLogs(){
   try{
