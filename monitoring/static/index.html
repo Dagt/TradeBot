@@ -150,7 +150,7 @@
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({strategy, pairs})
       });
-      await fetch('/config/start', {method:'POST'});
+      await fetch('/bot/start', {method:'POST'});
       document.getElementById('cfg-result').textContent = 'Bot started';
     } catch(err) {
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
@@ -159,7 +159,7 @@
 
   async function stopBot(){
     try {
-      await fetch('/config/stop', {method:'POST'});
+      await fetch('/bot/stop', {method:'POST'});
       document.getElementById('cfg-result').textContent = 'Bot stopped';
     } catch(err) {
       document.getElementById('cfg-result').textContent = 'Error: ' + err;
