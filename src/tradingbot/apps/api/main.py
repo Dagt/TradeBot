@@ -443,6 +443,10 @@ class BotConfig(BaseModel):
     market: str | None = None
     trade_qty: float | None = None
     leverage: int | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    stop_loss_pct: float | None = None
+    max_drawdown_pct: float | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
     spot: str | None = None
@@ -495,6 +499,14 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--trade-qty", str(cfg.trade_qty)])
     if cfg.leverage is not None:
         args.extend(["--leverage", str(cfg.leverage)])
+    if cfg.stop_loss is not None:
+        args.extend(["--stop-loss", str(cfg.stop_loss)])
+    if cfg.take_profit is not None:
+        args.extend(["--take-profit", str(cfg.take_profit)])
+    if cfg.stop_loss_pct is not None:
+        args.extend(["--stop-loss-pct", str(cfg.stop_loss_pct)])
+    if cfg.max_drawdown_pct is not None:
+        args.extend(["--max-drawdown-pct", str(cfg.max_drawdown_pct)])
     if cfg.testnet is not None:
         args.append("--testnet" if cfg.testnet else "--no-testnet")
     if cfg.dry_run is not None:
