@@ -20,6 +20,7 @@ Currently the translator understands the following flags:
     names for these fields (``tpPrice``/``stopPrice`` on Binance vs
     ``takeProfit``/``stopLoss`` on Bybit/OKX).
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -33,6 +34,7 @@ def translate_order_flags(
     iceberg_qty: Optional[float] = None,
     take_profit: Optional[float] = None,
     stop_loss: Optional[float] = None,
+    reduce_only: bool = False,
 ) -> Dict[str, Any]:
     """Translate generic order flags into venue specific ``params``.
 
@@ -51,6 +53,8 @@ def translate_order_flags(
     take_profit, stop_loss:
         Optional prices for OCO style orders.  If only one of them is provided
         a simple TP or SL order is produced.
+    reduce_only:
+        Whether the order should only decrease an existing position.
 
     Returns
     -------
@@ -73,6 +77,8 @@ def translate_order_flags(
             params["tpPrice"] = float(take_profit)
         if stop_loss is not None:
             params["stopPrice"] = float(stop_loss)
+        if reduce_only:
+            params["reduceOnly"] = True
         return params
 
     # Bybit / OKX ---------------------------------------------------------
@@ -87,6 +93,8 @@ def translate_order_flags(
             params["takeProfit"] = float(take_profit)
         if stop_loss is not None:
             params["stopLoss"] = float(stop_loss)
+        if reduce_only:
+            params["reduceOnly"] = True
         return params
 
     # Fallback for other venues ------------------------------------------
@@ -100,6 +108,8 @@ def translate_order_flags(
         params["takeProfit"] = float(take_profit)
     if stop_loss is not None:
         params["stopLoss"] = float(stop_loss)
+    if reduce_only:
+        params["reduceOnly"] = True
     return params
 
 

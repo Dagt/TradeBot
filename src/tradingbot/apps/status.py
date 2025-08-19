@@ -1,4 +1,5 @@
 """Status server exposing strategy states and basic metrics."""
+
 from fastapi import FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from typing import Dict
@@ -53,7 +54,7 @@ def _counter_value(counter) -> float:
     return 0.0
 
 
-@app.get("/metrics/summary")
+@app.get("/metrics")
 def metrics_summary() -> dict:
     """Return a minimal summary of key metrics."""
     return {
@@ -62,7 +63,7 @@ def metrics_summary() -> dict:
     }
 
 
-@app.get("/metrics")
-def metrics() -> Response:
+@app.get("/metrics/prometheus")
+def prometheus_metrics() -> Response:
     """Expose Prometheus metrics for scraping."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

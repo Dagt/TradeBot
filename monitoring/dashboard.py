@@ -69,15 +69,13 @@ _HTML = """
   async function updateMetrics(){
     try {
       const now = new Date();
-      const pnl = await fetch('/metrics/pnl').then(r => r.json());
-      const slip = await fetch('/metrics/slippage').then(r => r.json());
-      const lat = await fetch('/metrics/latency').then(r => r.json());
+      const data = await fetch('/metrics').then(r => r.json());
       pnlTrace.x.push(now);
-      pnlTrace.y.push(pnl.pnl || 0);
+      pnlTrace.y.push(data.performance?.pnl || 0);
       slippageTrace.x.push(now);
-      slippageTrace.y.push(slip.avg_slippage_bps || 0);
+      slippageTrace.y.push(data.performance?.avg_slippage_bps || 0);
       latencyTrace.x.push(now);
-      latencyTrace.y.push(lat.avg_order_latency_seconds || 0);
+      latencyTrace.y.push(data.performance?.avg_order_latency_seconds || 0);
       Plotly.update('pnl', {x:[pnlTrace.x], y:[pnlTrace.y]});
       Plotly.update('slippage', {x:[slippageTrace.x], y:[slippageTrace.y]});
       Plotly.update('latency', {x:[latencyTrace.x], y:[latencyTrace.y]});
@@ -131,4 +129,3 @@ _HTML = """
 async def dashboard() -> HTMLResponse:
     """Serve the Plotly dashboard with live metrics and controls."""
     return HTMLResponse(content=_HTML)
-

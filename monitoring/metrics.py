@@ -78,16 +78,10 @@ def _avg_slippage() -> float:
     """Compute average slippage in basis points."""
 
     slippage_samples = [
-        sample
-        for metric in SLIPPAGE.collect()
-        for sample in metric.samples
+        sample for metric in SLIPPAGE.collect() for sample in metric.samples
     ]
-    slippage_sum = sum(
-        s.value for s in slippage_samples if s.name.endswith("_sum")
-    )
-    slippage_count = sum(
-        s.value for s in slippage_samples if s.name.endswith("_count")
-    )
+    slippage_sum = sum(s.value for s in slippage_samples if s.name.endswith("_sum"))
+    slippage_count = sum(s.value for s in slippage_samples if s.name.endswith("_count"))
     return slippage_sum / slippage_count if slippage_count else 0.0
 
 
@@ -95,16 +89,10 @@ def _avg_order_latency() -> float:
     """Compute average order execution latency across venues."""
 
     latency_samples = [
-        sample
-        for metric in ORDER_LATENCY.collect()
-        for sample in metric.samples
+        sample for metric in ORDER_LATENCY.collect() for sample in metric.samples
     ]
-    latency_sum = sum(
-        s.value for s in latency_samples if s.name.endswith("_sum")
-    )
-    latency_count = sum(
-        s.value for s in latency_samples if s.name.endswith("_count")
-    )
+    latency_sum = sum(s.value for s in latency_samples if s.name.endswith("_sum"))
+    latency_count = sum(s.value for s in latency_samples if s.name.endswith("_count"))
     return latency_sum / latency_count if latency_count else 0.0
 
 
@@ -112,16 +100,10 @@ def _avg_market_latency() -> float:
     """Compute average market data latency."""
 
     market_samples = [
-        sample
-        for metric in MARKET_LATENCY.collect()
-        for sample in metric.samples
+        sample for metric in MARKET_LATENCY.collect() for sample in metric.samples
     ]
-    market_sum = sum(
-        s.value for s in market_samples if s.name.endswith("_sum")
-    )
-    market_count = sum(
-        s.value for s in market_samples if s.name.endswith("_count")
-    )
+    market_sum = sum(s.value for s in market_samples if s.name.endswith("_sum"))
+    market_count = sum(s.value for s in market_samples if s.name.endswith("_count"))
     return market_sum / market_count if market_count else 0.0
 
 
@@ -129,27 +111,23 @@ def _avg_e2e_latency() -> float:
     """Compute average end-to-end latency."""
 
     e2e_samples = [
-        sample
-        for metric in E2E_LATENCY.collect()
-        for sample in metric.samples
+        sample for metric in E2E_LATENCY.collect() for sample in metric.samples
     ]
     e2e_sum = sum(s.value for s in e2e_samples if s.name.endswith("_sum"))
-    e2e_count = sum(
-        s.value for s in e2e_samples if s.name.endswith("_count")
-    )
+    e2e_count = sum(s.value for s in e2e_samples if s.name.endswith("_count"))
     return e2e_sum / e2e_count if e2e_count else 0.0
 
 
-@router.get("/metrics")
-def metrics() -> Response:
-    """Expose Prometheus metrics."""
+@router.get("/metrics/prometheus")
+def prometheus_metrics() -> Response:
+    """Expose Prometheus metrics for scraping."""
     update_process_metrics()
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@router.get("/metrics/summary")
+@router.get("/metrics")
 def metrics_summary() -> dict:
-    """Return a minimal summary of key metrics."""
+    """Return a minimal summary of key metrics in JSON."""
 
     update_process_metrics()
 
@@ -185,9 +163,7 @@ def metrics_summary() -> dict:
         for sample in metric.samples
         if sample.name == "maker_taker_ratio"
     ]
-    avg_ratio = (
-        sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
-    )
+    avg_ratio = sum(ratio_samples) / len(ratio_samples) if ratio_samples else 0.0
 
     # Aggregate websocket failures across adapters
     ws_failures_total = sum(
@@ -234,23 +210,27 @@ def metrics_summary() -> dict:
     }
 
     return {
-        "pnl": TRADING_PNL._value.get(),
-        "positions": positions,
+        "balances": positions,
+        "orders": {
+            "sent": orders_sent,
+            "rejects": order_rejects,
+            "reject_rate": reject_rate,
+        },
+        "performance": {
+            "pnl": TRADING_PNL._value.get(),
+            "avg_slippage_bps": avg_slippage,
+            "avg_market_latency_seconds": avg_market_latency,
+            "avg_order_latency_seconds": avg_latency,
+            "avg_maker_taker_ratio": avg_ratio,
+            "avg_e2e_latency_seconds": avg_e2e,
+        },
         "funding_rates": funding_rates,
         "open_interest": open_interest,
         "basis": basis,
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
-        "orders_sent": orders_sent,
-        "order_rejects": order_rejects,
-        "order_reject_rate": reject_rate,
         "kill_switch_active": KILL_SWITCH_ACTIVE._value.get(),
-        "avg_slippage_bps": avg_slippage,
-        "avg_market_latency_seconds": avg_market_latency,
-        "avg_order_latency_seconds": avg_latency,
-        "avg_maker_taker_ratio": avg_ratio,
-        "avg_e2e_latency_seconds": avg_e2e,
         "ws_failures": ws_failures_total,
         "strategy_states": strategy_states,
         "cpu_percent": PROCESS_CPU._value.get(),

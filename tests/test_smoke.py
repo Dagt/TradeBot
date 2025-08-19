@@ -18,7 +18,13 @@ def test_metrics_endpoint_exposed():
     client = _client()
     resp = client.get("/metrics")
     assert resp.status_code == 200
-    assert "python_info" in resp.text
+    body = resp.json()
+    assert "performance" in body
+    assert "pnl" in body["performance"]
+
+    prom = client.get("/metrics/prometheus")
+    assert prom.status_code == 200
+    assert "python_info" in prom.text
 
 
 def test_cli_endpoint_runs_help():
