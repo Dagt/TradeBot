@@ -206,6 +206,13 @@
       <div class="column is-full">
         <div class="box">
           <h2 class="subtitle">Run CLI Command</h2>
+          <div class="field">
+            <div class="buttons">
+              <button class="button is-primary" onclick="runCLI('paper-run')">Paper Run</button>
+              <button class="button is-warning" onclick="runCLI('run-bot --testnet')">Testnet Run</button>
+              <button class="button is-danger" onclick="runCLI('real-run')">Real Run</button>
+            </div>
+          </div>
           <div class="field has-addons">
             <div class="control is-expanded">
               <input id="cli-command" class="input" placeholder="e.g. ingest --venue binance" />
@@ -510,9 +517,15 @@
     updateStrategies();
   }
 
-  async function runCLI(){
-    const cmd = document.getElementById('cli-command').value;
-    if(!cmd) return;
+
+  async function runCLI(cmd){
+    if(!cmd){
+      cmd = document.getElementById('cli-command').value;
+      if(!cmd) return;
+    }
+    const outEl = document.getElementById('cli-output');
+    outEl.className = '';
+    outEl.textContent = `Running "${cmd}"...`;
     try {
       const res = await fetch('/run-cli', {
         method:'POST',
@@ -520,10 +533,22 @@
         body: JSON.stringify({command: cmd})
       });
       const data = await res.json();
-      document.getElementById('cli-output').textContent =
-        (data.stdout || '') + (data.stderr ? '\n' + data.stderr : '');
+      let text = '';
+      if(data.success){
+        text = `✅ "${cmd}" completed`;
+        if(data.stdout) text += `\n${data.stdout}`;
+        if(data.stderr) text += `\n${data.stderr}`;
+        outEl.className = 'has-text-success';
+      } else {
+        text = `❌ "${cmd}" failed (code ${data.returncode})`;
+        if(data.stdout) text += `\n${data.stdout}`;
+        if(data.stderr) text += `\n${data.stderr}`;
+        outEl.className = 'has-text-danger';
+      }
+      outEl.textContent = text;
     } catch(err){
-      document.getElementById('cli-output').textContent = 'Error: ' + err;
+      outEl.textContent = 'Error: ' + err;
+      outEl.className = 'has-text-danger';
     }
   }
 

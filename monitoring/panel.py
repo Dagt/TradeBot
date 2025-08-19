@@ -542,9 +542,11 @@ async def run_cli(cmd: CLICommand) -> dict:
     )
     out, err = await proc.communicate()
     return {
+        "command": cmd.command,
         "stdout": out.decode(),
         "stderr": err.decode(),
         "returncode": proc.returncode,
+        "success": proc.returncode == 0,
     }
 
 
