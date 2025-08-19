@@ -10,6 +10,9 @@ import secrets
 import subprocess
 import sys
 import shlex
+import itertools
+import signal
+from typing import Dict
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -141,6 +144,24 @@ def index():
         return Response(content=html, media_type="text/html")
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
+
+# Servir monitor.html en "/monitor"
+@app.get("/monitor")
+def monitor_page():
+    try:
+        html = (_static_dir / "monitor.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/monitor.html"}
+
+# Servir bots.html en "/bots"
+@app.get("/bots")
+def bots_page():
+    try:
+        html = (_static_dir / "bots.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/bots.html"}
 
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
@@ -379,8 +400,11 @@ def run_cli(req: CLIRequest):
 
     args = shlex.split(req.command)
     cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
         return {
             "command": req.command,
             "returncode": res.returncode,
@@ -389,4 +413,90 @@ def run_cli(req: CLIRequest):
         }
     except Exception as exc:  # pragma: no cover - subprocess failures
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# --- Bot process management -------------------------------------------------------
+
+
+class BotStartRequest(BaseModel):
+    command: str
+
+
+_bot_seq = itertools.count(1)
+_bots: Dict[int, dict] = {}
+
+
+@app.post("/bots/start")
+def start_bot(req: BotStartRequest):
+    """Launch a bot subprocess and track it."""
+
+    args = shlex.split(req.command)
+    cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    bot_id = next(_bot_seq)
+    _bots[bot_id] = {"proc": proc, "command": req.command}
+    return {"id": bot_id, "pid": proc.pid, "command": req.command, "status": "running"}
+
+
+@app.get("/bots/list")
+def list_bots():
+    items = []
+    for bid, info in _bots.items():
+        proc = info.get("proc")
+        status = "running" if proc.poll() is None else "stopped"
+        items.append({"id": bid, "pid": proc.pid, "command": info.get("command"), "status": status})
+    return {"items": items}
+
+
+def _get_bot(bot_id: int) -> dict:
+    bot = _bots.get(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="bot not found")
+    return bot
+
+
+@app.post("/bots/{bot_id}/stop")
+def stop_bot(bot_id: int):
+    bot = _get_bot(bot_id)
+    proc = bot["proc"]
+    if proc.poll() is None:
+        proc.terminate()
+    return {"id": bot_id, "status": "stopped"}
+
+
+@app.post("/bots/{bot_id}/pause")
+def pause_bot(bot_id: int):
+    bot = _get_bot(bot_id)
+    proc = bot["proc"]
+    if proc.poll() is None:
+        try:
+            proc.send_signal(signal.SIGSTOP)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"id": bot_id, "status": "paused"}
+
+
+@app.post("/bots/{bot_id}/resume")
+def resume_bot(bot_id: int):
+    bot = _get_bot(bot_id)
+    proc = bot["proc"]
+    if proc.poll() is None:
+        try:
+            proc.send_signal(signal.SIGCONT)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"id": bot_id, "status": "running"}
+
+
+@app.post("/bots/{bot_id}/delete")
+def delete_bot(bot_id: int):
+    bot = _get_bot(bot_id)
+    proc = bot["proc"]
+    if proc.poll() is None:
+        raise HTTPException(status_code=400, detail="bot still running")
+    _bots.pop(bot_id, None)
+    return {"id": bot_id, "status": "deleted"}
 

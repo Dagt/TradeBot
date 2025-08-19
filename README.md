@@ -36,6 +36,14 @@ La correspondencia entre el blueprint original y los módulos del código se doc
    tradingbot backtest
    ```
 
+6. **Iniciar dashboards**
+   ```bash
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
+   ```
+   Visita `http://localhost:8000/` para la configuración, `http://localhost:8000/monitor`
+   para métricas y `http://localhost:8000/bots` para administrar bots.  El menú
+   superior permite cambiar entre las vistas sin reiniciar el servidor.
+
 Al terminar, consulta [docs/blueprint_map.md](docs/blueprint_map.md) para entender la correspondencia entre el blueprint y el código.
 
 ## Errores comunes
@@ -66,7 +74,9 @@ gracias al **paper trading** (simulación).
 - Backtester vectorizado y motor event‑driven con modelado de slippage.
 - **Panel web** con métricas en vivo y un **ejecutor de comandos CLI** que
   permite lanzar cualquier comando desde el navegador.  Incluye formularios
-  para configurar exchanges, claves API y estrategias sin usar la terminal.
+  para configurar exchanges, claves API y estrategias sin usar la terminal, y
+  una pestaña **Bots** para iniciar, pausar o detener procesos de trading de
+  forma visual.
 
 ## Funcionalidades extra
 
@@ -174,13 +184,14 @@ make down  # detiene y elimina los servicios
    make up
    ```
 
-3. Inicia el panel web con métricas y consola de comandos:
+3. Inicia la API y los dashboards:
 
    ```bash
-   uvicorn monitoring.panel:app --reload --port 8000
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
    ```
 
-   Luego visita `http://localhost:8000` en tu navegador.
+   `http://localhost:8000/` abre el dashboard de configuración y
+   `http://localhost:8000/monitor` el de monitoreo.
 
 ## Comandos CLI
 
