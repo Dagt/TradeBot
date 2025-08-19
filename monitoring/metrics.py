@@ -253,6 +253,13 @@ def metrics() -> dict:
     return metrics_summary()
 
 
+@router.get("/metrics/summary")
+def metrics_summary_route() -> dict:
+    """Expose a minimal summary of key metrics."""
+
+    return metrics_summary()
+
+
 @router.get("/metrics/prometheus")
 def metrics_prometheus() -> Response:
     """Expose Prometheus metrics for scraping."""
