@@ -13,7 +13,7 @@
 - **Ejecución** (router multi‑exchange, maker/taker, TWAP/VWAP/POV, OCO)
 - **Gestión de riesgo** (sizing por volatilidad, límites/correlación, kill‑switch, daily guard)
 - **Persistencia** (TimescaleDB/QuestDB)
-- **Monitoreo** (métricas Prometheus y panel FastAPI)
+- **Monitoreo** (métricas Prometheus y dashboards servidos por FastAPI)
 - **Paper‑trading** y **testnet**
 
 **No objetivos**: co‑location, HFT <1 ms, opciones complejas.
@@ -91,7 +91,7 @@
 ### 2.8 Monitoreo & Ops
 
 - **Prometheus** exporters: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized/unrealized`
-- **Panel FastAPI**: salud WS, posiciones, órdenes activas, PnL intradía, alertas
+- **Dashboards FastAPI**: vista de configuración y panel de monitoreo con salud WS, posiciones, PnL intradía y alertas
 - **Alertas**: falta de ticks, DD intradía, tasa de rechazos
 
 ---
@@ -261,7 +261,7 @@ La descripción detallada y ejemplos de uso están en
 ## 10) Monitoreo y panel
 
 - **Exporters Prometheus**: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized`, `pnl_unrealized`
-- **Panel FastAPI**: endpoints REST y vista web para: salud WS, posiciones/órdenes activas, PnL intradía, alertas y logs
+- **Dashboards FastAPI**: endpoints REST y vistas web para configuración, salud WS, posiciones/órdenes activas, PnL intradía, alertas y logs
 - **Alertas**: faltas de ticks (>30s), DD intradía, rechazos de órdenes
 
 ---
@@ -336,7 +336,7 @@ monitoring:
 | **5. Ejecución**    | `execution/router.py`, `execution/algos.py`, `execution/order_types.py`                | `run-bot --algo`, `run-cross-arb`                               |
 | **6. Persistencia** | `storage/timescale.py`, `storage/quest.py`                                             | `ingest*`, `report`                                             |
 | **7. Backtesting**  | `backtest/event_engine.py`, `backtesting/engine.py`, `backtesting/vectorbt_wrapper.py` | `backtest*`, `walk-forward`, `paper-run`                        |
-| **8. Monitoreo**    | `monitoring/panel.py`, `monitoring/metrics.py`, `utils/metrics.py`                     | `report`                                                        |
+| **8. Monitoreo**    | `monitoring/metrics.py`, `src/tradingbot/apps/api/static/index.html`, `src/tradingbot/apps/api/static/monitor.html`, `utils/metrics.py` | `report`                                                        |
 
 ---
 
