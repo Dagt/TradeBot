@@ -34,8 +34,9 @@
         <input id="bot-pairs" placeholder="BTC/USDT,ETH/USDT"/>
       </div>
       <div>
-        <label for="bot-notional">Notional (USDT)</label>
-        <div class="muted">Monto en USDT por operación</div>
+        <label for="bot-notional">Notional (USDT)
+          <span class="help-icon" title="Monto en USDT por operación">?</span>
+        </label>
         <input id="bot-notional" type="number" step="0.01"/>
       </div>
       <div id="field-exchange">
@@ -54,8 +55,9 @@
         </select>
       </div>
       <div id="field-trade-qty">
-        <label for="bot-trade-qty">Trade qty</label>
-        <div class="muted">Cantidad fija de unidades base por operación</div>
+        <label for="bot-trade-qty">Trade qty
+          <span class="help-icon" title="Cantidad fija de unidades base por operación">?</span>
+        </label>
         <input id="bot-trade-qty" type="number" step="0.0001"/>
       </div>
       <div id="field-leverage">
@@ -91,8 +93,9 @@
         <input id="bot-stop-loss-pct" type="number" step="0.0001" required/>
       </div>
       <div>
-        <label for="bot-max-drawdown-pct">Max drawdown %</label>
-        <div class="muted">Pérdida máxima permitida antes de detener el bot</div>
+        <label for="bot-max-drawdown-pct">Max drawdown %
+          <span class="help-icon" title="Pérdida máxima permitida antes de detener el bot">?</span>
+        </label>
         <input id="bot-max-drawdown-pct" type="number" step="0.0001" required/>
       </div>
       <div>
