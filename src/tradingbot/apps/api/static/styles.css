@@ -54,6 +54,43 @@ nav a:hover{
   margin: 0 auto 18px;
   filter: drop-shadow(var(--glow));
 }
+/* === Glow persistente detrás del logo, incluso con PNG transparente === */
+.logo-wrap{
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  margin-bottom: 18px;
+}
+
+/* ↓ glow más grande, menos intenso y un poco “hacia arriba” */
+.logo-wrap::before{
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset:-42px;              /* tamaño del halo */
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 45%,   /* 45% lo empuja un poco hacia arriba */
+      rgba(34,211,238,.28) 0%,
+      rgba(34,211,238,.16) 38%,
+      rgba(34,211,238,.06) 60%,
+      rgba(34,211,238,0) 82%);
+  filter: blur(20px);
+  pointer-events:none;
+  transform: translateY(-8px); /* ajuste fino vertical del glow */
+}
+
+/* Logo más grande y centrado */
+.logo{
+  position: relative;
+  z-index:1;
+  height:168px;             /* << antes 124px */
+  display:block;
+  margin: 0 auto 10px;
+  filter: drop-shadow(0 0 14px rgba(34,211,238,.22)); /* más sutil */
+}
+
+
 
 /* ====== Cards / métricas ====== */
 .card{
@@ -157,4 +194,55 @@ pre{
   padding:10px;
   border-radius:8px;
   overflow:auto;
+}
+
+/* ====== Menú minimal ====== */
+nav{
+  margin: 14px auto 28px;
+  text-align:center;
+}
+
+nav .menu{
+  display:inline-flex;
+  gap:20px;
+}
+
+nav a{
+  font-weight:600;
+  font-size:15px;
+  color:var(--muted);
+  text-decoration:none;
+  padding:8px 4px;
+  position: relative;
+  transition: color .15s ease;
+}
+
+/* Línea sutil debajo al pasar el mouse */
+nav a::after{
+  content:"";
+  position:absolute;
+  left:0;
+  bottom:-4px;
+  width:100%;
+  height:2px;
+  background:var(--primary);
+  transform: scaleX(0);
+  transform-origin:right;
+  transition: transform .25s ease;
+}
+
+nav a:hover{
+  color:var(--text);
+}
+nav a:hover::after{
+  transform: scaleX(1);
+  transform-origin:left;
+}
+
+/* Activo = color principal con subrayado fijo */
+nav a.active{
+  color:var(--primary);
+}
+nav a.active::after{
+  transform: scaleX(1);
 }
