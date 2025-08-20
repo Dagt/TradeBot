@@ -181,6 +181,45 @@ pip install -r requirements.txt
 pip install "vectorbt>=0.26"
 cp .env.example .env   # completa con tus claves
 ```
+
+## Instalación y uso en Windows
+
+1. Instala [Python 3.11](https://www.python.org/downloads/windows/) y [Git](https://git-scm.com/download/win). Durante la instalación de Python marca la casilla **Add Python to PATH**.
+2. Abre PowerShell o Git Bash y clona el repositorio:
+   ```powershell
+   git clone <repo>
+   cd TradeBot
+   ```
+3. Crea y activa un entorno virtual:
+   ```powershell
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+4. Instala las dependencias:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+   Opcionalmente habilita el backtester vectorizado:
+   ```powershell
+   pip install "vectorbt>=0.26"
+   ```
+5. Copia el archivo de entorno:
+   ```powershell
+   copy .env.example .env
+   ```
+6. (Opcional) Si tienes Docker Desktop, inicia los servicios:
+   ```powershell
+   docker compose up -d
+   ```
+   También puedes ejecutar `make up` desde Git Bash si dispones de `make`.
+7. Ejecuta el bot o la API:
+   ```powershell
+   python -m tradingbot.cli ingest
+   python -m tradingbot.cli backtest
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
+   ```
+   Luego visita `http://localhost:8000/` para acceder al panel web.
+
 ## Arranque rápido
 
 Inicia y detén los servicios de Docker con el Makefile:
