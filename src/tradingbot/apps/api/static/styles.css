@@ -185,6 +185,19 @@ button.ghost{
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
 
 /* ====== Helpers ====== */
+.help-icon{
+  display:inline-block;
+  width:14px;
+  height:14px;
+  line-height:12px;
+  text-align:center;
+  border:1px solid var(--muted);
+  border-radius:50%;
+  margin-left:4px;
+  cursor:help;
+  font-size:10px;
+  color:var(--muted);
+}
 .row{ display:grid; grid-template-columns: 1fr 1fr; gap:16px }
 .center{ text-align:center }
 
