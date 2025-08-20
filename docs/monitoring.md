@@ -3,6 +3,10 @@
 This project ships a minimal monitoring stack to track bot health and
 trading performance.
 
+Puedes obtener un resumen rápido de PnL desde la terminal con
+`python -m tradingbot.cli report` siempre que la base de datos esté
+disponible.
+
 ## FastAPI panel
 
 Run the monitoring panel with:

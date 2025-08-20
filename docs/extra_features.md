@@ -24,6 +24,8 @@ breakout), el bot incluye módulos listos para:
   profundidad de libro y desequilibrio de colas para scalping.
 
 Estas estrategias pueden ejecutarse en modo ``paper`` o en cuentas reales.
+Para habilitar trading en producción utiliza el comando `real-run` y
+confirma con la opción `--i-know-what-im-doing`.
 
 ## Adaptadores y conectores
 
@@ -34,6 +36,13 @@ La estructura es modular para facilitar la inclusión de nuevos exchanges.
 Ejemplo rápido para obtener trades de Bybit:
 ```bash
 python -m tradingbot.cli ingest --venue bybit_spot --symbol BTC/USDT
+```
+
+Para completar históricos existe el comando **backfill**, que descarga
+OHLCV y trades en bloque respetando los límites de cada API:
+
+```bash
+python -m tradingbot.cli backfill --days 30 --symbols BTC/USDT ETH/USDT
 ```
 
 ## Monitoreo y panel web

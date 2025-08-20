@@ -9,6 +9,9 @@ Mantener seguras las credenciales es fundamental. Algunas recomendaciones:
 - Revisa periódicamente los registros y rota las claves con regularidad.
 - Nunca compartas claves ni las publiques en repositorios.
 
+El comando `real-run` exige el flag `--i-know-what-im-doing` como medida de
+protección para evitar operar por accidente con fondos reales.
+
 Algunas funciones avanzadas (API web, panel de monitoreo, estrategias de
-arbitraje) también requieren considerar permisos y autenticación.
-Consulta [extra_features.md](extra_features.md) para más detalles.
+arbitraje) también requieren considerar permisos y autenticación. Consulta
+[extra_features.md](extra_features.md) para más detalles.

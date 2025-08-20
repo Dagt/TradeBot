@@ -4,9 +4,9 @@ Este documento enlaza los puntos del [blueprint inicial](../blueprint_trading_bo
 
 | Punto del blueprint | Módulos / archivos relevantes | Comandos de CLI |
 |---------------------|-------------------------------|-----------------|
-| **1. Ingesta de datos** | `adapters/`, `data/ingestion.py`, `workers/` | `python -m tradingbot.cli ingest`, `python -m tradingbot.cli ingest-historical`, `python -m tradingbot.cli ingestion-workers` |
+| **1. Ingesta de datos** | `adapters/`, `data/ingestion.py`, `workers/` | `python -m tradingbot.cli ingest`, `python -m tradingbot.cli backfill`, `python -m tradingbot.cli ingest-historical`, `python -m tradingbot.cli ingestion-workers` |
 | **2. Feature engineering** | `data/features.py`, `data/basis.py`, `data/open_interest.py` | – |
-| **3. Señal / estrategia** | `strategies/`, `live/runner*.py` – estrategias: `momentum`, `mean_reversion`, `breakout_atr`, `breakout_vol`, `order_flow`, `mean_rev_ofi`, `depth_imbalance`, `liquidity_events`, `cash_and_carry`, `cross_exchange_arbitrage`, `triangular_arb`, `arbitrage`, `triple_barrier` | `run-bot`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
+| **3. Señal / estrategia** | `strategies/`, `live/runner*.py` – estrategias: `momentum`, `mean_reversion`, `breakout_atr`, `breakout_vol`, `order_flow`, `mean_rev_ofi`, `depth_imbalance`, `liquidity_events`, `cash_and_carry`, `cross_exchange_arbitrage`, `triangular_arb`, `arbitrage`, `triple_barrier` | `run-bot`, `real-run`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
 | **4. Gestión de cartera y riesgo** | `risk/manager.py`, `risk/portfolio_guard.py`, `risk/daily_guard.py` | `run-bot`, `daemon` |
 | **5. Ejecución** | `execution/router.py`, `execution/algos.py`, `execution/order_types.py` | `run-bot --algo`, `run-cross-arb` |
 | **6. Persistencia** | `storage/timescale.py`, `storage/quest.py` | `ingest`, `ingest-historical`, `ingestion-workers`, `report` |

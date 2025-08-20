@@ -10,10 +10,12 @@ señales y ejecuta operaciones en los exchanges soportados.
   vía WebSocket.
 - **Histórico**: descargas REST de OHLCV, trades y snapshots de libro.
 - **Adaptadores**: módulos por exchange que normalizan símbolos y datos.
+- **Backfill**: comando dedicado para completar históricos en bloque.
 
 _Ejemplo:_
 ```bash
 python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20
+python -m tradingbot.cli backfill --days 7 --symbols BTC/USDT
 ```
 
 ## 2. Generación de features
@@ -64,6 +66,7 @@ Router multi‑exchange con algoritmos **TWAP**, **VWAP** y **POV**.  Soporta
 _Ejemplo:_
 ```bash
 python -m tradingbot.cli run-bot --exchange binance --symbol ETH/USDT --algo twap
+python -m tradingbot.cli real-run --exchange binance --symbol ETH/USDT --i-know-what-im-doing
 ```
 
 ## 6. Persistencia
