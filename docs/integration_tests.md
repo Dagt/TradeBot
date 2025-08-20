@@ -13,6 +13,9 @@ aproximadamente `2.85` unidades, calculado como la diferencia entre el precio
 de cierre final y el precio promedio de la orden ejecutada. Cualquier intento de
 exceder el límite de riesgo es rechazado.
 
+Los datos de prueba pueden obtenerse con `ingest-historical` o de forma más
+rápida con el comando `backfill`.
+
 ## Prueba de estrés de latencia y spreads
 
 El segundo escenario ejecuta el mismo flujo bajo un `StressConfig` que duplica la

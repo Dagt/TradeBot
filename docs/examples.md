@@ -3,6 +3,7 @@
 ## Ingesta de datos
 ```bash
 python -m tradingbot.cli ingest --symbol BTC/USDT
+python -m tradingbot.cli backfill --days 7 --symbols BTC/USDT
 ```
 
 ### Ingesta histórica
@@ -17,6 +18,7 @@ python -m tradingbot.cli ingest-historical coinapi BTC/USD --kind orderbook --de
 ```bash
 python -m tradingbot.cli run-bot --exchange binance --market spot --symbol BTC/USDT
 python -m tradingbot.cli run-bot --exchange binance --market futures --symbol BTC/USDT --leverage 5
+python -m tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing
 ```
 
 ## Backfill y backtesting vectorizado

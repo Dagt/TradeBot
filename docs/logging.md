@@ -27,6 +27,10 @@ except Exception:
 Esto facilita identificar rápidamente el punto exacto del fallo al revisar los
 logs.
 
+Todos los comandos de la CLI (`ingest`, `backfill`, `run-bot`, `real-run`, etc.)
+utilizan esta configuración de logging, por lo que los mensajes seguirán el
+mismo formato tanto en modo papel como en ejecución real.
+
 Para una descripción de funcionalidades avanzadas y cómo generan logs
 adicionales (arbitrajes, panel web, API), ver
 [extra_features.md](extra_features.md).

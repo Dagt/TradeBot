@@ -346,11 +346,11 @@ monitoring:
 
 | Punto del blueprint | Módulos / archivos                                                                     | Comandos CLI                                                    |
 | ------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| **1. Ingesta**      | `adapters/`, `data/ingestion.py`, `workers/`                                           | `ingest`, `ingest-historical`, `ingestion-workers`              |
+| **1. Ingesta**      | `adapters/`, `data/ingestion.py`, `workers/`                                           | `ingest`, `backfill`, `ingest-historical`, `ingestion-workers`  |
 | **2. Features**     | `data/features.py`, `data/basis.py`, `data/open_interest.py`                           | –                                                               |
-| **3. Estrategias**  | `strategies/`, `live/runner*.py`                                                       | `run-bot`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
-| **4. Riesgo**       | `risk/manager.py`, `risk/portfolio_guard.py`, `risk/daily_guard.py`                    | `run-bot`, `daemon`                                             |
-| **5. Ejecución**    | `execution/router.py`, `execution/algos.py`, `execution/order_types.py`                | `run-bot --algo`, `run-cross-arb`                               |
+| **3. Estrategias**  | `strategies/`, `live/runner*.py`                                                       | `run-bot`, `real-run`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
+| **4. Riesgo**       | `risk/manager.py`, `risk/portfolio_guard.py`, `risk/daily_guard.py`                    | `run-bot`, `real-run`, `daemon`                                |
+| **5. Ejecución**    | `execution/router.py`, `execution/algos.py`, `execution/order_types.py`                | `run-bot --algo`, `real-run --algo`, `run-cross-arb`            |
 | **6. Persistencia** | `storage/timescale.py`, `storage/quest.py`                                             | `ingest*`, `report`                                             |
 | **7. Backtesting**  | `backtest/event_engine.py`, `backtesting/engine.py`, `backtesting/vectorbt_wrapper.py` | `backtest*`, `walk-forward`, `paper-run`                        |
 | **8. Monitoreo**    | `monitoring/metrics.py`, `src/tradingbot/apps/api/static/index.html`, `src/tradingbot/apps/api/static/monitor.html`, `utils/metrics.py` | `report`                                                        |
@@ -430,7 +430,10 @@ monitoring:
 python -m src.tradingbot.cli ingest --venue binance --symbols BTCUSDT,ETHUSDT --persist
 
 # Backfill histórico 7 días
-python -m src.tradingbot.cli ingest-historical --venue binance --symbols BTCUSDT --days 7
+python -m src.tradingbot.cli backfill --days 7 --symbols BTC/USDT
+
+# Ingesta histórica con Kaiko
+python -m src.tradingbot.cli ingest-historical kaiko BTC-USDT --exchange binance --kind trades
 
 # Backtest estrategia Breakout ATR
 python -m src.tradingbot.cli backtest --strategy breakout_atr --config config/default.yaml
@@ -440,6 +443,9 @@ python -m src.tradingbot.cli paper-run --strategy breakout_atr --symbols BTCUSDT
 
 # Testnet multi‑símbolo (futuros)
 python -m src.tradingbot.cli testnet-run --venue binance_futures --symbols BTCUSDT,ETHUSDT --algo twap --oco
+
+# Operación real (requiere confirmación)
+python -m src.tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing
 ```
 
 ### Anexo B) Esquema SQL (borrador Timescale)

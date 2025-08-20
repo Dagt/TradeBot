@@ -10,7 +10,9 @@ control) se documentan en [extra_features.md](extra_features.md).
 
 ```bash
 python -m tradingbot.cli ingest --symbol BTC/USDT
+python -m tradingbot.cli backfill --days 7 --symbols BTC/USDT
 python -m tradingbot.cli run-bot --symbol BTC/USDT
+python -m tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing
 python -m tradingbot.cli backtest data/btcusdt_1m.csv --symbol BTC/USDT --strategy breakout_atr
 python -m tradingbot.cli paper-run --strategy breakout_atr --symbol BTC/USDT
 python -m tradingbot.cli backtest-cfg src/tradingbot/config/config.yaml

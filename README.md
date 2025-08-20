@@ -35,6 +35,11 @@ del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
    tradingbot ingest
    ```
 
+   (Opcional) para completar históricos:
+   ```bash
+   tradingbot backfill --days 7 --symbols BTC/USDT
+   ```
+
 5. **Ejecutar backtesting**
    ```bash
    tradingbot backtest
@@ -80,16 +85,6 @@ gracias al **paper trading** (simulación).
   La sección de bots incorpora un **ejecutor de comandos CLI** para
   lanzar cualquier comando desde el navegador y formularios para
   configurar estrategias sin usar la terminal.
-
-## Funcionalidades extra
-
-TradeBot incluye una serie de capacidades adicionales más allá del MVP
-original. Entre ellas se destacan las estrategias de arbitraje
-triangular y entre exchanges, señales basadas en microestructura,
-adaptadores para múltiples venues con soporte de testnet, un panel web
-que permite ejecutar comandos de la CLI y una API para control remoto.
-La descripción completa y ejemplos de uso se encuentran en
-[docs/extra_features.md](docs/extra_features.md).
 
 ## Funcionalidades extra
 
@@ -230,8 +225,10 @@ python -m tradingbot.cli <comando> [opciones]
 | `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20` |
 | `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
 | `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
+| `real-run` | Opera en el exchange real (requiere `--i-know-what-im-doing`) | `python -m tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing` |
 | `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr --config params.yaml` |
 | `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
+| `backfill` | Backfill de OHLCV y trades con rate limit | `python -m tradingbot.cli backfill --days 7 --symbols BTC/USDT ETH/USDT` |
 | `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
 | `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |
 | `backtest-cfg` | Backtest desde un YAML de configuración | `python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml` |

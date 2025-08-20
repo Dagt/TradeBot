@@ -21,6 +21,10 @@ Los módulos se comunican mediante un bus de eventos (`bus.py`) lo
 que permite desacoplar la generación de señales de la ejecución y
 el almacenamiento.
 
+La capa de CLI (`cli/main.py`) expone comandos como `ingest`, `backfill`,
+`run-bot`, `real-run`, `paper-run` o `backtest` para interactuar con estas
+piezas de forma sencilla.
+
 La carpeta `sql/` contiene los esquemas de base de datos y ejemplos
 de `docker-compose` para levantar servicios individuales. El stack
 completo de demostración se levanta con `docker-compose.yml` en la
