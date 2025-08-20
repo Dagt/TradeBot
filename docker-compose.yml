@@ -30,6 +30,7 @@ services:
     command: uvicorn tradingbot.apps.api.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./src:/app/src
+      - ./monitoring:/app/monitoring
     environment:
       - SENTRY_ENABLED=${SENTRY_ENABLED:-false}
       - SENTRY_DSN=${SENTRY_DSN:-}
