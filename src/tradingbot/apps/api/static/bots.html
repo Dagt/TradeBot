@@ -35,6 +35,7 @@
       </div>
       <div>
         <label for="bot-notional">Notional (USDT)</label>
+        <div class="muted">Monto en USDT por operación</div>
         <input id="bot-notional" type="number" step="0.01"/>
       </div>
       <div id="field-exchange">
@@ -54,6 +55,7 @@
       </div>
       <div id="field-trade-qty">
         <label for="bot-trade-qty">Trade qty</label>
+        <div class="muted">Cantidad fija de unidades base por operación</div>
         <input id="bot-trade-qty" type="number" step="0.0001"/>
       </div>
       <div id="field-leverage">
@@ -90,6 +92,7 @@
       </div>
       <div>
         <label for="bot-max-drawdown-pct">Max drawdown %</label>
+        <div class="muted">Pérdida máxima permitida antes de detener el bot</div>
         <input id="bot-max-drawdown-pct" type="number" step="0.0001" required/>
       </div>
       <div>
@@ -180,16 +183,25 @@ const api = (path) => `${location.origin}${path}`;
     }catch(e){}
   }
 
+  function updateMarketFields(){
+    const market=document.getElementById('bot-market').value;
+    const strat=document.getElementById('bot-strategy').value;
+    const cross=strat==='cross_arbitrage';
+    const lev=document.getElementById('field-leverage');
+    lev.style.display = (!cross && market==='futures') ? '' : 'none';
+  }
+
   async function updateForm(){
     const strat=document.getElementById('bot-strategy').value;
     const cross=strat==='cross_arbitrage';
-    ['field-exchange','field-market','field-trade-qty','field-leverage'].forEach(id=>{
+    ['field-exchange','field-market','field-trade-qty'].forEach(id=>{
       document.getElementById(id).style.display = cross ? 'none' : '';
     });
     ['field-spot','field-perp','field-threshold'].forEach(id=>{
       document.getElementById(id).style.display = cross ? '' : 'none';
     });
     await loadStrategyParams(strat);
+    updateMarketFields();
   }
 
 async function startBot(){
@@ -329,7 +341,9 @@ async function resetRisk(){
 
 document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
+document.getElementById('bot-market').addEventListener('change', updateMarketFields);
 loadStrategies();
+updateMarketFields();
 refreshBots();
 setInterval(refreshBots,5000);
 document.getElementById('cli-run').addEventListener('click', runCli);
