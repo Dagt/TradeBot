@@ -54,7 +54,6 @@ services:
       - "9090:9090"
     depends_on:
       - api
-      - alertmanager
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -62,6 +61,8 @@ services:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:
       - "9093:9093"
+    depends_on:
+      - api
 
   grafana:
     image: grafana/grafana:latest
@@ -78,6 +79,7 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+      - alertmanager
 
   questdb:
     image: questdb/questdb:latest
