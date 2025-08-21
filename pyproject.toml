@@ -17,6 +17,9 @@ vectorbt = ["vectorbt>=0.26"]
 package-dir = {"" = "src"}
 packages = ["tradingbot"]
 
+[tool.setuptools.package-data]
+"tradingbot" = ["db/*.sql"]
+
 [tool.pytest.ini_options]
 markers = [
     "optional: tests requiring optional dependencies",
