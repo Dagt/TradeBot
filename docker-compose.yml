@@ -73,7 +73,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ./monitoring/grafana/datasources/postgres.yml:/etc/grafana/provisioning/datasources/postgres.yml
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./monitoring/grafana/users:/etc/grafana/provisioning/users
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards

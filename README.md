@@ -27,6 +27,9 @@ del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
    ```bash
    docker compose up -d timescaledb api prometheus alertmanager grafana
    ```
+   Este comando ejecuta `docker-compose up` y levanta **Prometheus**,
+   **Alertmanager** y **Grafana** con dashboards y *data sources*
+   preconfigurados, sin pasos manuales posteriores.
 
 3. **Ingerir datos**
    ```bash
