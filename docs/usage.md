@@ -111,7 +111,7 @@ El repositorio incluye un `docker-compose.yml` que levanta la API junto con
 TimescaleDB, Prometheus y Grafana para visualización.
 
 ```bash
-docker compose up
+./entrypoint.sh
 ```
 
 Una vez levantados los servicios:
