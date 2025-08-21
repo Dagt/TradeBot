@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Optional
+from importlib import resources
 
 from prometheus_client import Histogram
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -87,8 +88,13 @@ class AsyncTimescaleClient:
         """
 
         if path is None:
-            path = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
-        schema_sql = Path(path).read_text()
+            try:
+                schema_sql = resources.files("tradingbot.db").joinpath("schema.sql").read_text()
+            except (FileNotFoundError, ModuleNotFoundError):
+                path = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
+                schema_sql = Path(path).read_text()
+        else:
+            schema_sql = Path(path).read_text()
         engine = await self.connect()
         async with engine.begin() as conn:
             for stmt in schema_sql.split(";"):
