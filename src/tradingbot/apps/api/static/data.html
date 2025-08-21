@@ -177,17 +177,24 @@ async function runData(){
     if(kind==='orderbook') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
   }
-  document.getElementById('dm-output').textContent='';
+  const out=document.getElementById('dm-output');
+  out.textContent='Iniciando...\n';
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
     currentJob=j.id;
     document.getElementById('dm-stop').disabled=false;
     evt=new EventSource(api(`/cli/stream/${j.id}`));
-    evt.onmessage=(e)=>{document.getElementById('dm-output').textContent+=e.data+'\n';};
-    evt.addEventListener('end',()=>{document.getElementById('dm-stop').disabled=true; currentJob=null; evt.close();});
+    evt.onmessage=(e)=>{out.textContent+=e.data+'\n';};
+    evt.addEventListener('end',(e)=>{
+      document.getElementById('dm-stop').disabled=true;
+      currentJob=null;
+      evt.close();
+      out.textContent+=`Proceso finalizado (código ${e.data}).\n`;
+    });
+    evt.onerror=()=>{out.textContent+='[error de conexión]\n';};
   }catch(e){
-    document.getElementById('dm-output').textContent=String(e);
+    out.textContent=String(e);
   }
 }
 
