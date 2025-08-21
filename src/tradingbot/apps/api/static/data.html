@@ -20,6 +20,8 @@
     <a href="/stats" class="">Estadísticas operativas</a>
     <a href="/data" class="active">Datos históricos</a>
     <a href="/backtest" class="">Backtest</a>
+    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
+    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
   </div>
 </nav>
 
@@ -65,7 +67,7 @@
         </select>
       </div>
       <div id="field-persist" style="display:flex;align-items:end">
-        <label><input type="checkbox" id="dm-persist"/> Persistir</label>
+        <label class="chk"><input type="checkbox" id="dm-persist"/><span>Persistir</span></label>
       </div>
       <div id="field-days">
         <label for="dm-days">Días</label>

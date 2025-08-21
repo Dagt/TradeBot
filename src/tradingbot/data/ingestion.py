@@ -12,6 +12,7 @@ from ..connectors.kaiko import KaikoConnector
 from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
+import inspect
 
 log = logging.getLogger(__name__)
 
@@ -739,7 +740,12 @@ async def run_orderbook_stream(
     storage = _get_storage(backend) if persist else None
 
     async def _orderbook() -> None:
-        async for d in adapter.stream_order_book(symbol, depth):
+        sig = inspect.signature(adapter.stream_order_book)
+        if "depth" in sig.parameters:
+            agen = adapter.stream_order_book(symbol, depth=depth)
+        else:
+            agen = adapter.stream_order_book(symbol)
+        async for d in agen:
             ob = OrderBook(
                 ts=d.get("ts", datetime.now(timezone.utc)),
                 exchange=getattr(adapter, "name", "unknown"),
@@ -809,7 +815,12 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
     """Stream L2 orderbook snapshots and persist them."""
     storage = _get_storage(backend)
     engine = storage.get_engine()
-    async for d in adapter.stream_order_book(symbol, depth):
+    sig = inspect.signature(adapter.stream_order_book)
+    if "depth" in sig.parameters:
+        agen = adapter.stream_order_book(symbol, depth=depth)
+    else:
+        agen = adapter.stream_order_book(symbol)
+    async for d in agen:
         data = {
             "ts": d.get("ts", datetime.now(timezone.utc)),
             "exchange": getattr(adapter, "name", "unknown"),

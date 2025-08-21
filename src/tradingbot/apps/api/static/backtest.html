@@ -20,6 +20,9 @@
     <a href="/stats" class="">Estadísticas operativas</a>
     <a href="/data" class="">Datos históricos</a>
     <a href="/backtest" class="active">Backtest</a>
+    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
+    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
+
   </div>
 </nav>
 
@@ -35,6 +38,7 @@
           <option value="csv">CSV</option>
           <option value="cfg">Config YAML</option>
           <option value="walk">Walk-forward</option>
+          <option value="db">Base de datos</option>
         </select>
       </div>
       <div id="field-data">
@@ -47,11 +51,23 @@
       </div>
       <div id="field-strategy">
         <label for="bt-strategy">Estrategia</label>
-        <input id="bt-strategy" placeholder="breakout_atr"/>
+        <select id="bt-strategy"></select>
       </div>
       <div id="field-config">
         <label for="bt-config">Archivo config</label>
         <input id="bt-config" placeholder="config.yaml"/>
+      </div>
+      <div id="field-venue">
+        <label for="bt-venue">Exchange</label>
+        <input id="bt-venue" placeholder="binance"/>
+      </div>
+      <div id="field-start">
+        <label for="bt-start">Inicio</label>
+        <input id="bt-start" type="date"/>
+      </div>
+      <div id="field-end">
+        <label for="bt-end">Fin</label>
+        <input id="bt-end" type="date"/>
       </div>
     </div>
     <div class="muted" style="margin-top:8px">Los resultados y reportes se muestran abajo y pueden guardarse en archivos según la configuración.</div>
@@ -70,12 +86,28 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+async function loadStrategies(){
+  try{
+    const r=await fetch(api('/strategies/status'));
+    const j=await r.json();
+    const sel=document.getElementById('bt-strategy');
+    sel.innerHTML='';
+    Object.keys(j.strategies||{}).forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s;o.textContent=s;sel.appendChild(o);
+    });
+  }catch(e){}
+}
+
 function updateBtFields(){
   const mode=document.getElementById('bt-mode').value;
   document.getElementById('field-data').style.display=mode==='csv'?'':'none';
-  document.getElementById('field-symbol').style.display=mode==='csv'?'':'none';
-  document.getElementById('field-strategy').style.display=mode==='csv'?'':'none';
-  document.getElementById('field-config').style.display=mode==='csv'?'none':'';
+  document.getElementById('field-symbol').style.display=(mode==='csv'||mode==='db')?'':'none';
+  document.getElementById('field-strategy').style.display=(mode==='csv'||mode==='db')?'':'none';
+  document.getElementById('field-config').style.display=(mode==='cfg'||mode==='walk')?'':'none';
+  document.getElementById('field-venue').style.display=mode==='db'?'':'none';
+  document.getElementById('field-start').style.display=mode==='db'?'':'none';
+  document.getElementById('field-end').style.display=mode==='db'?'':'none';
 }
 
 async function runBacktest(){
@@ -89,9 +121,16 @@ async function runBacktest(){
   }else if(mode==='cfg'){
     const cfg=document.getElementById('bt-config').value.trim();
     cmd=`backtest-cfg ${cfg}`;
-  }else{
+  }else if(mode==='walk'){
     const cfg=document.getElementById('bt-config').value.trim();
     cmd=`walk-forward ${cfg}`;
+  }else{
+    const venue=document.getElementById('bt-venue').value.trim();
+    const sym=document.getElementById('bt-symbol').value.trim();
+    const strat=document.getElementById('bt-strategy').value.trim();
+    const start=document.getElementById('bt-start').value;
+    const end=document.getElementById('bt-end').value;
+    cmd=`backtest-db --exchange ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
   }
   try{
     const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
@@ -120,6 +159,7 @@ document.getElementById('bt-mode').addEventListener('change',updateBtFields);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('cli-run').addEventListener('click',runCli);
 updateBtFields();
+loadStrategies();
 </script>
 </body>
 </html>
