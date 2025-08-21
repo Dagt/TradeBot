@@ -29,6 +29,9 @@ del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
    ```bash
    make up
    ```
+   Este comando ejecuta `docker-compose up` y levanta **Prometheus**,
+   **Alertmanager** y **Grafana** con dashboards y *data sources*
+   preconfigurados, sin pasos manuales posteriores.
 
 4. **Ingerir datos**
    ```bash
