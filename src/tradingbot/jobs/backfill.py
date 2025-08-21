@@ -45,6 +45,7 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
     client = AsyncTimescaleClient()
+    await client.ensure_schema()
     client.register_table("market.bars", INSERT_BAR_SQL)
     client.register_table("market.trades", INSERT_TRADE_SQL)
 
