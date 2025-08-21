@@ -549,7 +549,7 @@ async def _stream_process(proc: asyncio.subprocess.Process):
 
     try:
         while True:
-            if proc.returncode is not None and queue.empty():
+            if proc.stdout.at_eof() and proc.stderr.at_eof() and queue.empty():
                 break
             try:
                 line = await asyncio.wait_for(queue.get(), 0.1)

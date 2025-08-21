@@ -7,8 +7,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 import ccxt.async_support as ccxt
+import logging
 
 from ..storage.async_timescale import AsyncTimescaleClient
+
+logger = logging.getLogger(__name__)
 
 
 INSERT_BAR_SQL = """
@@ -41,6 +44,7 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
 async def backfill(days: int, symbols: Sequence[str]) -> None:
     """Backfill OHLCV bars and trades for *symbols* over the past *days* days."""
 
+    logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
     ex = ccxt.binance({"enableRateLimit": False})
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
@@ -54,6 +58,7 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
 
     try:
         for symbol in symbols:
+            logger.info("Procesando %s", symbol)
             db_symbol = symbol.replace("/", "")
 
             # --- OHLCV backfill -------------------------------------------------
@@ -113,8 +118,10 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
                         },
                     )
                 since = trades[-1]["timestamp"] + 1
+            logger.info("Completado %s", symbol)
 
     finally:
         await client.stop()
         await ex.close()
+        logger.info("Backfill finalizado")
 
