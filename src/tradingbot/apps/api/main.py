@@ -517,7 +517,7 @@ async def cli_start(req: CLIRequest):
     """Start a CLI command in the background and return an ID."""
 
     args = shlex.split(req.command)
-    cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    cmd = [sys.executable, "-u", "-m", "tradingbot.cli", *args]
     env = os.environ.copy()
     repo_root = Path(__file__).resolve().parents[3]
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
