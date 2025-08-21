@@ -1,6 +1,6 @@
 # src/tradingbot/apps/api/main.py
 from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -13,6 +13,7 @@ import sys
 import shlex
 import asyncio
 import signal
+import uuid
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -505,6 +506,88 @@ def run_cli(req: CLIRequest):
         }
     except Exception as exc:  # pragma: no cover - subprocess failures
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Background CLI processes keyed by an ID
+_CLI_PROCS: dict[str, asyncio.subprocess.Process] = {}
+
+
+@app.post("/cli/start")
+async def cli_start(req: CLIRequest):
+    """Start a CLI command in the background and return an ID."""
+
+    args = shlex.split(req.command)
+    cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    job_id = uuid.uuid4().hex
+    _CLI_PROCS[job_id] = proc
+    return {"id": job_id}
+
+
+async def _stream_process(proc: asyncio.subprocess.Process):
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def reader(stream: asyncio.StreamReader):
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            await queue.put(line.decode())
+
+    tasks = [
+        asyncio.create_task(reader(proc.stdout)),
+        asyncio.create_task(reader(proc.stderr)),
+    ]
+
+    try:
+        while True:
+            if proc.returncode is not None and queue.empty():
+                break
+            try:
+                line = await asyncio.wait_for(queue.get(), 0.1)
+            except asyncio.TimeoutError:
+                continue
+            yield f"data: {line.rstrip()}\n\n"
+    finally:
+        for t in tasks:
+            t.cancel()
+
+
+@app.get("/cli/stream/{job_id}")
+async def cli_stream(job_id: str):
+    """Stream output from a running CLI job as server-sent events."""
+
+    proc = _CLI_PROCS.get(job_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    async def event_gen():
+        async for chunk in _stream_process(proc):
+            yield chunk
+        returncode = await proc.wait()
+        yield f"event: end\ndata: {returncode}\n\n"
+        _CLI_PROCS.pop(job_id, None)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.post("/cli/stop/{job_id}")
+async def cli_stop(job_id: str):
+    """Terminate a running CLI job."""
+
+    proc = _CLI_PROCS.get(job_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="job not found")
+    proc.terminate()
+    return {"status": "terminated"}
 
 
 # --- Bot lifecycle --------------------------------------------------------------

@@ -36,6 +36,7 @@
         <select id="dm-action">
           <option value="ingest">Ingesta</option>
           <option value="backfill">Backfill</option>
+          <option value="ingest-historical">Ingesta histórica</option>
         </select>
       </div>
       <div id="field-venue">
@@ -67,15 +68,52 @@
         </select>
       </div>
       <div id="field-persist" style="display:flex;align-items:end">
-        <label class="chk"><input type="checkbox" id="dm-persist"/><span>Persistir</span></label>
+        <label class="chk"><input type="checkbox" id="dm-persist"/><span>Persistir <span class="help-icon" title="Guarda los datos en la base de datos para uso futuro">?</span></span></label>
       </div>
       <div id="field-days">
         <label for="dm-days">Días</label>
         <input id="dm-days" type="number" value="1"/>
       </div>
+      <div id="field-source">
+        <label for="dm-source">Fuente</label>
+        <select id="dm-source">
+          <option value="kaiko">kaiko</option>
+          <option value="coinapi">coinapi</option>
+        </select>
+      </div>
+      <div id="field-exchange">
+        <label for="dm-exchange">Exchange</label>
+        <input id="dm-exchange" placeholder="binance"/>
+      </div>
+      <div id="field-hkind">
+        <label for="dm-hkind">Tipo</label>
+        <select id="dm-hkind">
+          <option value="trades">trades</option>
+          <option value="orderbook">orderbook</option>
+          <option value="open_interest">open_interest</option>
+          <option value="funding">funding</option>
+        </select>
+      </div>
+      <div id="field-hdepth">
+        <label for="dm-hdepth">Profundidad</label>
+        <input id="dm-hdepth" type="number" value="10"/>
+      </div>
+      <div id="field-hlimit">
+        <label for="dm-hlimit">Límite</label>
+        <input id="dm-hlimit" type="number" value="100"/>
+      </div>
+      <div id="field-backend">
+        <label for="dm-backend">Backend</label>
+        <select id="dm-backend">
+          <option value="timescale">timescale</option>
+          <option value="quest">quest</option>
+          <option value="csv">csv</option>
+        </select>
+      </div>
     </div>
     <div class="muted" style="margin-top:8px">Los datos se guardan en el backend configurado. Puedes analizarlos en <a href="/stats">Estadísticas</a> u otras herramientas.</div>
     <button id="dm-run" style="margin-top:10px">Ejecutar</button>
+    <button id="dm-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
     <pre id="dm-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
@@ -89,6 +127,8 @@
 
 <script>
 const api = (path) => `${location.origin}${path}`;
+let currentJob=null;
+let evt=null;
 
 function updateFields(){
   const act=document.getElementById('dm-action').value;
@@ -97,9 +137,21 @@ function updateFields(){
   document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
   document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
   document.getElementById('field-days').style.display=act==='backfill'?'':'none';
+  const hist=act==='ingest-historical';
+  document.getElementById('field-source').style.display=hist?'':'none';
+  document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
+  document.getElementById('field-hkind').style.display=hist?'':'none';
+  const hk=document.getElementById('dm-hkind').value;
+  document.getElementById('field-hdepth').style.display=hist && hk==='orderbook'?'':'none';
+  document.getElementById('field-hlimit').style.display=hist && hk==='trades'?'':'none';
+  document.getElementById('field-backend').style.display=hist?'':'none';
 }
 
+document.getElementById('dm-source').addEventListener('change',updateFields);
+document.getElementById('dm-hkind').addEventListener('change',updateFields);
+
 async function runData(){
+  if(evt){evt.close();evt=null;}
   const act=document.getElementById('dm-action').value;
   const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
   let cmd='';
@@ -109,28 +161,54 @@ async function runData(){
     const kind=document.getElementById('dm-kind').value;
     const persist=document.getElementById('dm-persist').checked;
     cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind}`+(persist?' --persist':'');
-  }else{
+  }else if(act==='backfill'){
     const days=document.getElementById('dm-days').value;
     cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+  }else{
+    const src=document.getElementById('dm-source').value;
+    const sym=document.getElementById('dm-symbols').value.trim();
+    const ex=document.getElementById('dm-exchange').value.trim();
+    const kind=document.getElementById('dm-hkind').value;
+    const depth=document.getElementById('dm-hdepth').value;
+    const limit=document.getElementById('dm-hlimit').value;
+    const backend=document.getElementById('dm-backend').value;
+    cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
+    if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
+    if(kind==='orderbook') cmd+=` --depth ${depth}`;
+    if(kind==='trades') cmd+=` --limit ${limit}`;
   }
+  document.getElementById('dm-output').textContent='';
   try{
-    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
-    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
-    document.getElementById('dm-output').textContent=out;
+    currentJob=j.id;
+    document.getElementById('dm-stop').disabled=false;
+    evt=new EventSource(api(`/cli/stream/${j.id}`));
+    evt.onmessage=(e)=>{document.getElementById('dm-output').textContent+=e.data+'\n';};
+    evt.addEventListener('end',()=>{document.getElementById('dm-stop').disabled=true; currentJob=null; evt.close();});
   }catch(e){
     document.getElementById('dm-output').textContent=String(e);
   }
 }
 
+async function stopData(){
+  if(!currentJob) return;
+  try{await fetch(api(`/cli/stop/${currentJob}`),{method:'POST'});}catch(e){}
+  if(evt) evt.close();
+  document.getElementById('dm-stop').disabled=true;
+  currentJob=null;
+}
+
 async function runCli(){
-  const cmd=document.getElementById('cli-input').value;
-  if(!cmd.trim()) return;
+  const cmd=document.getElementById('cli-input').value.trim();
+  if(!cmd) return;
+  document.getElementById('cli-output').textContent='';
   try{
-    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
-    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
-    document.getElementById('cli-output').textContent=out;
+    const ev=new EventSource(api(`/cli/stream/${j.id}`));
+    ev.onmessage=(e)=>{document.getElementById('cli-output').textContent+=e.data+'\n';};
+    ev.addEventListener('end',()=>ev.close());
   }catch(e){
     document.getElementById('cli-output').textContent=String(e);
   }
@@ -138,6 +216,7 @@ async function runCli(){
 
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
+document.getElementById('dm-stop').addEventListener('click',stopData);
 document.getElementById('cli-run').addEventListener('click',runCli);
 updateFields();
 </script>
