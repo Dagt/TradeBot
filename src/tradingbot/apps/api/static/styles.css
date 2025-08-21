@@ -156,24 +156,75 @@ textarea:focus,input:focus,select:focus{
 }
 label{ font-size:12px; color:var(--muted); display:block; margin:8px 0 4px }
 
+/* ====== Botones ghost/minimal ====== */
 button{
-  background: linear-gradient(90deg, var(--primary), var(--primary-2));
-  color:#03131a;
-  border:none;
-  padding:10px 14px;
-  border-radius:10px;
-  cursor:pointer;
-  font-weight:700;
-  letter-spacing:.2px;
-  transition: transform .12s, box-shadow .12s, filter .12s;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid #314156;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: .2px;
+  transition: color .15s ease, border-color .15s ease, background .15s ease, transform .08s ease;
 }
-button:hover{ transform: translateY(-1px); box-shadow: 0 6px 14px rgba(59,130,246,.35) }
-button:active{ transform: translateY(0) scale(.99) }
-button.danger{ background: linear-gradient(90deg, #ef4444, #f97316); color:#fff }
-button.warn{ background: linear-gradient(90deg, #facc15, #fb923c) }
+
+button:hover{
+  background: rgba(255,255,255,.04);
+  border-color: #3b4a63;
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+button:active{
+  transform: translateY(0);
+}
+
+/* enfoque accesible */
+button:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(34,211,238,.25);
+}
+
+/* variantes */
+button.primary{
+  color: var(--primary);
+  border-color: rgba(34,211,238,.45);
+}
+button.primary:hover{
+  background: rgba(34,211,238,.08);
+}
+
+button.warn{
+  color: var(--warning);
+  border-color: rgba(250,204,21,.45);
+}
+button.warn:hover{
+  background: rgba(250,204,21,.08);
+}
+
+button.danger{
+  color: var(--danger);
+  border-color: rgba(239,68,68,.45);
+}
+button.danger:hover{
+  background: rgba(239,68,68,.08);
+}
+
 button.ghost{
-  background:transparent; color:var(--text); border:1px solid #314156;
+  color: var(--muted);
+  border-color: #314156;
 }
+button.ghost:hover{
+  color: var(--text);
+  border-color: #3b4a63;
+  background: rgba(255,255,255,.02);
+}
+
+/* tamaños */
+button.btn-sm{ padding: 6px 12px; font-size: 13px }
+button.btn-xs{ padding: 4px 8px; font-size: 12px }
+
 
 /* ====== Badges / estados ====== */
 .badge{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid #334155 }
