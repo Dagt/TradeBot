@@ -154,6 +154,26 @@ def stats_page():
     except Exception:
         return {"message": "Sube el dashboard en /static/stats.html"}
 
+
+# Servir data.html en "/data"
+@app.get("/data")
+def data_page():
+    try:
+        html = (_static_dir / "data.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/data.html"}
+
+
+# Servir backtest.html en "/backtest"
+@app.get("/backtest")
+def backtest_page():
+    try:
+        html = (_static_dir / "backtest.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/backtest.html"}
+
 # Compatibilidad: redirige "/monitor" a "/stats"
 @app.get("/monitor")
 def monitor_redirect():

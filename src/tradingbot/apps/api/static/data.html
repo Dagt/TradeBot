@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <link rel="icon" href="/static/favicon.ico">
+  <title>DMI - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header class="center" style="margin-bottom:8px">
+  <div class="logo-wrap">
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
+</div>
+
+  <nav>
+  <div class="menu">
+    <a href="/" class="">Monitoreo</a>
+    <a href="/bots" class="">Bots</a>
+    <a href="/stats" class="">Estadísticas operativas</a>
+    <a href="/data" class="active">Datos históricos</a>
+    <a href="/backtest" class="">Backtest</a>
+  </div>
+</nav>
+
+</header>
+  <h1>Datos históricos</h1>
+
+  <div class="card">
+    <h2>Gestión de datos</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="dm-action">Acción</label>
+        <select id="dm-action">
+          <option value="ingest">Ingesta</option>
+          <option value="backfill">Backfill</option>
+        </select>
+      </div>
+      <div id="field-venue">
+        <label for="dm-venue">Venue</label>
+        <select id="dm-venue">
+          <option value="binance_spot">Binance Spot</option>
+          <option value="binance_futures_um">Binance Futuros</option>
+          <option value="bybit_spot">Bybit Spot</option>
+          <option value="okx_spot">OKX Spot</option>
+        </select>
+      </div>
+      <div id="field-symbols">
+        <label for="dm-symbols">Símbolos (coma)</label>
+        <input id="dm-symbols" placeholder="BTC/USDT,ETH/USDT"/>
+      </div>
+      <div id="field-depth">
+        <label for="dm-depth">Profundidad</label>
+        <input id="dm-depth" type="number" value="10"/>
+      </div>
+      <div id="field-kind">
+        <label for="dm-kind">Tipo</label>
+        <select id="dm-kind">
+          <option value="orderbook">orderbook</option>
+          <option value="trades">trades</option>
+          <option value="bba">bba</option>
+          <option value="delta">delta</option>
+          <option value="funding">funding</option>
+          <option value="oi">oi</option>
+        </select>
+      </div>
+      <div id="field-persist" style="display:flex;align-items:end">
+        <label><input type="checkbox" id="dm-persist"/> Persistir</label>
+      </div>
+      <div id="field-days">
+        <label for="dm-days">Días</label>
+        <input id="dm-days" type="number" value="1"/>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:8px">Los datos se guardan en el backend configurado. Puedes analizarlos en <a href="/stats">Estadísticas</a> u otras herramientas.</div>
+    <button id="dm-run" style="margin-top:10px">Ejecutar</button>
+    <pre id="dm-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <input id="cli-input" class="mono" placeholder="--help"/>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+
+function updateFields(){
+  const act=document.getElementById('dm-action').value;
+  document.getElementById('field-venue').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-depth').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-days').style.display=act==='backfill'?'':'none';
+}
+
+async function runData(){
+  const act=document.getElementById('dm-action').value;
+  const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
+  let cmd='';
+  if(act==='ingest'){
+    const venue=document.getElementById('dm-venue').value;
+    const depth=document.getElementById('dm-depth').value;
+    const kind=document.getElementById('dm-kind').value;
+    const persist=document.getElementById('dm-persist').checked;
+    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind}`+(persist?' --persist':'');
+  }else{
+    const days=document.getElementById('dm-days').value;
+    cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+  }
+  try{
+    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
+    document.getElementById('dm-output').textContent=out;
+  }catch(e){
+    document.getElementById('dm-output').textContent=String(e);
+  }
+}
+
+async function runCli(){
+  const cmd=document.getElementById('cli-input').value;
+  if(!cmd.trim()) return;
+  try{
+    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
+    document.getElementById('cli-output').textContent=out;
+  }catch(e){
+    document.getElementById('cli-output').textContent=String(e);
+  }
+}
+
+document.getElementById('dm-action').addEventListener('change',updateFields);
+document.getElementById('dm-run').addEventListener('click',runData);
+document.getElementById('cli-run').addEventListener('click',runCli);
+updateFields();
+</script>
+</body>
+</html>
