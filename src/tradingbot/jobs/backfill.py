@@ -8,6 +8,7 @@ from typing import Sequence
 
 import ccxt.async_support as ccxt
 import logging
+from sqlalchemy import text
 
 from ..storage.async_timescale import AsyncTimescaleClient
 
@@ -19,6 +20,7 @@ INSERT_BAR_SQL = """
         (ts, timeframe, exchange, symbol, o, h, l, c, v)
     VALUES
         (:ts, :timeframe, :exchange, :symbol, :o, :h, :l, :c, :v)
+    ON CONFLICT DO NOTHING
 """
 
 INSERT_TRADE_SQL = """
@@ -26,6 +28,7 @@ INSERT_TRADE_SQL = """
         (ts, exchange, symbol, px, qty, side, trade_id)
     VALUES
         (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+    ON CONFLICT DO NOTHING
 """
 
 
@@ -39,6 +42,23 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
             if attempt >= retries:
                 raise
             await asyncio.sleep(delay * 2 ** (attempt - 1))
+
+
+async def _last_ts(client: AsyncTimescaleClient, table: str, exchange: str, symbol: str):
+    """Return the last timestamp stored for *table*/*exchange*/*symbol*.
+
+    Returns ``None`` if the table has no rows for the pair.
+    """
+
+    engine = await client.connect()
+    async with engine.connect() as conn:
+        res = await conn.execute(
+            text(
+                f"SELECT max(ts) FROM {table} WHERE exchange=:exchange AND symbol=:symbol"
+            ),
+            {"exchange": exchange, "symbol": symbol},
+        )
+        return res.scalar_one_or_none()
 
 
 async def backfill(days: int, symbols: Sequence[str]) -> None:
@@ -62,7 +82,8 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
             db_symbol = symbol.replace("/", "")
 
             # --- OHLCV backfill -------------------------------------------------
-            since = start_ms
+            last_bar = await _last_ts(client, "market.bars", ex.id, db_symbol)
+            since = max(start_ms, int(last_bar.timestamp() * 1000) + 60_000) if last_bar else start_ms
             while since < end_ms:
                 ohlcvs = await _retry(
                     ex.fetch_ohlcv,
@@ -94,7 +115,8 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
                 since = ohlcvs[-1][0] + 60_000
 
             # --- Trades backfill -----------------------------------------------
-            since = start_ms
+            last_trade = await _last_ts(client, "market.trades", ex.id, db_symbol)
+            since = max(start_ms, int(last_trade.timestamp() * 1000) + 1) if last_trade else start_ms
             while since < end_ms:
                 trades = await _retry(
                     ex.fetch_trades, symbol, since, 1000, delay=delay

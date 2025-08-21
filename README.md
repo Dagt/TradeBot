@@ -19,21 +19,19 @@ del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
    cd TradeBot
    ```
 
-2. **Crear `.env`**
-   Copia el archivo `.env.example` a `.env` y completa las credenciales.
+2. **Levantar los servicios**
    ```bash
-   cp .env.example .env
+   ./entrypoint.sh
    ```
-
-3. **Levantar los servicios**
+   También puedes ejecutar directamente:
    ```bash
-   make up
+   docker compose up -d timescaledb api prometheus alertmanager grafana
    ```
    Este comando ejecuta `docker-compose up` y levanta **Prometheus**,
    **Alertmanager** y **Grafana** con dashboards y *data sources*
    preconfigurados, sin pasos manuales posteriores.
 
-4. **Ingerir datos**
+3. **Ingerir datos**
    ```bash
    tradingbot ingest
    ```
@@ -43,12 +41,12 @@ del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
    tradingbot backfill --days 7 --symbols BTC/USDT
    ```
 
-5. **Ejecutar backtesting**
+4. **Ejecutar backtesting**
    ```bash
    tradingbot backtest
    ```
 
-6. **Iniciar dashboards**
+5. **Iniciar dashboards**
    ```bash
    uvicorn tradingbot.apps.api.main:app --reload --port 8000
    ```
@@ -206,16 +204,11 @@ cp .env.example .env   # completa con tus claves
    ```powershell
    pip install "vectorbt>=0.26"
    ```
-5. Copia el archivo de entorno:
+5. Inicia los servicios:
    ```powershell
-   copy .env.example .env
+   docker compose up -d timescaledb api prometheus alertmanager grafana
    ```
-6. (Opcional) Si tienes Docker Desktop, inicia los servicios:
-   ```powershell
-   docker compose up -d
-   ```
-   También puedes ejecutar `make up` desde Git Bash si dispones de `make`.
-7. Ejecuta el bot o la API:
+6. Ejecuta el bot o la API:
    ```powershell
    python -m tradingbot.cli ingest
    python -m tradingbot.cli backtest
@@ -225,22 +218,22 @@ cp .env.example .env   # completa con tus claves
 
 ## Arranque rápido
 
-Inicia y detén los servicios de Docker con el Makefile:
+Inicia y detén los servicios de Docker:
 
 ```bash
-make up    # levanta los servicios en segundo plano
-make logs  # sigue los logs de todos los contenedores
-make down  # detiene y elimina los servicios
+./entrypoint.sh   # levanta los servicios en segundo plano
+docker compose logs -f  # sigue los logs de todos los contenedores
+docker compose down  # detiene y elimina los servicios
 ```
 ## Configuración inicial
 
-1. Copia `.env.example` a `.env` y completa tus claves API (`BINANCE_KEY`,
+1. (Opcional) Copia `.env.example` a `.env` y completa tus claves API (`BINANCE_KEY`,
    `BINANCE_SECRET`, etc.). Para pruebas en modo papel puedes dejar los
    valores vacíos.
-2. (Opcional) Levanta la base de datos y el stack de monitoreo con Docker:
+2. Levanta la base de datos y el stack de monitoreo con Docker:
 
    ```bash
-   make up
+   ./entrypoint.sh
    ```
 
 3. Inicia la API y los dashboards:

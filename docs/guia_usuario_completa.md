@@ -47,7 +47,7 @@ source venv/bin/activate  # En Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-5. Copia las variables de ejemplo y completa tus credenciales:
+5. (Opcional) Copia las variables de ejemplo y completa tus credenciales:
 
 ```bash
 cp .env.example .env
@@ -57,10 +57,10 @@ En el archivo `.env` encontrarás espacios para poner tus claves de Binance,
 Bybit u otros exchanges. Si sólo harás pruebas con datos históricos o en modo
 simulación puedes dejarlos vacíos.
 
-6. (Opcional) Levanta la base de datos y el panel de monitoreo con Docker:
+6. Levanta la base de datos y el panel de monitoreo con Docker:
 
 ```bash
-make up
+./entrypoint.sh
 ```
 
 Esto descargará los contenedores y los dejará listos. Más adelante podrás
@@ -286,7 +286,7 @@ subida. Se compra cuando esa probabilidad supera un umbral.
 
 ## 6. Panel web y API
 
-Con los contenedores levantados (`make up`) puedes acceder a:
+Con los contenedores levantados (`./entrypoint.sh`) puedes acceder a:
 
 * **API y panel**: <http://localhost:8000>
 * **Prometheus**: <http://localhost:9090>
