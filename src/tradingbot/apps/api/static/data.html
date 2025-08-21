@@ -152,6 +152,9 @@ document.getElementById('dm-hkind').addEventListener('change',updateFields);
 
 async function runData(){
   if(evt){evt.close();evt=null;}
+  const runBtn=document.getElementById('dm-run');
+  runBtn.disabled=true;
+  runBtn.textContent='Ejecutando...';
   const act=document.getElementById('dm-action').value;
   const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
   let cmd='';
@@ -188,13 +191,21 @@ async function runData(){
     evt.onmessage=(e)=>{out.textContent+=e.data+'\n';};
     evt.addEventListener('end',(e)=>{
       document.getElementById('dm-stop').disabled=true;
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
       currentJob=null;
       evt.close();
       out.textContent+=`Proceso finalizado (código ${e.data}).\n`;
     });
-    evt.onerror=()=>{out.textContent+='[error de conexión]\n';};
+    evt.onerror=()=>{
+      out.textContent+='[error de conexión]\n';
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
+    };
   }catch(e){
     out.textContent=String(e);
+    runBtn.disabled=false;
+    runBtn.textContent='Ejecutar';
   }
 }
 
@@ -203,6 +214,9 @@ async function stopData(){
   try{await fetch(api(`/cli/stop/${currentJob}`),{method:'POST'});}catch(e){}
   if(evt) evt.close();
   document.getElementById('dm-stop').disabled=true;
+  const runBtn=document.getElementById('dm-run');
+  runBtn.disabled=false;
+  runBtn.textContent='Ejecutar';
   currentJob=null;
 }
 
