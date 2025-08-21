@@ -258,7 +258,17 @@ pre{
   padding:10px;
   border-radius:8px;
   overflow:auto;
+  max-height:300px;
 }
+
+input[type="checkbox"]{
+  width:16px;
+  height:16px;
+  accent-color:var(--primary);
+  vertical-align:middle;
+  margin-right:4px;
+}
+.chk{display:flex;align-items:center;font-size:12px;color:var(--muted);margin:8px 0 4px}
 
 /* ====== Menú minimal ====== */
 nav{

@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from datetime import datetime
 
 from sqlalchemy import create_engine, text
 
@@ -142,6 +143,35 @@ def insert_cross_signal(engine, *, symbol: str, spot_exchange: str, perp_exchang
             VALUES (:symbol, :spot_exchange, :perp_exchange, :spot_px, :perp_px, :edge)
         '''), dict(symbol=symbol, spot_exchange=spot_exchange, perp_exchange=perp_exchange,
                    spot_px=spot_px, perp_px=perp_px, edge=edge))
+
+def select_bars(
+    engine,
+    *,
+    exchange: str,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    timeframe: str = "1m",
+) -> list[dict[str, Any]]:
+    """Load OHLCV bars from TimescaleDB."""
+    with engine.begin() as conn:
+        rows = (
+            conn.execute(
+                text(
+                    """
+            SELECT ts, o, h, l, c, v
+            FROM market.bars
+            WHERE exchange = :exchange AND symbol = :symbol
+              AND timeframe = :tf AND ts BETWEEN :start AND :end
+            ORDER BY ts
+            """
+                ),
+                dict(exchange=exchange, symbol=symbol, tf=timeframe, start=start, end=end),
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(r) for r in rows]
 
 # --- Lecturas simples para API ---
 

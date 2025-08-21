@@ -598,6 +598,48 @@ def backtest_cfg(config: str) -> None:
         sys.argv = old_argv
 
 
+@app.command("backtest-db")
+def backtest_db(
+    exchange: str = typer.Option("binance", help="Exchange name"),
+    symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),
+    strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
+    end: str = typer.Option(..., help="End date YYYY-MM-DD"),
+    timeframe: str = typer.Option("1m", help="Bar timeframe"),
+) -> None:
+    """Run a backtest using data stored in the database."""
+
+    from datetime import datetime
+    import pandas as pd
+    from ..storage.timescale import get_engine, select_bars
+    from ..backtest.event_engine import EventDrivenBacktestEngine
+
+    setup_logging()
+    engine = get_engine()
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    rows = select_bars(
+        engine,
+        exchange=exchange,
+        symbol=symbol,
+        start=start_dt,
+        end=end_dt,
+        timeframe=timeframe,
+    )
+    if not rows:
+        typer.echo("no data")
+        raise typer.Exit()
+    df = (
+        pd.DataFrame(rows)
+        .rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        .set_index("ts")
+    )
+    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+    result = eng.run()
+    typer.echo(result)
+    typer.echo(generate_report(result))
+
+
 @app.command("walk-forward")
 def walk_forward_cfg(config: str) -> None:
     """Run walk-forward optimization from a Hydra configuration."""

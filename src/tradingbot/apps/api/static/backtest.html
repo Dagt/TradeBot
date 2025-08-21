@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <link rel="icon" href="/static/favicon.ico">
+  <title>DMI - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header class="center" style="margin-bottom:8px">
+  <div class="logo-wrap">
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
+</div>
+
+  <nav>
+  <div class="menu">
+    <a href="/" class="">Monitoreo</a>
+    <a href="/bots" class="">Bots</a>
+    <a href="/stats" class="">Estadísticas operativas</a>
+    <a href="/data" class="">Datos históricos</a>
+    <a href="/backtest" class="active">Backtest</a>
+    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
+    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
+  </div>
+</nav>
+
+</header>
+  <h1>Backtest</h1>
+
+  <div class="card">
+    <h2>Ejecutar backtest</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="bt-mode">Modo</label>
+        <select id="bt-mode">
+          <option value="csv">CSV</option>
+          <option value="cfg">Config YAML</option>
+          <option value="walk">Walk-forward</option>
+          <option value="db">Base de datos</option>
+        </select>
+      </div>
+      <div id="field-data">
+        <label for="bt-data">Archivo CSV</label>
+        <input id="bt-data" placeholder="data.csv"/>
+      </div>
+      <div id="field-symbol">
+        <label for="bt-symbol">Símbolo</label>
+        <input id="bt-symbol" placeholder="BTC/USDT"/>
+      </div>
+      <div id="field-strategy">
+        <label for="bt-strategy">Estrategia</label>
+        <select id="bt-strategy"></select>
+      </div>
+      <div id="field-config">
+        <label for="bt-config">Archivo config</label>
+        <input id="bt-config" placeholder="config.yaml"/>
+      </div>
+      <div id="field-venue">
+        <label for="bt-venue">Exchange</label>
+        <input id="bt-venue" placeholder="binance"/>
+      </div>
+      <div id="field-start">
+        <label for="bt-start">Inicio</label>
+        <input id="bt-start" type="date"/>
+      </div>
+      <div id="field-end">
+        <label for="bt-end">Fin</label>
+        <input id="bt-end" type="date"/>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:8px">Los resultados y reportes se muestran abajo y pueden guardarse en archivos según la configuración.</div>
+    <button id="bt-run" style="margin-top:10px">Ejecutar</button>
+    <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <input id="cli-input" class="mono" placeholder="--help"/>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+
+async function loadStrategies(){
+  try{
+    const r=await fetch(api('/strategies/status'));
+    const j=await r.json();
+    const sel=document.getElementById('bt-strategy');
+    sel.innerHTML='';
+    Object.keys(j.strategies||{}).forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s;o.textContent=s;sel.appendChild(o);
+    });
+  }catch(e){}
+}
+
+function updateBtFields(){
+  const mode=document.getElementById('bt-mode').value;
+  document.getElementById('field-data').style.display=mode==='csv'?'':'none';
+  document.getElementById('field-symbol').style.display=(mode==='csv'||mode==='db')?'':'none';
+  document.getElementById('field-strategy').style.display=(mode==='csv'||mode==='db')?'':'none';
+  document.getElementById('field-config').style.display=(mode==='cfg'||mode==='walk')?'':'none';
+  document.getElementById('field-venue').style.display=mode==='db'?'':'none';
+  document.getElementById('field-start').style.display=mode==='db'?'':'none';
+  document.getElementById('field-end').style.display=mode==='db'?'':'none';
+}
+
+async function runBacktest(){
+  const mode=document.getElementById('bt-mode').value;
+  let cmd='';
+  if(mode==='csv'){
+    const data=document.getElementById('bt-data').value.trim();
+    const sym=document.getElementById('bt-symbol').value.trim();
+    const strat=document.getElementById('bt-strategy').value.trim();
+    cmd=`backtest ${data} --symbol ${sym} --strategy ${strat}`;
+  }else if(mode==='cfg'){
+    const cfg=document.getElementById('bt-config').value.trim();
+    cmd=`backtest-cfg ${cfg}`;
+  }else if(mode==='walk'){
+    const cfg=document.getElementById('bt-config').value.trim();
+    cmd=`walk-forward ${cfg}`;
+  }else{
+    const venue=document.getElementById('bt-venue').value.trim();
+    const sym=document.getElementById('bt-symbol').value.trim();
+    const strat=document.getElementById('bt-strategy').value.trim();
+    const start=document.getElementById('bt-start').value;
+    const end=document.getElementById('bt-end').value;
+    cmd=`backtest-db --exchange ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
+  }
+  try{
+    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
+    document.getElementById('bt-output').textContent=out;
+  }catch(e){
+    document.getElementById('bt-output').textContent=String(e);
+  }
+}
+
+async function runCli(){
+  const cmd=document.getElementById('cli-input').value;
+  if(!cmd.trim()) return;
+  try{
+    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
+    document.getElementById('cli-output').textContent=out;
+  }catch(e){
+    document.getElementById('cli-output').textContent=String(e);
+  }
+}
+
+document.getElementById('bt-mode').addEventListener('change',updateBtFields);
+document.getElementById('bt-run').addEventListener('click',runBacktest);
+document.getElementById('cli-run').addEventListener('click',runCli);
+updateBtFields();
+loadStrategies();
+</script>
+</body>
+</html>
