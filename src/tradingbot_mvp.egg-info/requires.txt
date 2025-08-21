@@ -1,0 +1,3 @@
+
+[vectorbt]
+vectorbt>=0.26

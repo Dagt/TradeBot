@@ -36,6 +36,12 @@ archivos CSV dentro de `db/` o directamente en TimescaleDB/QuestDB:
 
 La persistencia se realiza mediante utilidades de `tradingbot.data.ingestion`.
 
+También puedes completar históricos desde la CLI usando:
+
+```bash
+python -m tradingbot.cli backfill --days 30 --symbols BTC/USDT ETH/USDT
+```
+
 ### Claves de API para conectores externos
 
 Algunos proveedores como Kaiko y CoinAPI requieren claves de autenticación.

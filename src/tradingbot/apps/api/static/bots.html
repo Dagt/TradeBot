@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <link rel="icon" href="/static/favicon.ico">
+  <title>DMI - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header class="center" style="margin-bottom:8px">
+  <div class="logo-wrap">
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
+</div>
+  <nav>
+  <div class="menu">
+    <a href="/" class="">Monitoreo</a>
+    <a href="/bots" class="active">Bots</a>
+    <a href="/stats" class="">Estadísticas operativas</a>
+  </div>
+</nav>
+
+</header>
+  <h1>Bots</h1>
+
+  <div class="card">
+    <h2>Nuevo bot</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="bot-strategy">Estrategia</label>
+        <select id="bot-strategy"></select>
+      </div>
+      <div>
+        <label for="bot-pairs">Pares (coma)</label>
+        <input id="bot-pairs" placeholder="BTC/USDT,ETH/USDT"/>
+      </div>
+      <div>
+        <label for="bot-notional">Notional (USDT)
+          <span class="help-icon" title="Monto en USDT por operación">?</span>
+        </label>
+        <input id="bot-notional" type="number" step="0.01"/>
+      </div>
+      <div id="field-exchange">
+        <label for="bot-exchange">Exchange</label>
+        <select id="bot-exchange">
+          <option value="binance">Binance</option>
+          <option value="bybit">Bybit</option>
+          <option value="okx">OKX</option>
+        </select>
+      </div>
+      <div id="field-market">
+        <label for="bot-market">Mercado</label>
+        <select id="bot-market">
+          <option value="spot">Spot</option>
+          <option value="futures">Futuros</option>
+        </select>
+      </div>
+      <div id="field-trade-qty">
+        <label for="bot-trade-qty">Trade qty
+          <span class="help-icon" title="Cantidad fija de unidades base por operación">?</span>
+        </label>
+        <input id="bot-trade-qty" type="number" step="0.0001"/>
+      </div>
+      <div id="field-leverage">
+        <label for="bot-leverage">Leverage</label>
+        <input id="bot-leverage" type="number" step="1"/>
+      </div>
+      <div id="field-spot" style="display:none">
+        <label for="bot-spot">Spot adapter</label>
+        <select id="bot-spot">
+          <option value="binance_spot">Binance Spot</option>
+          <option value="binance_futures">Binance Futures</option>
+          <option value="bybit_spot">Bybit Spot</option>
+          <option value="bybit_futures">Bybit Futures</option>
+          <option value="okx_spot">OKX Spot</option>
+          <option value="okx_futures">OKX Futures</option>
+        </select>
+      </div>
+      <div id="field-perp" style="display:none">
+        <label for="bot-perp">Perp adapter</label>
+        <select id="bot-perp">
+          <option value="binance_futures">Binance Futures</option>
+          <option value="bybit_futures">Bybit Futures</option>
+          <option value="okx_futures">OKX Futures</option>
+        </select>
+      </div>
+      <div id="field-threshold" style="display:none">
+        <label for="bot-threshold">Threshold</label>
+        <input id="bot-threshold" type="number" step="0.0001" value="0.001"/>
+      </div>
+      <div id="strategy-params" style="display:contents"></div>
+      <div>
+        <label for="bot-stop-loss-pct">Risk stop loss %</label>
+        <input id="bot-stop-loss-pct" type="number" step="0.0001" required/>
+      </div>
+      <div>
+        <label for="bot-max-drawdown-pct">Max drawdown %
+          <span class="help-icon" title="Pérdida máxima permitida antes de detener el bot">?</span>
+        </label>
+        <input id="bot-max-drawdown-pct" type="number" step="0.0001" required/>
+      </div>
+      <div>
+        <label for="bot-env">Entorno</label>
+        <select id="bot-env">
+          <option value="live">Live</option>
+          <option value="paper">Paper trading</option>
+          <option value="testnet" selected>Testnet</option>
+        </select>
+      </div>
+    </div>
+    <button id="bot-start" style="margin-top:10px">Start</button>
+    <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Bots activos</h2>
+    <div class="muted">Auto-refresh 5s</div>
+    <div style="overflow:auto; max-height:60vh; margin-top:10px">
+      <table id="tbl-bots">
+        <thead><tr><th>PID</th><th>Estrategia</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Error</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <input id="cli-input" class="mono" placeholder="--help"/>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Gestión de riesgo</h2>
+    <div class="muted">Consultar exposiciones y eventos o ejecutar acciones</div>
+    <button id="risk-refresh">Consultar</button>
+    <button id="risk-halt">Halt</button>
+    <button id="risk-reset">Reset</button>
+    <pre id="risk-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+
+  async function loadStrategies(){
+    try{
+      const r = await fetch(api('/strategies/status'));
+      const j = await r.json();
+      const sel = document.getElementById('bot-strategy');
+      sel.innerHTML='';
+      Object.keys(j.strategies || {}).forEach(s=>{
+        const o=document.createElement('option');
+        o.value=s; o.textContent=s; sel.appendChild(o);
+      });
+    updateForm();
+    }catch(e){}
+  }
+
+  async function loadStrategyParams(name){
+    const container=document.getElementById('strategy-params');
+    container.innerHTML='';
+    try{
+      const r=await fetch(api(`/strategies/${name}/schema`));
+      const j=await r.json();
+      (j.params||[]).forEach(p=>{
+        const div=document.createElement('div');
+        const label=document.createElement('label');
+        label.htmlFor=`param-${p.name}`;
+        label.textContent=p.name;
+        const input=document.createElement('input');
+        input.id=`param-${p.name}`;
+        input.dataset.name=p.name;
+        input.dataset.type=p.type||'';
+        let type = (p.type||'').toLowerCase();
+        if(type.includes('int') || type.includes('float') || type.includes('number')){
+          input.type='number';
+          input.step='0.0001';
+        }else{
+          input.type='text';
+        }
+        if(p.default!==undefined && p.default!==null) input.value=p.default;
+        div.appendChild(label);
+        div.appendChild(input);
+        container.appendChild(div);
+      });
+    }catch(e){}
+  }
+
+  function updateMarketFields(){
+    const market=document.getElementById('bot-market').value;
+    const strat=document.getElementById('bot-strategy').value;
+    const cross=strat==='cross_arbitrage';
+    const lev=document.getElementById('field-leverage');
+    lev.style.display = (!cross && market==='futures') ? '' : 'none';
+  }
+
+  async function updateForm(){
+    const strat=document.getElementById('bot-strategy').value;
+    const cross=strat==='cross_arbitrage';
+    ['field-exchange','field-market','field-trade-qty'].forEach(id=>{
+      document.getElementById(id).style.display = cross ? 'none' : '';
+    });
+    ['field-spot','field-perp','field-threshold'].forEach(id=>{
+      document.getElementById(id).style.display = cross ? '' : 'none';
+    });
+    await loadStrategyParams(strat);
+    updateMarketFields();
+  }
+
+async function startBot(){
+  const strategy = document.getElementById('bot-strategy').value;
+  const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const notional = document.getElementById('bot-notional').value;
+  const exchange = document.getElementById('bot-exchange').value;
+  const market = document.getElementById('bot-market').value;
+  const trade_qty = document.getElementById('bot-trade-qty').value;
+  const leverage = document.getElementById('bot-leverage').value;
+  const stop_loss_pct = document.getElementById('bot-stop-loss-pct').value;
+  const max_drawdown_pct = document.getElementById('bot-max-drawdown-pct').value;
+  const env = document.getElementById('bot-env').value;
+  const testnet = env === 'testnet';
+  const dry_run = env === 'paper';
+    const spot = document.getElementById('bot-spot').value;
+    const perp = document.getElementById('bot-perp').value;
+    const threshold = document.getElementById('bot-threshold').value;
+    const paramEls=document.querySelectorAll('#strategy-params input');
+    const params={};
+    paramEls.forEach(el=>{
+      if(!el.value) return;
+      const t=(el.dataset.type||'').toLowerCase();
+      let v=el.value;
+      if(t.includes('int')) v=parseInt(v,10);
+      else if(t.includes('float') || t.includes('number')) v=parseFloat(v);
+      params[el.dataset.name]=v;
+    });
+    const payload = {strategy, pairs, exchange, market, testnet, dry_run};
+    if(notional) payload.notional = Number(notional);
+    if(trade_qty) payload.trade_qty = Number(trade_qty);
+    if(leverage) payload.leverage = Number(leverage);
+    if(stop_loss_pct) payload.stop_loss_pct = Number(stop_loss_pct);
+    if(max_drawdown_pct) payload.max_drawdown_pct = Number(max_drawdown_pct);
+  if(strategy==='cross_arbitrage'){
+    payload.spot = spot;
+      payload.perp = perp;
+      if(threshold) payload.threshold = Number(threshold);
+    }
+    if(Object.keys(params).length){
+      try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
+    }
+    try{
+      const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const j = await r.json();
+      document.getElementById('bot-output').textContent = JSON.stringify(j,null,2);
+      refreshBots();
+  }catch(e){ document.getElementById('bot-output').textContent = String(e); }
+}
+
+async function refreshBots(){
+  try{
+    const r = await fetch(api('/bots'));
+    const j = await r.json();
+    const body = document.querySelector('#tbl-bots tbody');
+    body.innerHTML='';
+    (j.bots||[]).forEach(b=>{
+      const stats=b.stats||{};
+      const pairs=(b.config?.pairs||[]).join(',');
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${b.pid}</td><td>${b.config?.strategy||''}</td><td>${pairs}</td><td>${b.status}</td>
+      <td>${stats.orders_sent||0}/${stats.fills||0}</td>
+      <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
+      <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
+      <td>${(stats.fees_usd||0).toFixed(2)}</td>
+      <td>${(stats.slippage_bps||0).toFixed(2)}</td>
+      <td>${((stats.hit_rate||0)*100).toFixed(1)}%</td>
+      <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
+      <td>${(stats.inventory||0).toFixed(4)}</td>
+      <td>${(stats.leverage||0).toFixed(2)}</td>
+      <td>${stats.risk_triggers||0}</td>
+      <td>${b.last_error||''}</td>
+      <td>
+        <button onclick="pauseBot(${b.pid})">Pause</button>
+        <button onclick="resumeBot(${b.pid})">Resume</button>
+        <button class='warn' onclick="haltBot(${b.pid})">Halt</button>
+        <button class='danger' onclick="flattenBot(${b.pid})">Flatten</button>
+        <button onclick="reloadBot(${b.pid})">Reload</button>
+        <button onclick="stopBot(${b.pid})">Stop</button>
+        <button onclick="deleteBot(${b.pid})">Delete</button>
+      </td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+
+async function runCli(){
+  const cmd = document.getElementById('cli-input').value;
+  if(!cmd.trim()) return;
+  try{
+    const r = await fetch(api('/cli/run'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: cmd})});
+    const j = await r.json();
+    const out = (j.stdout||'') + (j.stderr ? '\n'+j.stderr : '');
+    document.getElementById('cli-output').textContent = out;
+  }catch(e){
+    document.getElementById('cli-output').textContent = String(e);
+  }
+}
+
+async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
+async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
+async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
+async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+async function haltBot(pid){ await fetch(api(`/bots/${pid}/halt`), {method:'POST'}); refreshBots(); }
+async function flattenBot(pid){ await fetch(api(`/bots/${pid}/flatten`), {method:'POST'}); refreshBots(); }
+async function reloadBot(pid){ await fetch(api(`/bots/${pid}/reload`), {method:'POST'}); refreshBots(); }
+
+async function refreshRisk(){
+  try{
+    const ex = await fetch(api('/risk/exposure'));
+    const exj = await ex.json();
+    const ev = await fetch(api('/risk/events?limit=20'));
+    const evj = await ev.json();
+    document.getElementById('risk-output').textContent = JSON.stringify({exposure: exj, events: evj.items||evj.events||[]}, null,2);
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
+async function haltRisk(){
+  try{
+    await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
+    refreshRisk();
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
+async function resetRisk(){
+  try{
+    await fetch(api('/risk/reset'), {method:'POST'});
+    refreshRisk();
+  }catch(e){
+    document.getElementById('risk-output').textContent = String(e);
+  }
+}
+
+document.getElementById('bot-start').addEventListener('click', startBot);
+document.getElementById('bot-strategy').addEventListener('change', updateForm);
+document.getElementById('bot-market').addEventListener('change', updateMarketFields);
+loadStrategies();
+updateMarketFields();
+refreshBots();
+setInterval(refreshBots,5000);
+document.getElementById('cli-run').addEventListener('click', runCli);
+document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
+document.getElementById('risk-halt').addEventListener('click', haltRisk);
+document.getElementById('risk-reset').addEventListener('click', resetRisk);
+refreshRisk();
+</script>
+</body>
+</html>
+

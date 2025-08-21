@@ -5,7 +5,11 @@ scalping y arbitraje sobre criptomonedas.  Incluye todo lo necesario para
 ingerir datos, realizar backtesting y ejecutar estrategias en modo
 ``paper`` o real desde una interfaz web.
 
-La correspondencia entre el blueprint original y los módulos del código se documenta en [docs/blueprint_map.md](docs/blueprint_map.md).
+Un panorama general de la arquitectura se explica en
+[blueprint_trading_bot.md](blueprint_trading_bot.md) y la correspondencia con
+el código se detalla en
+[docs/blueprint_map.md](docs/blueprint_map.md).  El diseño técnico completo
+del MVP está en [tradebot_mvp.md](tradebot_mvp.md).
 
 ## Quickstart
 
@@ -31,10 +35,23 @@ La correspondencia entre el blueprint original y los módulos del código se doc
    tradingbot ingest
    ```
 
+   (Opcional) para completar históricos:
+   ```bash
+   tradingbot backfill --days 7 --symbols BTC/USDT
+   ```
+
 5. **Ejecutar backtesting**
    ```bash
    tradingbot backtest
    ```
+
+6. **Iniciar dashboards**
+   ```bash
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
+   ```
+   Visita `http://localhost:8000/` para gestionar credenciales,
+   `http://localhost:8000/monitor` para monitoreo y
+   `http://localhost:8000/bots` para lanzar bots o usar la CLI.
 
 Al terminar, consulta [docs/blueprint_map.md](docs/blueprint_map.md) para entender la correspondencia entre el blueprint y el código.
 
@@ -64,19 +81,10 @@ gracias al **paper trading** (simulación).
 - Gestión de riesgo y portafolio con límites de exposición y ``kill switch``.
 - Router de ejecución con algoritmos TWAP/VWAP/POV y soporte maker/taker.
 - Backtester vectorizado y motor event‑driven con modelado de slippage.
-- **Panel web** con métricas en vivo y un **ejecutor de comandos CLI** que
-  permite lanzar cualquier comando desde el navegador.  Incluye formularios
-  para configurar exchanges, claves API y estrategias sin usar la terminal.
-
-## Funcionalidades extra
-
-TradeBot incluye una serie de capacidades adicionales más allá del MVP
-original. Entre ellas se destacan las estrategias de arbitraje
-triangular y entre exchanges, señales basadas en microestructura,
-adaptadores para múltiples venues con soporte de testnet, un panel web
-que permite ejecutar comandos de la CLI y una API para control remoto.
-La descripción completa y ejemplos de uso se encuentran en
-[docs/extra_features.md](docs/extra_features.md).
+- **Panel web** dividido en secciones de credenciales, monitoreo y bots.
+  La sección de bots incorpora un **ejecutor de comandos CLI** para
+  lanzar cualquier comando desde el navegador y formularios para
+  configurar estrategias sin usar la terminal.
 
 ## Funcionalidades extra
 
@@ -100,42 +108,61 @@ La descripción completa y ejemplos de uso se encuentran en
 
 ## Estrategias incluidas
 
-Cada estrategia se puede ejecutar en modo simulación o real.  A
-continuación se explica la idea teórica y cómo la implementa TradeBot.
+Cada estrategia puede correrse en modo **paper trading** o con órdenes
+reales.  A continuación se resume la idea y se indica cómo ejecutarla desde
+la CLI.  Todas aceptan parámetros opcionales mediante ``--config``.
 
-### Momentum intradía
-**Idea**: cuando un precio sube con fuerza, suele seguir subiendo a corto
-plazo.
-**Implementación**: el bot calcula el retorno de los últimos minutos y
-compra si supera un umbral; vende cuando el impulso se agota o cambia de
-signo.
+### Momentum intradía (`momentum`)
+**Idea**: seguir la tendencia reciente.  Cuando el RSI supera un umbral y el
+OFI confirma presión compradora, se compra; lo inverso genera venta.
 
-### Mean reversion
-**Idea**: los precios tienden a volver a su promedio después de moverse
-demasiado.
-**Implementación**: se calcula una media móvil y su desviación.  Si el
-precio está muy por encima, se vende; si está por debajo, se compra.
+```
+python -m tradingbot.cli paper-run --strategy momentum --symbol BTC/USDT
+```
 
-### Breakout de volatilidad
-**Idea**: tras un periodo de calma, un movimiento brusco puede iniciar una
-nuevo recorrido de precios.
-**Implementación**: se observa la volatilidad (ATR) y se activan órdenes
-cuando el precio rompe un canal predefinido.
+### Reversión a la media (`mean_reversion`)
+**Idea**: los precios vuelven a su media tras desviarse demasiado.
+**Implementación**: RSI con niveles superior/inferior para vender o comprar.
 
-### Arbitraje triangular
-**Idea**: en un mismo exchange, las tasas de cambio entre tres pares pueden
-quedar desalineadas.  Al hacer la ruta A→B→C→A se obtiene una ganancia
-sin exposición direccional.
-**Implementación**: el bot revisa continuamente rutas como BTC‑ETH‑USDT y
-ejecuta las tres operaciones si el beneficio neto supera las comisiones.
+### Breakout ATR (`breakout_atr`)
+**Idea**: rupturas de un canal de Keltner anuncian movimientos fuertes.
+**Implementación**: compra si el cierre supera la banda superior del canal,
+vende si cae por debajo de la inferior.
 
-### Arbitraje entre exchanges / cash‑and‑carry
-**Idea**: un mismo activo puede tener precios distintos entre exchanges o
-entre mercado spot y perp.  Comprar donde está barato y vender donde está
-caro permite capturar la diferencia o el pago de funding.
-**Implementación**: el bot compara precios de los exchanges conectados y
-abre posiciones opuestas (spot vs perp o exchange vs exchange) cuando la
-brecha supera un umbral configurado.
+### Breakout de volatilidad (`breakout_vol`)
+**Idea**: una subida brusca tras un período tranquilo puede iniciar un
+recorrido.  Usa media y desviación estándar.
+
+### Order Flow (`order_flow`)
+**Idea**: el promedio del OFI revela desequilibrio de órdenes.
+**Implementación**: si el OFI medio es positivo se compra, si es negativo se
+vende.
+
+### Mean Reversion OFI (`mean_rev_ofi`)
+**Idea**: cuando el z‑score del OFI es extremo y la volatilidad es baja, el
+precio suele corregir.
+
+### Depth Imbalance (`depth_imbalance`)
+**Idea**: grandes diferencias entre las colas del libro anticipan el
+movimiento.
+
+### Eventos de liquidez (`liquidity_events`)
+**Idea**: vaciados del libro o gaps amplios indican movimientos inminentes.
+
+### Arbitraje simple (`arbitrage`)
+Plantilla para experimentar con spreads entre dos activos.
+
+### Arbitraje triangular (`triangular_arb`)
+**Idea**: recorrer rutas A→B→C→A dentro de un exchange para capturar
+desalineaciones de precio.
+
+### Arbitraje entre exchanges (`cross_exchange_arbitrage`) y Cash‑and‑Carry (`cash_and_carry`)
+**Idea**: aprovechar diferencias entre spot y perp o entre dos exchanges.
+El bot abre posiciones opuestas cuando la prima supera un umbral.
+
+### Triple Barrera con ML (`triple_barrier`)
+Genera labels de triple barrera y entrena un modelo de **gradient boosting**
+para decidir si tomar la señal principal.
 
 ## Requisitos
 
@@ -150,8 +177,49 @@ git clone <repo>
 cd TradeBot
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# Opcional: habilita el backtester vectorizado
+pip install "vectorbt>=0.26"
 cp .env.example .env   # completa con tus claves
 ```
+
+## Instalación y uso en Windows
+
+1. Instala [Python 3.11](https://www.python.org/downloads/windows/) y [Git](https://git-scm.com/download/win). Durante la instalación de Python marca la casilla **Add Python to PATH**.
+2. Abre PowerShell o Git Bash y clona el repositorio:
+   ```powershell
+   git clone <repo>
+   cd TradeBot
+   ```
+3. Crea y activa un entorno virtual:
+   ```powershell
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+4. Instala las dependencias:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+   Opcionalmente habilita el backtester vectorizado:
+   ```powershell
+   pip install "vectorbt>=0.26"
+   ```
+5. Copia el archivo de entorno:
+   ```powershell
+   copy .env.example .env
+   ```
+6. (Opcional) Si tienes Docker Desktop, inicia los servicios:
+   ```powershell
+   docker compose up -d
+   ```
+   También puedes ejecutar `make up` desde Git Bash si dispones de `make`.
+7. Ejecuta el bot o la API:
+   ```powershell
+   python -m tradingbot.cli ingest
+   python -m tradingbot.cli backtest
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
+   ```
+   Luego visita `http://localhost:8000/` para acceder al panel web.
+
 ## Arranque rápido
 
 Inicia y detén los servicios de Docker con el Makefile:
@@ -172,13 +240,15 @@ make down  # detiene y elimina los servicios
    make up
    ```
 
-3. Inicia el panel web con métricas y consola de comandos:
+3. Inicia la API y los dashboards:
 
    ```bash
-   uvicorn monitoring.panel:app --reload --port 8000
+   uvicorn tradingbot.apps.api.main:app --reload --port 8000
    ```
 
-   Luego visita `http://localhost:8000` en tu navegador.
+   `http://localhost:8000/` abre el panel de credenciales,
+   `http://localhost:8000/monitor` el de monitoreo y
+   `http://localhost:8000/bots` la gestión de bots.
 
 ## Comandos CLI
 
@@ -194,8 +264,10 @@ python -m tradingbot.cli <comando> [opciones]
 | `ingest` | Stream de order book a la base de datos | `python -m tradingbot.cli ingest --venue binance_spot --symbol BTC/USDT --depth 20` |
 | `ingest-historical` | Descarga histórica desde Kaiko o CoinAPI | `python -m tradingbot.cli ingest-historical kaiko BTC/USDT --kind trades` |
 | `run-bot` | Ejecuta el bot en vivo o testnet | `python -m tradingbot.cli run-bot --exchange binance --symbol BTC/USDT` |
+| `real-run` | Opera en el exchange real (requiere `--i-know-what-im-doing`) | `python -m tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing` |
 | `paper-run` | Ejecuta una estrategia en modo simulación | `python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr --config params.yaml` |
 | `daemon` | Levanta el daemon de trading mediante Hydra | `python -m tradingbot.cli daemon config/config.yaml` |
+| `backfill` | Backfill de OHLCV y trades con rate limit | `python -m tradingbot.cli backfill --days 7 --symbols BTC/USDT ETH/USDT` |
 | `ingestion-workers` | Workers de funding y open interest | `python -m tradingbot.cli ingestion-workers` |
 | `backtest` | Backtest vectorizado desde CSV | `python -m tradingbot.cli backtest data/ohlcv.csv` |
 | `backtest-cfg` | Backtest desde un YAML de configuración | `python -m tradingbot.cli backtest-cfg data/examples/backtest.yaml` |

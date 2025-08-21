@@ -542,11 +542,14 @@ async def run_cli(cmd: CLICommand) -> dict:
     )
     out, err = await proc.communicate()
     return {
+        "command": cmd.command,
         "stdout": out.decode(),
         "stderr": err.decode(),
         "returncode": proc.returncode,
+        "success": proc.returncode == 0,
     }
 
 
 static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

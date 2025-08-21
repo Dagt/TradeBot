@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <link rel="icon" href="/static/favicon.ico">
+  <title>DMI - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header class="center" style="margin-bottom:8px">
+  <div class="logo-wrap">
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
+</div>
+
+  <nav>
+  <div class="menu">
+    <a href="/" class="">Monitoreo</a>
+    <a href="/bots" class="">Bots</a>
+    <a href="/stats" class="active">Estadísticas operativas</a>
+  </div>
+</nav>
+
+</header>
+
+  <h1>Estadísticas operativas</h1>
+  <div class="grid5" style="margin:14px 0 10px">
+    <div class="kv"><div class="k">PnL bruto</div><div class="v" id="m-pnl-gross">—</div></div>
+    <div class="kv"><div class="k">PnL neto</div><div class="v" id="m-pnl-net">—</div></div>
+    <div class="kv"><div class="k">Fees</div><div class="v" id="m-fees">—</div></div>
+    <div class="kv"><div class="k">Funding</div><div class="v" id="m-funding">—</div></div>
+    <div class="kv"><div class="k">Borrow</div><div class="v" id="m-borrow">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Sharpe</div><div class="v" id="m-sharpe">—</div></div>
+    <div class="kv"><div class="k">Sortino</div><div class="v" id="m-sortino">—</div></div>
+    <div class="kv"><div class="k">Calmar</div><div class="v" id="m-calmar">—</div></div>
+    <div class="kv"><div class="k">Max DD</div><div class="v" id="m-maxdd">—</div></div>
+    <div class="kv"><div class="k">TUW</div><div class="v" id="m-tuw">—</div></div>
+  </div>
+  <div class="grid5" style="margin:0 0 10px">
+    <div class="kv"><div class="k">Hit Rate</div><div class="v" id="m-hit">—</div></div>
+    <div class="kv"><div class="k">Expectancy</div><div class="v" id="m-expectancy">—</div></div>
+    <div class="kv"><div class="k">Payoff</div><div class="v" id="m-payoff">—</div></div>
+    <div class="kv"><div class="k">Trades/día</div><div class="v" id="m-trades-day">—</div></div>
+    <div class="kv"><div class="k">Notional medio</div><div class="v" id="m-notional">—</div></div>
+  </div>
+  <div class="grid4" style="margin:0 0 20px">
+    <div class="kv"><div class="k">DSR</div><div class="v" id="m-dsr">—</div></div>
+    <div class="kv"><div class="k">Alpha vol</div><div class="v" id="m-alpha-vol">—</div></div>
+    <div class="kv"><div class="k">Benchmark</div><div class="v" id="m-benchmark">—</div></div>
+    <div class="kv"><div class="k">Risk Events</div><div class="v" id="m-risk">—</div></div>
+  </div>
+  <div class="card">
+    <h2>Filtros</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="fl-symbol">Símbolo</label>
+        <input id="fl-symbol" placeholder="BTCUSDT"/>
+      </div>
+      <div style="display:flex;align-items:end;">
+        <button id="fl-apply">Aplicar</button>
+      </div>
+    </div>
+  </div>  
+  <div class="row" style="margin-top:20px">
+    <div class="card">
+      <h2>PnL Spot (6h)</h2>
+      <canvas id="chart-pnl-spot" height="120"></canvas>
+    </div>
+    <div class="card">
+      <h2>PnL Futuros (6h)</h2>
+      <canvas id="chart-pnl-fut" height="120"></canvas>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Spot)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-spot">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>PnL por símbolo (Futuros)</h2>
+      <div class="muted">Realizado, no realizado y neto</div>
+      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+        <table id="tbl-pnl-fut">
+          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+          <tbody></tbody>
+        </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Fills por estrategia y símbolo</h2>
+    <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+      <table id="tbl-fills-summary">
+        <thead><tr><th>venue</th><th>strategy</th><th>symbol</th><th>fills</th><th>notional</th><th>fees</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>Posiciones</h2>
+    <div style="overflow:auto; max-height:60vh; margin-top:10px">
+      <table id="tbl-pos">
+        <thead><tr><th>Symbol</th><th>Position</th><th>Funding</th><th>Basis</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Ejecución (microestructura)</h2>
+    <div class="muted">Implementation shortfall, slippage y fill ratio</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-exec">
+        <thead><tr><th>symbol</th><th>IS</th><th>slippage</th><th>fill_ratio</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Calidad de señales</h2>
+    <div class="muted">Precision/Recall y AUC</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-signals">
+        <thead><tr><th>signal</th><th>precision</th><th>recall</th><th>AUC</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>Riesgo</h2>
+    <div class="muted">Activaciones de guardas y correlaciones</div>
+    <div style="overflow:auto; max-height:40vh; margin-top:10px">
+      <table id="tbl-risk-events">
+        <thead><tr><th>tipo</th><th>count</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+<script>
+async function refreshMetrics(){
+  try{
+    const r = await fetch('/metrics');
+    const j = await r.json();
+    document.getElementById('m-pnl-gross').textContent = (j.pnl_gross||0).toFixed(2);
+    document.getElementById('m-pnl-net').textContent = (j.pnl_net||0).toFixed(2);
+    document.getElementById('m-fees').textContent = (j.fees||0).toFixed(2);
+    document.getElementById('m-funding').textContent = (j.funding||0).toFixed(2);
+    document.getElementById('m-borrow').textContent = (j.borrow||0).toFixed(2);
+    document.getElementById('m-sharpe').textContent = (j.sharpe||0).toFixed(2);
+    document.getElementById('m-sortino').textContent = (j.sortino||0).toFixed(2);
+    document.getElementById('m-calmar').textContent = (j.calmar||0).toFixed(2);
+    document.getElementById('m-maxdd').textContent = (j.max_drawdown||0).toFixed(2);
+    document.getElementById('m-tuw').textContent = (j.time_under_water||0).toFixed(2);
+    document.getElementById('m-hit').textContent = ((j.hit_rate||0)*100).toFixed(1)+'%';
+    document.getElementById('m-expectancy').textContent = (j.expectancy||0).toFixed(2);
+    document.getElementById('m-payoff').textContent = (j.payoff_ratio||0).toFixed(2);
+    document.getElementById('m-trades-day').textContent = (j.trades_per_day||0).toFixed(2);
+    document.getElementById('m-notional').textContent = (j.avg_notional||0).toFixed(2);
+    document.getElementById('m-dsr').textContent = (j.dsr||0).toFixed(2);
+    document.getElementById('m-alpha-vol').textContent = (j.alpha_vol||0).toFixed(2);
+    document.getElementById('m-benchmark').textContent = (j.benchmark||0).toFixed(2);
+    document.getElementById('m-risk').textContent = j.risk_events||0;
+  }catch(e){}
+}
+async function refreshPositions(){
+  try{
+    const r = await fetch('/metrics/positions');
+    const j = await r.json();
+    const body = document.querySelector('#tbl-pos tbody');
+    body.innerHTML='';
+    const pos=j.positions||{}; const fund=j.funding_rates||{}; const basis=j.basis||{};
+    Object.keys(pos).forEach(sym=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${sym}</td><td>${pos[sym].toFixed(4)}</td><td>${(fund[sym]||0).toFixed(4)}</td><td>${(basis[sym]||0).toFixed(4)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+let currentSymbol='';
+function buildPnlChart(ctx, labels, upnl, rpnl, net){
+  new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
+}
+async function refreshPnlSpot(){
+  try{
+    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
+    const r=await fetch(`/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6${sym}`);
+    const j=await r.json();
+    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
+    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
+    buildPnlChart(document.getElementById('chart-pnl-spot').getContext('2d'),labels,upnl,rpnl,net);
+  }catch(e){}
+}
+async function refreshPnlFut(){
+  try{
+    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
+    const r=await fetch(`/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6${sym}`);
+    const j=await r.json();
+    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
+    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
+    buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
+  }catch(e){}
+}
+async function refreshPnlSummarySpot(){
+  try{
+    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
+    const r=await fetch(`/pnl/summary?venue=binance_spot_testnet${sym}`);
+    const j=await r.json();
+    const body=document.querySelector('#tbl-pnl-spot tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${Number(it.qty).toFixed(4)}</td><td>${Number(it.avg_price).toFixed(4)}</td><td>${Number(it.upnl||0).toFixed(2)}</td><td>${Number(it.realized_pnl||0).toFixed(2)}</td><td>${Number(it.fees_paid||0).toFixed(2)}</td><td>${Number(it.total_pnl||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshPnlSummaryFut(){
+  try{
+    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
+    const r=await fetch(`/pnl/summary?venue=binance_futures_um_testnet${sym}`);
+    const j=await r.json();
+    const body=document.querySelector('#tbl-pnl-fut tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${Number(it.qty).toFixed(4)}</td><td>${Number(it.avg_price).toFixed(4)}</td><td>${Number(it.upnl||0).toFixed(2)}</td><td>${Number(it.realized_pnl||0).toFixed(2)}</td><td>${Number(it.fees_paid||0).toFixed(2)}</td><td>${Number(it.total_pnl||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshFillsSummary(){
+  try{
+    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
+    const venues=['binance_spot_testnet','binance_futures_um_testnet'];
+    const body=document.querySelector('#tbl-fills-summary tbody');
+    body.innerHTML='';
+    for(const v of venues){
+      const r=await fetch(`/fills/summary?venue=${v}${sym}`);
+      const j=await r.json();
+      (j.items||[]).forEach(it=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${v}</td><td>${it.strategy}</td><td>${it.symbol}</td><td>${it.fills}</td><td>${Number(it.notional||0).toFixed(2)}</td><td>${Number(it.fees||0).toFixed(2)}</td>`;
+        body.appendChild(tr);
+      });
+    }
+  }catch(e){}
+}
+async function refreshExecution(){
+  try{
+    const r=await fetch('/metrics/execution');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-exec tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.symbol}</td><td>${(it.is||0).toFixed(2)}</td><td>${(it.slippage||0).toFixed(2)}</td><td>${(it.fill_ratio||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshSignals(){
+  try{
+    const r=await fetch('/metrics/signals');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-signals tbody');
+    body.innerHTML='';
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${it.name}</td><td>${(it.precision||0).toFixed(2)}</td><td>${(it.recall||0).toFixed(2)}</td><td>${(it.auc||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+async function refreshRiskStats(){
+  try{
+    const r=await fetch('/metrics/risk');
+    const j=await r.json();
+    const body=document.querySelector('#tbl-risk-events tbody');
+    body.innerHTML='';
+    Object.entries(j.triggers||{}).forEach(([k,v])=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${k}</td><td>${v}</td>`;
+      body.appendChild(tr);
+    });
+  }catch(e){}
+}
+function applyFilters(){
+  currentSymbol=document.getElementById('fl-symbol').value.trim();
+  refreshPnlSpot();
+  refreshPnlFut();
+  refreshPnlSummarySpot();
+  refreshPnlSummaryFut();
+  refreshFillsSummary();
+  refreshExecution();
+  refreshSignals();
+  refreshRiskStats();
+}
+refreshMetrics();
+refreshPositions();
+refreshPnlSpot();
+refreshPnlFut();
+refreshPnlSummarySpot();
+refreshPnlSummaryFut();
+refreshFillsSummary();
+refreshExecution();
+refreshSignals();
+refreshRiskStats();
+setInterval(refreshMetrics,5000);
+setInterval(refreshPositions,5000);
+setInterval(refreshPnlSpot,10000);
+setInterval(refreshPnlFut,10000);
+setInterval(refreshPnlSummarySpot,10000);
+setInterval(refreshPnlSummaryFut,10000);
+setInterval(refreshFillsSummary,10000);
+setInterval(refreshExecution,10000);
+setInterval(refreshSignals,10000);
+setInterval(refreshRiskStats,10000);
+document.getElementById('fl-apply').addEventListener('click',applyFilters);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</body>
+</html>

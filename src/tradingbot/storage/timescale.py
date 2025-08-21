@@ -11,7 +11,25 @@ def pg_url() -> str:
     return f"postgresql+psycopg2://{settings.pg_user}:{settings.pg_password}@{settings.pg_host}:{settings.pg_port}/{settings.pg_db}"
 
 def get_engine():
-    return create_engine(pg_url(), pool_pre_ping=True)
+    """Return a SQLAlchemy engine if TimescaleDB is reachable.
+
+    By default ``create_engine`` does not actually establish a connection.
+    This caused the API to believe TimescaleDB was available even when the
+    database server was down, leading to runtime ``OperationalError``
+    exceptions for each request.  Here we try a simple ``SELECT 1`` query
+    during initialisation; if it fails we propagate the exception so the API
+    can disable database-backed endpoints gracefully.
+    """
+
+    engine = create_engine(pg_url(), pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        # Bubble up the exception so callers can handle the absence of the DB
+        # (e.g. by disabling Timescale-backed features).
+        raise
+    return engine
 
 def insert_trade(engine, t):
     with engine.begin() as conn:
@@ -235,24 +253,36 @@ def insert_pnl_snapshot(engine, *, venue: str, symbol: str, qty: float, price: f
             VALUES (:venue, :symbol, :qty, :price, :avg_price, :upnl, :rpnl, :fees)
         '''), dict(venue=venue, symbol=symbol, qty=qty, price=price, avg_price=avg_price, upnl=upnl, rpnl=rpnl, fees=fees))
 
-def select_pnl_summary(engine, venue: str) -> dict:
+def select_pnl_summary(engine, venue: str, symbol: str | None = None) -> dict:
     with engine.begin() as conn:
-        # última posición por símbolo
-        rows = conn.execute(text('''
+        where = "p.venue = :venue"
+        params = {"venue": venue}
+        if symbol:
+            where += " AND p.symbol = :symbol"
+            params["symbol"] = symbol
+        rows = conn.execute(
+            text(f'''
             SELECT p.symbol, p.qty, p.avg_price, p.realized_pnl, p.fees_paid
             FROM market.positions p
-            WHERE p.venue = :venue
-        '''), dict(venue=venue)).mappings().all()
+            WHERE {where}
+        '''),
+            params,
+        ).mappings().all()
         pos = [dict(r) for r in rows]
 
         # último mark por símbolo desde portfolio_snapshots (ya lo tomamos como ref de mark_px)
-        marks = conn.execute(text('''
+        mark_rows = conn.execute(
+            text(
+                f'''
             SELECT DISTINCT ON (symbol) symbol, price
             FROM market.portfolio_snapshots
-            WHERE venue = :venue
+            WHERE venue = :venue {"AND symbol = :symbol" if symbol else ""}
             ORDER BY symbol, ts DESC
-        '''), dict(venue=venue)).mappings().all()
-        mark_map = {r["symbol"]: float(r["price"]) for r in marks}
+        '''
+            ),
+            params,
+        ).mappings().all()
+        mark_map = {r["symbol"]: float(r["price"]) for r in mark_rows}
 
         for r in pos:
             mp = mark_map.get(r["symbol"])
@@ -368,6 +398,28 @@ def select_recent_fills(engine, venue: str, symbol: str | None = None, limit: in
       WHERE {where}
       ORDER BY ts DESC
       LIMIT :lim
+    '''
+    with engine.begin() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(r) for r in rows]
+
+def select_fills_summary(engine, venue: str, symbol: str | None = None, strategy: str | None = None) -> list[dict]:
+    where = "venue = :venue"
+    params = {"venue": venue}
+    if symbol:
+        where += " AND symbol = :symbol"
+        params["symbol"] = symbol
+    if strategy:
+        where += " AND strategy = :strategy"
+        params["strategy"] = strategy
+    sql = f'''
+      SELECT strategy, symbol, COUNT(*) AS fills,
+             SUM(COALESCE(notional,0)) AS notional,
+             SUM(COALESCE(fee_usdt,0)) AS fees
+      FROM market.fills
+      WHERE {where}
+      GROUP BY strategy, symbol
+      ORDER BY strategy, symbol
     '''
     with engine.begin() as conn:
         rows = conn.execute(text(sql), params).mappings().all()

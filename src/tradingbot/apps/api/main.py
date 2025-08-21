@@ -1,5 +1,6 @@
 # src/tradingbot/apps/api/main.py
 from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -10,6 +11,8 @@ import secrets
 import subprocess
 import sys
 import shlex
+import asyncio
+import signal
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -142,6 +145,20 @@ def index():
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
 
+# Servir stats.html en "/stats"
+@app.get("/stats")
+def stats_page():
+    try:
+        html = (_static_dir / "stats.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/stats.html"}
+
+# Compatibilidad: redirige "/monitor" a "/stats"
+@app.get("/monitor")
+def monitor_redirect():
+    return RedirectResponse("/stats")
+
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
@@ -189,11 +206,11 @@ def risk_reset():
     return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
 @app.get("/pnl/summary")
-def pnl_summary(venue: str = "binance_spot_testnet"):
+def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     if not _CAN_PG:
-        return {"venue": venue, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
+        return {"venue": venue, "symbol": symbol, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
     from ...storage.timescale import select_pnl_summary
-    return select_pnl_summary(_ENGINE, venue=venue)
+    return select_pnl_summary(_ENGINE, venue=venue, symbol=symbol)
 
 @app.get("/pnl/timeseries")
 def pnl_timeseries(
@@ -218,6 +235,18 @@ def fills_recent(
         return {"venue": venue, "items": []}
     items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
     return {"venue": venue, "symbol": symbol, "items": items}
+
+@app.get("/fills/summary")
+def fills_summary(
+    venue: str = "binance_spot_testnet",
+    symbol: str | None = Query(None),
+    strategy: str | None = Query(None),
+):
+    if not _CAN_PG:
+        return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": []}
+    from ...storage.timescale import select_fills_summary
+    items = select_fills_summary(_ENGINE, venue=venue, symbol=symbol, strategy=strategy)
+    return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": items}
 
 @app.get("/positions/rebuild_preview")
 def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
@@ -304,8 +333,72 @@ def stop_strategy(name: str):
 @app.get("/strategies/status")
 def strategies_status():
     """Return the status of all known strategies."""
+    from ...strategies import STRATEGIES
 
-    return {"strategies": _strategies_state}
+    extras = {"cross_arbitrage"}
+    all_names = list(STRATEGIES.keys()) + list(extras)
+    return {
+        "strategies": {
+            name: _strategies_state.get(name, "stopped") for name in all_names
+        }
+    }
+
+
+@app.get("/strategies/{name}/schema")
+def strategy_schema(name: str):
+    """Return constructor parameters and defaults for a strategy.
+
+    The endpoint inspects the strategy's ``__init__`` signature and returns
+    parameter names, annotated types and default values.  Strategies that use
+    ``**kwargs`` with in-class defaults are instantiated so their attributes can
+    be discovered.
+    """
+
+    import importlib
+    import inspect
+
+    try:
+        module = importlib.import_module(f"tradingbot.strategies.{name}")
+    except ModuleNotFoundError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=404, detail="unknown strategy") from exc
+
+    strategy_cls = None
+    for attr in dir(module):
+        obj = getattr(module, attr)
+        if inspect.isclass(obj) and getattr(obj, "name", None) == name:
+            strategy_cls = obj
+            break
+    if strategy_cls is None:
+        raise HTTPException(status_code=404, detail="strategy class not found")
+
+    sig = inspect.signature(strategy_cls.__init__)
+    params: list[dict] = []
+    for p in list(sig.parameters.values())[1:]:  # skip ``self``
+        if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        default = None if p.default is inspect._empty else p.default
+        if p.annotation is inspect._empty:
+            annotation = "Any"
+        elif isinstance(p.annotation, type):
+            annotation = p.annotation.__name__
+        else:
+            annotation = str(p.annotation)
+        params.append({"name": p.name, "type": annotation, "default": default})
+
+    # Strategies relying solely on ``**kwargs`` won't expose parameters via the
+    # signature.  Attempt to instantiate the class and inspect its attributes to
+    # derive defaults in that case.
+    if not params:
+        try:  # pragma: no cover - best effort
+            inst = strategy_cls()
+            for k, v in vars(inst).items():
+                if k.startswith("_"):
+                    continue
+                params.append({"name": k, "type": type(v).__name__, "default": v})
+        except Exception:
+            pass
+
+    return {"strategy": name, "params": params}
 
 
 # --- Funding and basis endpoints ------------------------------------------------
@@ -379,8 +472,11 @@ def run_cli(req: CLIRequest):
 
     args = shlex.split(req.command)
     cmd = [sys.executable, "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
         return {
             "command": req.command,
             "returncode": res.returncode,
@@ -389,4 +485,178 @@ def run_cli(req: CLIRequest):
         }
     except Exception as exc:  # pragma: no cover - subprocess failures
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# --- Bot lifecycle --------------------------------------------------------------
+
+
+class BotConfig(BaseModel):
+    """Configuration for launching a trading bot."""
+
+    strategy: str
+    pairs: list[str] | None = None
+    notional: float | None = None
+    exchange: str | None = None
+    market: str | None = None
+    trade_qty: float | None = None
+    leverage: int | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    stop_loss_pct: float | None = None
+    max_drawdown_pct: float | None = None
+    testnet: bool | None = None
+    dry_run: bool | None = None
+    spot: str | None = None
+    perp: str | None = None
+    threshold: float | None = None
+
+
+_BOTS: dict[int, dict] = {}
+
+
+def _build_bot_args(cfg: BotConfig) -> list[str]:
+    # Special runner for cross exchange arbitrage / cash and carry
+    if cfg.strategy == "cross_arbitrage":
+        if not cfg.pairs:
+            raise ValueError("pairs required for cross_arbitrage")
+        if not (cfg.spot and cfg.perp):
+            raise ValueError("spot and perp adapters required")
+        args = [
+            sys.executable,
+            "-m",
+            "tradingbot.cli",
+            "run-cross-arb",
+            cfg.pairs[0],
+            cfg.spot,
+            cfg.perp,
+        ]
+        if cfg.threshold is not None:
+            args.extend(["--threshold", str(cfg.threshold)])
+        if cfg.notional is not None:
+            args.extend(["--notional", str(cfg.notional)])
+        return args
+
+    args = [
+        sys.executable,
+        "-m",
+        "tradingbot.cli",
+        "run-bot",
+        "--strategy",
+        cfg.strategy,
+    ]
+    for pair in cfg.pairs or []:
+        args.extend(["--symbol", pair])
+    if cfg.notional is not None:
+        args.extend(["--notional", str(cfg.notional)])
+    if cfg.exchange:
+        args.extend(["--exchange", cfg.exchange])
+    if cfg.market:
+        args.extend(["--market", cfg.market])
+    if cfg.trade_qty is not None:
+        args.extend(["--trade-qty", str(cfg.trade_qty)])
+    if cfg.leverage is not None:
+        args.extend(["--leverage", str(cfg.leverage)])
+    if cfg.stop_loss is not None:
+        args.extend(["--stop-loss", str(cfg.stop_loss)])
+    if cfg.take_profit is not None:
+        args.extend(["--take-profit", str(cfg.take_profit)])
+    if cfg.stop_loss_pct is not None:
+        args.extend(["--stop-loss-pct", str(cfg.stop_loss_pct)])
+    if cfg.max_drawdown_pct is not None:
+        args.extend(["--max-drawdown-pct", str(cfg.max_drawdown_pct)])
+    if cfg.testnet is not None:
+        args.append("--testnet" if cfg.testnet else "--no-testnet")
+    if cfg.dry_run is not None:
+        args.append("--dry-run" if cfg.dry_run else "--no-dry-run")
+    return args
+
+
+@app.post("/bots")
+async def start_bot(cfg: BotConfig):
+    """Launch a bot process using the provided configuration."""
+
+    args = _build_bot_args(cfg)
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _BOTS[proc.pid] = {"process": proc, "config": cfg.dict()}
+    return {"pid": proc.pid, "status": "started"}
+
+
+@app.get("/bots")
+def list_bots(request: Request):
+    """Return information about running bot processes."""
+
+    if "text/html" in request.headers.get("accept", ""):
+        try:
+            html = (_static_dir / "bots.html").read_text(encoding="utf-8")
+            return HTMLResponse(content=html)
+        except Exception:
+            return HTMLResponse(content="Bots dashboard not found", status_code=404)
+
+    items = []
+    for pid, info in _BOTS.items():
+        proc = info["process"]
+        status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
+        items.append({"pid": pid, "status": status, "config": info["config"]})
+    return {"bots": items}
+
+
+@app.post("/bots/{pid}/stop")
+async def stop_bot(pid: int):
+    """Terminate a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.terminate()
+    await proc.wait()
+    return {"pid": pid, "status": "stopped", "returncode": proc.returncode}
+
+
+@app.post("/bots/{pid}/pause")
+def pause_bot(pid: int):
+    """Send SIGSTOP to a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.send_signal(signal.SIGSTOP)
+    return {"pid": pid, "status": "paused"}
+
+
+@app.post("/bots/{pid}/resume")
+def resume_bot(pid: int):
+    """Send SIGCONT to resume a paused bot."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.send_signal(signal.SIGCONT)
+    return {"pid": pid, "status": "running"}
+
+
+@app.delete("/bots/{pid}")
+async def delete_bot(pid: int):
+    """Remove process information and terminate if still running."""
+
+    info = _BOTS.pop(pid, None)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is None:
+        proc.terminate()
+        await proc.wait()
+    return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 

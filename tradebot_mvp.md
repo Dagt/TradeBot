@@ -13,7 +13,7 @@
 - **Ejecución** (router multi‑exchange, maker/taker, TWAP/VWAP/POV, OCO)
 - **Gestión de riesgo** (sizing por volatilidad, límites/correlación, kill‑switch, daily guard)
 - **Persistencia** (TimescaleDB/QuestDB)
-- **Monitoreo** (métricas Prometheus y panel FastAPI)
+- **Monitoreo** (métricas Prometheus y dashboards servidos por FastAPI)
 - **Paper‑trading** y **testnet**
 
 **No objetivos**: co‑location, HFT <1 ms, opciones complejas.
@@ -53,11 +53,27 @@
 
 ### 2.3 Señal / Estrategia
 
-- **Breakout ATR** (canal Keltner)
-- **Momentum** intradía (retornos acumulados 1–5–15 m)
-- **Mean Reversion** (extremos OFI/volatilidad)
-- **Arbitraje**: triangular intra‑exchange, **cross‑exchange**, **cash‑and‑carry/funding‑basis**
-- (Fase posterior) ML: triple barrier/meta‑labeling, DSR
+Las estrategias se implementan como clases pluggables y se pueden ejecutar en
+``paper trading`` o en vivo.  La lista completa incluye:
+
+| Estrategia | Idea principal | Archivo |
+|------------|----------------|---------|
+| Momentum intradía | Seguir la tendencia mediante RSI y filtro OFI. | `strategies/momentum.py` |
+| Mean Reversion | Regreso a la media con RSI. | `strategies/mean_reversion.py` |
+| Breakout ATR | Rompimiento de canal de Keltner. | `strategies/breakout_atr.py` |
+| Breakout de volatilidad | Rupturas basadas en desviación estándar. | `strategies/breakout_vol.py` |
+| Order Flow | Promedio de OFI para detectar presión. | `strategies/order_flow.py` |
+| Mean Rev OFI | Z‑score de OFI con control de volatilidad. | `strategies/mean_rev_ofi.py` |
+| Depth Imbalance | Desequilibrio de profundidad del libro. | `strategies/depth_imbalance.py` |
+| Liquidity Events | Vacíos y gaps de liquidez. | `strategies/liquidity_events.py` |
+| Cash‑and‑Carry | Captura de basis/funding entre spot y perp. | `strategies/cash_and_carry.py` |
+| Cross Exchange Arb | Arbitraje entre exchanges. | `strategies/cross_exchange_arbitrage.py` |
+| Triangular Arb | Ruta A→B→C→A para capturar desalineaciones. | `strategies/arbitrage_triangular.py` |
+| Arbitrage (stub) | Plantilla simple para spreads. | `strategies/arbitrage.py` |
+| Triple Barrier | Etiquetado de triple barrera + meta‑labeling. | `strategies/triple_barrier.py` |
+
+Todas aceptan parámetros externos vía YAML (`--config`) y exponen métricas de
+señales para monitoreo.
 
 ### 2.4 Gestión de cartera y riesgo
 
@@ -91,7 +107,7 @@
 ### 2.8 Monitoreo & Ops
 
 - **Prometheus** exporters: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized/unrealized`
-- **Panel FastAPI**: salud WS, posiciones, órdenes activas, PnL intradía, alertas
+- **Dashboards FastAPI**: vistas separadas para credenciales, monitoreo y bots (con CLI)
 - **Alertas**: falta de ticks, DD intradía, tasa de rechazos
 
 ---
@@ -155,8 +171,9 @@
 
 El repositorio actual expande este MVP con estrategias de arbitraje
 triangular y cross‑exchange, señales de microestructura como Order Flow
-Imbalance, adaptadores para testnets de Binance, Bybit y OKX, un panel
-web con ejecución de comandos de la CLI y una API de monitoreo/riesgo.
+Imbalance, adaptadores para testnets de Binance, Bybit y OKX y un panel
+web con secciones de monitoreo y gestión de bots que permite ejecutar
+comandos de la CLI.
 La descripción detallada y ejemplos de uso están en
 [docs/extra_features.md](docs/extra_features.md).
 
@@ -261,7 +278,7 @@ La descripción detallada y ejemplos de uso están en
 ## 10) Monitoreo y panel
 
 - **Exporters Prometheus**: `ws_uptime`, `ingest_rate`, `route_latency`, `order_reject_rate`, `pnl_realized`, `pnl_unrealized`
-- **Panel FastAPI**: endpoints REST y vista web para: salud WS, posiciones/órdenes activas, PnL intradía, alertas y logs
+- **Dashboards FastAPI**: endpoints REST y vistas web para credenciales, monitoreo y bots/CLI
 - **Alertas**: faltas de ticks (>30s), DD intradía, rechazos de órdenes
 
 ---
@@ -329,14 +346,14 @@ monitoring:
 
 | Punto del blueprint | Módulos / archivos                                                                     | Comandos CLI                                                    |
 | ------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| **1. Ingesta**      | `adapters/`, `data/ingestion.py`, `workers/`                                           | `ingest`, `ingest-historical`, `ingestion-workers`              |
+| **1. Ingesta**      | `adapters/`, `data/ingestion.py`, `workers/`                                           | `ingest`, `backfill`, `ingest-historical`, `ingestion-workers`  |
 | **2. Features**     | `data/features.py`, `data/basis.py`, `data/open_interest.py`                           | –                                                               |
-| **3. Estrategias**  | `strategies/`, `live/runner*.py`                                                       | `run-bot`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
-| **4. Riesgo**       | `risk/manager.py`, `risk/portfolio_guard.py`, `risk/daily_guard.py`                    | `run-bot`, `daemon`                                             |
-| **5. Ejecución**    | `execution/router.py`, `execution/algos.py`, `execution/order_types.py`                | `run-bot --algo`, `run-cross-arb`                               |
+| **3. Estrategias**  | `strategies/`, `live/runner*.py`                                                       | `run-bot`, `real-run`, `paper-run`, `tri-arb`, `cross-arb`, `run-cross-arb` |
+| **4. Riesgo**       | `risk/manager.py`, `risk/portfolio_guard.py`, `risk/daily_guard.py`                    | `run-bot`, `real-run`, `daemon`                                |
+| **5. Ejecución**    | `execution/router.py`, `execution/algos.py`, `execution/order_types.py`                | `run-bot --algo`, `real-run --algo`, `run-cross-arb`            |
 | **6. Persistencia** | `storage/timescale.py`, `storage/quest.py`                                             | `ingest*`, `report`                                             |
 | **7. Backtesting**  | `backtest/event_engine.py`, `backtesting/engine.py`, `backtesting/vectorbt_wrapper.py` | `backtest*`, `walk-forward`, `paper-run`                        |
-| **8. Monitoreo**    | `monitoring/panel.py`, `monitoring/metrics.py`, `utils/metrics.py`                     | `report`                                                        |
+| **8. Monitoreo**    | `monitoring/metrics.py`, `src/tradingbot/apps/api/static/index.html`, `src/tradingbot/apps/api/static/monitor.html`, `utils/metrics.py` | `report`                                                        |
 
 ---
 
@@ -413,7 +430,10 @@ monitoring:
 python -m src.tradingbot.cli ingest --venue binance --symbols BTCUSDT,ETHUSDT --persist
 
 # Backfill histórico 7 días
-python -m src.tradingbot.cli ingest-historical --venue binance --symbols BTCUSDT --days 7
+python -m src.tradingbot.cli backfill --days 7 --symbols BTC/USDT
+
+# Ingesta histórica con Kaiko
+python -m src.tradingbot.cli ingest-historical kaiko BTC-USDT --exchange binance --kind trades
 
 # Backtest estrategia Breakout ATR
 python -m src.tradingbot.cli backtest --strategy breakout_atr --config config/default.yaml
@@ -423,6 +443,9 @@ python -m src.tradingbot.cli paper-run --strategy breakout_atr --symbols BTCUSDT
 
 # Testnet multi‑símbolo (futuros)
 python -m src.tradingbot.cli testnet-run --venue binance_futures --symbols BTCUSDT,ETHUSDT --algo twap --oco
+
+# Operación real (requiere confirmación)
+python -m src.tradingbot.cli real-run --exchange binance --symbol BTC/USDT --i-know-what-im-doing
 ```
 
 ### Anexo B) Esquema SQL (borrador Timescale)
