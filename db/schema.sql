@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS market.trades (
   trade_id text
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS trades_uq_idx
+  ON market.trades (ts, exchange, symbol, trade_id);
+
 CREATE TABLE IF NOT EXISTS market.orderbook (
   ts timestamptz NOT NULL,
   exchange text NOT NULL,
@@ -31,6 +34,9 @@ CREATE TABLE IF NOT EXISTS market.bars (
   c numeric,
   v numeric
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS bars_uq_idx
+  ON market.bars (ts, timeframe, exchange, symbol);
 
 CREATE TABLE IF NOT EXISTS market.funding (
   ts timestamptz NOT NULL,
