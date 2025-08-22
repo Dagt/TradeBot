@@ -6,7 +6,7 @@
   "title": "Core Metrics",
   "uid": "core",
   "schemaVersion": 16,
-  "version": 1,
+  "version": 2,
   "panels": [
     {
       "type": "stat",
@@ -99,5 +99,41 @@
       "id": 7,
       "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8}
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "symbol",
+        "label": "Symbol",
+        "type": "query",
+        "datasource": "Postgres",
+        "refresh": 1,
+        "query": "SELECT DISTINCT symbol FROM market.trades ORDER BY 1",
+        "current": {
+          "text": "BTCUSD",
+          "value": "BTCUSD"
+        }
+      },
+      {
+        "name": "start",
+        "label": "Start time",
+        "type": "textbox",
+        "query": "now() - interval '1 hour'",
+        "current": {
+          "text": "now() - interval '1 hour'",
+          "value": "now() - interval '1 hour'"
+        }
+      },
+      {
+        "name": "end",
+        "label": "End time",
+        "type": "textbox",
+        "query": "now()",
+        "current": {
+          "text": "now()",
+          "value": "now()"
+        }
+      }
+    ]
+  }
 }
