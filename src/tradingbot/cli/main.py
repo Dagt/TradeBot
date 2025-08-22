@@ -26,6 +26,9 @@ import asyncio
 import logging
 import os
 import sys
+import inspect
+import ast
+import textwrap
 from typing import List
 
 import typer
@@ -113,6 +116,25 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
         if base_attr is attr:
             # method not implemented by subclass
             continue
+        try:
+            src = inspect.getsource(attr)
+        except OSError:  # pragma: no cover - builtins or C extensions
+            src = ""
+        if src:
+            fn_node = ast.parse(textwrap.dedent(src)).body[0]
+            body = getattr(fn_node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                body = body[1:]
+            if len(body) == 1 and isinstance(body[0], ast.Raise):
+                exc = body[0].exc
+                if isinstance(exc, ast.Name) and exc.id == "NotImplementedError":
+                    continue
+                if (
+                    isinstance(exc, ast.Call)
+                    and isinstance(exc.func, ast.Name)
+                    and exc.func.id == "NotImplementedError"
+                ):
+                    continue
         kind = name[len("stream_"):]
         if kind in ("order_book", "orderbook"):
             kind = "orderbook"

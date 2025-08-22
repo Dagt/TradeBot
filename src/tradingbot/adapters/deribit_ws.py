@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -117,6 +118,18 @@ class DeribitWSAdapter(ExchangeAdapter):
                 "ask_px": [p for p, _ in delta_asks],
                 "ask_qty": [q for _, q in delta_asks],
             }
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        while True:
+            data = await self.fetch_funding(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        while True:
+            data = await self.fetch_oi(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
         if self.rest:

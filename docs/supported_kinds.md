@@ -1,0 +1,24 @@
+# Supported stream kinds by exchange
+
+The CLI exposes different market data streams depending on the selected
+exchange adapter.  The table below lists the available ``kind`` values for
+each venue as detected by :func:`get_supported_kinds`.
+
+| Exchange | Supported kinds |
+| -------- | --------------- |
+| binance_spot | trades, orderbook, bba, delta, funding, open_interest |
+| binance_futures | trades, orderbook, bba, delta, funding, open_interest |
+| binance_spot_ws | trades, trades_multi, orderbook, bba, delta |
+| binance_futures_ws | trades, trades_multi, orderbook, bba, delta, funding, open_interest |
+| bybit_spot | trades, orderbook, bba, delta, funding, open_interest |
+| bybit_futures | trades, orderbook, bba, delta, funding, open_interest |
+| bybit_ws | trades, orderbook, bba, delta, funding, open_interest |
+| okx_spot | trades, orderbook, bba, delta, funding, open_interest |
+| okx_futures | trades, orderbook, bba, delta, funding, open_interest |
+| okx_ws | trades, orderbook, bba, delta, funding, open_interest |
+| deribit | trades, funding, open_interest |
+| deribit_ws | trades, orderbook, bba, delta, funding, open_interest |
+
+This reference aims to keep the UI and CLI documentation aligned with the
+actual capabilities of each adapter.
+

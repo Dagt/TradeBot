@@ -136,6 +136,12 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                 "ask_qty": [q for _, q in delta_asks],
             }
 
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Funding stream not supported for Spot WS")
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Open interest stream not supported for Spot WS")
+
     async def fetch_funding(self, symbol: str):
         if self.rest:
             return await self.rest.fetch_funding(symbol)
