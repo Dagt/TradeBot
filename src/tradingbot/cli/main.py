@@ -105,6 +105,10 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
     are not overridden are ignored.
     """
 
+    kinds_attr = getattr(adapter_cls, "supported_kinds", None)
+    if kinds_attr:
+        return sorted(kinds_attr)
+
     kinds: set[str] = set()
     for name in dir(adapter_cls):
         if not name.startswith("stream_"):
@@ -141,6 +145,10 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
         elif kind == "book_delta":
             kind = "delta"
         kinds.add(kind)
+    name = getattr(adapter_cls, "name", "")
+    if "futures" not in name:
+        kinds.discard("funding")
+        kinds.discard("open_interest")
     return sorted(kinds)
 
 

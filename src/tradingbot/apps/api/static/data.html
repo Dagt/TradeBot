@@ -6,6 +6,10 @@
   <title>DMI - TradingBot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="/static/styles.css"/>
+  <style>
+  @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
+  #dm-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
+  </style>
 </head>
 <body>
 <header class="center" style="margin-bottom:8px">
@@ -111,6 +115,7 @@
     <button id="dm-run" style="margin-top:10px">Ejecutar</button>
     <button id="dm-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
     <button id="dm-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
+    <span id="dm-working">Procesando<span id="dm-dots"></span></span>
     <pre id="dm-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
@@ -241,18 +246,22 @@ async function runData(){
       runBtn.textContent='Ejecutar';
       currentJob=null;
       evt.close();
+      if(act==='backfill') hideWorking();
       appendOutput(out, `Proceso finalizado (código ${e.data}).`);
     });
     evt.onerror=()=>{
       appendOutput(out, '[error de conexión]');
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
+      if(act==='backfill') hideWorking();
     };
+    if(act==='backfill') showWorking();
   }catch(e){
     out.textContent=String(e);
     out.scrollTop = out.scrollHeight;
     runBtn.disabled=false;
     runBtn.textContent='Ejecutar';
+    if(act==='backfill') hideWorking();
   }
 }
 
@@ -265,6 +274,7 @@ async function stopData(){
   runBtn.disabled=false;
   runBtn.textContent='Ejecutar';
   currentJob=null;
+  hideWorking();
 }
 
 async function runCli(){

@@ -8,8 +8,6 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
-        "funding",
-        "open_interest",
     },
     "binance_futures": {
         "trades",
@@ -34,8 +32,6 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
-        "funding",
-        "open_interest",
     },
     "bybit_futures": {
         "trades",
@@ -58,8 +54,6 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
-        "funding",
-        "open_interest",
     },
     "okx_futures": {
         "trades",
@@ -83,8 +77,6 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
-        "funding",
-        "open_interest",
     },
 }
 

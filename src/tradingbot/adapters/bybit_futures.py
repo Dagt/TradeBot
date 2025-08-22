@@ -192,13 +192,15 @@ class BybitFuturesAdapter(ExchangeAdapter):
         basis = mark_px - index_px
         return {"ts": ts, "basis": basis}
 
-    async def fetch_oi(self, symbol: str):
+    async def fetch_oi(self, symbol: str, interval: str = "5min"):
         """Return current open interest for ``symbol``.
 
         Bybit provides the value under the ``public/v5/market/open-interest``
-        endpoint.  The response wraps the data inside ``result.list``.  We
-        normalise it into a lightweight ``{"ts": datetime, "oi": float}``
-        structure.
+        endpoint.  The response wraps the data inside ``result.list``.  The
+        ``intervalTime`` query parameter is required and accepts one of
+        ``{"5min", "15min", "30min", "1h", "4h"}``, with ``"5min"`` being the
+        default.  The result is normalised into a lightweight
+        ``{"ts": datetime, "oi": float}`` structure.
         """
 
         sym = normalize(symbol)
@@ -206,9 +208,12 @@ class BybitFuturesAdapter(ExchangeAdapter):
         if method is None:
             raise NotImplementedError("Open interest not supported")
 
-        data = await self._request(method, {"category": "linear", "symbol": sym})
+        params = {"category": "linear", "symbol": sym, "intervalTime": interval}
+        data = await self._request(method, params)
         lst = (data.get("result") or {}).get("list") or []
-        item = lst[0] if lst else {}
+        if not lst:
+            raise ValueError("Empty open interest response")
+        item = lst[0]
         ts_ms = int(item.get("timestamp", 0))
         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
         oi = float(item.get("openInterest", 0.0))
