@@ -139,7 +139,9 @@ def ingest(
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
     depth: int = typer.Option(10, help="Order book depth"),
     kind: str = typer.Option(
-        "orderbook", "--kind", help="Data kind: trades,orderbook,bba,delta,funding,oi"
+        "orderbook",
+        "--kind",
+        help="Data kind: trades,trades_multi,orderbook,bba,delta,funding,oi",
     ),
     persist: bool = typer.Option(False, "--persist", help="Persist data"),
     backend: str = typer.Option("timescale", "--backend"),
@@ -217,6 +219,23 @@ def ingest(
                             ing.persist_trades([tick], backend=backend)
 
                 tasks.append(asyncio.create_task(_t(sym)))
+            elif kind == "trades_multi":
+                async def _tm() -> None:
+                    async for d in adapter.stream_trades_multi(symbols):
+                        typer.echo(str(d))
+                        if persist:
+                            tick = Tick(
+                                ts=d.get("ts"),
+                                exchange=adapter.name,
+                                symbol=d.get("symbol"),
+                                price=float(d.get("price") or 0.0),
+                                qty=float(d.get("qty") or 0.0),
+                                side=d.get("side"),
+                            )
+                            ing.persist_trades([tick], backend=backend)
+
+                tasks.append(asyncio.create_task(_tm()))
+                break
             elif kind == "bba":
                 async def _b(symbol: str) -> None:
                     async for d in adapter.stream_bba(symbol):
