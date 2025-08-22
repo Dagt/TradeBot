@@ -83,8 +83,6 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
-        "funding",
-        "open_interest",
     },
 }
 

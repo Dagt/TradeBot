@@ -18,6 +18,9 @@ class DeribitWSAdapter(ExchangeAdapter):
     """Websocket wrapper delegando a :class:`DeribitAdapter` para REST."""
 
     name = "deribit_futures_ws"
+    # only websocket-native streams are advertised; funding and open interest
+    # require a REST fallback and are therefore omitted from ``supported_kinds``
+    supported_kinds = ["trades", "orderbook", "bba", "delta"]
 
     def __init__(self, rest: DeribitAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -123,12 +126,16 @@ class DeribitWSAdapter(ExchangeAdapter):
             }
 
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        if not self.rest:
+            raise NotImplementedError("Funding stream requires REST adapter")
         while True:
             data = await self.fetch_funding(symbol)
             yield {"symbol": symbol, **data}
             await asyncio.sleep(60)
 
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        if not self.rest:
+            raise NotImplementedError("Open interest stream requires REST adapter")
         while True:
             data = await self.fetch_oi(symbol)
             yield {"symbol": symbol, **data}

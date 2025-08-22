@@ -105,6 +105,10 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
     are not overridden are ignored.
     """
 
+    kinds_attr = getattr(adapter_cls, "supported_kinds", None)
+    if kinds_attr:
+        return sorted(kinds_attr)
+
     kinds: set[str] = set()
     for name in dir(adapter_cls):
         if not name.startswith("stream_"):
