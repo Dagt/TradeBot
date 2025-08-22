@@ -29,7 +29,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         self,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
-        testnet: bool = True,
+        testnet: bool = False,
         leverage: int = 5,
         maker_fee_bps: float | None = None,
         taker_fee_bps: float | None = None,
@@ -41,12 +41,15 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         self.leverage = leverage
         self.testnet = testnet
 
-        self.rest = ccxt.binanceusdm({
-            "apiKey": api_key or settings.binance_futures_api_key,
-            "secret": api_secret or settings.binance_futures_api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        })
+        if testnet:
+            self.rest = ccxt.binanceusdm({
+                "apiKey": api_key or settings.binance_futures_api_key,
+                "secret": api_secret or settings.binance_futures_api_secret,
+                "enableRateLimit": True,
+                "options": {"defaultType": "future"},
+            })
+        else:
+            self.rest = ccxt.binanceusdm()
         self.maker_fee_bps = float(
             maker_fee_bps
             if maker_fee_bps is not None
@@ -79,6 +82,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             self.meta.load_markets()
         except Exception as e:
             log.warning("load_markets falló: %s", e)
+
+        self.name = "binance_futures_usdm_testnet" if testnet else "binance_futures_usdm"
 
         try:
             self._configure_lock = asyncio.Lock()
