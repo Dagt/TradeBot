@@ -34,12 +34,16 @@ from .. import adapters
 from ..adapters import (
     BinanceFuturesAdapter,
     BinanceSpotAdapter,
+    BinanceFuturesWSAdapter,
+    BinanceSpotWSAdapter,
     BybitFuturesAdapter,
     BybitSpotAdapter,
+    BybitWSAdapter,
     DeribitAdapter,
     DeribitWSAdapter,
     OKXFuturesAdapter,
     OKXSpotAdapter,
+    OKXWSAdapter,
 )
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
@@ -70,10 +74,14 @@ app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 _ADAPTER_CLASS_MAP: dict[str, type[adapters.ExchangeAdapter]] = {
     "binance_spot": BinanceSpotAdapter,
     "binance_futures": BinanceFuturesAdapter,
+    "binance_spot_ws": BinanceSpotWSAdapter,
+    "binance_futures_ws": BinanceFuturesWSAdapter,
     "bybit_spot": BybitSpotAdapter,
     "bybit_futures": BybitFuturesAdapter,
+    "bybit_ws": BybitWSAdapter,
     "okx_spot": OKXSpotAdapter,
     "okx_futures": OKXFuturesAdapter,
+    "okx_ws": OKXWSAdapter,
     "deribit": DeribitAdapter,
     "deribit_ws": DeribitWSAdapter,
 }

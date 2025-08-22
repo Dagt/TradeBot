@@ -10,12 +10,26 @@ A continuación se describen los comandos disponibles.
 
 ## `ingest`
 Recibe datos de mercado en vivo y opcionalmente los almacena.
-- `--venue`: intercambio a utilizar (ej. `binance_spot`).
+- `--venue`: intercambio a utilizar (ej. `binance_spot`, `binance_futures_ws`, `bybit_ws`, `okx_ws`).
 - `--symbol`: puede repetirse para varios pares (por defecto `BTC/USDT`).
 - `--depth`: profundidad del libro de órdenes (10).
 - `--kind`: tipo de dato: `trades`, `orderbook`, `bba`, `delta`, `funding`, `oi`.
 - `--persist`: si se indica, guarda los datos en la base de datos.
 - `--backend`: backend de almacenamiento (`timescale` o `csv`).
+
+Ejemplos:
+
+```bash
+# Funding rate en Binance Futures
+python -m tradingbot.cli ingest --venue binance_futures_ws --symbol BTC/USDT --kind funding
+
+# Open interest en Bybit
+python -m tradingbot.cli ingest --venue bybit_ws --symbol BTC/USDT --kind open_interest
+
+# Funding y open interest en OKX
+python -m tradingbot.cli ingest --venue okx_ws --symbol BTC/USDT --kind funding
+python -m tradingbot.cli ingest --venue okx_ws --symbol BTC/USDT --kind open_interest
+```
 
 ## `backfill`
 Descarga datos históricos con límites de velocidad.
