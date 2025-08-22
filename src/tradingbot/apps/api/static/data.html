@@ -74,6 +74,14 @@
         <label for="dm-days">Días</label>
         <input id="dm-days" type="number" value="1"/>
       </div>
+      <div id="field-start">
+        <label for="dm-start">Inicio</label>
+        <input id="dm-start" type="datetime-local"/>
+      </div>
+      <div id="field-end">
+        <label for="dm-end">Fin</label>
+        <input id="dm-end" type="datetime-local"/>
+      </div>
       <div id="field-source">
         <label for="dm-source">Fuente</label>
         <select id="dm-source">
@@ -136,7 +144,12 @@ function updateFields(){
   document.getElementById('field-depth').style.display=act==='ingest'?'':'none';
   document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
   document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
-  document.getElementById('field-days').style.display=act==='backfill'?'':'none';
+  const start=document.getElementById('dm-start').value;
+  const end=document.getElementById('dm-end').value;
+  const showDays=act==='backfill' && !(start && end);
+  document.getElementById('field-days').style.display=showDays?'':'none';
+  document.getElementById('field-start').style.display=act==='backfill'?'':'none';
+  document.getElementById('field-end').style.display=act==='backfill'?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
@@ -149,6 +162,8 @@ function updateFields(){
 
 document.getElementById('dm-source').addEventListener('change',updateFields);
 document.getElementById('dm-hkind').addEventListener('change',updateFields);
+document.getElementById('dm-start').addEventListener('change',updateFields);
+document.getElementById('dm-end').addEventListener('change',updateFields);
 
 async function runData(){
   if(evt){evt.close();evt=null;}
@@ -157,6 +172,7 @@ async function runData(){
   runBtn.textContent='Ejecutando...';
   const act=document.getElementById('dm-action').value;
   const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const out=document.getElementById('dm-output');
   let cmd='';
   if(act==='ingest'){
     const venue=document.getElementById('dm-venue').value;
@@ -165,8 +181,22 @@ async function runData(){
     const persist=document.getElementById('dm-persist').checked;
     cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind}`+(persist?' --persist':'');
   }else if(act==='backfill'){
-    const days=document.getElementById('dm-days').value;
-    cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+    const start=document.getElementById('dm-start').value;
+    const end=document.getElementById('dm-end').value;
+    if(start && end){
+      const s=new Date(start);
+      const e=new Date(end);
+      if(!(s<e)){
+        out.textContent='Rango inválido (inicio debe ser menor que fin)';
+        runBtn.disabled=false;
+        runBtn.textContent='Ejecutar';
+        return;
+      }
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+    }else{
+      const days=document.getElementById('dm-days').value;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+    }
   }else{
     const src=document.getElementById('dm-source').value;
     const sym=document.getElementById('dm-symbols').value.trim();
@@ -180,7 +210,6 @@ async function runData(){
     if(kind==='orderbook') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
   }
-  const out=document.getElementById('dm-output');
   out.textContent='Iniciando...\n';
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
