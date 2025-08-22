@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 class DeribitWSAdapter(ExchangeAdapter):
     """Websocket wrapper delegando a :class:`DeribitAdapter` para REST."""
 
-    name = "deribit_ws"
+    name = "deribit_futures_ws"
 
     def __init__(self, rest: DeribitAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -23,6 +23,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         self.ws_url = (
             "wss://test.deribit.com/ws/api/v2" if testnet else "wss://www.deribit.com/ws/api/v2"
         )
+        self.name = "deribit_futures_ws_testnet" if testnet else "deribit_futures_ws"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Stream trades from Deribit public websocket."""

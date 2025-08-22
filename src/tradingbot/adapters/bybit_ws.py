@@ -29,7 +29,7 @@ class BybitWSAdapter(ExchangeAdapter):
     basis and open interest retrieval via an optional REST client.
     """
 
-    name = "bybit_ws"
+    name = "bybit_futures_ws"
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -42,7 +42,7 @@ class BybitWSAdapter(ExchangeAdapter):
                 else "wss://stream.bybit.com/v5/public/linear"
             )
         self.rest = rest
-        self.name = "bybit_ws_testnet" if testnet else "bybit_ws"
+        self.name = "bybit_futures_ws_testnet" if testnet else "bybit_futures_ws"
 
     # ------------------------------------------------------------------
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:

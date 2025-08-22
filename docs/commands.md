@@ -10,7 +10,7 @@ A continuación se describen los comandos disponibles.
 
 ## `ingest`
 Recibe datos de mercado en vivo y opcionalmente los almacena.
-- `--venue`: intercambio a utilizar (ej. `binance_spot`, `binance_futures_ws`, `bybit_ws`, `okx_futures_ws`).
+- `--venue`: intercambio a utilizar (ej. `binance_spot`, `binance_futures_ws`, `bybit_futures_ws`, `okx_futures_ws`). Los nombres siguen el patrón `<exchange>_<market>` para REST y `<exchange>_<market>_ws` para WebSocket; se añade `_testnet` automáticamente cuando se usa el entorno de prueba.
 - `--symbol`: puede repetirse para varios pares (por defecto `BTC/USDT`).
 - `--depth`: profundidad del libro de órdenes (10).
 - `--kind`: tipo de dato: `trades`, `trades_multi`, `orderbook`, `bba`, `delta`, `funding`, `oi`.
@@ -24,7 +24,7 @@ Ejemplos:
 python -m tradingbot.cli ingest --venue binance_futures_ws --symbol BTC/USDT --kind funding
 
 # Open interest en Bybit
-python -m tradingbot.cli ingest --venue bybit_ws --symbol BTC/USDT --kind open_interest
+python -m tradingbot.cli ingest --venue bybit_futures_ws --symbol BTC/USDT --kind open_interest
 
 # Funding y open interest en OKX
 python -m tradingbot.cli ingest --venue okx_futures_ws --symbol BTC/USDT --kind funding

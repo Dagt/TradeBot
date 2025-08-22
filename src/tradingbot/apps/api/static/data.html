@@ -40,7 +40,7 @@
         </select>
       </div>
       <div id="field-venue">
-        <label for="dm-venue">Venue</label>
+        <label for="dm-venue">Venue (e.g. binance_futures_ws)</label>
         <select id="dm-venue"></select>
       </div>
       <div id="field-symbols">
@@ -293,6 +293,7 @@ async function loadVenues(){
   try{
     const r=await fetch(api('/venues'));
     const venues=await r.json();
+    venues.sort();
     const sel=document.getElementById('dm-venue');
     sel.innerHTML='';
     for(const v of venues){

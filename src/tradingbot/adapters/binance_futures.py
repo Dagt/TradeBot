@@ -23,7 +23,7 @@ from ..utils.secrets import validate_scopes
 log = logging.getLogger(__name__)
 
 class BinanceFuturesAdapter(ExchangeAdapter):
-    name = "binance_futures_usdm_testnet"
+    name = "binance_futures"
 
     def __init__(
         self,
@@ -76,14 +76,14 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         # Cache de metadatos/filters
         self.meta = ExchangeMeta.binanceusdm_testnet(
             api_key or settings.binance_futures_api_key,
-            api_secret or settings.binance_futures_api_secret
+            api_secret or settings.binance_futures_api_secret,
         )
         try:
             self.meta.load_markets()
         except Exception as e:
             log.warning("load_markets falló: %s", e)
 
-        self.name = "binance_futures_usdm_testnet" if testnet else "binance_futures_usdm"
+        self.name = "binance_futures_testnet" if testnet else "binance_futures"
 
         try:
             self._configure_lock = asyncio.Lock()
