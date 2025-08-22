@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 class DeribitAdapter(ExchangeAdapter):
     """Adapter simple para Deribit (perpetuos)."""
 
-    name = "deribit"
+    name = "deribit_futures"
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class DeribitAdapter(ExchangeAdapter):
         })
         self.rest.set_sandbox_mode(testnet)
         validate_scopes(self.rest, log)
-        self.name = "deribit_testnet" if testnet else "deribit"
+        self.name = "deribit_futures_testnet" if testnet else "deribit_futures"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         while True:  # poll trades vía REST; Deribit no posee WS en este adaptador

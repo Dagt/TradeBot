@@ -81,12 +81,12 @@ _ADAPTER_CLASS_MAP: dict[str, type[adapters.ExchangeAdapter]] = {
     "binance_futures_ws": BinanceFuturesWSAdapter,
     "bybit_spot": BybitSpotAdapter,
     "bybit_futures": BybitFuturesAdapter,
-    "bybit_ws": BybitWSAdapter,
+    "bybit_futures_ws": BybitWSAdapter,
     "okx_spot": OKXSpotAdapter,
     "okx_futures": OKXFuturesAdapter,
     "okx_futures_ws": OKXWSAdapter,
-    "deribit": DeribitAdapter,
-    "deribit_ws": DeribitWSAdapter,
+    "deribit_futures": DeribitAdapter,
+    "deribit_futures_ws": DeribitWSAdapter,
 }
 
 

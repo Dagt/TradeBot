@@ -21,7 +21,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     WS de Binance USDⓈ-M Futures (UM) para datos de mercado.
     Permite operar tanto en mainnet como en testnet.
     """
-    name = "binance_futures_um_testnet_ws"
+    name = "binance_futures_ws"
 
     def __init__(
         self,
@@ -42,6 +42,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         self.rest = rest
         self._api_key = api_key
         self._api_secret = api_secret
+        self.name = "binance_futures_ws_testnet" if testnet else "binance_futures_ws"
 
     def _ensure_rest(self):
         if self.rest is None:
