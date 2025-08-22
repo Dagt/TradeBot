@@ -110,6 +110,7 @@
     <div class="muted" style="margin-top:8px">Los datos se guardan en el backend configurado. Puedes analizarlos en <a href="/stats">Estadísticas</a> u otras herramientas.</div>
     <button id="dm-run" style="margin-top:10px">Ejecutar</button>
     <button id="dm-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
+    <button id="dm-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
     <pre id="dm-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
@@ -307,6 +308,9 @@ async function loadVenues(){
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
 document.getElementById('dm-stop').addEventListener('click',stopData);
+document.getElementById('dm-clear').addEventListener(
+  'click', () => (document.getElementById('dm-output').textContent = '')
+);
 document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
