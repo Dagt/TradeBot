@@ -108,20 +108,30 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask for *symbol* using order book snapshots."""
+        """Stream best bid/ask for ``symbol`` using Binance's ``bookTicker``."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
+        stream = _stream_name(normalize(symbol), "bookTicker")
+        url = self.ws_base + stream
+        async for raw in self._ws_messages(url):
+            msg = json.loads(raw)
+            d = msg.get("data") or msg
+            bid = d.get("b")
+            bid_qty = d.get("B")
+            ask = d.get("a")
+            ask_qty = d.get("A")
+            ts_ms = d.get("T") or d.get("E")
+            ts = (
+                datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                if ts_ms
+                else datetime.now(timezone.utc)
+            )
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+                "ts": ts,
+                "bid_px": float(bid) if bid is not None else None,
+                "bid_qty": float(bid_qty or 0.0),
+                "ask_px": float(ask) if ask is not None else None,
+                "ask_qty": float(ask_qty or 0.0),
             }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
