@@ -55,7 +55,26 @@ async def backfill(
     ``days`` days ending at ``datetime.now(timezone.utc)``.
     """
 
-    logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
+    if end is None:
+        end_dt = datetime.now(timezone.utc)
+    else:
+        end_dt = end.replace(tzinfo=timezone.utc) if end.tzinfo is None else end
+
+    if start is None:
+        start_dt = end_dt - timedelta(days=days)
+    else:
+        start_dt = start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start
+
+    if start is not None and end is not None:
+        logger.info(
+            "Backfill start: %s \u2192 %s para %s",
+            start_dt,
+            end_dt,
+            ", ".join(symbols),
+        )
+    else:
+        logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
+
     ex = ccxt.binance({"enableRateLimit": False})
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
@@ -64,19 +83,8 @@ async def backfill(
     client.register_table("market.bars", INSERT_BAR_SQL)
     client.register_table("market.trades", INSERT_TRADE_SQL)
 
-    if end is None:
-        end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    else:
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
-        end_ms = int(end.timestamp() * 1000)
-
-    if start is None:
-        start_ms = end_ms - int(timedelta(days=days).total_seconds() * 1000)
-    else:
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
-        start_ms = int(start.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+    start_ms = int(start_dt.timestamp() * 1000)
 
     try:
         for symbol in symbols:
@@ -145,5 +153,5 @@ async def backfill(
     finally:
         await client.stop()
         await ex.close()
-        logger.info("Backfill finalizado")
+        logger.info("Backfill finalizado para %s", ", ".join(symbols))
 
