@@ -1,4 +1,5 @@
 # src/tradingbot/adapters/binance_futures_ws.py
+import asyncio
 import json
 import logging
 import urllib.request
@@ -167,11 +168,36 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         interval: str, optional
             Update interval for open interest aggregation.  Binance supports
             values such as ``"1m"`` and ``"5m"``.  Defaults to ``"1m"``.
+
+        Notes
+        -----
+        The Binance Futures testnet does **not** currently support the
+        ``openInterest`` websocket channel.  When the adapter is running in
+        testnet mode a :class:`NotImplementedError` is raised to make this
+        limitation explicit.
         """
+
+        if self._testnet:
+            raise NotImplementedError("openInterest stream not available on Binance Futures testnet")
 
         stream = _stream_name(normalize(symbol), f"openInterest@{interval}")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+
+        messages = self._ws_messages(url)
+        first = True
+        while True:
+            try:
+                raw = await asyncio.wait_for(messages.__anext__(), timeout=15)
+            except asyncio.TimeoutError:
+                log.warning("No message received on %s for 15s", stream)
+                continue
+            except StopAsyncIteration:
+                return
+
+            if first:
+                log.debug("Subscribed to %s", stream)
+                first = False
+
             msg = json.loads(raw)
             d = msg.get("data") or msg
             oi = d.get("oi") or d.get("openInterest") or d.get("o")
