@@ -23,7 +23,7 @@ from monitoring.dashboard import router as dashboard_router
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
-from ...cli.main import get_adapter_class, get_supported_kinds
+from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
 
 # Persistencia
 try:
@@ -79,6 +79,12 @@ async def _metrics_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
+
+
+@app.get("/venues")
+def list_venues():
+    """Return available venues."""
+    return sorted(_AVAILABLE_VENUES)
 
 
 @app.get("/venues/{name}/kinds")
