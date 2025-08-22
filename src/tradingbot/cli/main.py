@@ -181,6 +181,9 @@ def ingest(
 
                 tasks.append(asyncio.create_task(_f(sym)))
             elif kind in ("oi", "open_interest"):
+                if not hasattr(adapter, "stream_open_interest"):
+                    raise typer.BadParameter("adapter does not support open_interest")
+
                 async def _oi(symbol: str) -> None:
                     async for d in adapter.stream_open_interest(symbol):
                         typer.echo(str(d))
