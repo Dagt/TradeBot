@@ -141,11 +141,14 @@
 const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
 let evt=null;
+const kindsWithDepth=["orderbook","delta"];
 
 function updateFields(){
   const act=document.getElementById('dm-action').value;
+  const kind=document.getElementById('dm-kind').value;
+  const showDepth=act==='ingest' && kindsWithDepth.includes(kind);
   document.getElementById('field-venue').style.display=act==='ingest'?'':'none';
-  document.getElementById('field-depth').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-depth').style.display=showDepth?'':'none';
   document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
   document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
   const start=document.getElementById('dm-start').value;
@@ -170,6 +173,7 @@ document.getElementById('dm-hkind').addEventListener('change',updateFields);
 document.getElementById('dm-start').addEventListener('change',updateFields);
 document.getElementById('dm-end').addEventListener('change',updateFields);
 document.getElementById('dm-persist').addEventListener('change',updateFields);
+document.getElementById('dm-kind').addEventListener('change',updateFields);
 
 async function runData(){
   if(evt){evt.close();evt=null;}
@@ -284,6 +288,7 @@ async function loadKinds(){
       opt.textContent=k;
       sel.appendChild(opt);
     }
+    updateFields();
   }catch(e){
     console.error(e);
   }
