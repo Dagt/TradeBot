@@ -275,14 +275,13 @@ async function loadKinds(){
     const data=await r.json();
     const sel=document.getElementById('dm-kind');
     sel.innerHTML='';
-    kindsWithDepth=[];
-    for(const [k,info] of Object.entries(data.kinds)){
-      if(info && info.supported===false) continue;
-      const opt=document.createElement('option');
-      opt.value=k;
-      opt.textContent=k;
+    const kinds=data.kinds || [];
+    kindsWithDepth = kinds.filter(k => ['orderbook','delta'].includes(k));
+    for (const k of kinds) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k;
       sel.appendChild(opt);
-      if(info && info.depth) kindsWithDepth.push(k);
     }
     updateFields();
   }catch(e){
