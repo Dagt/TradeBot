@@ -158,10 +158,19 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 "interval_sec": int(d.get("i") or 0),
             }
 
-    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream open interest updates for ``symbol``."""
+    async def stream_open_interest(self, symbol: str, interval: str = "1m") -> AsyncIterator[dict]:
+        """Stream open interest updates for ``symbol``.
 
-        stream = _stream_name(normalize(symbol), "openInterest")
+        Parameters
+        ----------
+        symbol: str
+            Market symbol to subscribe to.
+        interval: str, optional
+            Update interval for open interest aggregation.  Binance supports
+            values such as ``"1m"`` and ``"5m"``.  Defaults to ``"1m"``.
+        """
+
+        stream = _stream_name(normalize(symbol), f"openInterest@{interval}")
         url = self.ws_base + stream
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
