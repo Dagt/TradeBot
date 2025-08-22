@@ -81,11 +81,39 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             log.warning("load_markets falló: %s", e)
 
         try:
-            asyncio.get_event_loop().create_task(self.rest.set_position_mode(False))
-        except Exception as e:
-            log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            self._configure_lock = asyncio.Lock()
+            self._position_mode_configured = False
+        except Exception:
+            # Lock creation should not fail, but keep constructor safe
+            self._configure_lock = None
+            self._position_mode_configured = False
+
+    async def _configure_mode(self):
+        """Ensure one-way position mode is configured."""
+        if getattr(self, "_position_mode_configured", False):
+            return
+        lock = getattr(self, "_configure_lock", None)
+        if lock is None:
+            # Lock not available, still attempt configuration
+            try:
+                await self.rest.set_position_mode(False)
+            except Exception as e:
+                log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            else:
+                self._position_mode_configured = True
+            return
+        async with lock:
+            if self._position_mode_configured:
+                return
+            try:
+                await self.rest.set_position_mode(False)
+            except Exception as e:
+                log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            else:
+                self._position_mode_configured = True
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
+        await self._configure_mode()
         sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
@@ -224,6 +252,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+        await self._configure_mode()
         sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
@@ -272,7 +301,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
 
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
         """Poll funding rate updates via REST."""
-
+        await self._configure_mode()
         while True:
             data = await self.fetch_funding(symbol)
             yield {"symbol": symbol, **data}
@@ -280,7 +309,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
 
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
         """Poll open interest updates via REST."""
-
+        await self._configure_mode()
         while True:
             data = await self.fetch_oi(symbol)
             yield {"symbol": symbol, **data}
