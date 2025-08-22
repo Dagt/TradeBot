@@ -111,7 +111,7 @@
         </select>
       </div>
     </div>
-    <div class="muted" style="margin-top:8px">Los datos se guardan en el backend configurado. Puedes analizarlos en <a href="/stats">Estadísticas</a> u otras herramientas.</div>
+    <p id="kind-desc" class="muted" style="margin-top:8px"></p>
     <button id="dm-run" style="margin-top:10px">Ejecutar</button>
     <button id="dm-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
     <button id="dm-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
@@ -132,21 +132,15 @@ const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
 let evt=null;
 let kindsWithDepth=[];
-let dotsInterval=null;
-
-function showWorking(){
-  const w=document.getElementById('dm-working');
-  const d=document.getElementById('dm-dots');
-  let c=0;
-  w.style.display='inline';
-  dotsInterval=setInterval(()=>{c=(c+1)%4;d.textContent='.'.repeat(c);},500);
-}
-
-function hideWorking(){
-  const w=document.getElementById('dm-working');
-  w.style.display='none';
-  if(dotsInterval){clearInterval(dotsInterval);dotsInterval=null;}
-}
+const kindDescriptions={
+  bba:"Mejores posturas bid/ask",
+  delta:"Deltas del libro de órdenes",
+  open_interest:"Interés abierto",
+  orderbook:"Libro de órdenes completo",
+  trades:"Operaciones ejecutadas",
+  funding:"Tasa de financiamiento",
+  ticker:"Precio de ticker"
+};
 
 function appendOutput(out, text) {
   out.textContent += text + '\n';
@@ -183,7 +177,12 @@ document.getElementById('dm-hkind').addEventListener('change',updateFields);
 document.getElementById('dm-start').addEventListener('change',updateFields);
 document.getElementById('dm-end').addEventListener('change',updateFields);
 document.getElementById('dm-persist').addEventListener('change',updateFields);
-document.getElementById('dm-kind').addEventListener('change',updateFields);
+document.getElementById('dm-kind').addEventListener('change', e => {
+  updateFields();
+  const kind=e.target.value;
+  const desc=document.getElementById('kind-desc');
+  desc.textContent=kindDescriptions[kind]||'';
+});
 
 async function runData(){
   if(evt){evt.close();evt=null;}
@@ -309,6 +308,7 @@ async function loadKinds(){
       sel.appendChild(opt);
     }
     updateFields();
+    document.getElementById('kind-desc').textContent = kindDescriptions[sel.value] || '';
   }catch(e){
     console.error(e);
   }
