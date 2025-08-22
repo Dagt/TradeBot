@@ -23,7 +23,6 @@ TWAP, VWAP or POV strategies.
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import os
 import sys
@@ -32,6 +31,16 @@ from typing import List
 import typer
 
 from .. import adapters
+from ..adapters import (
+    BinanceFuturesAdapter,
+    BinanceSpotAdapter,
+    BybitFuturesAdapter,
+    BybitSpotAdapter,
+    DeribitAdapter,
+    DeribitWSAdapter,
+    OKXFuturesAdapter,
+    OKXSpotAdapter,
+)
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
 from tradingbot.core.symbols import normalize
@@ -55,24 +64,31 @@ except Exception as exc:  # pragma: no cover - network failures
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
+# Manual mapping of venue names to adapter classes to avoid relying on
+# capitalization conventions. This ensures acronyms such as OKX resolve
+# correctly without deriving the class name dynamically.
+_ADAPTER_CLASS_MAP: dict[str, type[adapters.ExchangeAdapter]] = {
+    "binance_spot": BinanceSpotAdapter,
+    "binance_futures": BinanceFuturesAdapter,
+    "bybit_spot": BybitSpotAdapter,
+    "bybit_futures": BybitFuturesAdapter,
+    "okx_spot": OKXSpotAdapter,
+    "okx_futures": OKXFuturesAdapter,
+    "deribit": DeribitAdapter,
+    "deribit_ws": DeribitWSAdapter,
+}
+
+
+def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
+    """Return the adapter class for ``name`` if available."""
+
+    return _ADAPTER_CLASS_MAP.get(name)
+
+
 def _get_available_venues() -> set[str]:
-    """Return venue names exposed by :mod:`tradingbot.adapters`.
+    """Return venue names available for the CLI."""
 
-    The adapters package exposes classes via ``__all__``.  Each adapter class
-    defines a ``name`` attribute used throughout the project.  We derive the
-    CLI choices from those values so that users can only select valid venues.
-    Only classes whose module can be determined are considered valid.
-    """
-
-    names: set[str] = set()
-    for cls_name in getattr(adapters, "__all__", []):
-        cls = getattr(adapters, cls_name, None)
-        if cls is None:
-            continue
-        name = getattr(cls, "name", None)
-        if isinstance(name, str) and inspect.getmodule(cls) is not None:
-            names.add(name)
-    return names
+    return set(_ADAPTER_CLASS_MAP)
 
 
 _AVAILABLE_VENUES = _get_available_venues()
@@ -104,19 +120,10 @@ def ingest(
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
         raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
 
-    adapter_class = None
-    for cls_name in getattr(adapters, "__all__", []):
-        cls = getattr(adapters, cls_name, None)
-        if getattr(cls, "name", None) == venue:
-            adapter_class = cls
-            break
+    adapter_class = get_adapter_class(venue)
     if adapter_class is None:
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
         raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
-
-    module = inspect.getmodule(adapter_class)
-    if module is None:
-        raise typer.BadParameter(f"Adapter module for {venue} not found")
     adapter = adapter_class()
 
     symbols = [normalize(s) for s in symbols]
@@ -504,7 +511,6 @@ def run_ingestion_workers(
     """Start funding and open-interest ingestion workers defined in a YAML config."""
 
     import yaml
-    from importlib import import_module
 
     from ..workers import funding_worker, open_interest_worker
 
@@ -517,14 +523,15 @@ def run_ingestion_workers(
     funding_cfg = ingestion_cfg.get("funding", {})
     oi_cfg = ingestion_cfg.get("open_interest", {})
 
-    adapters: dict[str, object] = {}
+    adapters_cache: dict[str, object] = {}
 
     def _load_adapter(name: str):
-        if name not in adapters:
-            module = import_module(f"tradingbot.adapters.{name}")
-            cls_name = "".join(part.capitalize() for part in name.split("_")) + "Adapter"
-            adapters[name] = getattr(module, cls_name)()
-        return adapters[name]
+        if name not in adapters_cache:
+            cls = get_adapter_class(name)
+            if cls is None:
+                raise typer.BadParameter(f"Adapter {name} not found")
+            adapters_cache[name] = cls()
+        return adapters_cache[name]
 
     async def _run() -> None:
         tasks = []
