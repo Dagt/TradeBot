@@ -23,6 +23,7 @@ from monitoring.dashboard import router as dashboard_router
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
+from ...cli.main import get_adapter_class, get_supported_kinds
 
 # Persistencia
 try:
@@ -78,6 +79,16 @@ async def _metrics_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
+
+
+@app.get("/venues/{name}/kinds")
+def venue_kinds(name: str):
+    """Return available streaming kinds for the given venue."""
+
+    cls = get_adapter_class(name)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="venue not found")
+    return {"kinds": get_supported_kinds(cls)}
 
 @app.get("/logs")
 def logs(lines: int = Query(200, ge=1, le=1000)):
