@@ -4,6 +4,18 @@ TradeBot incluye paneles de Grafana para visualizar el estado del bot y los
 resultados de las operaciones. Los archivos de cada dashboard se encuentran
 en `monitoring/grafana/dashboards`.
 
+## Variables de consulta
+Para los paneles que acceden a datos de mercado desde PostgreSQL se añadieron
+variables que permiten filtrar las consultas:
+
+- **$symbol**: símbolo o par de trading a visualizar.
+- **$start**: timestamp inicial del rango a consultar.
+- **$end**: timestamp final del rango.
+
+Estas variables pueden emplearse en las cláusulas `WHERE` de las consultas a
+`market.bars` o `market.trades` para limitar los resultados por símbolo y
+periodo.
+
 ## Core Metrics (`core.json`)
 Muestra métricas básicas del proceso:
 - **Trading PnL**: resultado acumulado.
