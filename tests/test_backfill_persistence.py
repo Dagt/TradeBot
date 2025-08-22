@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 
@@ -29,8 +30,11 @@ class DummyExchange:
         if self._ohlcv_used:
             return []
         self._ohlcv_used = True
-        # Single bar
-        return [[since, 1.0, 2.0, 0.5, 1.5, 10.0]]
+        # Two bars spaced one minute apart
+        return [
+            [since, 1.0, 2.0, 0.5, 1.5, 10.0],
+            [since + 60_000, 1.1, 2.1, 0.6, 1.6, 11.0],
+        ]
 
     async def fetch_trades(self, symbol, since, limit):  # noqa: ANN001
         if self._trades_used:
@@ -42,8 +46,15 @@ class DummyExchange:
                 "price": 1.0,
                 "amount": 2.0,
                 "side": "buy",
-                "id": "t1",
-            }
+                "id": str(since),
+            },
+            {
+                "timestamp": since + 1,
+                "price": 1.1,
+                "amount": 2.1,
+                "side": "sell",
+                "id": str(since + 1),
+            },
         ]
 
     async def close(self) -> None:  # pragma: no cover - nothing to do
@@ -87,4 +98,42 @@ async def test_backfill_persists_data(monkeypatch, setup_db):
 
     assert bars and bars[0]["symbol"] == "BTCUSDT"
     assert trades and trades[0]["symbol"] == "BTCUSDT"
+
+
+@pytest.mark.asyncio
+async def test_backfill_overlapping_range(monkeypatch, setup_db):
+    # Ensure database is empty
+    dsn = "postgresql+asyncpg://postgres:postgres@localhost/tradebot_test"
+    eng = create_async_engine(dsn, echo=False)
+    async with eng.begin() as conn:
+        await conn.execute(text("TRUNCATE market.bars"))
+        await conn.execute(text("TRUNCATE market.trades"))
+    await eng.dispose()
+
+    monkeypatch.setenv("PG_HOST", "localhost")
+    monkeypatch.setenv("PG_USER", "postgres")
+    monkeypatch.setenv("PG_PASSWORD", "postgres")
+    monkeypatch.setenv("PG_DB", "tradebot_test")
+
+    from tradingbot.jobs import backfill as job_backfill
+
+    monkeypatch.setattr(job_backfill.ccxt, "binance", lambda *_, **__: DummyExchange())
+
+    start1 = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    end1 = start1 + timedelta(minutes=2)
+    await job_backfill.backfill(days=1, symbols=["BTC/USDT"], start=start1, end=end1)
+
+    start2 = start1 + timedelta(minutes=1)
+    end2 = start2 + timedelta(minutes=2)
+    await job_backfill.backfill(days=1, symbols=["BTC/USDT"], start=start2, end=end2)
+
+    from tradingbot.storage.async_timescale import AsyncTimescaleClient
+
+    client = AsyncTimescaleClient(dsn=dsn)
+    bars = await client.fetch("SELECT count(*) AS cnt FROM market.bars")
+    trades = await client.fetch("SELECT count(*) AS cnt FROM market.trades")
+    await client.close()
+
+    assert bars[0]["cnt"] == 3
+    assert trades[0]["cnt"] == 3
 
