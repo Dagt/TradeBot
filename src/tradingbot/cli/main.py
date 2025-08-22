@@ -145,6 +145,10 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
         elif kind == "book_delta":
             kind = "delta"
         kinds.add(kind)
+    name = getattr(adapter_cls, "name", "")
+    if "futures" not in name:
+        kinds.discard("funding")
+        kinds.discard("open_interest")
     return sorted(kinds)
 
 

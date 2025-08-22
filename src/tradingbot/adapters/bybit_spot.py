@@ -101,6 +101,9 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
         """Poll funding rate updates for ``symbol`` via REST."""
+        sym = normalize(symbol)
+        if ":" not in symbol and "-" not in sym:
+            raise NotImplementedError("Funding stream is not available for spot symbols")
 
         while True:
             data = await self.fetch_funding(symbol)
@@ -109,6 +112,9 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
         """Poll open interest updates for ``symbol`` via REST."""
+        sym = normalize(symbol)
+        if ":" not in symbol and "-" not in sym:
+            raise NotImplementedError("Open interest stream is not available for spot symbols")
 
         while True:
             data = await self.fetch_oi(symbol)
