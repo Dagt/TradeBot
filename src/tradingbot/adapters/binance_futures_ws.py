@@ -174,7 +174,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         async for raw in self._ws_messages(url):
             msg = json.loads(raw)
             d = msg.get("data") or msg
-            oi = d.get("oi") or d.get("openInterest")
+            oi = d.get("oi") or d.get("openInterest") or d.get("o")
             if oi is None:
                 continue
             ts_ms = d.get("E") or d.get("T") or 0
