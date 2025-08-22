@@ -87,6 +87,7 @@ def ingest(
         "orderbook", "--kind", help="Data kind: trades,orderbook,bba,delta,funding,oi"
     ),
     persist: bool = typer.Option(False, "--persist", help="Persist data"),
+    backend: str = typer.Option("timescale", "--backend"),
 ) -> None:
     """Stream market data from a venue and optionally persist it."""
 
@@ -96,7 +97,7 @@ def ingest(
     from ..bus import EventBus
     from ..data import ingestion as ing
     from ..types import Tick
-    from ..storage.timescale import get_engine
+    from ..storage import quest as qs_storage, timescale as ts_storage
 
     if venue not in _AVAILABLE_VENUES:
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
@@ -108,7 +109,10 @@ def ingest(
 
     symbols = [normalize(s) for s in symbols]
     bus = EventBus()
-    engine = get_engine() if persist else None
+    engine = None
+    if persist and backend != "csv":
+        storage = ts_storage if backend == "timescale" else qs_storage
+        engine = storage.get_engine()
 
     if kind == "orderbook":
         bus.subscribe("orderbook", lambda ob: typer.echo(str(ob)))
@@ -126,6 +130,7 @@ def ingest(
                             bus,
                             engine,
                             persist=persist,
+                            backend=backend,
                         )
                     )
                 )
@@ -142,7 +147,7 @@ def ingest(
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
                             )
-                            ing.persist_trades([tick])
+                            ing.persist_trades([tick], backend=backend)
 
                 tasks.append(asyncio.create_task(_t(sym)))
             elif kind == "bba":
@@ -152,7 +157,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_bba([data])
+                            ing.persist_bba([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_b(sym)))
             elif kind == "delta":
@@ -162,7 +167,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_book_delta([data])
+                            ing.persist_book_delta([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_d(sym)))
             elif kind == "funding":
@@ -172,7 +177,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_funding([data])
+                            ing.persist_funding([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_f(sym)))
             elif kind in ("oi", "open_interest"):
@@ -182,7 +187,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_open_interest([data])
+                            ing.persist_open_interest([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_oi(sym)))
             else:  # pragma: no cover - CLI validation

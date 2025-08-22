@@ -15,6 +15,7 @@ Recibe datos de mercado en vivo y opcionalmente los almacena.
 - `--depth`: profundidad del libro de órdenes (10).
 - `--kind`: tipo de dato: `trades`, `orderbook`, `bba`, `delta`, `funding`, `oi`.
 - `--persist`: si se indica, guarda los datos en la base de datos.
+- `--backend`: backend de almacenamiento (`timescale` o `csv`).
 
 ## `backfill`
 Descarga datos históricos con límites de velocidad.
