@@ -54,26 +54,32 @@ except Exception as exc:  # pragma: no cover - network failures
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
-def _get_available_venues() -> set[str]:
-    """Return venue names exposed by :mod:`tradingbot.adapters`.
+def _build_adapter_map() -> dict[str, type]:
+    """Return mapping of venue names to adapter classes."""
 
-    The adapters package exposes classes via ``__all__``.  Each adapter class
-    defines a ``name`` attribute used throughout the project.  We derive the
-    CLI choices from those values so that users can only select valid venues.
-    """
-
-    names: set[str] = set()
+    adapters_by_name: dict[str, type] = {}
     for cls_name in getattr(adapters, "__all__", []):
         cls = getattr(adapters, cls_name, None)
         if cls is None:
             continue
         name = getattr(cls, "name", None)
         if isinstance(name, str):
-            names.add(name)
-    return names
+            adapters_by_name[name] = cls
+    return adapters_by_name
 
 
-_AVAILABLE_VENUES = _get_available_venues()
+_ADAPTERS_BY_NAME = _build_adapter_map()
+_AVAILABLE_VENUES = set(_ADAPTERS_BY_NAME.keys())
+
+
+def _get_adapter_cls(venue: str) -> type:
+    """Return adapter class for *venue* or raise :class:`typer.BadParameter`."""
+
+    try:
+        return _ADAPTERS_BY_NAME[venue]
+    except KeyError:
+        choices = ", ".join(sorted(_AVAILABLE_VENUES))
+        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
 
 
 @app.command()
@@ -92,20 +98,14 @@ def ingest(
     """Stream market data from a venue and optionally persist it."""
 
     setup_logging()
-    from importlib import import_module
 
     from ..bus import EventBus
     from ..data import ingestion as ing
     from ..types import Tick
     from ..storage import quest as qs_storage, timescale as ts_storage
 
-    if venue not in _AVAILABLE_VENUES:
-        choices = ", ".join(sorted(_AVAILABLE_VENUES))
-        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
-
-    module = import_module(f"tradingbot.adapters.{venue}")
-    cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
-    adapter = getattr(module, cls_name)()
+    adapter_cls = _get_adapter_cls(venue)
+    adapter = adapter_cls()
 
     symbols = [normalize(s) for s in symbols]
     bus = EventBus()
