@@ -183,6 +183,8 @@ def ingest(
         bus.subscribe("orderbook", lambda ob: typer.echo(str(ob)))
 
     async def _run() -> None:
+        if hasattr(adapter, "_configure_mode"):
+            await adapter._configure_mode()
         tasks = []
         for sym in symbols:
             if kind == "orderbook":
@@ -580,6 +582,8 @@ def run_ingestion_workers(
         tasks = []
         for exch, symbols in funding_cfg.items():
             adapter = _load_adapter(exch)
+            if hasattr(adapter, "_configure_mode"):
+                await adapter._configure_mode()
             for sym, interval in symbols.items():
                 tasks.append(
                     asyncio.create_task(
@@ -588,6 +592,8 @@ def run_ingestion_workers(
                 )
         for exch, symbols in oi_cfg.items():
             adapter = _load_adapter(exch)
+            if hasattr(adapter, "_configure_mode"):
+                await adapter._configure_mode()
             for sym, interval in symbols.items():
                 tasks.append(
                     asyncio.create_task(
