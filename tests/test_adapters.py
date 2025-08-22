@@ -182,6 +182,18 @@ async def test_binance_spot_rest_streams():
     assert book["bid_px"][0] == 1.0
     assert book["bid_qty"][0] == 2.0
 
+    gen3 = adapter.stream_bba("BTC/USDT")
+    bba = await gen3.__anext__()
+    await gen3.aclose()
+    assert bba["bid"] == 1.0
+    assert bba["ask"] == 3.0
+
+    gen4 = adapter.stream_book_delta("BTC/USDT")
+    delta = await gen4.__anext__()
+    await gen4.aclose()
+    assert delta["bid_px"][0] == 1.0
+    assert delta["ask_px"][0] == 3.0
+
 
 @pytest.mark.asyncio
 async def test_binance_futures_rest_fetch():
@@ -197,6 +209,16 @@ async def test_binance_futures_rest_fetch():
     assert isinstance(basis["ts"], datetime)
     assert oi["oi"] == 100.0
     assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+    sf_gen = adapter.stream_funding("BTC/USDT")
+    sf = await sf_gen.__anext__()
+    await sf_gen.aclose()
+    assert sf["rate"] == 0.01
+
+    oi_gen = adapter.stream_open_interest("BTC/USDT")
+    soi = await oi_gen.__anext__()
+    await oi_gen.aclose()
+    assert soi["oi"] == 100.0
 
 
 @pytest.mark.asyncio
