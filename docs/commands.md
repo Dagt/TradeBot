@@ -20,6 +20,8 @@ Recibe datos de mercado en vivo y opcionalmente los almacena.
 Descarga datos históricos con límites de velocidad.
 - `--days`: número de días hacia atrás (1 por defecto).
 - `--symbols`: lista de símbolos a descargar.
+- `--start`: fecha inicial en formato ISO.
+- `--end`: fecha final en formato ISO.
 
 ## `ingest-historical`
 Obtiene datos históricos de Kaiko o CoinAPI.

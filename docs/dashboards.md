@@ -27,3 +27,14 @@ Vista general del desempeño del bot:
 - **Risk events (5m)**: eventos de riesgo recientes.
 - **E2E latency (95th)**.
 - **Strategy states**: estado reportado por cada estrategia.
+
+## Carga de datos históricos
+Para completar los paneles con datos antiguos se puede usar el comando
+`backfill` indicando un rango explícito:
+
+```bash
+python -m tradingbot.cli backfill --symbols BTC/USDT \
+    --start 2023-01-01T00:00:00Z --end 2023-01-02T00:00:00Z
+```
+
+Las opciones `--start` y `--end` aceptan fechas en formato ISO.

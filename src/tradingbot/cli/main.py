@@ -206,13 +206,35 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
+    start: str | None = typer.Option(
+        None, "--start", help="Start datetime in ISO format"
+    ),
+    end: str | None = typer.Option(
+        None, "--end", help="End datetime in ISO format"
+    ),
 ) -> None:
     """Backfill OHLCV and trades for symbols with rate limiting."""
 
     setup_logging()
+    from datetime import datetime, timezone
     from ..jobs.backfill import backfill as run_backfill
 
-    asyncio.run(run_backfill(days=days, symbols=symbols))
+    def _parse(dt: str | None) -> datetime | None:
+        if dt is None:
+            return None
+        parsed = datetime.fromisoformat(dt)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    asyncio.run(
+        run_backfill(
+            days=days,
+            symbols=symbols,
+            start=_parse(start),
+            end=_parse(end),
+        )
+    )
 
 
 @app.command("ingest-historical")

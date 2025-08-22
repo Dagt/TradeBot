@@ -8,7 +8,6 @@ from typing import Sequence
 
 import ccxt.async_support as ccxt
 import logging
-from sqlalchemy import text
 
 from ..storage.async_timescale import AsyncTimescaleClient
 
@@ -44,25 +43,17 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
             await asyncio.sleep(delay * 2 ** (attempt - 1))
 
 
-async def _last_ts(client: AsyncTimescaleClient, table: str, exchange: str, symbol: str):
-    """Return the last timestamp stored for *table*/*exchange*/*symbol*.
+async def backfill(
+    days: int,
+    symbols: Sequence[str],
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> None:
+    """Backfill OHLCV bars and trades for *symbols*.
 
-    Returns ``None`` if the table has no rows for the pair.
+    If *start* or *end* are not provided, the range defaults to the past
+    ``days`` days ending at ``datetime.now(timezone.utc)``.
     """
-
-    engine = await client.connect()
-    async with engine.connect() as conn:
-        res = await conn.execute(
-            text(
-                f"SELECT max(ts) FROM {table} WHERE exchange=:exchange AND symbol=:symbol"
-            ),
-            {"exchange": exchange, "symbol": symbol},
-        )
-        return res.scalar_one_or_none()
-
-
-async def backfill(days: int, symbols: Sequence[str]) -> None:
-    """Backfill OHLCV bars and trades for *symbols* over the past *days* days."""
 
     logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
     ex = ccxt.binance({"enableRateLimit": False})
@@ -73,8 +64,19 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
     client.register_table("market.bars", INSERT_BAR_SQL)
     client.register_table("market.trades", INSERT_TRADE_SQL)
 
-    end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    start_ms = end_ms - int(timedelta(days=days).total_seconds() * 1000)
+    if end is None:
+        end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    else:
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        end_ms = int(end.timestamp() * 1000)
+
+    if start is None:
+        start_ms = end_ms - int(timedelta(days=days).total_seconds() * 1000)
+    else:
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        start_ms = int(start.timestamp() * 1000)
 
     try:
         for symbol in symbols:
@@ -82,8 +84,7 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
             db_symbol = symbol.replace("/", "")
 
             # --- OHLCV backfill -------------------------------------------------
-            last_bar = await _last_ts(client, "market.bars", ex.id, db_symbol)
-            since = max(start_ms, int(last_bar.timestamp() * 1000) + 60_000) if last_bar else start_ms
+            since = start_ms
             while since < end_ms:
                 ohlcvs = await _retry(
                     ex.fetch_ohlcv,
@@ -115,8 +116,7 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
                 since = ohlcvs[-1][0] + 60_000
 
             # --- Trades backfill -----------------------------------------------
-            last_trade = await _last_ts(client, "market.trades", ex.id, db_symbol)
-            since = max(start_ms, int(last_trade.timestamp() * 1000) + 1) if last_trade else start_ms
+            since = start_ms
             while since < end_ms:
                 trades = await _retry(
                     ex.fetch_trades, symbol, since, 1000, delay=delay
