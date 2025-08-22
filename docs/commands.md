@@ -34,6 +34,16 @@ python -m tradingbot.cli ingest --venue okx_ws --symbol BTC/USDT --kind open_int
 python -m tradingbot.cli ingest --venue binance_spot_ws --symbol BTC/USDT --symbol ETH/USDT --kind trades_multi
 ```
 
+### Uso en mainnet
+
+Por defecto, los conectores de Binance Futures usan el entorno de prueba. Para
+conectarse a la red principal se debe deshabilitar el modo testnet mediante la
+variable de entorno `BINANCE_FUTURES_TESTNET`:
+
+```bash
+BINANCE_FUTURES_TESTNET=false python -m tradingbot.cli ingest --venue binance_futures_ws --symbol BTC/USDT --kind funding
+```
+
 ## `backfill`
 Descarga datos históricos con límites de velocidad.
 - `--days`: número de días hacia atrás (1 por defecto).
