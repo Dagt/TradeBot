@@ -95,20 +95,18 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Yield best bid/ask updates derived from order book snapshots."""
+        """Stream best bid/ask updates using the ``bookTicker`` feed."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
+        stream = _stream_name(normalize(symbol), "bookTicker")
+        async for raw in self._ws_messages(self.ws_base + stream):
+            d = json.loads(raw).get("data") or {}
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+                "ts": datetime.fromtimestamp(int(d.get("T", 0)) / 1000, tz=timezone.utc),
+                "bid_px": float(d.get("b") or 0.0),
+                "bid_qty": float(d.get("B") or 0.0),
+                "ask_px": float(d.get("a") or 0.0),
+                "ask_qty": float(d.get("A") or 0.0),
             }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
