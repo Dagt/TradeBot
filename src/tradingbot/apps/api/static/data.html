@@ -41,16 +41,7 @@
       </div>
       <div id="field-venue">
         <label for="dm-venue">Venue</label>
-        <select id="dm-venue">
-          <option value="binance_futures_usdm_testnet">Binance Futures USDM Testnet</option>
-          <option value="binance_spot">Binance Spot</option>
-          <option value="bybit_futures">Bybit Futures</option>
-          <option value="bybit_spot">Bybit Spot</option>
-          <option value="deribit">Deribit</option>
-          <option value="deribit_ws">Deribit WS</option>
-          <option value="okx_futures">OKX Futures</option>
-          <option value="okx_spot">OKX Spot</option>
-        </select>
+        <select id="dm-venue"></select>
       </div>
       <div id="field-symbols">
         <label for="dm-symbols">Símbolos (coma)</label>
@@ -62,14 +53,7 @@
       </div>
       <div id="field-kind">
         <label for="dm-kind">Tipo</label>
-        <select id="dm-kind">
-          <option value="orderbook">orderbook</option>
-          <option value="trades">trades</option>
-          <option value="bba">bba</option>
-          <option value="delta">delta</option>
-          <option value="funding">funding</option>
-          <option value="oi">oi</option>
-        </select>
+        <select id="dm-kind"></select>
       </div>
       <div id="field-persist" style="display:flex;align-items:end">
         <label class="chk"><input type="checkbox" id="dm-persist"/><span>Persistir <span class="help-icon" title="Guarda los datos en la base de datos para uso futuro">?</span></span></label>
@@ -294,13 +278,31 @@ async function loadKinds(){
   }
 }
 
+async function loadVenues(){
+  try{
+    const r=await fetch(api('/venues'));
+    const venues=await r.json();
+    const sel=document.getElementById('dm-venue');
+    sel.innerHTML='';
+    for(const v of venues){
+      const opt=document.createElement('option');
+      opt.value=v;
+      opt.textContent=v;
+      sel.appendChild(opt);
+    }
+    loadKinds();
+  }catch(e){
+    console.error(e);
+  }
+}
+
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
 document.getElementById('dm-stop').addEventListener('click',stopData);
 document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
-loadKinds();
+loadVenues();
 </script>
 </body>
 </html>
