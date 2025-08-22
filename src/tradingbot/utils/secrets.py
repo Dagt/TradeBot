@@ -69,7 +69,7 @@ def validate_scopes(
     try:
         has_perm = getattr(exchange, "has", {}).get("fetchPermissions")
         if not has_perm:
-            log.warning("exchange %s no soporta fetch_permissions", getattr(exchange, "id", ""))
+            log.debug("fetch_permissions no soportado para %s", getattr(exchange, "id", ""))
             return
         perms = exchange.fetch_permissions()
     except Exception as e:  # pragma: no cover - depende del exchange
