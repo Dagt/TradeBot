@@ -31,6 +31,18 @@ python -m tradingbot.cli --help
 
 Para una guía detallada de cada comando, consulte [docs/commands.md](docs/commands.md).
 
+## Variables de entorno
+
+De forma predeterminada, Binance Futures opera contra el entorno real. Para
+volver a utilizar la testnet es necesario indicar explícitamente:
+
+```bash
+export BINANCE_FUTURES_TESTNET=true
+```
+
+Si esta variable no está definida o se establece en `false`, el bot usará el
+entorno real de Binance Futures.
+
 ## Recursos
 
 - [Blueprint de arquitectura](BLUEPRINT.md)
