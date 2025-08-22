@@ -280,6 +280,24 @@ async def test_binance_futures_ws_fetch_ok():
 
 
 @pytest.mark.asyncio
+async def test_binance_futures_ws_stream_funding():
+    ws = BinanceFuturesWSAdapter()
+
+    msg = json.dumps({"data": {"r": "0.01", "i": "100", "E": 0}})
+
+    async def _fake_messages(url):
+        yield msg
+
+    ws._ws_messages = _fake_messages
+    gen = ws.stream_funding("BTC/USDT")
+    funding = await gen.__anext__()
+    await gen.aclose()
+    assert funding["rate"] == 0.01
+    assert funding["index_px"] == 100.0
+    assert "interval_sec" not in funding
+
+
+@pytest.mark.asyncio
 async def test_binance_futures_ws_fetch_error():
     ws = BinanceFuturesWSAdapter()
 
