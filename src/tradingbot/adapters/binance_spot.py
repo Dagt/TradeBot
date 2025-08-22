@@ -261,7 +261,7 @@ class BinanceSpotAdapter(ExchangeAdapter):
             await asyncio.sleep(60)
 
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
-        """Poll open interest updates via REST."""
+        """Poll open interest for ``symbol`` using the futures REST API."""
 
         while True:
             data = await self.fetch_oi(symbol)

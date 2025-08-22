@@ -10,8 +10,8 @@ def test_get_supported_kinds_binance_spot():
     # basic kinds available on most venues
     assert "trades" in kinds
     assert "orderbook" in kinds
-    # binance spot does not expose open interest
-    assert "open_interest" not in kinds
+    # binance spot exposes open interest via the futures API
+    assert "open_interest" in kinds
 
 
 def test_get_supported_kinds_binance_futures_ws():

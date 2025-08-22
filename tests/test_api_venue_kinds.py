@@ -19,7 +19,7 @@ def test_venue_kinds_endpoint(monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert "trades" in data["kinds"]
-    assert "open_interest" not in data["kinds"]
+    assert "open_interest" in data["kinds"]
 
     resp = client.get("/venues/unknown/kinds", auth=("u", "p"))
     assert resp.status_code == 404
