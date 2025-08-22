@@ -367,6 +367,45 @@ async def test_ws_delegates_orders_to_rest():
     assert await ws.cancel_order("1") == {"status": "cancel"}
 
 
+@pytest.mark.asyncio
+async def test_binance_spot_ws_stream_bba(monkeypatch):
+    ws = BinanceSpotWSAdapter()
+
+    msg = json.dumps({"data": {"b": "1", "B": "2", "a": "3", "A": "4"}})
+
+    class DummyWS:
+        def __init__(self, messages):
+            self.messages = messages
+            self.pings = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, msg):
+            pass
+
+        async def recv(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise ConnectionError("closed")
+
+        async def ping(self):
+            self.pings += 1
+
+    monkeypatch.setattr("websockets.connect", lambda url, **k: DummyWS([msg]))
+
+    gen = ws.stream_bba("BTC/USDT")
+    bba = await gen.__anext__()
+    await gen.aclose()
+    assert bba["bid_px"] == 1.0
+    assert bba["bid_qty"] == 2.0
+    assert bba["ask_px"] == 3.0
+    assert bba["ask_qty"] == 4.0
+
+
 class _DummyBybitRest:
     async def fetchFundingRate(self, symbol):
         return {"fundingRate": "0.01", "timestamp": 1000}
