@@ -15,15 +15,30 @@ def _stream_name(symbol: str, channel: str = "trade") -> str:
 
 class BinanceSpotWSAdapter(ExchangeAdapter):
     """
-    WS de Binance Spot **TESTNET** para trades.
+    WS de Binance Spot para trades.
+    Usa el entorno de *testnet* si ``testnet=True``.
     """
-    name = "binance_spot_testnet_ws"
+    name = "binance_spot_ws"
 
-    def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
+    def __init__(
+        self,
+        ws_base: str | None = None,
+        rest: ExchangeAdapter | None = None,
+        testnet: bool = False,
+    ):
         super().__init__()
-        # Spot testnet: wss://testnet.binance.vision/stream?streams=
-        self.ws_base = ws_base or "wss://testnet.binance.vision/stream?streams="
         self.rest = rest
+        self.testnet = testnet
+
+        default_ws_base = (
+            "wss://testnet.binance.vision/stream?streams="
+            if testnet
+            else "wss://stream.binance.com:9443/stream?streams="
+        )
+        self.ws_base = ws_base or default_ws_base
+
+        if testnet:
+            self.name = "binance_spot_testnet_ws"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol))

@@ -18,7 +18,8 @@ def _stream_name(symbol: str, channel: str = "aggTrade") -> str:
 
 class BinanceFuturesWSAdapter(ExchangeAdapter):
     """
-    WS de Binance USDⓈ-M Futures **TESTNET** (UM) para datos de mercado.
+    WS de Binance USDⓈ-M Futures (UM) para datos de mercado.
+    Permite operar tanto en mainnet como en testnet.
     """
     name = "binance_futures_um_testnet_ws"
 
@@ -28,16 +29,19 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         rest: ExchangeAdapter | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool | None = None,
+        testnet: bool = False,
     ):
         super().__init__()
-        # UM testnet combined streams:
-        #   wss://stream.binancefuture.com/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade
-        self.ws_base = ws_base or "wss://stream.binancefuture.com/stream?streams="
+        self._testnet = testnet
+        default_ws = (
+            "wss://stream.binancefuture.com/stream?streams="
+            if testnet
+            else "wss://fstream.binance.com/stream?streams="
+        )
+        self.ws_base = ws_base or default_ws
         self.rest = rest
         self._api_key = api_key
         self._api_secret = api_secret
-        self._testnet = testnet
 
     def _ensure_rest(self):
         if self.rest is None:
@@ -46,9 +50,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             self.rest = BinanceFuturesAdapter(
                 api_key=self._api_key or settings.binance_futures_api_key,
                 api_secret=self._api_secret or settings.binance_futures_api_secret,
-                testnet=self._testnet
-                if self._testnet is not None
-                else settings.binance_futures_testnet,
+                testnet=self._testnet,
             )
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
