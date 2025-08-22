@@ -183,6 +183,7 @@ async function runData(){
       const e=new Date(end);
       if(!(s<e)){
         out.textContent='Rango inválido (inicio debe ser menor que fin)';
+        out.scrollTop = out.scrollHeight;
         runBtn.disabled=false;
         runBtn.textContent='Ejecutar';
         return;
@@ -206,13 +207,17 @@ async function runData(){
     if(kind==='trades') cmd+=` --limit ${limit}`;
   }
   out.textContent='Iniciando...\n';
+  out.scrollTop = out.scrollHeight;
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
     currentJob=j.id;
     document.getElementById('dm-stop').disabled=false;
     evt=new EventSource(api(`/cli/stream/${j.id}`));
-    evt.onmessage=(e)=>{out.textContent+=e.data+'\n';};
+    evt.onmessage = (e) => {
+      out.textContent += e.data + '\n';
+      out.scrollTop = out.scrollHeight;
+    };
     evt.addEventListener('end',(e)=>{
       document.getElementById('dm-stop').disabled=true;
       runBtn.disabled=false;
@@ -220,14 +225,17 @@ async function runData(){
       currentJob=null;
       evt.close();
       out.textContent+=`Proceso finalizado (código ${e.data}).\n`;
+      out.scrollTop = out.scrollHeight;
     });
     evt.onerror=()=>{
       out.textContent+='[error de conexión]\n';
+      out.scrollTop = out.scrollHeight;
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
     };
   }catch(e){
     out.textContent=String(e);
+    out.scrollTop = out.scrollHeight;
     runBtn.disabled=false;
     runBtn.textContent='Ejecutar';
   }
