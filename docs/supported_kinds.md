@@ -9,14 +9,14 @@ connecting to test environments.
 
 | Exchange | Supported kinds |
 | -------- | --------------- |
-| binance_spot | trades, orderbook, bba, delta, funding, open_interest |
+| binance_spot | trades, orderbook, bba, delta |
 | binance_futures | trades, orderbook, bba, delta, funding, open_interest |
 | binance_spot_ws | trades, trades_multi, orderbook, bba, delta |
 | binance_futures_ws | trades, trades_multi, orderbook, bba, delta, funding, open_interest |
-| bybit_spot | trades, orderbook, bba, delta, funding, open_interest |
+| bybit_spot | trades, orderbook, bba, delta |
 | bybit_futures | trades, orderbook, bba, delta, funding, open_interest |
 | bybit_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
-| okx_spot | trades, orderbook, bba, delta, funding, open_interest |
+| okx_spot | trades, orderbook, bba, delta |
 | okx_futures | trades, orderbook, bba, delta, funding, open_interest |
 | okx_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
 | deribit_futures | trades, funding, open_interest |
