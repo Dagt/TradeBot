@@ -1,4 +1,7 @@
+import asyncio
 import json
+import logging
+
 import pytest
 from datetime import datetime, timezone
 from tradingbot.adapters import (
@@ -295,6 +298,42 @@ async def test_binance_futures_ws_stream_funding():
     assert funding["rate"] == 0.01
     assert funding["index_px"] == 100.0
     assert "interval_sec" not in funding
+
+
+@pytest.mark.asyncio
+async def test_binance_futures_ws_open_interest_timeout_recovery(monkeypatch, caplog):
+    ws = BinanceFuturesWSAdapter()
+
+    msg = json.dumps({"data": {"oi": "100", "E": 0}})
+    calls = {"n": 0}
+
+    async def _fake_messages(url):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            while True:
+                await asyncio.sleep(0.02)
+        else:
+            yield msg
+
+    ws._ws_messages = _fake_messages
+
+    original_wait_for = asyncio.wait_for
+
+    async def fake_wait_for(awaitable, timeout):
+        return await original_wait_for(awaitable, 0.01)
+
+    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+
+    caplog.set_level(logging.WARNING, logger="tradingbot.adapters.binance_futures_ws")
+
+    gen = ws.stream_open_interest("BTC/USDT")
+    task = asyncio.create_task(gen.__anext__())
+    await asyncio.sleep(0.03)
+    result = await task
+    await gen.aclose()
+
+    assert result["oi"] == 100.0
+    assert any("No message received" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
