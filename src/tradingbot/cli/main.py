@@ -84,7 +84,7 @@ _ADAPTER_CLASS_MAP: dict[str, type[adapters.ExchangeAdapter]] = {
     "bybit_ws": BybitWSAdapter,
     "okx_spot": OKXSpotAdapter,
     "okx_futures": OKXFuturesAdapter,
-    "okx_ws": OKXWSAdapter,
+    "okx_futures_ws": OKXWSAdapter,
     "deribit": DeribitAdapter,
     "deribit_ws": DeribitWSAdapter,
 }

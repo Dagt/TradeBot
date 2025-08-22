@@ -15,7 +15,7 @@ each venue as detected by :func:`get_supported_kinds`.
 | bybit_ws | trades, orderbook, bba, delta, funding, open_interest |
 | okx_spot | trades, orderbook, bba, delta, funding, open_interest |
 | okx_futures | trades, orderbook, bba, delta, funding, open_interest |
-| okx_ws | trades, orderbook, bba, delta, funding, open_interest |
+| okx_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
 | deribit | trades, funding, open_interest |
 | deribit_ws | trades, orderbook, bba, delta, funding, open_interest |
 

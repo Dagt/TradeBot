@@ -20,9 +20,9 @@ log = logging.getLogger(__name__)
 
 
 class OKXWSAdapter(ExchangeAdapter):
-    """Lightweight OKX websocket adapter."""
+    """Lightweight OKX futures websocket adapter."""
 
-    name = "okx_ws"
+    name = "okx_futures_ws"
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -35,7 +35,7 @@ class OKXWSAdapter(ExchangeAdapter):
                 else "wss://ws.okx.com:8443/ws/v5/public"
             )
         self.rest = rest
-        self.name = "okx_ws_testnet" if testnet else "okx_ws"
+        self.name = "okx_futures_ws_testnet" if testnet else "okx_futures_ws"
 
     # ------------------------------------------------------------------
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:

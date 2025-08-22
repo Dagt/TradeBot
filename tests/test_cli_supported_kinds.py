@@ -69,7 +69,7 @@ EXPECTED_KINDS = {
         "funding",
         "open_interest",
     },
-    "okx_ws": {
+    "okx_futures_ws": {
         "trades",
         "orderbook",
         "bba",
