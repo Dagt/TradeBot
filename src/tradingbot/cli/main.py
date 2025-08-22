@@ -23,6 +23,7 @@ TWAP, VWAP or POV strategies.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import sys
@@ -60,6 +61,7 @@ def _get_available_venues() -> set[str]:
     The adapters package exposes classes via ``__all__``.  Each adapter class
     defines a ``name`` attribute used throughout the project.  We derive the
     CLI choices from those values so that users can only select valid venues.
+    Only classes whose module can be determined are considered valid.
     """
 
     names: set[str] = set()
@@ -68,7 +70,7 @@ def _get_available_venues() -> set[str]:
         if cls is None:
             continue
         name = getattr(cls, "name", None)
-        if isinstance(name, str):
+        if isinstance(name, str) and inspect.getmodule(cls) is not None:
             names.add(name)
     return names
 
@@ -92,7 +94,6 @@ def ingest(
     """Stream market data from a venue and optionally persist it."""
 
     setup_logging()
-    from importlib import import_module
 
     from ..bus import EventBus
     from ..data import ingestion as ing
@@ -103,9 +104,20 @@ def ingest(
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
         raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
 
-    module = import_module(f"tradingbot.adapters.{venue}")
-    cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
-    adapter = getattr(module, cls_name)()
+    adapter_class = None
+    for cls_name in getattr(adapters, "__all__", []):
+        cls = getattr(adapters, cls_name, None)
+        if getattr(cls, "name", None) == venue:
+            adapter_class = cls
+            break
+    if adapter_class is None:
+        choices = ", ".join(sorted(_AVAILABLE_VENUES))
+        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
+
+    module = inspect.getmodule(adapter_class)
+    if module is None:
+        raise typer.BadParameter(f"Adapter module for {venue} not found")
+    adapter = adapter_class()
 
     symbols = [normalize(s) for s in symbols]
     bus = EventBus()
