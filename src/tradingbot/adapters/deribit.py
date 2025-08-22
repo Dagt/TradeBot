@@ -58,6 +58,28 @@ class DeribitAdapter(ExchangeAdapter):
                 yield self.normalize_trade(symbol, ts, price, qty, side)
             await asyncio.sleep(1)
 
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("BBA stream not supported")
+
+    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Order book delta stream not supported")
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll funding rate updates via REST."""
+
+        while True:
+            data = await self.fetch_funding(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll open interest updates via REST."""
+
+        while True:
+            data = await self.fetch_oi(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
     async def fetch_funding(self, symbol: str):
         sym = normalize(symbol)
         method = (

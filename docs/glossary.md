@@ -31,3 +31,19 @@ sucesivas para estimar cómo se comportaría una estrategia en el futuro.
 ### Dashboard
 Tablero de control donde se visualizan métricas de funcionamiento y
 resultados del bot.
+
+### Best Bid/Ask (BBA)
+La mejor oferta de compra y venta disponible en el libro de órdenes. Se usa
+para conocer rápidamente el spread vigente.
+
+### Book Delta
+Actualización incremental del libro de órdenes que sólo incluye los niveles
+que cambiaron respecto a la instantánea previa.
+
+### Funding Rate
+Interés periódico que pagan o cobran las posiciones en swaps perpetuos para
+mantener el precio del contrato cercano al spot.
+
+### Open Interest (OI)
+Cantidad total de contratos abiertos en un mercado de derivados. Sirve como
+indicador del interés y liquidez en ese instrumento.
