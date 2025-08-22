@@ -157,13 +157,15 @@ function updateFields(){
   const hk=document.getElementById('dm-hkind').value;
   document.getElementById('field-hdepth').style.display=hist && hk==='orderbook'?'':'none';
   document.getElementById('field-hlimit').style.display=hist && hk==='trades'?'':'none';
-  document.getElementById('field-backend').style.display=hist?'':'none';
+  const persist=document.getElementById('dm-persist').checked;
+  document.getElementById('field-backend').style.display=(hist || (act==='ingest' && persist))?'':'none';
 }
 
 document.getElementById('dm-source').addEventListener('change',updateFields);
 document.getElementById('dm-hkind').addEventListener('change',updateFields);
 document.getElementById('dm-start').addEventListener('change',updateFields);
 document.getElementById('dm-end').addEventListener('change',updateFields);
+document.getElementById('dm-persist').addEventListener('change',updateFields);
 
 async function runData(){
   if(evt){evt.close();evt=null;}
@@ -179,7 +181,8 @@ async function runData(){
     const depth=document.getElementById('dm-depth').value;
     const kind=document.getElementById('dm-kind').value;
     const persist=document.getElementById('dm-persist').checked;
-    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind}`+(persist?' --persist':'');
+    const backend=document.getElementById('dm-backend').value;
+    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind} --backend ${backend}`+(persist?' --persist':'');
   }else if(act==='backfill'){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;
