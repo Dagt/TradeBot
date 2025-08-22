@@ -85,6 +85,35 @@ def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
     return _ADAPTER_CLASS_MAP.get(name)
 
 
+def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
+    """Return a sorted list of stream kinds supported by ``adapter_cls``.
+
+    The function inspects ``adapter_cls`` for methods named ``stream_*`` and
+    returns the suffixes normalised to match CLI ``kind`` parameters.  Methods
+    inherited directly from :class:`~tradingbot.adapters.ExchangeAdapter` that
+    are not overridden are ignored.
+    """
+
+    kinds: set[str] = set()
+    for name in dir(adapter_cls):
+        if not name.startswith("stream_"):
+            continue
+        attr = getattr(adapter_cls, name)
+        if not callable(attr):
+            continue
+        base_attr = getattr(adapters.ExchangeAdapter, name, None)
+        if base_attr is attr:
+            # method not implemented by subclass
+            continue
+        kind = name[len("stream_"):]
+        if kind in ("order_book", "orderbook"):
+            kind = "orderbook"
+        elif kind == "book_delta":
+            kind = "delta"
+        kinds.add(kind)
+    return sorted(kinds)
+
+
 def _get_available_venues() -> set[str]:
     """Return venue names available for the CLI."""
 
@@ -125,6 +154,15 @@ def ingest(
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
         raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
     adapter = adapter_class()
+
+    alias_kind = "open_interest" if kind == "oi" else kind
+    supported_kinds = get_supported_kinds(adapter_class)
+    if alias_kind not in supported_kinds:
+        choices = ", ".join(sorted(supported_kinds))
+        raise typer.BadParameter(
+            f"adapter does not support {alias_kind} (supported: {choices})"
+        )
+    kind = alias_kind
 
     symbols = [normalize(s) for s in symbols]
     bus = EventBus()
@@ -199,10 +237,7 @@ def ingest(
                             ing.persist_funding([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_f(sym)))
-            elif kind in ("oi", "open_interest"):
-                if not hasattr(adapter, "stream_open_interest"):
-                    raise typer.BadParameter("adapter does not support open_interest")
-
+            elif kind == "open_interest":
                 async def _oi(symbol: str) -> None:
                     async for d in adapter.stream_open_interest(symbol):
                         typer.echo(str(d))

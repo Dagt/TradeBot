@@ -271,11 +271,31 @@ async function runCli(){
   }
 }
 
+async function loadKinds(){
+  const venue=document.getElementById('dm-venue').value;
+  try{
+    const r=await fetch(api(`/venues/${venue}/kinds`));
+    const data=await r.json();
+    const sel=document.getElementById('dm-kind');
+    sel.innerHTML='';
+    for(const k of data.kinds){
+      const opt=document.createElement('option');
+      opt.value=k;
+      opt.textContent=k;
+      sel.appendChild(opt);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
 document.getElementById('dm-stop').addEventListener('click',stopData);
 document.getElementById('cli-run').addEventListener('click',runCli);
+document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
+loadKinds();
 </script>
 </body>
 </html>
