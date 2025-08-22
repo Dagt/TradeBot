@@ -49,4 +49,9 @@ python -m tradingbot.cli backfill --symbols BTC/USDT \
     --start 2023-01-01T00:00:00Z --end 2023-01-02T00:00:00Z
 ```
 
+En el dashboard de "Datos históricos" se incluyen los campos **Inicio** y
+**Fin** para facilitar esta tarea. Al especificar ambos valores se usará ese
+rango, ocultando la opción de **Días**. Si se dejan vacíos, el comando empleará
+el número de días indicado.
+
 Las opciones `--start` y `--end` aceptan fechas en formato ISO.
