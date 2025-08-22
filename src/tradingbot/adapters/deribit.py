@@ -58,6 +58,9 @@ class DeribitAdapter(ExchangeAdapter):
                 yield self.normalize_trade(symbol, ts, price, qty, side)
             await asyncio.sleep(1)
 
+    async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Order book stream not supported")
+
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
         raise NotImplementedError("BBA stream not supported")
 
