@@ -12,6 +12,12 @@ from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
+# Default websocket endpoints used by the adapter.  ``FUTURES_WS_BASE`` is
+# documented here to make it explicit that the production URL should be
+# ``wss://fstream.binance.com/stream?streams=``.
+FUTURES_WS_BASE = "wss://fstream.binance.com/stream?streams="
+FUTURES_WS_BASE_TESTNET = "wss://stream.binancefuture.com/stream?streams="
+
 def _stream_name(symbol: str, channel: str = "aggTrade") -> str:
     # futures usa minúsculas y sin "/"
     return symbol.replace("/", "").lower() + f"@{channel}"
@@ -33,11 +39,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     ):
         super().__init__()
         self._testnet = testnet
-        default_ws = (
-            "wss://stream.binancefuture.com/stream?streams="
-            if testnet
-            else "wss://fstream.binance.com/stream?streams="
-        )
+        default_ws = FUTURES_WS_BASE_TESTNET if testnet else FUTURES_WS_BASE
         self.ws_base = ws_base or default_ws
         self.rest = rest
         self._api_key = api_key
@@ -188,12 +190,17 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
 
         messages = self._ws_messages(url)
         first = True
+        timeouts = 0
         while True:
             try:
                 raw = await asyncio.wait_for(messages.__anext__(), timeout=15)
+                timeouts = 0
             except asyncio.TimeoutError:
+                timeouts += 1
                 log.warning("No message received on %s for 15s", stream)
                 messages = self._ws_messages(url)
+                if timeouts >= 3:
+                    raise NotImplementedError("openInterest channel unavailable on Binance")
                 continue
             except StopAsyncIteration:
                 return
