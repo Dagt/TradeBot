@@ -1,3 +1,5 @@
+"""WebSocket adapter for streaming markets from Deribit."""
+
 from __future__ import annotations
 
 import asyncio

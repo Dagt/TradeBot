@@ -1,12 +1,8 @@
 # src/tradingbot/adapters/bybit_ws.py
-"""Lightweight websocket adapter for Bybit perpetual futures.
+"""WebSocket adapter for Bybit USDT perpetual futures.
 
-Based on the `binance_spot_ws` implementation, this adapter focuses on
-streaming trades and L2 order book snapshots while delegating optional REST
-queries for funding, basis and open interest to an injected REST adapter.
-
-Only the public websocket is used; ping/pong handling and reconnect backoff
-are provided by :func:`ExchangeAdapter._ws_messages` from the base class.
+Streams trades and L2 order book snapshots and can leverage a REST client for
+auxiliary data such as funding and open interest.
 """
 
 from __future__ import annotations

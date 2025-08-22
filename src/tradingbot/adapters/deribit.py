@@ -1,3 +1,5 @@
+"""REST adapter for Deribit perpetual futures."""
+
 from __future__ import annotations
 
 import asyncio
