@@ -126,7 +126,7 @@
 const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
 let evt=null;
-const kindsWithDepth=["orderbook","delta"];
+let kindsWithDepth=[];
 
 function appendOutput(out, text) {
   out.textContent += text + '\n';
@@ -275,11 +275,14 @@ async function loadKinds(){
     const data=await r.json();
     const sel=document.getElementById('dm-kind');
     sel.innerHTML='';
-    for(const k of data.kinds){
+    kindsWithDepth=[];
+    for(const [k,info] of Object.entries(data.kinds)){
+      if(info && info.supported===false) continue;
       const opt=document.createElement('option');
       opt.value=k;
       opt.textContent=k;
       sel.appendChild(opt);
+      if(info && info.depth) kindsWithDepth.push(k);
     }
     updateFields();
   }catch(e){
