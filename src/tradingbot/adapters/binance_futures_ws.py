@@ -151,11 +151,12 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 continue
             ts_ms = d.get("E") or d.get("T") or 0
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            index_px = float(d.get("i") or 0.0)
             yield {
                 "symbol": symbol,
                 "ts": ts,
                 "rate": float(rate),
-                "interval_sec": int(d.get("i") or 0),
+                "index_px": index_px,
             }
 
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
