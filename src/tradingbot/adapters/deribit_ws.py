@@ -31,7 +31,12 @@ class DeribitWSAdapter(ExchangeAdapter):
         self.name = "deribit_futures_ws_testnet" if testnet else "deribit_futures_ws"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream trades from Deribit public websocket."""
+        """Stream trades from Deribit public websocket.
+
+        Suscribe al canal ``trades.{symbol}`` y emite cada transacción
+        con ``price``, ``amount`` y ``ts``. Reintenta en caso de
+        desconexión.
+        """
 
         channel = f"trades.{symbol}"
         sub = {
@@ -41,17 +46,23 @@ class DeribitWSAdapter(ExchangeAdapter):
             "id": 1,
         }
 
-        async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
-            msg = json.loads(raw)
-            params = msg.get("params") or {}
-            for t in params.get("data") or []:
-                price = float(t.get("price") or 0.0)
-                qty = float(t.get("amount") or t.get("size") or 0.0)
-                side = (t.get("direction") or t.get("side") or "").lower()
-                ts_ms = int(t.get("timestamp") or t.get("time") or 0)
-                ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-                self.state.last_px[symbol] = price
-                yield self.normalize_trade(symbol, ts, price, qty, side)
+        while True:
+            try:
+                async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
+                    msg = json.loads(raw)
+                    params = msg.get("params") or {}
+                    for t in params.get("data") or []:
+                        price = float(t.get("price") or 0.0)
+                        amount = float(t.get("amount") or t.get("size") or 0.0)
+                        ts_ms = int(t.get("timestamp") or t.get("time") or 0)
+                        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                        self.state.last_px[symbol] = price
+                        yield {"price": price, "amount": amount, "ts": ts}
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # pragma: no cover - reconnection path
+                log.warning("WS trades disconnected (%s), reconnecting ...", e)
+                await asyncio.sleep(1.0)
 
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book snapshots from Deribit."""
