@@ -5,6 +5,7 @@ import contextlib
 import logging
 import time
 import random
+import json
 
 import websockets
 
@@ -169,6 +170,22 @@ class ExchangeAdapter(ABC):
                     try:
                         while True:
                             msg = await ws.recv()
+                            try:
+                                data = json.loads(msg)
+                            except Exception:
+                                yield msg
+                                continue
+                            if data.get("method") == "heartbeat":
+                                await ws.send(
+                                    json.dumps(
+                                        {
+                                            "jsonrpc": "2.0",
+                                            "id": 0,
+                                            "method": "public/respond-heartbeat",
+                                        }
+                                    )
+                                )
+                                continue
                             yield msg
                     finally:
                         ping_task.cancel()
