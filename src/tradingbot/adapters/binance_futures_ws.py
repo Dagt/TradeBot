@@ -203,14 +203,15 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         messages = self._ws_messages(url)
         first = True
         timeouts = 0
+        backoff = 1
         while True:
             try:
                 raw = await asyncio.wait_for(messages.__anext__(), timeout=15)
                 timeouts = 0
+                backoff = 1
             except asyncio.TimeoutError:
                 timeouts += 1
                 log.warning("No message received on %s for 15s", stream)
-                messages = self._ws_messages(url)
                 if timeouts >= 3:
                     if per_symbol:
                         per_symbol = False
