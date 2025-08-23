@@ -119,26 +119,28 @@ class OKXWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask levels for ``symbol`` using the bbo channel."""
+        """Stream best bid/ask levels for ``symbol`` using the books5 channel."""
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "bbo-tbt", "instId": sym}]}
+        sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bid_px_raw = d.get("bidPx")
-                ask_px_raw = d.get("askPx")
-                if bid_px_raw is None or ask_px_raw is None:
-                    log.debug("Discarding BBA event with invalid prices: %s", d)
+                bids = d.get("bids", []) or []
+                asks = d.get("asks", []) or []
+                if not bids or not asks:
+                    log.warning("Discarding BBA event with empty bids/asks: %s", d)
                     continue
+                bid_px_raw, bid_qty_raw, *_ = bids[0]
+                ask_px_raw, ask_qty_raw, *_ = asks[0]
                 bid_px = float(bid_px_raw)
                 ask_px = float(ask_px_raw)
                 if bid_px == 0 or ask_px == 0:
-                    log.debug("Discarding BBA event with invalid prices: %s", d)
+                    log.warning("Discarding BBA event with zero price: %s", d)
                     continue
-                bid_qty = float(d.get("bidSz", 0))
-                ask_qty = float(d.get("askSz", 0))
+                bid_qty = float(bid_qty_raw)
+                ask_qty = float(ask_qty_raw)
                 ts_ms = int(d.get("ts", 0))
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
                 yield {

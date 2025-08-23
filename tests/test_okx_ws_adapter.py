@@ -73,20 +73,8 @@ async def test_fetch_funding_oi_and_orders():
         (
             "stream_bba",
             (),
-            "bbo-tbt",
-            json.dumps(
-                {
-                    "data": [
-                        {
-                            "bidPx": "1",
-                            "bidSz": "2",
-                            "askPx": "3",
-                            "askSz": "4",
-                            "ts": "0",
-                        }
-                    ]
-                }
-            ),
+            "books5",
+            json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]}),
         ),
         (
             "stream_funding",
@@ -133,9 +121,9 @@ async def test_subscription_format(method, args, channel, msg):
 async def test_stream_bba_discard_invalid(caplog):
     adapter = OKXWSAdapter()
     events = [
-        json.dumps({"data": [{"bidPx": "0", "bidSz": "1", "askPx": "2", "askSz": "2", "ts": "0"}]}),
-        json.dumps({"data": [{"bidPx": "1", "bidSz": "1", "askPx": None, "askSz": "2", "ts": "0"}]}),
-        json.dumps({"data": [{"bidPx": "1", "bidSz": "2", "askPx": "3", "askSz": "4", "ts": "0"}]})
+        json.dumps({"data": [{"bids": [["0", "1"]], "asks": [["2", "2"]], "ts": "0"}]}),
+        json.dumps({"data": [{"bids": [["1", "1"]], "asks": [], "ts": "0"}]}),
+        json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]})
     ]
 
     async def fake_messages(url, sub):
@@ -143,7 +131,7 @@ async def test_stream_bba_discard_invalid(caplog):
             yield e
 
     adapter._ws_messages = fake_messages
-    caplog.set_level("DEBUG")
+    caplog.set_level("WARNING")
     gen = adapter.stream_bba("BTC/USDT")
     result = await gen.__anext__()
     await gen.aclose()
