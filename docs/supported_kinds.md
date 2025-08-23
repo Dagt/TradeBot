@@ -15,7 +15,7 @@ connecting to test environments.
 | binance_futures_ws | trades, trades_multi, orderbook, bba, delta, funding |
 | bybit_spot | trades, orderbook, bba, delta |
 | bybit_futures | trades, orderbook, bba, delta, funding, open_interest |
-| bybit_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
+| bybit_futures_ws | trades, orderbook, bba, delta |
 | okx_spot | trades, orderbook, bba, delta |
 | okx_futures | trades, orderbook, bba, delta, funding, open_interest |
 | okx_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
@@ -23,5 +23,7 @@ connecting to test environments.
 | deribit_futures_ws | trades, orderbook, bba, delta |
 
 This reference aims to keep the UI and CLI documentation aligned with the
-actual capabilities of each adapter.
+actual capabilities of each adapter. Bybit's public websocket omits funding
+and open interest streams; use the REST adapter (``bybit_futures``) for those
+data types.
 

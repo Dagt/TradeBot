@@ -26,6 +26,11 @@ class BybitWSAdapter(ExchangeAdapter):
     """
 
     name = "bybit_futures_ws"
+    # Bybit's public websocket does not expose funding or open interest
+    # channels (the server responds with ``error:handler not found``).  Only
+    # native streams are advertised here; users should rely on the REST
+    # adapter for those additional kinds.
+    supported_kinds = {"trades", "orderbook", "bba", "delta"}
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None, testnet: bool = False):
         super().__init__()
