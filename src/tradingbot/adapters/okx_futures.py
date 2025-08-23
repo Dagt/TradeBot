@@ -121,12 +121,18 @@ class OKXFuturesAdapter(ExchangeAdapter):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
                 if channel == "bbo-tbt":
-                    bid_px = float(d.get("bidPx", 0))
-                    bid_qty = float(d.get("bidSz", 0))
-                    ask_px = float(d.get("askPx", 0))
-                    ask_qty = float(d.get("askSz", 0))
-                    bids = [[bid_px, bid_qty]] if bid_px else []
-                    asks = [[ask_px, ask_qty]] if ask_px else []
+                    bid_px_raw = d.get("bidPx")
+                    ask_px_raw = d.get("askPx")
+                    if bid_px_raw is None or ask_px_raw is None:
+                        continue
+                    bid_px = float(bid_px_raw)
+                    ask_px = float(ask_px_raw)
+                    if bid_px == 0 or ask_px == 0:
+                        continue
+                    bid_qty = float(d.get("bidSz") or 0)
+                    ask_qty = float(d.get("askSz") or 0)
+                    bids = [[bid_px, bid_qty]]
+                    asks = [[ask_px, ask_qty]]
                 else:
                     bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
                     asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
@@ -148,6 +154,8 @@ class OKXFuturesAdapter(ExchangeAdapter):
             ask_px = asks[0] if asks else None
             ask_qtys = ob.get("ask_qty", [])
             ask_qty = ask_qtys[0] if ask_qtys else None
+            if bid_px is None or ask_px is None:
+                continue
             yield {
                 "symbol": symbol,
                 "ts": ob.get("ts"),
