@@ -68,7 +68,7 @@ EXPECTED_KINDS = {
         "funding",
         "open_interest",
     },
-    "deribit_futures": {"trades", "funding", "open_interest"},
+    "deribit_futures": {"trades", "funding"},
     "deribit_futures_ws": {
         "trades",
         "orderbook",

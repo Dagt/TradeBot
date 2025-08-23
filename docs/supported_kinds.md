@@ -19,7 +19,7 @@ connecting to test environments.
 | okx_spot | trades, orderbook, bba, delta |
 | okx_futures | trades, orderbook, bba, delta, funding, open_interest |
 | okx_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
-| deribit_futures | trades, funding, open_interest |
+| deribit_futures | trades, funding |
 | deribit_futures_ws | trades, orderbook, bba, delta |
 
 This reference aims to keep the UI and CLI documentation aligned with the
