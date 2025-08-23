@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 import pytest
@@ -8,7 +9,7 @@ from tradingbot.adapters.base import ExchangeAdapter
 
 
 @pytest.mark.asyncio
-async def test_stream_order_book_ignores_zero_or_none():
+async def test_stream_order_book_ignores_zero_or_none(caplog):
     adapter = OKXFuturesAdapter.__new__(OKXFuturesAdapter)
     ExchangeAdapter.__init__(adapter)
     adapter.state = type("S", (), {"order_book": {}, "last_px": {}})()
@@ -27,25 +28,30 @@ async def test_stream_order_book_ignores_zero_or_none():
 
     adapter._ws_messages = fake_messages
 
-    gen = adapter.stream_order_book("BTC/USDT", depth=1)
-    ob = await gen.__anext__()
-    await gen.aclose()
+    with caplog.at_level(logging.WARNING):
+        gen = adapter.stream_order_book("BTC/USDT", depth=1)
+        ob = await gen.__anext__()
+        await gen.aclose()
 
     assert ob["bid_px"] == [1.0]
     assert ob["ask_px"] == [3.0]
+    assert "zero price" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_stream_bba_skips_missing_sides():
     adapter = OKXFuturesAdapter.__new__(OKXFuturesAdapter)
     ExchangeAdapter.__init__(adapter)
-    ts = datetime.fromtimestamp(0, tz=timezone.utc)
+    adapter.ws_public_url = "wss://example"
 
-    async def fake_order_book(symbol, depth):
-        yield {"ts": ts, "bid_px": [], "bid_qty": [], "ask_px": [3.0], "ask_qty": [4.0]}
-        yield {"ts": ts, "bid_px": [1.0], "bid_qty": [2.0], "ask_px": [3.0], "ask_qty": [4.0]}
+    msg1 = json.dumps({"data": [{"bids": [], "asks": [["3", "4"]], "ts": "0"}]})
+    msg2 = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "1"}]})
 
-    adapter.stream_order_book = fake_order_book
+    async def fake_messages(url, sub):
+        yield msg1
+        yield msg2
+
+    adapter._ws_messages = fake_messages
 
     gen = adapter.stream_bba("BTC/USDT")
     quote = await gen.__anext__()

@@ -133,6 +133,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
                     bid_px = float(bid_px_raw)
                     ask_px = float(ask_px_raw)
                     if bid_px == 0 or ask_px == 0:
+                        log.warning("bbo-tbt returned zero price; check channel permissions")
                         continue
                     bid_qty = float(d.get("bidSz") or 0)
                     ask_qty = float(d.get("askSz") or 0)
@@ -150,27 +151,34 @@ class OKXFuturesAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
+        """Emit best bid/ask quotes for ``symbol`` using books5 channel."""
 
-        async for ob in self.stream_order_book(symbol, 1):
-            bids = ob.get("bid_px", [])
-            bid_px = bids[0] if bids else None
-            bid_qtys = ob.get("bid_qty", [])
-            bid_qty = bid_qtys[0] if bid_qtys else None
-            asks = ob.get("ask_px", [])
-            ask_px = asks[0] if asks else None
-            ask_qtys = ob.get("ask_qty", [])
-            ask_qty = ask_qtys[0] if ask_qtys else None
-            if bid_px is None or ask_px is None:
-                continue
-            yield {
-                "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px,
-                "bid_qty": bid_qty,
-                "ask_px": ask_px,
-                "ask_qty": ask_qty,
-            }
+        url = self.ws_public_url
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for d in msg.get("data", []) or []:
+                bids = d.get("bids", [])
+                asks = d.get("asks", [])
+                if not bids or not asks:
+                    continue
+                bid_px = float(bids[0][0])
+                bid_qty = float(bids[0][1])
+                ask_px = float(asks[0][0])
+                ask_qty = float(asks[0][1])
+                if bid_px == 0 or ask_px == 0:
+                    log.warning("books5 returned zero price; check channel permissions")
+                    continue
+                ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
+                yield {
+                    "symbol": symbol,
+                    "ts": ts,
+                    "bid_px": bid_px,
+                    "bid_qty": bid_qty,
+                    "ask_px": ask_px,
+                    "ask_qty": ask_qty,
+                }
 
 
     async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
