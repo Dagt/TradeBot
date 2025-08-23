@@ -84,9 +84,14 @@ class OKXFuturesAdapter(ExchangeAdapter):
         base = base_quote[: -len(quote)]
         return f"{base}-{quote}-{suffix}"
 
+    def _normalize(self, symbol: str) -> str:
+        """Return normalised symbol in OKX format."""
+
+        return self.normalize_symbol(symbol).replace("/", "-").upper()
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -100,7 +105,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
 
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         if depth not in (1, 5, 10, 25):
             raise ValueError("depth must be one of 1, 5, 10, 25")
         channel = f"books{depth}"
@@ -168,7 +173,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
             await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
@@ -192,7 +197,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
         venue no soporta esta métrica.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -228,7 +233,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
         ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")
