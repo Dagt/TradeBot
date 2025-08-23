@@ -127,21 +127,21 @@ class BybitWSAdapter(ExchangeAdapter):
         sub = {"op": "subscribe", "args": [f"tickers.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
-            for d in msg.get("data", []) or []:
-                bid_px = d.get("bid1Price")
-                ask_px = d.get("ask1Price")
-                if bid_px is None and ask_px is None:
-                    continue
-                ts_ms = int(d.get("ts", 0))
-                ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-                yield {
-                    "symbol": symbol,
-                    "ts": ts,
-                    "bid_px": float(bid_px) if bid_px is not None else None,
-                    "bid_qty": float(d.get("bid1Size", 0.0)),
-                    "ask_px": float(ask_px) if ask_px is not None else None,
-                    "ask_qty": float(d.get("ask1Size", 0.0)),
-                }
+            data = msg.get("data") or {}
+            bid_px = data.get("bid1Price")
+            ask_px = data.get("ask1Price")
+            if bid_px is None and ask_px is None:
+                continue
+            ts_ms = int(data.get("ts", 0))
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            yield {
+                "symbol": symbol,
+                "ts": ts,
+                "bid_px": float(bid_px) if bid_px is not None else None,
+                "bid_qty": float(data.get("bid1Size", 0.0)),
+                "ask_px": float(ask_px) if ask_px is not None else None,
+                "ask_qty": float(data.get("ask1Size", 0.0)),
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 1) -> AsyncIterator[dict]:
         """Stream order book deltas for ``symbol``.
