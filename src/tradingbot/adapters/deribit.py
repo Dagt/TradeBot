@@ -43,8 +43,9 @@ class DeribitAdapter(ExchangeAdapter):
     name = "deribit_futures"
     supported_kinds = ["trades", "funding"]  # ``open_interest`` no disponible
 
-    # Deribit únicamente lista perpetuos de BTC y ETH.  Este mapa traduce
-    # símbolos genéricos (``ETHUSDT``) al identificador oficial del venue
+    # Deribit listaba originalmente únicamente perpetuos de BTC y ETH pero ha
+    # ampliado su oferta con varios altcoins.  Este mapa traduce símbolos
+    # genéricos (``ETHUSDT``) al identificador oficial del venue
     # (``ETH-PERPETUAL``).  Las claves se almacenan ya normalizadas mediante
     # :func:`tradingbot.core.symbols.normalize` para aceptar múltiples
     # variantes de entrada ("ETH/USDT", "eth-perp", etc.).
@@ -57,6 +58,38 @@ class DeribitAdapter(ExchangeAdapter):
         "ETHUSD": "ETH-PERPETUAL",
         "ETHPERP": "ETH-PERPETUAL",
         "ETHPERPETUAL": "ETH-PERPETUAL",
+        "SOLUSDT": "SOL-PERPETUAL",
+        "SOLUSD": "SOL-PERPETUAL",
+        "SOLPERP": "SOL-PERPETUAL",
+        "SOLPERPETUAL": "SOL-PERPETUAL",
+        "XRPUSDT": "XRP-PERPETUAL",
+        "XRPUSD": "XRP-PERPETUAL",
+        "XRPPERP": "XRP-PERPETUAL",
+        "XRPPERPETUAL": "XRP-PERPETUAL",
+        "MATICUSDT": "MATIC-PERPETUAL",
+        "MATICUSD": "MATIC-PERPETUAL",
+        "MATICPERP": "MATIC-PERPETUAL",
+        "MATICPERPETUAL": "MATIC-PERPETUAL",
+        "DOTUSDT": "DOT-PERPETUAL",
+        "DOTUSD": "DOT-PERPETUAL",
+        "DOTPERP": "DOT-PERPETUAL",
+        "DOTPERPETUAL": "DOT-PERPETUAL",
+        "ADAUSDT": "ADA-PERPETUAL",
+        "ADAUSD": "ADA-PERPETUAL",
+        "ADAPERP": "ADA-PERPETUAL",
+        "ADAPERPETUAL": "ADA-PERPETUAL",
+        "DOGEUSDT": "DOGE-PERPETUAL",
+        "DOGEUSD": "DOGE-PERPETUAL",
+        "DOGEPERP": "DOGE-PERPETUAL",
+        "DOGEPERPETUAL": "DOGE-PERPETUAL",
+        "LTCUSDT": "LTC-PERPETUAL",
+        "LTCUSD": "LTC-PERPETUAL",
+        "LTCPERP": "LTC-PERPETUAL",
+        "LTCPERPETUAL": "LTC-PERPETUAL",
+        "TRXUSDT": "TRX-PERPETUAL",
+        "TRXUSD": "TRX-PERPETUAL",
+        "TRXPERP": "TRX-PERPETUAL",
+        "TRXPERPETUAL": "TRX-PERPETUAL",
     }
 
     @classmethod
