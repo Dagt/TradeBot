@@ -17,14 +17,17 @@ Recibe datos de mercado en vivo y opcionalmente los almacena.
 - `--persist`: si se indica, guarda los datos en la base de datos.
 - `--backend`: backend de almacenamiento (`timescale` o `csv`).
 
+Nota: Bybit no provee streams de `funding` ni `open_interest` vía WebSocket;
+para esos datos utilice el adaptador REST (`bybit_futures`).
+
 Ejemplos:
 
 ```bash
 # Funding rate en Binance Futures
 python -m tradingbot.cli ingest --venue binance_futures_ws --symbol BTC/USDT --kind funding
 
-# Open interest en Bybit
-python -m tradingbot.cli ingest --venue bybit_futures_ws --symbol BTC/USDT --kind open_interest
+# Open interest en Bybit (usar REST)
+python -m tradingbot.cli ingest --venue bybit_futures --symbol BTC/USDT --kind open_interest
 
 # Funding y open interest en OKX
 python -m tradingbot.cli ingest --venue okx_futures_ws --symbol BTC/USDT --kind funding
