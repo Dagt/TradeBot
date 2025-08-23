@@ -16,7 +16,6 @@ except Exception:  # pragma: no cover
     NetworkError = ExchangeError = Exception
 
 from .base import ExchangeAdapter
-from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -35,9 +34,32 @@ class OKXSpotAdapter(ExchangeAdapter):
         # Validar permisos disponibles en la API key
         validate_scopes(self.rest, log)
 
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Return OKX formatted spot symbol."""
+
+        sym = ExchangeAdapter.normalize_symbol(symbol)
+        if not sym:
+            return sym
+        parts = sym.split("-")
+        base_quote = parts[0]
+        quotes = [
+            "USDT",
+            "USDC",
+            "USD",
+            "BTC",
+            "ETH",
+            "EUR",
+            "GBP",
+            "JPY",
+        ]
+        quote = next((q for q in quotes if base_quote.endswith(q)), base_quote[-4:])
+        base = base_quote[: -len(quote)]
+        return f"{base}-{quote}"
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = normalize(symbol)
+        sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -119,18 +141,19 @@ class OKXSpotAdapter(ExchangeAdapter):
             await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
-        sym = normalize(symbol)
-        method = getattr(self.rest, "fetchFundingRate", None)
+        sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
-        data = await self._request(method, sym)
-        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
-        ts = int(ts)
-        if ts > 1e12:
-            ts /= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        data = await self._request(method, {"instId": sym})
+        lst = data.get("data") or []
+        item = lst[0] if lst else {}
+        ts_ms = int(
+            item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
+        )
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
         """Return the basis (mark - index) for ``symbol``.
@@ -140,7 +163,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         difference, returning a normalised ``{"ts": datetime, "basis": float}``.
         """
 
-        sym = normalize(symbol)
+        sym = self.normalize_symbol(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -173,7 +196,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         ``data`` array and return it as ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = normalize(symbol)
+        sym = self.normalize_symbol(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")
