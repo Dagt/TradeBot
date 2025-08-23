@@ -140,10 +140,14 @@ class OKXFuturesAdapter(ExchangeAdapter):
         """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
 
         async for ob in self.stream_order_book(symbol, 1):
-            bid_px = ob.get("bid_px", [None])[0]
-            bid_qty = ob.get("bid_qty", [None])[0]
-            ask_px = ob.get("ask_px", [None])[0]
-            ask_qty = ob.get("ask_qty", [None])[0]
+            bids = ob.get("bid_px", [])
+            bid_px = bids[0] if bids else None
+            bid_qtys = ob.get("bid_qty", [])
+            bid_qty = bid_qtys[0] if bid_qtys else None
+            asks = ob.get("ask_px", [])
+            ask_px = asks[0] if asks else None
+            ask_qtys = ob.get("ask_qty", [])
+            ask_qty = ask_qtys[0] if ask_qtys else None
             yield {
                 "symbol": symbol,
                 "ts": ob.get("ts"),
