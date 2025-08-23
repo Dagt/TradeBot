@@ -159,3 +159,9 @@ E2E_LATENCY = Histogram(
     "e2e_latency_seconds",
     "End-to-end order processing latency in seconds",
 )
+
+# Order book persistence failures
+ORDERBOOK_INSERT_FAILURES = Counter(
+    "orderbook_insert_failures_total",
+    "Total order book persistence failures",
+)

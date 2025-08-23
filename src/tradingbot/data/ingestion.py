@@ -13,6 +13,7 @@ from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 import inspect
+from ..utils.metrics import ORDERBOOK_INSERT_FAILURES
 
 log = logging.getLogger(__name__)
 
@@ -757,16 +758,20 @@ async def run_orderbook_stream(
             )
             await bus.publish("orderbook", ob)
             if storage is not None and engine is not None:
-                storage.insert_orderbook(
-                    engine,
-                    ts=ob.ts,
-                    exchange=ob.exchange,
-                    symbol=ob.symbol,
-                    bid_px=ob.bid_px,
-                    bid_qty=ob.bid_qty,
-                    ask_px=ob.ask_px,
-                    ask_qty=ob.ask_qty,
-                )
+                try:
+                    storage.insert_orderbook(
+                        engine,
+                        ts=ob.ts,
+                        exchange=ob.exchange,
+                        symbol=ob.symbol,
+                        bid_px=ob.bid_px,
+                        bid_qty=ob.bid_qty,
+                        ask_px=ob.ask_px,
+                        ask_qty=ob.ask_qty,
+                    )
+                except Exception as exc:  # pragma: no cover - logging only
+                    log.debug("Orderbook insert failed: %s", exc)
+                    ORDERBOOK_INSERT_FAILURES.inc()
 
     tasks = [asyncio.create_task(_orderbook())]
 
