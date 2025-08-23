@@ -112,16 +112,19 @@ class OKXSpotAdapter(ExchangeAdapter):
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
         """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
 
-        url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"bbo-tbt:{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
-            msg = json.loads(raw)
-            for d in msg.get("data", []) or []:
-                bid = float(d.get("bidPx", 0))
-                ask = float(d.get("askPx", 0))
-                ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
-                yield {"symbol": symbol, "ts": ts, "bid": bid, "ask": ask}
+        async for ob in self.stream_order_book(symbol):
+            bid_px = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
+            ask_px = ob.get("ask_px", [None])[0]
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid_px,
+                "bid_qty": bid_qty,
+                "ask_px": ask_px,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""
