@@ -188,7 +188,13 @@ async def test_stream_trades(connector_cls, messages, monkeypatch):
     assert trade1.price == 1.0
     assert trade2.price == 3.0
     await gen.aclose()
-    assert ws.sent[0] == c._ws_trades_subscribe("BTCUSDT")
+    if connector_cls is OKXConnector:
+        assert json.loads(ws.sent[0]) == {
+            "op": "subscribe",
+            "args": [{"channel": "trades", "instId": "BTCUSDT"}],
+        }
+    else:
+        assert ws.sent[0] == c._ws_trades_subscribe("BTCUSDT")
 
 
 class DummyOrderRest:
