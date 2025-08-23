@@ -9,15 +9,6 @@
   <style>
   @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
   #dm-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
-  .dm-kind-desc {
-    color: #444;
-    background: #f2f2f2;
-    padding: 4px 8px;
-    border-left: 3px solid #ccc;
-    border-radius: 4px;
-    margin-top: 8px;
-    display: block;
-  }
   </style>
 </head>
 <body>
@@ -146,7 +137,7 @@ const kindDescriptions={
   open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
   funding:"Funding (tasa de financiamiento): pagos periódicos entre compradores y vendedores de perpetuos para alinear el precio con el spot.",
   trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
-  trade_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
+  trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
   delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
@@ -174,14 +165,23 @@ function updateFields(){
   document.getElementById('field-depth').style.display=showDepth?'':'none';
   document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
   document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
-  const desc=document.getElementById('dm-kind-desc');
-  if(act==='ingest'){
-    desc.style.display='';
-    desc.textContent=kindDescriptions[kind]||'';
-  }else{
-    desc.style.display='none';
-    desc.textContent='';
-  }
+  const desc = document.getElementById('dm-kind-desc');
+if (act === 'ingest' || act === 'ingest-historical') {
+  desc.style.display = '';
+  const selectedKind = act === 'ingest'
+    ? document.getElementById('dm-kind').value
+    : document.getElementById('dm-hkind').value;
+ const raw = kindDescriptions[selectedKind] || '';
+// Envuelve todo hasta el primer ":" como lead (si existe)
+desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
+
+  desc.dataset.kind = selectedKind; // útil si más adelante varías acentos por tipo
+} else {
+  desc.style.display = 'none';
+  desc.textContent = '';
+  delete desc.dataset.kind;
+}
+
   const start=document.getElementById('dm-start').value;
   const end=document.getElementById('dm-end').value;
   const showDays=act==='backfill' && !(start && end);
