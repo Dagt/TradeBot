@@ -98,9 +98,18 @@ class OKXSpotAdapter(ExchangeAdapter):
         """Emit best bid/ask quotes for ``symbol``."""
 
         async for ob in self.stream_order_book(symbol):
-            bid = ob.get("bid_px", [None])[0]
-            ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+            bid_px = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
+            ask_px = ob.get("ask_px", [None])[0]
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid_px,
+                "bid_qty": bid_qty,
+                "ask_px": ask_px,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""
