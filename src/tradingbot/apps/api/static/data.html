@@ -142,6 +142,16 @@ const kindDescriptions={
   delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
 
+function showWorking() {
+  const span = document.getElementById('dm-working');
+  if (span) span.style.display = 'inline';
+}
+
+function hideWorking() {
+  const span = document.getElementById('dm-working');
+  if (span) span.style.display = 'none';
+}
+
 function appendOutput(out, text) {
   out.textContent += text + '\n';
   requestAnimationFrame(() => out.scrollTop = out.scrollHeight);
@@ -246,14 +256,14 @@ async function runData(){
       runBtn.textContent='Ejecutar';
       currentJob=null;
       evt.close();
-      if(act==='backfill') hideWorking();
+        hideWorking();
       appendOutput(out, `Proceso finalizado (código ${e.data}).`);
     });
     evt.onerror=()=>{
       appendOutput(out, '[error de conexión]');
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
-      if(act==='backfill') hideWorking();
+      hideWorking();
     };
     if(act==='backfill') showWorking();
   }catch(e){
@@ -261,7 +271,7 @@ async function runData(){
     out.scrollTop = out.scrollHeight;
     runBtn.disabled=false;
     runBtn.textContent='Ejecutar';
-    if(act==='backfill') hideWorking();
+    hideWorking();
   }
 }
 
