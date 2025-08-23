@@ -71,6 +71,8 @@ class DeribitWSAdapter(ExchangeAdapter):
                     if msg.get("error"):
                         log.error("WS subscription error: %s", msg)
                         continue
+                    if "result" in msg and "params" not in msg:
+                        continue
                     params = msg.get("params") or {}
                     if params.get("channel") != channel:
                         raise ValueError(
@@ -124,6 +126,8 @@ class DeribitWSAdapter(ExchangeAdapter):
             msg = json.loads(raw)
             if msg.get("error"):
                 log.error("WS subscription error: %s", msg)
+                continue
+            if "result" in msg and "params" not in msg:
                 continue
             params = msg.get("params") or {}
             if params.get("channel") != channel:
