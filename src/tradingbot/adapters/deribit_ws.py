@@ -56,7 +56,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         """
 
         sym = self._normalize(symbol)
-        channel = f"trades.{sym}.raw"
+        channel = f"trades.{sym}.100ms"
         sub = {
             "jsonrpc": "2.0",
             "method": "public/subscribe",

@@ -83,7 +83,12 @@ class OKXSpotAdapter(ExchangeAdapter):
         400: "books-l2-tbt",
     }
 
+
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
+        """Yield order book snapshots for ``symbol``.
+
+        Events with incomplete bid or ask data are discarded.
+        """
         url = "wss://ws.okx.com:8443/ws/v5/public"
         sym = self._normalize(symbol)
         channel = self.DEPTH_TO_CHANNEL.get(depth)
@@ -105,8 +110,10 @@ class OKXSpotAdapter(ExchangeAdapter):
                     asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
                 ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
                 self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-                yield self.normalize_order_book(symbol, ts, bids, asks)
-
+                ob = self.normalize_order_book(symbol, ts, bids, asks)
+                if len(ob["bid_px"]) != len(ob["bid_qty"]) or len(ob["ask_px"]) != len(ob["ask_qty"]):
+                    continue
+                yield ob
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
@@ -130,13 +137,22 @@ class OKXSpotAdapter(ExchangeAdapter):
                 "ask_qty": ask_qty,
             }
 
-    async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
-        """Yield incremental order book updates for ``symbol``."""
 
+    async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
+        """Yield incremental order book updates for ``symbol``.
+
+        Events with incomplete bid or ask data are discarded.
+        """
         prev: dict | None = None
         async for ob in self.stream_order_book(symbol, depth):
-            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
-            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
+            bid_px = ob.get("bid_px", [])
+            bid_qty = ob.get("bid_qty", [])
+            ask_px = ob.get("ask_px", [])
+            ask_qty = ob.get("ask_qty", [])
+            if len(bid_px) != len(bid_qty) or len(ask_px) != len(ask_qty):
+                continue
+            curr_bids = list(zip(bid_px, bid_qty))
+            curr_asks = list(zip(ask_px, ask_qty))
             if prev is None:
                 delta_bids = curr_bids
                 delta_asks = curr_asks
@@ -156,7 +172,6 @@ class OKXSpotAdapter(ExchangeAdapter):
                 "ask_px": [p for p, _ in delta_asks],
                 "ask_qty": [q for _, q in delta_asks],
             }
-
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
         """Poll funding rate updates via REST."""
 
