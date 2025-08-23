@@ -584,6 +584,19 @@ async def test_deribit_fetch_methods():
     assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
 
 
+@pytest.mark.parametrize(
+    "alias,instrument",
+    [
+        ("SOLUSDT", "SOL-PERPETUAL"),
+        ("XRPUSDT", "XRP-PERPETUAL"),
+        ("MATICUSDT", "MATIC-PERPETUAL"),
+        ("DOTUSDT", "DOT-PERPETUAL"),
+    ],
+)
+def test_deribit_symbol_map_new_instruments(alias, instrument):
+    assert DeribitAdapter.normalize(alias) == instrument
+
+
 @pytest.mark.asyncio
 async def test_request_and_close_async_rest():
     class DummyAdapter(ExchangeAdapter):

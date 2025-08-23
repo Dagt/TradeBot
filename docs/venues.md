@@ -18,3 +18,6 @@ target and the primary connection method used by each adapter.
 | deribit | Perpetual futures | REST |
 | deribit_ws | Perpetual futures | WebSocket |
 
+Deribit ofrece perpetuos no solo de BTC y ETH sino también de varios altcoins
+como SOL, XRP, MATIC, DOT, ADA, DOGE, LTC y TRX.
+
