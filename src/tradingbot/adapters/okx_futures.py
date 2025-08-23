@@ -116,7 +116,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
         channel = self.DEPTH_TO_CHANNEL.get(depth)
         if channel is None:
             raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
-        sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -139,7 +139,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
         """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
 
-        async for ob in self.stream_order_book(symbol):
+        async for ob in self.stream_order_book(symbol, 1):
             bid_px = ob.get("bid_px", [None])[0]
             bid_qty = ob.get("bid_qty", [None])[0]
             ask_px = ob.get("ask_px", [None])[0]
@@ -153,7 +153,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
                 "ask_qty": ask_qty,
             }
 
-    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+    async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""
 
         prev: dict | None = None
