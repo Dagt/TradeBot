@@ -119,6 +119,72 @@ def insert_orderbook(engine, *, ts, exchange: str, symbol: str,
         '''), dict(ts=ts, exchange=exchange, symbol=symbol,
                    bid_px=bid_px, bid_qty=bid_qty, ask_px=ask_px, ask_qty=ask_qty))
 
+
+def insert_bba(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: float | None,
+    bid_qty: float | None,
+    ask_px: float | None,
+    ask_qty: float | None,
+):
+    """Persist best bid/ask snapshots."""
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.bba (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+            VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+        '''
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=symbol,
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
+
+
+def insert_book_delta(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: list[float],
+    bid_qty: list[float],
+    ask_px: list[float],
+    ask_qty: list[float],
+):
+    """Persist order book delta updates."""
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.book_delta (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+            VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+        '''
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=symbol,
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
+
 def insert_order(engine, *, strategy: str, exchange: str, symbol: str, side: str, type_: str, qty: float, px: float | None, status: str, ext_order_id: str | None = None, notes: dict | None = None):
     with engine.begin() as conn:
         conn.execute(text('''

@@ -117,6 +117,74 @@ def insert_orderbook(
         )
 
 
+def insert_bba(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: float | None,
+    bid_qty: float | None,
+    ask_px: float | None,
+    ask_qty: float | None,
+):
+    """Persist a best bid/ask snapshot into QuestDB."""
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO bba (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+                VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+                """
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=symbol,
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
+
+
+def insert_book_delta(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: list[float],
+    bid_qty: list[float],
+    ask_px: list[float],
+    ask_qty: list[float],
+):
+    """Persist order book delta updates into QuestDB."""
+
+    payload = dict(
+        ts=ts,
+        exchange=exchange,
+        symbol=symbol,
+        bid_px=json.dumps(bid_px),
+        bid_qty=json.dumps(bid_qty),
+        ask_px=json.dumps(ask_px),
+        ask_qty=json.dumps(ask_qty),
+    )
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO book_delta (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+                VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+                """
+            ),
+            payload,
+        )
+
+
 def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
                   l: float, c: float, v: float):
     """Insert a 1-minute bar into QuestDB."""
@@ -289,6 +357,8 @@ __all__ = [
     "get_engine",
     "insert_trade",
     "insert_orderbook",
+    "insert_bba",
+    "insert_book_delta",
     "insert_bar_1m",
     "insert_funding",
     "insert_open_interest",
