@@ -76,18 +76,33 @@ class OKXSpotAdapter(ExchangeAdapter):
                 self.state.last_px[symbol] = price
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
+    DEPTH_TO_CHANNEL = {
+        1: "bbo-tbt",
+        5: "books5",
+        50: "books50-l2-tbt",
+        400: "books-l2-tbt",
+    }
+
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
         sym = self._normalize(symbol)
-        if depth not in (1, 5, 10, 25):
-            raise ValueError("depth must be one of 1, 5, 10, 25")
-        channel = f"books{depth}"
+        channel = self.DEPTH_TO_CHANNEL.get(depth)
+        if channel is None:
+            raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
         sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
-                asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
+                if channel == "bbo-tbt":
+                    bid_px = float(d.get("bidPx", 0))
+                    bid_qty = float(d.get("bidSz", 0))
+                    ask_px = float(d.get("askPx", 0))
+                    ask_qty = float(d.get("askSz", 0))
+                    bids = [[bid_px, bid_qty]] if bid_px else []
+                    asks = [[ask_px, ask_qty]] if ask_px else []
+                else:
+                    bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
+                    asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
                 ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
                 self.state.order_book[symbol] = {"bids": bids, "asks": asks}
                 yield self.normalize_order_book(symbol, ts, bids, asks)
@@ -95,12 +110,18 @@ class OKXSpotAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Emit best bid/ask quotes for ``symbol``."""
+        """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
 
-        async for ob in self.stream_order_book(symbol):
-            bid = ob.get("bid_px", [None])[0]
-            ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+        url = "wss://ws.okx.com:8443/ws/v5/public"
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"bbo-tbt:{sym}"]}
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for d in msg.get("data", []) or []:
+                bid = float(d.get("bidPx", 0))
+                ask = float(d.get("askPx", 0))
+                ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
+                yield {"symbol": symbol, "ts": ts, "bid": bid, "ask": ask}
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""
