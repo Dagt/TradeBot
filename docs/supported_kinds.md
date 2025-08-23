@@ -12,7 +12,7 @@ connecting to test environments.
 | binance_spot | trades, orderbook, bba, delta |
 | binance_futures | trades, orderbook, bba, delta, funding, open_interest |
 | binance_spot_ws | trades, trades_multi, orderbook, bba, delta |
-| binance_futures_ws | trades, trades_multi, orderbook, bba, delta, funding, open_interest |
+| binance_futures_ws | trades, trades_multi, orderbook, bba, delta, funding |
 | bybit_spot | trades, orderbook, bba, delta |
 | bybit_futures | trades, orderbook, bba, delta, funding, open_interest |
 | bybit_futures_ws | trades, orderbook, bba, delta, funding, open_interest |
