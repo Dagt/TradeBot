@@ -86,8 +86,8 @@ class OKXFuturesAdapter(ExchangeAdapter):
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"trades:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
@@ -100,11 +100,11 @@ class OKXFuturesAdapter(ExchangeAdapter):
 
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         url = self.ws_public_url
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         if depth not in (1, 5, 10, 25):
             raise ValueError("depth must be one of 1, 5, 10, 25")
         channel = f"books{depth}"
-        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
+        sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
