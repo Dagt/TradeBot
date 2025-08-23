@@ -28,6 +28,14 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     Permite operar tanto en mainnet como en testnet.
     """
     name = "binance_futures_ws"
+    supported_kinds = {
+        "bba",
+        "delta",
+        "funding",
+        "orderbook",
+        "trades",
+        "trades_multi",
+    }
 
     def __init__(
         self,
