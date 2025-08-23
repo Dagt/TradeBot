@@ -117,7 +117,10 @@ class OKXSpotAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Emit best bid/ask quotes for ``symbol`` using bbo channel."""
+        """Emit best bid/ask quotes for ``symbol`` using bbo channel.
+
+        Snapshots with incomplete bid or ask data are discarded.
+        """
 
         async for ob in self.stream_order_book(symbol, 1):
             bids = ob.get("bid_px", [])
@@ -128,6 +131,8 @@ class OKXSpotAdapter(ExchangeAdapter):
             ask_px = asks[0] if asks else None
             ask_qtys = ob.get("ask_qty", [])
             ask_qty = ask_qtys[0] if ask_qtys else None
+            if bid_px is None or ask_px is None:
+                continue
             yield {
                 "symbol": symbol,
                 "ts": ob.get("ts"),
