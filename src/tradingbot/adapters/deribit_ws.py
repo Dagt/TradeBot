@@ -50,7 +50,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         """
 
         sym = normalize(symbol)
-        channel = f"trades.{sym}"
+        channel = f"trades.{sym}.raw"
         sub = {
             "jsonrpc": "2.0",
             "method": "public/subscribe",
@@ -62,8 +62,13 @@ class DeribitWSAdapter(ExchangeAdapter):
             try:
                 async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
                     msg = json.loads(raw)
+                    if msg.get("error"):
+                        continue
                     params = msg.get("params") or {}
-                    for t in params.get("data") or []:
+                    data = params.get("data") or []
+                    if not data:
+                        continue
+                    for t in data:
                         price = float(t.get("price") or 0.0)
                         qty = float(t.get("amount") or t.get("size") or 0.0)
                         side = str(t.get("direction") or t.get("side") or "").lower()
@@ -86,7 +91,7 @@ class DeribitWSAdapter(ExchangeAdapter):
                 yield ob
             return
 
-        channel = f"book.{depth}.{sym}"
+        channel = f"book.{sym}.{depth}.100ms"
         sub = {
             "jsonrpc": "2.0",
             "method": "public/subscribe",
@@ -96,7 +101,12 @@ class DeribitWSAdapter(ExchangeAdapter):
 
         async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
             msg = json.loads(raw)
-            data = (msg.get("params") or {}).get("data") or {}
+            if msg.get("error"):
+                continue
+            params = msg.get("params") or {}
+            data = params.get("data") or {}
+            if not data:
+                continue
             bids = [[float(p), float(q)] for p, q, *_ in data.get("bids", [])]
             asks = [[float(p), float(q)] for p, q, *_ in data.get("asks", [])]
             ts_ms = int(data.get("timestamp") or data.get("ts") or 0)
