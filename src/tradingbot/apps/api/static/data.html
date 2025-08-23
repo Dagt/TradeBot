@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <link rel="icon" href="/static/favicon.ico">
+  <title>DMI - TradingBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+  <style>
+  @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
+  #dm-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
+  </style>
+</head>
+<body>
+<header class="center" style="margin-bottom:8px">
+  <div class="logo-wrap">
+  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
+</div>
+
+  <nav>
+  <div class="menu">
+    <a href="/" class="">Monitoreo</a>
+    <a href="/bots" class="">Bots</a>
+    <a href="/stats" class="">Estadísticas operativas</a>
+    <a href="/data" class="active">Datos históricos</a>
+    <a href="/backtest" class="">Backtest</a>
+    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
+    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
+  </div>
+</nav>
+
+</header>
+  <h1>Datos históricos</h1>
+
+  <div class="card">
+    <h2>Gestión de datos</h2>
+    <div class="grid3" style="margin-top:10px">
+      <div>
+        <label for="dm-action">Acción</label>
+        <select id="dm-action">
+          <option value="ingest">Ingesta</option>
+          <option value="backfill">Backfill</option>
+          <option value="ingest-historical">Ingesta histórica</option>
+        </select>
+      </div>
+      <div id="field-venue">
+        <label for="dm-venue">Venue (e.g. binance_futures_ws)</label>
+        <select id="dm-venue"></select>
+      </div>
+      <div id="field-symbols">
+        <label for="dm-symbols">Símbolos (coma)</label>
+        <input id="dm-symbols" placeholder="BTC/USDT,ETH/USDT"/>
+      </div>
+      <div id="field-kind">
+        <label for="dm-kind">Tipo</label>
+        <select id="dm-kind"></select>
+      </div>
+      <div id="field-depth">
+        <label for="dm-depth">Profundidad</label>
+        <input id="dm-depth" type="number" value="10"/>
+      </div>
+      <div id="field-persist" style="display:flex;align-items:end">
+        <label class="chk"><input type="checkbox" id="dm-persist"/><span>Persistir <span class="help-icon" title="Guarda los datos en la base de datos para uso futuro">?</span></span></label>
+      </div>
+      <div id="field-days">
+        <label for="dm-days">Días</label>
+        <input id="dm-days" type="number" value="1"/>
+      </div>
+      <div id="field-start">
+        <label for="dm-start">Inicio</label>
+        <input id="dm-start" type="datetime-local"/>
+      </div>
+      <div id="field-end">
+        <label for="dm-end">Fin</label>
+        <input id="dm-end" type="datetime-local"/>
+      </div>
+      <div id="field-source">
+        <label for="dm-source">Fuente</label>
+        <select id="dm-source">
+          <option value="kaiko">kaiko</option>
+          <option value="coinapi">coinapi</option>
+        </select>
+      </div>
+      <div id="field-exchange">
+        <label for="dm-exchange">Exchange</label>
+        <input id="dm-exchange" placeholder="binance"/>
+      </div>
+      <div id="field-hkind">
+        <label for="dm-hkind">Tipo</label>
+        <select id="dm-hkind">
+          <option value="trades">trades</option>
+          <option value="orderbook">orderbook</option>
+          <option value="open_interest">open_interest</option>
+          <option value="funding">funding</option>
+        </select>
+      </div>
+      <div id="field-hdepth">
+        <label for="dm-hdepth">Profundidad</label>
+        <input id="dm-hdepth" type="number" value="10"/>
+      </div>
+      <div id="field-hlimit">
+        <label for="dm-hlimit">Límite</label>
+        <input id="dm-hlimit" type="number" value="100"/>
+      </div>
+      <div id="field-backend">
+        <label for="dm-backend">Backend</label>
+        <select id="dm-backend">
+          <option value="timescale">timescale</option>
+          <option value="quest">quest</option>
+          <option value="csv">csv</option>
+        </select>
+      </div>
+    </div>
+    <p id="dm-kind-desc" class="dm-kind-desc"></p>
+    <button id="dm-run" style="margin-top:10px">Ejecutar</button>
+    <button id="dm-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
+    <button id="dm-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
+    <span id="dm-working">Procesando<span id="dm-dots"></span></span>
+    <pre id="dm-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Comandos CLI</h2>
+    <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
+    <input id="cli-input" class="mono" placeholder="--help"/>
+    <button id="cli-run" style="margin-top:8px">Ejecutar</button>
+    <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+<script>
+const api = (path) => `${location.origin}${path}`;
+let currentJob=null;
+let evt=null;
+let kindsWithDepth=[];
+const kindDescriptions={
+  bba:"BBA (Best Bid & Ask): muestra las mejores posturas de compra (bid) y venta (ask) en el libro de órdenes.",
+  open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
+  funding:"Funding (tasa de financiamiento): pagos periódicos entre compradores y vendedores de perpetuos para alinear el precio con el spot.",
+  trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
+  trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
+  orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
+  delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
+};
+
+function showWorking() {
+  const span = document.getElementById('dm-working');
+  if (span) span.style.display = 'inline';
+}
+
+function hideWorking() {
+  const span = document.getElementById('dm-working');
+  if (span) span.style.display = 'none';
+}
+
+function appendOutput(out, text) {
+  out.textContent += text + '\n';
+  requestAnimationFrame(() => out.scrollTop = out.scrollHeight);
+}
+
+function updateFields(){
+  const act=document.getElementById('dm-action').value;
+  const kind=document.getElementById('dm-kind').value;
+  const showDepth=act==='ingest' && kindsWithDepth.includes(kind);
+  document.getElementById('field-venue').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-depth').style.display=showDepth?'':'none';
+  document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
+  document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
+  const desc = document.getElementById('dm-kind-desc');
+if (act === 'ingest' || act === 'ingest-historical') {
+  desc.style.display = '';
+  const selectedKind = act === 'ingest'
+    ? document.getElementById('dm-kind').value
+    : document.getElementById('dm-hkind').value;
+ const raw = kindDescriptions[selectedKind] || '';
+// Envuelve todo hasta el primer ":" como lead (si existe)
+desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
+
+  desc.dataset.kind = selectedKind; // útil si más adelante varías acentos por tipo
+} else {
+  desc.style.display = 'none';
+  desc.textContent = '';
+  delete desc.dataset.kind;
+}
+
+  const start=document.getElementById('dm-start').value;
+  const end=document.getElementById('dm-end').value;
+  const showDays=act==='backfill' && !(start && end);
+  document.getElementById('field-days').style.display=showDays?'':'none';
+  document.getElementById('field-start').style.display=act==='backfill'?'':'none';
+  document.getElementById('field-end').style.display=act==='backfill'?'':'none';
+  const hist=act==='ingest-historical';
+  document.getElementById('field-source').style.display=hist?'':'none';
+  document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
+  document.getElementById('field-hkind').style.display=hist?'':'none';
+  const hk=document.getElementById('dm-hkind').value;
+  document.getElementById('field-hdepth').style.display=hist && hk==='orderbook'?'':'none';
+  document.getElementById('field-hlimit').style.display=hist && hk==='trades'?'':'none';
+  const persist=document.getElementById('dm-persist').checked;
+  document.getElementById('field-backend').style.display=(hist || (act==='ingest' && persist))?'':'none';
+}
+
+document.getElementById('dm-source').addEventListener('change',updateFields);
+document.getElementById('dm-hkind').addEventListener('change',updateFields);
+document.getElementById('dm-start').addEventListener('change',updateFields);
+document.getElementById('dm-end').addEventListener('change',updateFields);
+document.getElementById('dm-persist').addEventListener('change',updateFields);
+document.getElementById('dm-kind').addEventListener('change', updateFields);
+
+async function runData(){
+  if(evt){evt.close();evt=null;}
+  const runBtn=document.getElementById('dm-run');
+  runBtn.disabled=true;
+  runBtn.textContent='Ejecutando...';
+  const act=document.getElementById('dm-action').value;
+  const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const out=document.getElementById('dm-output');
+  let cmd='';
+  if(act==='ingest'){
+    const venue=document.getElementById('dm-venue').value;
+    const depth=document.getElementById('dm-depth').value;
+    const kind=document.getElementById('dm-kind').value;
+    const persist=document.getElementById('dm-persist').checked;
+    const backend=document.getElementById('dm-backend').value;
+    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind} --backend ${backend}`+(persist?' --persist':'');
+  }else if(act==='backfill'){
+    const start=document.getElementById('dm-start').value;
+    const end=document.getElementById('dm-end').value;
+    if(start && end){
+      const s=new Date(start);
+      const e=new Date(end);
+      if(!(s<e)){
+        out.textContent='Rango inválido (inicio debe ser menor que fin)';
+        out.scrollTop = out.scrollHeight;
+        runBtn.disabled=false;
+        runBtn.textContent='Ejecutar';
+        return;
+      }
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+    }else{
+      const days=document.getElementById('dm-days').value;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+    }
+  }else{
+    const src=document.getElementById('dm-source').value;
+    const sym=document.getElementById('dm-symbols').value.trim();
+    const ex=document.getElementById('dm-exchange').value.trim();
+    const kind=document.getElementById('dm-hkind').value;
+    const depth=document.getElementById('dm-hdepth').value;
+    const limit=document.getElementById('dm-hlimit').value;
+    const backend=document.getElementById('dm-backend').value;
+    cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
+    if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
+    if(kind==='orderbook') cmd+=` --depth ${depth}`;
+    if(kind==='trades') cmd+=` --limit ${limit}`;
+  }
+  out.textContent='Iniciando...\n';
+  out.scrollTop = out.scrollHeight;
+  try{
+    const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    currentJob=j.id;
+    document.getElementById('dm-stop').disabled=false;
+    evt=new EventSource(api(`/cli/stream/${j.id}`));
+    evt.onmessage = (e) => appendOutput(out, e.data);
+    evt.addEventListener('end',(e)=>{
+      document.getElementById('dm-stop').disabled=true;
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
+      currentJob=null;
+      evt.close();
+        hideWorking();
+      appendOutput(out, `Proceso finalizado (código ${e.data}).`);
+    });
+    evt.onerror=()=>{
+      appendOutput(out, '[error de conexión]');
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
+      hideWorking();
+    };
+    if(act==='backfill') showWorking();
+  }catch(e){
+    out.textContent=String(e);
+    out.scrollTop = out.scrollHeight;
+    runBtn.disabled=false;
+    runBtn.textContent='Ejecutar';
+    hideWorking();
+  }
+}
+
+async function stopData(){
+  if(!currentJob) return;
+  try{await fetch(api(`/cli/stop/${currentJob}`),{method:'POST'});}catch(e){}
+  if(evt) evt.close();
+  document.getElementById('dm-stop').disabled=true;
+  const runBtn=document.getElementById('dm-run');
+  runBtn.disabled=false;
+  runBtn.textContent='Ejecutar';
+  currentJob=null;
+  hideWorking();
+}
+
+async function runCli(){
+  const cmd=document.getElementById('cli-input').value.trim();
+  if(!cmd) return;
+  document.getElementById('cli-output').textContent='';
+  try{
+    const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    const ev=new EventSource(api(`/cli/stream/${j.id}`));
+    ev.onmessage=(e)=>{document.getElementById('cli-output').textContent+=e.data+'\n';};
+    ev.addEventListener('end',()=>ev.close());
+  }catch(e){
+    document.getElementById('cli-output').textContent=String(e);
+  }
+}
+
+async function loadKinds(){
+  const venue=document.getElementById('dm-venue').value;
+  try{
+    const r=await fetch(api(`/venues/${venue}/kinds`));
+    const data=await r.json();
+    const sel=document.getElementById('dm-kind');
+    sel.innerHTML='';
+    const kinds=data.kinds || [];
+    kindsWithDepth = kinds.filter(k => ['orderbook','delta'].includes(k));
+    for (const k of kinds) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k;
+      sel.appendChild(opt);
+    }
+    updateFields();
+  }catch(e){
+    console.error(e);
+  }
+}
+
+async function loadVenues(){
+  try{
+    const r=await fetch(api('/venues'));
+    const venues=await r.json();
+    venues.sort();
+    const sel=document.getElementById('dm-venue');
+    sel.innerHTML='';
+    for(const v of venues){
+      const opt=document.createElement('option');
+      opt.value=v;
+      opt.textContent=v;
+      sel.appendChild(opt);
+    }
+    loadKinds();
+  }catch(e){
+    console.error(e);
+  }
+}
+
+document.getElementById('dm-action').addEventListener('change',updateFields);
+document.getElementById('dm-run').addEventListener('click',runData);
+document.getElementById('dm-stop').addEventListener('click',stopData);
+document.getElementById('dm-clear').addEventListener(
+  'click', () => (document.getElementById('dm-output').textContent = '')
+);
+document.getElementById('cli-run').addEventListener('click',runCli);
+document.getElementById('dm-venue').addEventListener('change',loadKinds);
+updateFields();
+loadVenues();
+</script>
+</body>
+</html>

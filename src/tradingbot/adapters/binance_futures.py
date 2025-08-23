@@ -23,13 +23,13 @@ from ..utils.secrets import validate_scopes
 log = logging.getLogger(__name__)
 
 class BinanceFuturesAdapter(ExchangeAdapter):
-    name = "binance_futures_usdm_testnet"
+    name = "binance_futures"
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
-        testnet: bool = True,
+        testnet: bool = False,
         leverage: int = 5,
         maker_fee_bps: float | None = None,
         taker_fee_bps: float | None = None,
@@ -41,12 +41,15 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         self.leverage = leverage
         self.testnet = testnet
 
-        self.rest = ccxt.binanceusdm({
-            "apiKey": api_key or settings.binance_futures_api_key,
-            "secret": api_secret or settings.binance_futures_api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        })
+        if testnet:
+            self.rest = ccxt.binanceusdm({
+                "apiKey": api_key or settings.binance_futures_api_key,
+                "secret": api_secret or settings.binance_futures_api_secret,
+                "enableRateLimit": True,
+                "options": {"defaultType": "future"},
+            })
+        else:
+            self.rest = ccxt.binanceusdm()
         self.maker_fee_bps = float(
             maker_fee_bps
             if maker_fee_bps is not None
@@ -73,19 +76,49 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         # Cache de metadatos/filters
         self.meta = ExchangeMeta.binanceusdm_testnet(
             api_key or settings.binance_futures_api_key,
-            api_secret or settings.binance_futures_api_secret
+            api_secret or settings.binance_futures_api_secret,
         )
         try:
             self.meta.load_markets()
         except Exception as e:
             log.warning("load_markets falló: %s", e)
 
+        self.name = "binance_futures_testnet" if testnet else "binance_futures"
+
         try:
-            asyncio.get_event_loop().create_task(self.rest.set_position_mode(False))
-        except Exception as e:
-            log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            self._configure_lock = asyncio.Lock()
+            self._position_mode_configured = False
+        except Exception:
+            # Lock creation should not fail, but keep constructor safe
+            self._configure_lock = None
+            self._position_mode_configured = False
+
+    async def _configure_mode(self):
+        """Ensure one-way position mode is configured."""
+        if getattr(self, "_position_mode_configured", False):
+            return
+        lock = getattr(self, "_configure_lock", None)
+        if lock is None:
+            # Lock not available, still attempt configuration
+            try:
+                await self.rest.set_position_mode(False)
+            except Exception as e:
+                log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            else:
+                self._position_mode_configured = True
+            return
+        async with lock:
+            if self._position_mode_configured:
+                return
+            try:
+                await self.rest.set_position_mode(False)
+            except Exception as e:
+                log.debug("No se pudo fijar position_mode (one-way): %s", e)
+            else:
+                self._position_mode_configured = True
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
+        await self._configure_mode()
         sym = normalize(symbol)
         while True:
             trades = await self._request(self.rest.fetch_trades, sym, limit=1)
@@ -224,6 +257,7 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             raise
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+        await self._configure_mode()
         sym = normalize(symbol)
         while True:
             ob = await self._request(self.rest.fetch_order_book, sym)
@@ -234,6 +268,57 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             self.state.order_book[symbol] = {"bids": bids, "asks": asks}
             yield self.normalize_order_book(symbol, ts, bids, asks)
             await asyncio.sleep(1)
+
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
+        """Emit best bid/ask quotes for ``symbol``."""
+
+        async for ob in self.stream_order_book(symbol):
+            bid = ob.get("bid_px", [None])[0]
+            ask = ob.get("ask_px", [None])[0]
+            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+
+    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        """Yield incremental order book updates for ``symbol``."""
+
+        prev: dict | None = None
+        async for ob in self.stream_order_book(symbol):
+            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
+            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
+            if prev is None:
+                delta_bids = curr_bids
+                delta_asks = curr_asks
+            else:
+                pb = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
+                pa = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
+                delta_bids = [[p, q] for p, q in curr_bids if pb.get(p) != q]
+                delta_bids += [[p, 0.0] for p in pb.keys() - {p for p, _ in curr_bids}]
+                delta_asks = [[p, q] for p, q in curr_asks if pa.get(p) != q]
+                delta_asks += [[p, 0.0] for p in pa.keys() - {p for p, _ in curr_asks}]
+            prev = ob
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": [p for p, _ in delta_bids],
+                "bid_qty": [q for _, q in delta_bids],
+                "ask_px": [p for p, _ in delta_asks],
+                "ask_qty": [q for _, q in delta_asks],
+            }
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll funding rate updates via REST."""
+        await self._configure_mode()
+        while True:
+            data = await self.fetch_funding(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll open interest updates via REST."""
+        await self._configure_mode()
+        while True:
+            data = await self.fetch_oi(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
         sym = normalize(symbol)

@@ -1,6 +1,6 @@
 # src/tradingbot/apps/api/main.py
 from fastapi import FastAPI, Query, HTTPException, Depends, status, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -13,6 +13,7 @@ import sys
 import shlex
 import asyncio
 import signal
+import uuid
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ from monitoring.dashboard import router as dashboard_router
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
+from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
 
 # Persistencia
 try:
@@ -77,6 +79,22 @@ async def _metrics_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok", "db": bool(_CAN_PG)}
+
+
+@app.get("/venues")
+def list_venues():
+    """Return available venues."""
+    return sorted(_AVAILABLE_VENUES)
+
+
+@app.get("/venues/{name}/kinds")
+def venue_kinds(name: str):
+    """Return available streaming kinds for the given venue."""
+
+    cls = get_adapter_class(name)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="venue not found")
+    return {"kinds": get_supported_kinds(cls)}
 
 @app.get("/logs")
 def logs(lines: int = Query(200, ge=1, le=1000)):
@@ -153,6 +171,26 @@ def stats_page():
         return Response(content=html, media_type="text/html")
     except Exception:
         return {"message": "Sube el dashboard en /static/stats.html"}
+
+
+# Servir data.html en "/data"
+@app.get("/data")
+def data_page():
+    try:
+        html = (_static_dir / "data.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/data.html"}
+
+
+# Servir backtest.html en "/backtest"
+@app.get("/backtest")
+def backtest_page():
+    try:
+        html = (_static_dir / "backtest.html").read_text(encoding="utf-8")
+        return Response(content=html, media_type="text/html")
+    except Exception:
+        return {"message": "Sube el dashboard en /static/backtest.html"}
 
 # Compatibilidad: redirige "/monitor" a "/stats"
 @app.get("/monitor")
@@ -485,6 +523,88 @@ def run_cli(req: CLIRequest):
         }
     except Exception as exc:  # pragma: no cover - subprocess failures
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# Background CLI processes keyed by an ID
+_CLI_PROCS: dict[str, asyncio.subprocess.Process] = {}
+
+
+@app.post("/cli/start")
+async def cli_start(req: CLIRequest):
+    """Start a CLI command in the background and return an ID."""
+
+    args = shlex.split(req.command)
+    cmd = [sys.executable, "-u", "-m", "tradingbot.cli", *args]
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    job_id = uuid.uuid4().hex
+    _CLI_PROCS[job_id] = proc
+    return {"id": job_id}
+
+
+async def _stream_process(proc: asyncio.subprocess.Process):
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def reader(stream: asyncio.StreamReader):
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            await queue.put(line.decode())
+
+    tasks = [
+        asyncio.create_task(reader(proc.stdout)),
+        asyncio.create_task(reader(proc.stderr)),
+    ]
+
+    try:
+        while True:
+            if proc.stdout.at_eof() and proc.stderr.at_eof() and queue.empty():
+                break
+            try:
+                line = await asyncio.wait_for(queue.get(), 0.1)
+            except asyncio.TimeoutError:
+                continue
+            yield f"data: {line.rstrip()}\n\n"
+    finally:
+        for t in tasks:
+            t.cancel()
+
+
+@app.get("/cli/stream/{job_id}")
+async def cli_stream(job_id: str):
+    """Stream output from a running CLI job as server-sent events."""
+
+    proc = _CLI_PROCS.get(job_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    async def event_gen():
+        async for chunk in _stream_process(proc):
+            yield chunk
+        returncode = await proc.wait()
+        yield f"event: end\ndata: {returncode}\n\n"
+        _CLI_PROCS.pop(job_id, None)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.post("/cli/stop/{job_id}")
+async def cli_stop(job_id: str):
+    """Terminate a running CLI job."""
+
+    proc = _CLI_PROCS.get(job_id)
+    if not proc:
+        raise HTTPException(status_code=404, detail="job not found")
+    proc.terminate()
+    return {"status": "terminated"}
 
 
 # --- Bot lifecycle --------------------------------------------------------------

@@ -7,8 +7,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 import ccxt.async_support as ccxt
+import logging
 
 from ..storage.async_timescale import AsyncTimescaleClient
+
+logger = logging.getLogger(__name__)
 
 
 INSERT_BAR_SQL = """
@@ -16,6 +19,7 @@ INSERT_BAR_SQL = """
         (ts, timeframe, exchange, symbol, o, h, l, c, v)
     VALUES
         (:ts, :timeframe, :exchange, :symbol, :o, :h, :l, :c, :v)
+    ON CONFLICT DO NOTHING
 """
 
 INSERT_TRADE_SQL = """
@@ -23,6 +27,7 @@ INSERT_TRADE_SQL = """
         (ts, exchange, symbol, px, qty, side, trade_id)
     VALUES
         (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+    ON CONFLICT DO NOTHING
 """
 
 
@@ -38,21 +43,52 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
             await asyncio.sleep(delay * 2 ** (attempt - 1))
 
 
-async def backfill(days: int, symbols: Sequence[str]) -> None:
-    """Backfill OHLCV bars and trades for *symbols* over the past *days* days."""
+async def backfill(
+    days: int,
+    symbols: Sequence[str],
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> None:
+    """Backfill OHLCV bars and trades for *symbols*.
+
+    If *start* or *end* are not provided, the range defaults to the past
+    ``days`` days ending at ``datetime.now(timezone.utc)``.
+    """
+
+    if end is None:
+        end_dt = datetime.now(timezone.utc)
+    else:
+        end_dt = end.replace(tzinfo=timezone.utc) if end.tzinfo is None else end
+
+    if start is None:
+        start_dt = end_dt - timedelta(days=days)
+    else:
+        start_dt = start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start
+
+    if start is not None and end is not None:
+        logger.info(
+            "Backfill start: %s \u2192 %s para %s",
+            start_dt,
+            end_dt,
+            ", ".join(symbols),
+        )
+    else:
+        logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
 
     ex = ccxt.binance({"enableRateLimit": False})
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
     client = AsyncTimescaleClient()
+    await client.ensure_schema()
     client.register_table("market.bars", INSERT_BAR_SQL)
     client.register_table("market.trades", INSERT_TRADE_SQL)
 
-    end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    start_ms = end_ms - int(timedelta(days=days).total_seconds() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+    start_ms = int(start_dt.timestamp() * 1000)
 
     try:
         for symbol in symbols:
+            logger.info("Procesando %s", symbol)
             db_symbol = symbol.replace("/", "")
 
             # --- OHLCV backfill -------------------------------------------------
@@ -112,8 +148,10 @@ async def backfill(days: int, symbols: Sequence[str]) -> None:
                         },
                     )
                 since = trades[-1]["timestamp"] + 1
+            logger.info("Completado %s", symbol)
 
     finally:
         await client.stop()
         await ex.close()
+        logger.info("Backfill finalizado para %s", ", ".join(symbols))
 

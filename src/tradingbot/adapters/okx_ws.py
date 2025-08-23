@@ -20,9 +20,9 @@ log = logging.getLogger(__name__)
 
 
 class OKXWSAdapter(ExchangeAdapter):
-    """Lightweight OKX websocket adapter."""
+    """Lightweight OKX futures websocket adapter."""
 
-    name = "okx_ws"
+    name = "okx_futures_ws"
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -35,14 +35,38 @@ class OKXWSAdapter(ExchangeAdapter):
                 else "wss://ws.okx.com:8443/ws/v5/public"
             )
         self.rest = rest
-        self.name = "okx_ws_testnet" if testnet else "okx_ws"
+        self.name = "okx_futures_ws_testnet" if testnet else "okx_futures_ws"
+
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Return OKX formatted perpetual contract symbol."""
+
+        sym = ExchangeAdapter.normalize_symbol(symbol)
+        if not sym:
+            return sym
+        parts = sym.split("-")
+        base_quote = parts[0]
+        suffix = parts[1] if len(parts) > 1 else "SWAP"
+        quotes = [
+            "USDT",
+            "USDC",
+            "USD",
+            "BTC",
+            "ETH",
+            "EUR",
+            "GBP",
+            "JPY",
+        ]
+        quote = next((q for q in quotes if base_quote.endswith(q)), base_quote[-4:])
+        base = base_quote[: -len(quote)]
+        return f"{base}-{quote}-{suffix}"
 
     # ------------------------------------------------------------------
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Yield normalised trades for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -58,18 +82,35 @@ class OKXWSAdapter(ExchangeAdapter):
                 self.state.last_px[symbol] = price
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
+    DEPTH_TO_CHANNEL = {
+        1: "bbo-tbt",
+        5: "books5",
+        50: "books50-l2-tbt",
+        400: "books-l2-tbt",
+    }
+
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         """Yield L2 order book updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
-        channel = f"books{depth}" if depth in (1, 5, 10, 25) else "books5"
+        sym = self._normalize(symbol)
+        channel = self.DEPTH_TO_CHANNEL.get(depth)
+        if channel is None:
+            raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
         sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
-                asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
+                if channel == "bbo-tbt":
+                    bid_px = float(d.get("bidPx", 0))
+                    bid_qty = float(d.get("bidSz", 0))
+                    ask_px = float(d.get("askPx", 0))
+                    ask_qty = float(d.get("askSz", 0))
+                    bids = [[bid_px, bid_qty]] if bid_px else []
+                    asks = [[ask_px, ask_qty]] if ask_px else []
+                else:
+                    bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
+                    asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
                 ts_ms = int(d.get("ts", 0))
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
                 self.state.order_book[symbol] = {"bids": bids, "asks": asks}
@@ -78,21 +119,38 @@ class OKXWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask levels for ``symbol``."""
+        """Stream best bid/ask levels for ``symbol`` using the books5 channel."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
-            yield {
-                "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
-            }
+        url = self.ws_public_url
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for d in msg.get("data", []) or []:
+                bids = d.get("bids", []) or []
+                asks = d.get("asks", []) or []
+                if not bids or not asks:
+                    log.warning("Discarding BBA event with empty bids/asks: %s", d)
+                    continue
+                bid_px_raw, bid_qty_raw, *_ = bids[0]
+                ask_px_raw, ask_qty_raw, *_ = asks[0]
+                bid_px = float(bid_px_raw)
+                ask_px = float(ask_px_raw)
+                if bid_px == 0 or ask_px == 0:
+                    log.warning("Discarding BBA event with zero price: %s", d)
+                    continue
+                bid_qty = float(bid_qty_raw)
+                ask_qty = float(ask_qty_raw)
+                ts_ms = int(d.get("ts", 0))
+                ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                yield {
+                    "symbol": symbol,
+                    "ts": ts,
+                    "bid_px": bid_px,
+                    "bid_qty": bid_qty,
+                    "ask_px": ask_px,
+                    "ask_qty": ask_qty,
+                }
 
     async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         """Stream order book deltas relative to previous snapshots."""
@@ -125,7 +183,7 @@ class OKXWSAdapter(ExchangeAdapter):
         """Stream funding rate updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "funding-rate", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -147,7 +205,7 @@ class OKXWSAdapter(ExchangeAdapter):
         """Stream open interest updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "open-interest", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -164,16 +222,28 @@ class OKXWSAdapter(ExchangeAdapter):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para funding")
         sym = self.normalize_symbol(symbol)
+        method = getattr(self.rest, "publicGetPublicFundingRate", None)
+        if method is not None:
+            data = await self._request(method, {"instId": sym})
+            lst = data.get("data") or []
+            item = lst[0] if lst else {}
+            ts_ms = int(
+                item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
+            )
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+            return {"ts": ts, "rate": rate}
+
+        # Fallback to legacy CCXT ``fetchFundingRate`` returning a single dict
         method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:  # pragma: no cover
             raise NotImplementedError("Funding no soportado")
-        data = await self._request(method, sym)
-        ts = int(data.get("timestamp") or data.get("time") or data.get("ts") or 0)
-        if ts > 1e12:
-            ts //= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        legacy_sym = ExchangeAdapter.normalize_symbol(symbol)
+        data = await self._request(method, legacy_sym)
+        ts_ms = int(data.get("timestamp") or data.get("ts") or 0)
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(data.get("fundingRate") or data.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
         if not self.rest:
@@ -205,7 +275,7 @@ class OKXWSAdapter(ExchangeAdapter):
     async def fetch_oi(self, symbol: str):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para open interest")
-        sym = self.normalize_symbol(symbol)
+        sym = ExchangeAdapter.normalize_symbol(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:  # pragma: no cover
             raise NotImplementedError("Open interest no soportado")

@@ -1,3 +1,4 @@
+import json
 import pytest
 from datetime import datetime
 
@@ -51,3 +52,90 @@ async def test_fetch_funding_oi_and_orders():
     cancel = await adapter.cancel_order("1", "BTC/USDT")
     assert rest.canceled == ("1", "BTC/USDT")
     assert cancel["status"] == "canceled"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,args,channel,msg",
+    [
+        (
+            "stream_trades",
+            (),
+            "trades",
+            json.dumps({"data": [{"px": "1", "sz": "1", "ts": "0", "side": "buy"}]}),
+        ),
+        (
+            "stream_order_book",
+            (5,),
+            "books5",
+            json.dumps({"data": [{"bids": [["1", "1"]], "asks": [["2", "2"]], "ts": "0"}]}),
+        ),
+        (
+            "stream_bba",
+            (),
+            "books5",
+            json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]}),
+        ),
+        (
+            "stream_funding",
+            (),
+            "funding-rate",
+            json.dumps(
+                {
+                    "data": [
+                        {"fundingRate": "0.01", "fundingInterval": "60", "ts": "0"}
+                    ]
+                }
+            ),
+        ),
+        (
+            "stream_open_interest",
+            (),
+            "open-interest",
+            json.dumps({"data": [{"oi": "5", "ts": "0"}]}),
+        ),
+    ],
+)
+async def test_subscription_format(method, args, channel, msg):
+    adapter = OKXWSAdapter()
+    captured: dict[str, dict] = {}
+
+    async def fake_messages(url, sub):
+        captured["sub"] = json.loads(sub)
+        yield msg
+
+    adapter._ws_messages = fake_messages
+
+    gen = getattr(adapter, method)("BTC/USDT", *args)
+    await gen.__anext__()
+    await gen.aclose()
+
+    expected_sym = adapter._normalize("BTC/USDT")
+    assert captured["sub"] == {
+        "op": "subscribe",
+        "args": [{"channel": channel, "instId": expected_sym}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_bba_discard_invalid(caplog):
+    adapter = OKXWSAdapter()
+    events = [
+        json.dumps({"data": [{"bids": [["0", "1"]], "asks": [["2", "2"]], "ts": "0"}]}),
+        json.dumps({"data": [{"bids": [["1", "1"]], "asks": [], "ts": "0"}]}),
+        json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]})
+    ]
+
+    async def fake_messages(url, sub):
+        for e in events:
+            yield e
+
+    adapter._ws_messages = fake_messages
+    caplog.set_level("WARNING")
+    gen = adapter.stream_bba("BTC/USDT")
+    result = await gen.__anext__()
+    await gen.aclose()
+
+    assert result["bid_px"] == pytest.approx(1.0)
+    discarded = [r for r in caplog.records if "Discarding BBA event" in r.message]
+    assert len(discarded) == 2

@@ -16,7 +16,6 @@ except Exception:  # pragma: no cover
     NetworkError = ExchangeError = Exception
 
 from .base import ExchangeAdapter
-from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -35,9 +34,37 @@ class OKXSpotAdapter(ExchangeAdapter):
         # Validar permisos disponibles en la API key
         validate_scopes(self.rest, log)
 
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Return OKX formatted spot symbol."""
+
+        sym = ExchangeAdapter.normalize_symbol(symbol)
+        if not sym:
+            return sym
+        parts = sym.split("-")
+        base_quote = parts[0]
+        quotes = [
+            "USDT",
+            "USDC",
+            "USD",
+            "BTC",
+            "ETH",
+            "EUR",
+            "GBP",
+            "JPY",
+        ]
+        quote = next((q for q in quotes if base_quote.endswith(q)), base_quote[-4:])
+        base = base_quote[: -len(quote)]
+        return f"{base}-{quote}"
+
+    def _normalize(self, symbol: str) -> str:
+        """Return normalised symbol in OKX format."""
+
+        return self.normalize_symbol(symbol).replace("/", "-").upper()
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
@@ -49,34 +76,145 @@ class OKXSpotAdapter(ExchangeAdapter):
                 self.state.last_px[symbol] = price
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
-    async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
+    DEPTH_TO_CHANNEL = {
+        1: "bbo-tbt",
+        5: "books5",
+        50: "books50-l2-tbt",
+        400: "books-l2-tbt",
+    }
+
+
+    async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
+        """Yield order book snapshots for ``symbol``.
+
+        Events with incomplete bid or ask data are discarded.
+        """
         url = "wss://ws.okx.com:8443/ws/v5/public"
-        sym = normalize(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
+        sym = self._normalize(symbol)
+        channel = self.DEPTH_TO_CHANNEL.get(depth)
+        if channel is None:
+            raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
+        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
-                asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
+                if channel == "bbo-tbt":
+                    bid_px = float(d.get("bidPx", 0))
+                    bid_qty = float(d.get("bidSz", 0))
+                    ask_px = float(d.get("askPx", 0))
+                    ask_qty = float(d.get("askSz", 0))
+                    bids = [[bid_px, bid_qty]] if bid_px else []
+                    asks = [[ask_px, ask_qty]] if ask_px else []
+                else:
+                    bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
+                    asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
                 ts = datetime.fromtimestamp(int(d.get("ts", 0)) / 1000, tz=timezone.utc)
                 self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-                yield self.normalize_order_book(symbol, ts, bids, asks)
-
+                ob = self.normalize_order_book(symbol, ts, bids, asks)
+                if len(ob["bid_px"]) != len(ob["bid_qty"]) or len(ob["ask_px"]) != len(ob["ask_qty"]):
+                    continue
+                yield ob
     stream_orderbook = stream_order_book
 
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
+        """Emit best bid/ask quotes for ``symbol`` using bbo channel.
+
+        Snapshots with incomplete bid or ask data are discarded.
+        """
+
+        async for ob in self.stream_order_book(symbol, 5):
+            bids = ob.get("bid_px", [])
+            bid_qtys = ob.get("bid_qty", [])
+            asks = ob.get("ask_px", [])
+            ask_qtys = ob.get("ask_qty", [])
+
+            if not bids or not asks or not bid_qtys or not ask_qtys:
+                log.warning("Missing bids or asks in books5 snapshot for %s", symbol)
+                continue
+
+            bid_px = bids[0]
+            bid_qty = bid_qtys[0]
+            ask_px = asks[0]
+            ask_qty = ask_qtys[0]
+
+            if bid_px == 0 or bid_qty == 0 or ask_px == 0 or ask_qty == 0:
+                log.warning("Zero bid/ask values in books5 snapshot for %s", symbol)
+                continue
+
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid_px,
+                "bid_qty": bid_qty,
+                "ask_px": ask_px,
+                "ask_qty": ask_qty,
+            }
+
+
+    async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
+        """Yield incremental order book updates for ``symbol``.
+
+        Events with incomplete bid or ask data are discarded.
+        """
+        prev: dict | None = None
+        async for ob in self.stream_order_book(symbol, depth):
+            bid_px = ob.get("bid_px", [])
+            bid_qty = ob.get("bid_qty", [])
+            ask_px = ob.get("ask_px", [])
+            ask_qty = ob.get("ask_qty", [])
+            if len(bid_px) != len(bid_qty) or len(ask_px) != len(ask_qty):
+                continue
+            curr_bids = list(zip(bid_px, bid_qty))
+            curr_asks = list(zip(ask_px, ask_qty))
+            if prev is None:
+                delta_bids = curr_bids
+                delta_asks = curr_asks
+            else:
+                pb = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
+                pa = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
+                delta_bids = [[p, q] for p, q in curr_bids if pb.get(p) != q]
+                delta_bids += [[p, 0.0] for p in pb.keys() - {p for p, _ in curr_bids}]
+                delta_asks = [[p, q] for p, q in curr_asks if pa.get(p) != q]
+                delta_asks += [[p, 0.0] for p in pa.keys() - {p for p, _ in curr_asks}]
+            prev = ob
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": [p for p, _ in delta_bids],
+                "bid_qty": [q for _, q in delta_bids],
+                "ask_px": [p for p, _ in delta_asks],
+                "ask_qty": [q for _, q in delta_asks],
+            }
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll funding rate updates via REST."""
+
+        while True:
+            data = await self.fetch_funding(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll open interest updates via REST."""
+
+        while True:
+            data = await self.fetch_oi(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
     async def fetch_funding(self, symbol: str):
-        sym = normalize(symbol)
-        method = getattr(self.rest, "fetchFundingRate", None)
+        sym = self._normalize(symbol)
+        method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
-        data = await self._request(method, sym)
-        ts = data.get("timestamp") or data.get("time") or data.get("ts") or 0
-        ts = int(ts)
-        if ts > 1e12:
-            ts /= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        data = await self._request(method, {"instId": sym})
+        lst = data.get("data") or []
+        item = lst[0] if lst else {}
+        ts_ms = int(
+            item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
+        )
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
         """Return the basis (mark - index) for ``symbol``.
@@ -86,7 +224,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         difference, returning a normalised ``{"ts": datetime, "basis": float}``.
         """
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -119,7 +257,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         ``data`` array and return it as ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")

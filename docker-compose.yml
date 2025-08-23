@@ -35,6 +35,11 @@ services:
       - SENTRY_ENABLED=${SENTRY_ENABLED:-false}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+      - PG_HOST=timescaledb
+      - PG_PORT=5432
+      - PG_USER=postgres
+      - PG_PASSWORD=postgres
+      - PG_DB=trading
     ports:
       - "8000:8000"
     depends_on:
@@ -49,7 +54,6 @@ services:
       - "9090:9090"
     depends_on:
       - api
-      - alertmanager
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -57,6 +61,8 @@ services:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:
       - "9093:9093"
+    depends_on:
+      - api
 
   grafana:
     image: grafana/grafana:latest
@@ -67,12 +73,14 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ./monitoring/grafana/datasources/postgres.yml:/etc/grafana/provisioning/datasources/postgres.yml
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./monitoring/grafana/users:/etc/grafana/provisioning/users
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+      - alertmanager
 
   questdb:
     image: questdb/questdb:latest

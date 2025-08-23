@@ -68,10 +68,19 @@ def validate_scopes(
     log = logger or logging.getLogger(__name__)
     try:
         has_perm = getattr(exchange, "has", {}).get("fetchPermissions")
-        if not has_perm:
-            log.warning("exchange %s no soporta fetch_permissions", getattr(exchange, "id", ""))
+        if not has_perm or not hasattr(exchange, "fetch_permissions"):
+            log.debug(
+                "fetch_permissions no soportado para %s",
+                getattr(exchange, "id", ""),
+            )
             return
         perms = exchange.fetch_permissions()
+    except AttributeError:
+        log.debug(
+            "fetch_permissions no soportado para %s",
+            getattr(exchange, "id", ""),
+        )
+        return
     except Exception as e:  # pragma: no cover - depende del exchange
         log.warning("no se pudieron obtener permisos: %s", e)
         return

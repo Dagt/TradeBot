@@ -26,11 +26,28 @@ import asyncio
 import logging
 import os
 import sys
+import inspect
+import ast
+import textwrap
 from typing import List
 
 import typer
 
 from .. import adapters
+from ..adapters import (
+    BinanceFuturesAdapter,
+    BinanceSpotAdapter,
+    BinanceFuturesWSAdapter,
+    BinanceSpotWSAdapter,
+    BybitFuturesAdapter,
+    BybitSpotAdapter,
+    BybitWSAdapter,
+    DeribitAdapter,
+    DeribitWSAdapter,
+    OKXFuturesAdapter,
+    OKXSpotAdapter,
+    OKXWSAdapter,
+)
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
 from tradingbot.core.symbols import normalize
@@ -54,23 +71,91 @@ except Exception as exc:  # pragma: no cover - network failures
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 
-def _get_available_venues() -> set[str]:
-    """Return venue names exposed by :mod:`tradingbot.adapters`.
+# Manual mapping of venue names to adapter classes to avoid relying on
+# capitalization conventions. This ensures acronyms such as OKX resolve
+# correctly without deriving the class name dynamically.
+_ADAPTER_CLASS_MAP: dict[str, type[adapters.ExchangeAdapter]] = {
+    "binance_spot": BinanceSpotAdapter,
+    "binance_futures": BinanceFuturesAdapter,
+    "binance_spot_ws": BinanceSpotWSAdapter,
+    "binance_futures_ws": BinanceFuturesWSAdapter,
+    "bybit_spot": BybitSpotAdapter,
+    "bybit_futures": BybitFuturesAdapter,
+    "bybit_futures_ws": BybitWSAdapter,
+    "okx_spot": OKXSpotAdapter,
+    "okx_futures": OKXFuturesAdapter,
+    "okx_futures_ws": OKXWSAdapter,
+    "deribit_futures": DeribitAdapter,
+    "deribit_futures_ws": DeribitWSAdapter,
+}
 
-    The adapters package exposes classes via ``__all__``.  Each adapter class
-    defines a ``name`` attribute used throughout the project.  We derive the
-    CLI choices from those values so that users can only select valid venues.
+
+def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
+    """Return the adapter class for ``name`` if available."""
+
+    return _ADAPTER_CLASS_MAP.get(name)
+
+
+def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
+    """Return a sorted list of stream kinds supported by ``adapter_cls``.
+
+    The function inspects ``adapter_cls`` for methods named ``stream_*`` and
+    returns the suffixes normalised to match CLI ``kind`` parameters.  Methods
+    inherited directly from :class:`~tradingbot.adapters.ExchangeAdapter` that
+    are not overridden are ignored.
     """
 
-    names: set[str] = set()
-    for cls_name in getattr(adapters, "__all__", []):
-        cls = getattr(adapters, cls_name, None)
-        if cls is None:
+    kinds_attr = getattr(adapter_cls, "supported_kinds", None)
+    if kinds_attr:
+        return sorted(kinds_attr)
+
+    kinds: set[str] = set()
+    for name in dir(adapter_cls):
+        if not name.startswith("stream_"):
             continue
-        name = getattr(cls, "name", None)
-        if isinstance(name, str):
-            names.add(name)
-    return names
+        attr = getattr(adapter_cls, name)
+        if not callable(attr):
+            continue
+        base_attr = getattr(adapters.ExchangeAdapter, name, None)
+        if base_attr is attr:
+            # method not implemented by subclass
+            continue
+        try:
+            src = inspect.getsource(attr)
+        except OSError:  # pragma: no cover - builtins or C extensions
+            src = ""
+        if src:
+            fn_node = ast.parse(textwrap.dedent(src)).body[0]
+            body = getattr(fn_node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                body = body[1:]
+            if len(body) == 1 and isinstance(body[0], ast.Raise):
+                exc = body[0].exc
+                if isinstance(exc, ast.Name) and exc.id == "NotImplementedError":
+                    continue
+                if (
+                    isinstance(exc, ast.Call)
+                    and isinstance(exc.func, ast.Name)
+                    and exc.func.id == "NotImplementedError"
+                ):
+                    continue
+        kind = name[len("stream_"):]
+        if kind in ("order_book", "orderbook"):
+            kind = "orderbook"
+        elif kind == "book_delta":
+            kind = "delta"
+        kinds.add(kind)
+    name = getattr(adapter_cls, "name", "")
+    if "futures" not in name:
+        kinds.discard("funding")
+        kinds.discard("open_interest")
+    return sorted(kinds)
+
+
+def _get_available_venues() -> set[str]:
+    """Return venue names available for the CLI."""
+
+    return set(_ADAPTER_CLASS_MAP)
 
 
 _AVAILABLE_VENUES = _get_available_venues()
@@ -84,36 +169,54 @@ def ingest(
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Market symbols"),
     depth: int = typer.Option(10, help="Order book depth"),
     kind: str = typer.Option(
-        "orderbook", "--kind", help="Data kind: trades,orderbook,bba,delta,funding,oi"
+        "orderbook",
+        "--kind",
+        help="Data kind: trades,trades_multi,orderbook,bba,delta,funding,oi",
     ),
     persist: bool = typer.Option(False, "--persist", help="Persist data"),
+    backend: str = typer.Option("timescale", "--backend"),
 ) -> None:
     """Stream market data from a venue and optionally persist it."""
 
     setup_logging()
-    from importlib import import_module
 
     from ..bus import EventBus
     from ..data import ingestion as ing
     from ..types import Tick
-    from ..storage.timescale import get_engine
+    from ..storage import quest as qs_storage, timescale as ts_storage
 
     if venue not in _AVAILABLE_VENUES:
         choices = ", ".join(sorted(_AVAILABLE_VENUES))
         raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
 
-    module = import_module(f"tradingbot.adapters.{venue}")
-    cls_name = "".join(part.capitalize() for part in venue.split("_")) + "Adapter"
-    adapter = getattr(module, cls_name)()
+    adapter_class = get_adapter_class(venue)
+    if adapter_class is None:
+        choices = ", ".join(sorted(_AVAILABLE_VENUES))
+        raise typer.BadParameter(f"Invalid venue, choose one of: {choices}")
+    adapter = adapter_class()
+
+    alias_kind = "open_interest" if kind == "oi" else kind
+    supported_kinds = get_supported_kinds(adapter_class)
+    if alias_kind not in supported_kinds:
+        choices = ", ".join(sorted(supported_kinds))
+        raise typer.BadParameter(
+            f"adapter does not support {alias_kind} (supported: {choices})"
+        )
+    kind = alias_kind
 
     symbols = [normalize(s) for s in symbols]
     bus = EventBus()
-    engine = get_engine() if persist else None
+    engine = None
+    if persist and backend != "csv":
+        storage = ts_storage if backend == "timescale" else qs_storage
+        engine = storage.get_engine()
 
     if kind == "orderbook":
         bus.subscribe("orderbook", lambda ob: typer.echo(str(ob)))
 
     async def _run() -> None:
+        if hasattr(adapter, "_configure_mode"):
+            await adapter._configure_mode()
         tasks = []
         for sym in symbols:
             if kind == "orderbook":
@@ -126,6 +229,7 @@ def ingest(
                             bus,
                             engine,
                             persist=persist,
+                            backend=backend,
                         )
                     )
                 )
@@ -142,9 +246,26 @@ def ingest(
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
                             )
-                            ing.persist_trades([tick])
+                            ing.persist_trades([tick], backend=backend)
 
                 tasks.append(asyncio.create_task(_t(sym)))
+            elif kind == "trades_multi":
+                async def _tm() -> None:
+                    async for d in adapter.stream_trades_multi(symbols):
+                        typer.echo(str(d))
+                        if persist:
+                            tick = Tick(
+                                ts=d.get("ts"),
+                                exchange=adapter.name,
+                                symbol=d.get("symbol"),
+                                price=float(d.get("price") or 0.0),
+                                qty=float(d.get("qty") or 0.0),
+                                side=d.get("side"),
+                            )
+                            ing.persist_trades([tick], backend=backend)
+
+                tasks.append(asyncio.create_task(_tm()))
+                break
             elif kind == "bba":
                 async def _b(symbol: str) -> None:
                     async for d in adapter.stream_bba(symbol):
@@ -152,7 +273,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_bba([data])
+                            ing.persist_bba([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_b(sym)))
             elif kind == "delta":
@@ -162,7 +283,7 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_book_delta([data])
+                            ing.persist_book_delta([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_d(sym)))
             elif kind == "funding":
@@ -172,17 +293,17 @@ def ingest(
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_funding([data])
+                            ing.persist_funding([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_f(sym)))
-            elif kind in ("oi", "open_interest"):
+            elif kind == "open_interest":
                 async def _oi(symbol: str) -> None:
                     async for d in adapter.stream_open_interest(symbol):
                         typer.echo(str(d))
                         if persist:
                             data = dict(d)
                             data.update({"exchange": adapter.name, "symbol": symbol})
-                            ing.persist_open_interest([data])
+                            ing.persist_open_interest([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_oi(sym)))
             else:  # pragma: no cover - CLI validation
@@ -206,13 +327,35 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
+    start: str | None = typer.Option(
+        None, "--start", help="Start datetime in ISO format"
+    ),
+    end: str | None = typer.Option(
+        None, "--end", help="End datetime in ISO format"
+    ),
 ) -> None:
     """Backfill OHLCV and trades for symbols with rate limiting."""
 
     setup_logging()
+    from datetime import datetime, timezone
     from ..jobs.backfill import backfill as run_backfill
 
-    asyncio.run(run_backfill(days=days, symbols=symbols))
+    def _parse(dt: str | None) -> datetime | None:
+        if dt is None:
+            return None
+        parsed = datetime.fromisoformat(dt)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    asyncio.run(
+        run_backfill(
+            days=days,
+            symbols=symbols,
+            start=_parse(start),
+            end=_parse(end),
+        )
+    )
 
 
 @app.command("ingest-historical")
@@ -462,7 +605,6 @@ def run_ingestion_workers(
     """Start funding and open-interest ingestion workers defined in a YAML config."""
 
     import yaml
-    from importlib import import_module
 
     from ..workers import funding_worker, open_interest_worker
 
@@ -475,19 +617,22 @@ def run_ingestion_workers(
     funding_cfg = ingestion_cfg.get("funding", {})
     oi_cfg = ingestion_cfg.get("open_interest", {})
 
-    adapters: dict[str, object] = {}
+    adapters_cache: dict[str, object] = {}
 
     def _load_adapter(name: str):
-        if name not in adapters:
-            module = import_module(f"tradingbot.adapters.{name}")
-            cls_name = "".join(part.capitalize() for part in name.split("_")) + "Adapter"
-            adapters[name] = getattr(module, cls_name)()
-        return adapters[name]
+        if name not in adapters_cache:
+            cls = get_adapter_class(name)
+            if cls is None:
+                raise typer.BadParameter(f"Adapter {name} not found")
+            adapters_cache[name] = cls()
+        return adapters_cache[name]
 
     async def _run() -> None:
         tasks = []
         for exch, symbols in funding_cfg.items():
             adapter = _load_adapter(exch)
+            if hasattr(adapter, "_configure_mode"):
+                await adapter._configure_mode()
             for sym, interval in symbols.items():
                 tasks.append(
                     asyncio.create_task(
@@ -496,6 +641,8 @@ def run_ingestion_workers(
                 )
         for exch, symbols in oi_cfg.items():
             adapter = _load_adapter(exch)
+            if hasattr(adapter, "_configure_mode"):
+                await adapter._configure_mode()
             for sym, interval in symbols.items():
                 tasks.append(
                     asyncio.create_task(
@@ -596,6 +743,48 @@ def backtest_cfg(config: str) -> None:
         _run()
     finally:
         sys.argv = old_argv
+
+
+@app.command("backtest-db")
+def backtest_db(
+    exchange: str = typer.Option("binance", help="Exchange name"),
+    symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),
+    strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
+    end: str = typer.Option(..., help="End date YYYY-MM-DD"),
+    timeframe: str = typer.Option("1m", help="Bar timeframe"),
+) -> None:
+    """Run a backtest using data stored in the database."""
+
+    from datetime import datetime
+    import pandas as pd
+    from ..storage.timescale import get_engine, select_bars
+    from ..backtest.event_engine import EventDrivenBacktestEngine
+
+    setup_logging()
+    engine = get_engine()
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    rows = select_bars(
+        engine,
+        exchange=exchange,
+        symbol=symbol,
+        start=start_dt,
+        end=end_dt,
+        timeframe=timeframe,
+    )
+    if not rows:
+        typer.echo("no data")
+        raise typer.Exit()
+    df = (
+        pd.DataFrame(rows)
+        .rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        .set_index("ts")
+    )
+    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+    result = eng.run()
+    typer.echo(result)
+    typer.echo(generate_report(result))
 
 
 @app.command("walk-forward")

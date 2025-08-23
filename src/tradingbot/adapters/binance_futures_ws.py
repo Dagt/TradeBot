@@ -1,4 +1,5 @@
 # src/tradingbot/adapters/binance_futures_ws.py
+import asyncio
 import json
 import logging
 import urllib.request
@@ -11,15 +12,30 @@ from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
+# Default websocket endpoints used by the adapter.  ``FUTURES_WS_BASE`` is
+# documented here to make it explicit that the production URL should be
+# ``wss://fstream.binance.com/stream?streams=``.
+FUTURES_WS_BASE = "wss://fstream.binance.com/stream?streams="
+FUTURES_WS_BASE_TESTNET = "wss://stream.binancefuture.com/stream?streams="
+
 def _stream_name(symbol: str, channel: str = "aggTrade") -> str:
     # futures usa minúsculas y sin "/"
     return symbol.replace("/", "").lower() + f"@{channel}"
 
 class BinanceFuturesWSAdapter(ExchangeAdapter):
     """
-    WS de Binance USDⓈ-M Futures **TESTNET** (UM) para datos de mercado.
+    WS de Binance USDⓈ-M Futures (UM) para datos de mercado.
+    Permite operar tanto en mainnet como en testnet.
     """
-    name = "binance_futures_um_testnet_ws"
+    name = "binance_futures_ws"
+    supported_kinds = {
+        "bba",
+        "delta",
+        "funding",
+        "orderbook",
+        "trades",
+        "trades_multi",
+    }
 
     def __init__(
         self,
@@ -27,16 +43,16 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         rest: ExchangeAdapter | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool | None = None,
+        testnet: bool = False,
     ):
         super().__init__()
-        # UM testnet combined streams:
-        #   wss://stream.binancefuture.com/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade
-        self.ws_base = ws_base or "wss://stream.binancefuture.com/stream?streams="
+        self._testnet = testnet
+        default_ws = FUTURES_WS_BASE_TESTNET if testnet else FUTURES_WS_BASE
+        self.ws_base = ws_base or default_ws
         self.rest = rest
         self._api_key = api_key
         self._api_secret = api_secret
-        self._testnet = testnet
+        self.name = "binance_futures_ws_testnet" if testnet else "binance_futures_ws"
 
     def _ensure_rest(self):
         if self.rest is None:
@@ -45,9 +61,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             self.rest = BinanceFuturesAdapter(
                 api_key=self._api_key or settings.binance_futures_api_key,
                 api_secret=self._api_secret or settings.binance_futures_api_secret,
-                testnet=self._testnet
-                if self._testnet is not None
-                else settings.binance_futures_testnet,
+                testnet=self._testnet,
             )
 
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
@@ -80,7 +94,14 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        messages = self._ws_messages(url)
+        while True:
+            try:
+                raw = await asyncio.wait_for(messages.__anext__(), 15)
+            except asyncio.TimeoutError:
+                log.warning("No message received on %s for 15s", stream)
+                messages = self._ws_messages(url)
+                continue
             msg = json.loads(raw)
             d = msg.get("data") or msg
             bids = d.get("b") or d.get("bids") or []
@@ -95,20 +116,18 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Yield best bid/ask updates derived from order book snapshots."""
+        """Stream best bid/ask updates using the ``bookTicker`` feed."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
+        stream = _stream_name(normalize(symbol), "bookTicker")
+        async for raw in self._ws_messages(self.ws_base + stream):
+            d = json.loads(raw).get("data") or {}
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+                "ts": datetime.fromtimestamp(int(d.get("T", 0)) / 1000, tz=timezone.utc),
+                "bid_px": float(d.get("b") or 0.0),
+                "bid_qty": float(d.get("B") or 0.0),
+                "ask_px": float(d.get("a") or 0.0),
+                "ask_qty": float(d.get("A") or 0.0),
             }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
@@ -151,22 +170,105 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 continue
             ts_ms = d.get("E") or d.get("T") or 0
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            index_px = float(d.get("i") or 0.0)
             yield {
                 "symbol": symbol,
                 "ts": ts,
                 "rate": float(rate),
-                "interval_sec": int(d.get("i") or 0),
+                "index_px": index_px,
             }
 
-    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream open interest updates for ``symbol``."""
+    async def stream_open_interest(
+        self, symbol: str, interval: str = "1m", per_symbol: bool = True
+    ) -> AsyncIterator[dict]:
+        """Stream open interest updates for ``symbol``.
 
-        stream = _stream_name(normalize(symbol), "openInterest")
+        Parameters
+        ----------
+        symbol: str
+            Market symbol to subscribe to.
+        interval: str, optional
+            Update interval for open interest aggregation.  Binance supports
+            values such as ``"1m"`` and ``"5m"``.  Defaults to ``"1m"``.
+        per_symbol: bool, optional
+            Subscribe to per-symbol stream.  If ``False`` the aggregated
+            ``!openInterest@arr`` channel is used and results are filtered
+            locally.
+
+        Notes
+        -----
+        The Binance Futures testnet does **not** currently support the
+        ``openInterest`` websocket channel.  When the adapter is running in
+        testnet mode a :class:`NotImplementedError` is raised to make this
+        limitation explicit.
+        """
+
+        if self._testnet:
+            raise NotImplementedError(
+                "openInterest stream not available on Binance Futures testnet"
+            )
+
+        norm_sym = normalize(symbol)
+        if per_symbol:
+            stream = _stream_name(norm_sym, f"openInterest@{interval}")
+        else:
+            stream = f"!openInterest@arr@{interval}"
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+
+        messages = self._ws_messages(url)
+        first = True
+        timeouts = 0
+        backoff = 1
+        while True:
+            try:
+                raw = await asyncio.wait_for(messages.__anext__(), timeout=15)
+                timeouts = 0
+                backoff = 1
+            except asyncio.TimeoutError:
+                timeouts += 1
+                log.warning("No message received on %s for 15s", stream)
+                if timeouts >= 3:
+                    if per_symbol:
+                        per_symbol = False
+                        stream = f"!openInterest@arr@{interval}"
+                        url = self.ws_base + stream
+                        messages = self._ws_messages(url)
+                        first = True
+                        timeouts = 0
+                        log.info("Falling back to aggregated open interest stream")
+                        continue
+                    raise NotImplementedError(
+                        "openInterest channel unavailable on Binance"
+                    )
+                messages = self._ws_messages(url)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+                continue
+            except StopAsyncIteration:
+                return
+
+            if first:
+                log.debug("Subscribed to %s", stream)
+                first = False
+
             msg = json.loads(raw)
-            d = msg.get("data") or msg
-            oi = d.get("oi") or d.get("openInterest")
+            data = msg.get("data") or msg
+            if not per_symbol:
+                items = data if isinstance(data, list) else [data]
+                for d in items:
+                    sym = normalize(d.get("s") or d.get("symbol") or "")
+                    if sym != norm_sym:
+                        continue
+                    oi = d.get("oi") or d.get("openInterest") or d.get("o")
+                    if oi is None:
+                        continue
+                    ts_ms = d.get("E") or d.get("T") or 0
+                    ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                    yield {"symbol": symbol, "ts": ts, "oi": float(oi)}
+                continue
+
+            d = data
+            oi = d.get("oi") or d.get("openInterest") or d.get("o")
             if oi is None:
                 continue
             ts_ms = d.get("E") or d.get("T") or 0

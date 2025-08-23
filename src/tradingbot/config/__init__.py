@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Binance Futures (USDT-M) - TESTNET
     binance_futures_api_key: str | None = None
     binance_futures_api_secret: str | None = None
-    binance_futures_testnet: bool = True
+    binance_futures_testnet: bool = False
     binance_futures_leverage: int = 5    # puedes cambiarlo en CLI también
     binance_futures_market: str = "USDT-M"  # informativo
 

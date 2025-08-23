@@ -1,4 +1,5 @@
 # src/tradingbot/adapters/binance_spot_ws.py
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -15,15 +16,30 @@ def _stream_name(symbol: str, channel: str = "trade") -> str:
 
 class BinanceSpotWSAdapter(ExchangeAdapter):
     """
-    WS de Binance Spot **TESTNET** para trades.
+    WS de Binance Spot para trades.
+    Usa el entorno de *testnet* si ``testnet=True``.
     """
-    name = "binance_spot_testnet_ws"
+    name = "binance_spot_ws"
 
-    def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None):
+    def __init__(
+        self,
+        ws_base: str | None = None,
+        rest: ExchangeAdapter | None = None,
+        testnet: bool = False,
+    ):
         super().__init__()
-        # Spot testnet: wss://testnet.binance.vision/stream?streams=
-        self.ws_base = ws_base or "wss://testnet.binance.vision/stream?streams="
         self.rest = rest
+        self.testnet = testnet
+
+        default_ws_base = (
+            "wss://testnet.binance.vision/stream?streams="
+            if testnet
+            else "wss://stream.binance.com:9443/stream?streams="
+        )
+        self.ws_base = ws_base or default_ws_base
+
+        if testnet:
+            self.name = "binance_spot_testnet_ws"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol))
@@ -78,7 +94,14 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        messages = self._ws_messages(url)
+        while True:
+            try:
+                raw = await asyncio.wait_for(messages.__anext__(), 15)
+            except asyncio.TimeoutError:
+                log.warning("No message received on %s for 15s", stream)
+                messages = self._ws_messages(url)
+                continue
             msg = json.loads(raw)
             d = msg.get("data") or msg
             ts_ms = d.get("T") or d.get("E")
@@ -93,20 +116,30 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask for *symbol* using order book snapshots."""
+        """Stream best bid/ask for ``symbol`` using Binance's ``bookTicker``."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
+        stream = _stream_name(normalize(symbol), "bookTicker")
+        url = self.ws_base + stream
+        async for raw in self._ws_messages(url):
+            msg = json.loads(raw)
+            d = msg.get("data") or msg
+            bid = d.get("b")
+            bid_qty = d.get("B")
+            ask = d.get("a")
+            ask_qty = d.get("A")
+            ts_ms = d.get("T") or d.get("E")
+            ts = (
+                datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                if ts_ms
+                else datetime.now(timezone.utc)
+            )
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+                "ts": ts,
+                "bid_px": float(bid) if bid is not None else None,
+                "bid_qty": float(bid_qty or 0.0),
+                "ask_px": float(ask) if ask is not None else None,
+                "ask_qty": float(ask_qty or 0.0),
             }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
@@ -135,6 +168,12 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                 "ask_px": [p for p, _ in delta_asks],
                 "ask_qty": [q for _, q in delta_asks],
             }
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Funding stream not supported for Spot WS")
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:  # pragma: no cover - not supported
+        raise NotImplementedError("Open interest stream not supported for Spot WS")
 
     async def fetch_funding(self, symbol: str):
         if self.rest:

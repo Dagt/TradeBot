@@ -1,4 +1,7 @@
+import asyncio
 import json
+import logging
+
 import pytest
 from datetime import datetime, timezone
 from tradingbot.adapters import (
@@ -182,6 +185,18 @@ async def test_binance_spot_rest_streams():
     assert book["bid_px"][0] == 1.0
     assert book["bid_qty"][0] == 2.0
 
+    gen3 = adapter.stream_bba("BTC/USDT")
+    bba = await gen3.__anext__()
+    await gen3.aclose()
+    assert bba["bid"] == 1.0
+    assert bba["ask"] == 3.0
+
+    gen4 = adapter.stream_book_delta("BTC/USDT")
+    delta = await gen4.__anext__()
+    await gen4.aclose()
+    assert delta["bid_px"][0] == 1.0
+    assert delta["ask_px"][0] == 3.0
+
 
 @pytest.mark.asyncio
 async def test_binance_futures_rest_fetch():
@@ -197,6 +212,16 @@ async def test_binance_futures_rest_fetch():
     assert isinstance(basis["ts"], datetime)
     assert oi["oi"] == 100.0
     assert oi["ts"] == datetime.fromtimestamp(1, tz=timezone.utc)
+
+    sf_gen = adapter.stream_funding("BTC/USDT")
+    sf = await sf_gen.__anext__()
+    await sf_gen.aclose()
+    assert sf["rate"] == 0.01
+
+    oi_gen = adapter.stream_open_interest("BTC/USDT")
+    soi = await oi_gen.__anext__()
+    await oi_gen.aclose()
+    assert soi["oi"] == 100.0
 
 
 @pytest.mark.asyncio
@@ -258,6 +283,62 @@ async def test_binance_futures_ws_fetch_ok():
 
 
 @pytest.mark.asyncio
+async def test_binance_futures_ws_stream_funding():
+    ws = BinanceFuturesWSAdapter()
+
+    msg = json.dumps({"data": {"r": "0.01", "i": "100", "E": 0}})
+
+    async def _fake_messages(url):
+        yield msg
+
+    ws._ws_messages = _fake_messages
+    gen = ws.stream_funding("BTC/USDT")
+    funding = await gen.__anext__()
+    await gen.aclose()
+    assert funding["rate"] == 0.01
+    assert funding["index_px"] == 100.0
+    assert "interval_sec" not in funding
+
+
+@pytest.mark.asyncio
+async def test_binance_futures_ws_open_interest_timeout_recovery(monkeypatch, caplog):
+    ws = BinanceFuturesWSAdapter()
+
+    msg = json.dumps({"data": {"oi": "100", "E": 0, "s": "BTCUSDT"}})
+    calls = {"per": 0, "arr": 0}
+
+    async def _fake_messages(url):
+        if "!openInterest@arr@" in url:
+            calls["arr"] += 1
+            yield msg
+        else:
+            calls["per"] += 1
+            while True:
+                await asyncio.sleep(0.02)
+
+    ws._ws_messages = _fake_messages
+
+    original_wait_for = asyncio.wait_for
+
+    async def fake_wait_for(awaitable, timeout):
+        return await original_wait_for(awaitable, 0.01)
+
+    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+
+    caplog.set_level(logging.WARNING, logger="tradingbot.adapters.binance_futures_ws")
+
+    gen = ws.stream_open_interest("BTC/USDT")
+    task = asyncio.create_task(gen.__anext__())
+    await asyncio.sleep(0.03)
+    result = await task
+    await gen.aclose()
+
+    assert result["oi"] == 100.0
+    assert any("No message received" in r.message for r in caplog.records)
+    assert calls["arr"] == 1
+
+
+@pytest.mark.asyncio
 async def test_binance_futures_ws_fetch_error():
     ws = BinanceFuturesWSAdapter()
 
@@ -286,6 +367,123 @@ async def test_ws_delegates_orders_to_rest():
     ws = BinanceSpotWSAdapter(rest=rest)
     assert await ws.place_order("BTC/USDT", "buy", "market", 1) == {"status": "ok"}
     assert await ws.cancel_order("1") == {"status": "cancel"}
+
+
+@pytest.mark.asyncio
+async def test_binance_spot_ws_stream_bba(monkeypatch):
+    ws = BinanceSpotWSAdapter()
+
+    msg = json.dumps({"data": {"b": "1", "B": "2", "a": "3", "A": "4"}})
+
+    class DummyWS:
+        def __init__(self, messages):
+            self.messages = messages
+            self.pings = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, msg):
+            pass
+
+        async def recv(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise ConnectionError("closed")
+
+        async def ping(self):
+            self.pings += 1
+
+    monkeypatch.setattr("websockets.connect", lambda url, **k: DummyWS([msg]))
+
+    gen = ws.stream_bba("BTC/USDT")
+    bba = await gen.__anext__()
+    await gen.aclose()
+    assert bba["bid_px"] == 1.0
+    assert bba["bid_qty"] == 2.0
+    assert bba["ask_px"] == 3.0
+    assert bba["ask_qty"] == 4.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adapter_cls", [OKXSpotAdapter, OKXFuturesAdapter])
+async def test_okx_stream_bba(monkeypatch, adapter_cls):
+    adapter = adapter_cls.__new__(adapter_cls)
+    ExchangeAdapter.__init__(adapter)
+    if adapter_cls is OKXFuturesAdapter:
+        adapter.ws_public_url = "wss://example"
+        msg = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]})
+
+        async def fake_messages(url, sub):
+            yield msg
+
+        adapter._ws_messages = fake_messages
+    else:
+        async def _ob(_symbol: str):
+            yield {
+                "bid_px": [1.0],
+                "bid_qty": [2.0],
+                "ask_px": [3.0],
+                "ask_qty": [4.0],
+                "ts": datetime.fromtimestamp(1, tz=timezone.utc),
+            }
+
+        monkeypatch.setattr(adapter, "stream_order_book", lambda s, depth=1: _ob(s))
+
+    gen = adapter.stream_bba("BTC/USDT")
+    bba = await gen.__anext__()
+    await gen.aclose()
+    assert bba["bid_px"] == 1.0
+    assert bba["bid_qty"] == 2.0
+    assert bba["ask_px"] == 3.0
+    assert bba["ask_qty"] == 4.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adapter_cls", [OKXSpotAdapter, OKXFuturesAdapter])
+async def test_okx_stream_bba_handles_empty(monkeypatch, adapter_cls):
+    adapter = adapter_cls.__new__(adapter_cls)
+    ExchangeAdapter.__init__(adapter)
+    if adapter_cls is OKXFuturesAdapter:
+        adapter.ws_public_url = "wss://example"
+        msg1 = json.dumps({"data": [{"bids": [], "asks": [], "ts": "0"}]})
+        msg2 = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "1"}]})
+
+        async def fake_messages(url, sub):
+            yield msg1
+            yield msg2
+
+        adapter._ws_messages = fake_messages
+
+        gen = adapter.stream_bba("BTC/USDT")
+        bba = await gen.__anext__()
+        await gen.aclose()
+        assert bba["bid_px"] == 1.0
+        assert bba["bid_qty"] == 2.0
+        assert bba["ask_px"] == 3.0
+        assert bba["ask_qty"] == 4.0
+    else:
+        async def _ob(_symbol: str):
+            yield {
+                "bid_px": [],
+                "bid_qty": [],
+                "ask_px": [],
+                "ask_qty": [],
+                "ts": datetime.fromtimestamp(1, tz=timezone.utc),
+            }
+
+        monkeypatch.setattr(adapter, "stream_order_book", lambda s, depth=1: _ob(s))
+
+        gen = adapter.stream_bba("BTC/USDT")
+        bba = await gen.__anext__()
+        await gen.aclose()
+        assert bba["bid_px"] is None
+        assert bba["bid_qty"] is None
+        assert bba["ask_px"] is None
+        assert bba["ask_qty"] is None
 
 
 class _DummyBybitRest:

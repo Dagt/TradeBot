@@ -1,6 +1,6 @@
 import json
+import logging
 import pytest
-from datetime import datetime
 
 from tradingbot.connectors import (
     DeribitConnector,
@@ -119,13 +119,37 @@ async def test_stream_trades_and_orderbook(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_deribit_ws_adapter_parsing(monkeypatch):
+async def test_deribit_ws_adapter_parsing(monkeypatch, caplog):
     adapter = DeribitWSAdapter(rest=DummyRest([], {}, {}, {}))
 
+    # First ensure subscription errors are logged and raised
+    trade_err = [json.dumps({"error": {"message": "bad"}})]
+    book_err = [json.dumps({"error": {"message": "bad"}})]
+    ws_iter = iter([DummyWS(trade_err.copy()), DummyWS(book_err.copy())])
+
+    def fake_connect(*args, **kwargs):
+        return next(ws_iter)
+
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    with caplog.at_level(logging.ERROR):
+        tgen = adapter.stream_trades("BTC-PERPETUAL")
+        with pytest.raises(ValueError):
+            await tgen.__anext__()
+
+        ogen = adapter.stream_order_book("BTC-PERPETUAL", depth=10)
+        with pytest.raises(ValueError):
+            await ogen.__anext__()
+
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(errors) >= 2
+
+    # Now test successful parsing for valid messages
     trade_msgs = [
         json.dumps(
             {
                 "params": {
+                    "channel": "trades.BTC-PERPETUAL.100ms",
                     "data": [
                         {
                             "price": "100",
@@ -133,7 +157,7 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
                             "direction": "buy",
                             "timestamp": 0,
                         }
-                    ]
+                    ],
                 }
             }
         )
@@ -143,11 +167,12 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
         json.dumps(
             {
                 "params": {
+                    "channel": "book.BTC-PERPETUAL.none.10.100ms",
                     "data": {
                         "bids": [["100", "1"]],
                         "asks": [["101", "2"]],
                         "timestamp": 0,
-                    }
+                    },
                 }
             }
         )
@@ -155,10 +180,10 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
 
     ws_iter = iter([DummyWS(trade_msgs.copy()), DummyWS(book_msgs.copy())])
 
-    def fake_connect(*args, **kwargs):
+    def fake_connect_success(*args, **kwargs):
         return next(ws_iter)
 
-    monkeypatch.setattr("websockets.connect", fake_connect)
+    monkeypatch.setattr("websockets.connect", fake_connect_success)
 
     tgen = adapter.stream_trades("BTC-PERPETUAL")
     trade = await tgen.__anext__()
@@ -171,6 +196,20 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
     assert ob["bid_px"][0] == 100.0
     assert ob["ask_qty"][0] == 2.0
     await ogen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_deribit_ws_adapter_channel_mismatch():
+    adapter = DeribitWSAdapter()
+
+    async def fake_messages(url, sub):
+        yield json.dumps({"params": {"channel": "other", "data": []}})
+
+    adapter._ws_messages = fake_messages
+
+    gen = adapter.stream_trades("BTC-PERPETUAL")
+    with pytest.raises(ValueError):
+        await gen.__anext__()
 
 
 @pytest.mark.asyncio

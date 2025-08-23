@@ -1,12 +1,8 @@
 # src/tradingbot/adapters/bybit_ws.py
-"""Lightweight websocket adapter for Bybit perpetual futures.
+"""WebSocket adapter for Bybit USDT perpetual futures.
 
-Based on the `binance_spot_ws` implementation, this adapter focuses on
-streaming trades and L2 order book snapshots while delegating optional REST
-queries for funding, basis and open interest to an injected REST adapter.
-
-Only the public websocket is used; ping/pong handling and reconnect backoff
-are provided by :func:`ExchangeAdapter._ws_messages` from the base class.
+Streams trades and L2 order book snapshots and can leverage a REST client for
+auxiliary data such as funding and open interest.
 """
 
 from __future__ import annotations
@@ -29,7 +25,12 @@ class BybitWSAdapter(ExchangeAdapter):
     basis and open interest retrieval via an optional REST client.
     """
 
-    name = "bybit_ws"
+    name = "bybit_futures_ws"
+    # Bybit's public websocket does not expose funding or open interest
+    # channels (the server responds with ``error:handler not found``).  Only
+    # native streams are advertised here; users should rely on the REST
+    # adapter for those additional kinds.
+    supported_kinds = {"trades", "orderbook", "bba", "delta"}
 
     def __init__(self, ws_base: str | None = None, rest: ExchangeAdapter | None = None, testnet: bool = False):
         super().__init__()
@@ -42,7 +43,7 @@ class BybitWSAdapter(ExchangeAdapter):
                 else "wss://stream.bybit.com/v5/public/linear"
             )
         self.rest = rest
-        self.name = "bybit_ws_testnet" if testnet else "bybit_ws"
+        self.name = "bybit_futures_ws_testnet" if testnet else "bybit_futures_ws"
 
     # ------------------------------------------------------------------
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
@@ -66,67 +67,122 @@ class BybitWSAdapter(ExchangeAdapter):
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str, depth: int = 1) -> AsyncIterator[dict]:
-        """Yield L2 order book snapshots for ``symbol``."""
+        """Yield normalised L2 order book snapshots for ``symbol``.
+
+        Bybit's ``orderbook.{depth}`` channel first sends a full snapshot and
+        subsequently publishes incremental updates.  We apply those deltas
+        locally to maintain the book and emit the reconstructed snapshot each
+        time an update is received.
+        """
 
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [f"orderbook.{depth}.{sym}"]}
+        # Bybit v5 supports only ``orderbook.50`` and ``orderbook.200`` topics.
+        sub_depth = 50 if depth <= 50 else 200
+        sub = {"op": "subscribe", "args": [f"orderbook.{sub_depth}.{sym}"]}
+        bids: dict[float, float] = {}
+        asks: dict[float, float] = {}
+
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
-            data = msg.get("data") or {}
-            if not data:
+            data_raw = msg.get("data") or {}
+            if isinstance(data_raw, list):
+                data = data_raw[0] if data_raw else {}
+            else:
+                data = data_raw
+            if not data or msg.get("type") not in {"snapshot", "delta"}:
                 continue
-            bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
-            asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
-            ts_ms = int(data.get("ts", 0))
+
+            side_updates = {
+                "b": bids,
+                "a": asks,
+            }
+
+            if msg.get("type") == "snapshot":
+                for side_key, book in side_updates.items():
+                    updates = data.get(side_key, [])
+                    book.clear()
+                    for p, q, *_ in updates:
+                        book[float(p)] = float(q)
+            elif msg.get("type") == "delta":
+                for side_key, book in side_updates.items():
+                    for p, q, *_ in data.get(side_key, []):
+                        price = float(p)
+                        qty = float(q)
+                        if qty == 0:
+                            book.pop(price, None)
+                        else:
+                            book[price] = qty
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-            self.state.order_book[symbol] = {"bids": bids, "asks": asks}
-            yield self.normalize_order_book(symbol, ts, bids, asks)
+
+            bids_sorted = sorted(bids.items(), key=lambda x: -x[0])[:depth]
+            asks_sorted = sorted(asks.items(), key=lambda x: x[0])[:depth]
+            bids_list = [[p, q] for p, q in bids_sorted]
+            asks_list = [[p, q] for p, q in asks_sorted]
+
+            self.state.order_book[symbol] = {"bids": bids_list, "asks": asks_list}
+            yield self.normalize_order_book(symbol, ts, bids_list, asks_list)
 
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask updates for ``symbol``."""
+        """Stream best bid/ask updates for ``symbol`` using the ticker feed."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
+        url = self.ws_public_url
+        sym = self.normalize_symbol(symbol)
+        sub = {"op": "subscribe", "args": [f"tickers.{sym}"]}
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            data = msg.get("data") or {}
+            bid_px = data.get("bid1Price")
+            ask_px = data.get("ask1Price")
+            if bid_px is None and ask_px is None:
+                continue
+            ts_ms = int(data.get("ts", 0))
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
+                "ts": ts,
+                "bid_px": float(bid_px) if bid_px is not None else None,
+                "bid_qty": float(data.get("bid1Size", 0.0)),
+                "ask_px": float(ask_px) if ask_px is not None else None,
+                "ask_qty": float(data.get("ask1Size", 0.0)),
             }
 
     async def stream_book_delta(self, symbol: str, depth: int = 1) -> AsyncIterator[dict]:
-        """Stream order book deltas compared to the previous snapshot."""
+        """Stream order book deltas for ``symbol``.
 
-        prev: dict | None = None
-        async for ob in self.stream_order_book(symbol, depth):
-            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
-            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
-            if prev is None:
-                delta_bids = curr_bids
-                delta_asks = curr_asks
+        The ``orderbook`` channel itself provides incremental updates.  We
+        subscribe separately and emit the changed levels directly without
+        reconstructing the full book.
+        """
+
+        url = self.ws_public_url
+        sym = self.normalize_symbol(symbol)
+        sub_depth = 50 if depth <= 50 else 200
+        sub = {"op": "subscribe", "args": [f"orderbook.{sub_depth}.{sym}"]}
+
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            data_raw = msg.get("data") or {}
+            if isinstance(data_raw, list):
+                data = data_raw[0] if data_raw else {}
             else:
-                prev_bids = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
-                prev_asks = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
-                delta_bids = [[p, q] for p, q in curr_bids if prev_bids.get(p) != q]
-                delta_bids += [[p, 0.0] for p in prev_bids.keys() - {p for p, _ in curr_bids}]
-                delta_asks = [[p, q] for p, q in curr_asks if prev_asks.get(p) != q]
-                delta_asks += [[p, 0.0] for p in prev_asks.keys() - {p for p, _ in curr_asks}]
-            prev = ob
+                data = data_raw
+            if not data or msg.get("type") not in {"snapshot", "delta"}:
+                continue
+            bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
+            asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             yield {
                 "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": [p for p, _ in delta_bids],
-                "bid_qty": [q for _, q in delta_bids],
-                "ask_px": [p for p, _ in delta_asks],
-                "ask_qty": [q for _, q in delta_asks],
+                "ts": ts,
+                "bid_px": [p for p, _ in bids],
+                "bid_qty": [q for _, q in bids],
+                "ask_px": [p for p, _ in asks],
+                "ask_qty": [q for _, q in asks],
             }
 
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
@@ -137,6 +193,8 @@ class BybitWSAdapter(ExchangeAdapter):
         sub = {"op": "subscribe", "args": [f"fundingRate.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
+            if msg.get("op") == "subscribe" and not msg.get("success", True):
+                raise NotImplementedError("fundingRate stream not supported")
             for d in msg.get("data", []) or []:
                 rate = d.get("fundingRate") or d.get("rate")
                 if rate is None:
@@ -159,6 +217,8 @@ class BybitWSAdapter(ExchangeAdapter):
         sub = {"op": "subscribe", "args": [f"openInterest.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
+            if msg.get("op") == "subscribe" and not msg.get("success", True):
+                raise NotImplementedError("openInterest stream not supported")
             for d in msg.get("data", []) or []:
                 oi = d.get("openInterest") or d.get("oi")
                 if oi is None:

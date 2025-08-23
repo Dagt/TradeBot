@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Iterable, Optional
+from importlib import resources
 
 from prometheus_client import Histogram
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -71,6 +73,34 @@ class AsyncTimescaleClient:
         self._closed = False
 
         self._insert_sql: dict[str, str] = insert_sql.copy() if insert_sql else {}
+
+    # ------------------------------------------------------------------
+    # Schema management
+    async def ensure_schema(self, path: str | Path | None = None) -> None:
+        """Apply database schema to ensure required tables exist.
+
+        Parameters
+        ----------
+        path:
+            Optional path to a SQL file containing ``CREATE TABLE`` statements.
+            If omitted, ``db/schema.sql`` from the repository root is used.  The
+            statements must be separated by semicolons.
+        """
+
+        if path is None:
+            try:
+                schema_sql = resources.files("tradingbot.db").joinpath("schema.sql").read_text()
+            except (FileNotFoundError, ModuleNotFoundError):
+                path = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
+                schema_sql = Path(path).read_text()
+        else:
+            schema_sql = Path(path).read_text()
+        engine = await self.connect()
+        async with engine.begin() as conn:
+            for stmt in schema_sql.split(";"):
+                s = stmt.strip()
+                if s:
+                    await conn.execute(text(s))
 
     # ------------------------------------------------------------------
     # Connection management

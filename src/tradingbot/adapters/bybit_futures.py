@@ -91,6 +91,57 @@ class BybitFuturesAdapter(ExchangeAdapter):
     # Backwards compatible alias
     stream_orderbook = stream_order_book
 
+    async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
+        """Emit best bid/ask quotes for ``symbol``."""
+
+        async for ob in self.stream_order_book(symbol):
+            bid = ob.get("bid_px", [None])[0]
+            ask = ob.get("ask_px", [None])[0]
+            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+
+    async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
+        """Yield incremental order book updates for ``symbol``."""
+
+        prev: dict | None = None
+        async for ob in self.stream_order_book(symbol):
+            curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
+            curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
+            if prev is None:
+                delta_bids = curr_bids
+                delta_asks = curr_asks
+            else:
+                pb = dict(zip(prev.get("bid_px", []), prev.get("bid_qty", [])))
+                pa = dict(zip(prev.get("ask_px", []), prev.get("ask_qty", [])))
+                delta_bids = [[p, q] for p, q in curr_bids if pb.get(p) != q]
+                delta_bids += [[p, 0.0] for p in pb.keys() - {p for p, _ in curr_bids}]
+                delta_asks = [[p, q] for p, q in curr_asks if pa.get(p) != q]
+                delta_asks += [[p, 0.0] for p in pa.keys() - {p for p, _ in curr_asks}]
+            prev = ob
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": [p for p, _ in delta_bids],
+                "bid_qty": [q for _, q in delta_bids],
+                "ask_px": [p for p, _ in delta_asks],
+                "ask_qty": [q for _, q in delta_asks],
+            }
+
+    async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll funding rate updates via REST."""
+
+        while True:
+            data = await self.fetch_funding(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
+    async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
+        """Poll open interest updates via REST."""
+
+        while True:
+            data = await self.fetch_oi(symbol)
+            yield {"symbol": symbol, **data}
+            await asyncio.sleep(60)
+
     async def fetch_funding(self, symbol: str):
         sym = normalize(symbol)
         method = getattr(self.rest, "fetchFundingRate", None)
@@ -141,13 +192,15 @@ class BybitFuturesAdapter(ExchangeAdapter):
         basis = mark_px - index_px
         return {"ts": ts, "basis": basis}
 
-    async def fetch_oi(self, symbol: str):
+    async def fetch_oi(self, symbol: str, interval: str = "5min"):
         """Return current open interest for ``symbol``.
 
         Bybit provides the value under the ``public/v5/market/open-interest``
-        endpoint.  The response wraps the data inside ``result.list``.  We
-        normalise it into a lightweight ``{"ts": datetime, "oi": float}``
-        structure.
+        endpoint.  The response wraps the data inside ``result.list``.  The
+        ``intervalTime`` query parameter is required and accepts one of
+        ``{"5min", "15min", "30min", "1h", "4h"}``, with ``"5min"`` being the
+        default.  The result is normalised into a lightweight
+        ``{"ts": datetime, "oi": float}`` structure.
         """
 
         sym = normalize(symbol)
@@ -155,9 +208,12 @@ class BybitFuturesAdapter(ExchangeAdapter):
         if method is None:
             raise NotImplementedError("Open interest not supported")
 
-        data = await self._request(method, {"category": "linear", "symbol": sym})
+        params = {"category": "linear", "symbol": sym, "intervalTime": interval}
+        data = await self._request(method, params)
         lst = (data.get("result") or {}).get("list") or []
-        item = lst[0] if lst else {}
+        if not lst:
+            raise ValueError("Empty open interest response")
+        item = lst[0]
         ts_ms = int(item.get("timestamp", 0))
         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
         oi = float(item.get("openInterest", 0.0))
