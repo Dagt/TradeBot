@@ -43,6 +43,12 @@ export BINANCE_FUTURES_TESTNET=true
 Si esta variable no está definida o se establece en `false`, el bot usará el
 entorno real de Binance Futures.
 
+## Solución de problemas
+
+Si se muestra el mensaje `System clock offset`, indica que el reloj del
+sistema tiene un desfase horario. Se recomienda sincronizar el reloj con un
+servidor NTP para evitar inconsistencias.
+
 ## Recursos
 
 - [Blueprint de arquitectura](BLUEPRINT.md)
