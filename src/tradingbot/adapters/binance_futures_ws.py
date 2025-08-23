@@ -86,7 +86,14 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        messages = self._ws_messages(url)
+        while True:
+            try:
+                raw = await asyncio.wait_for(messages.__anext__(), 15)
+            except asyncio.TimeoutError:
+                log.warning("No message received on %s for 15s", stream)
+                messages = self._ws_messages(url)
+                continue
             msg = json.loads(raw)
             d = msg.get("data") or msg
             bids = d.get("b") or d.get("bids") or []
