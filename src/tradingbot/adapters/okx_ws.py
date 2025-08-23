@@ -82,18 +82,35 @@ class OKXWSAdapter(ExchangeAdapter):
                 self.state.last_px[symbol] = price
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
+    DEPTH_TO_CHANNEL = {
+        1: "bbo-tbt",
+        5: "books5",
+        50: "books50-l2-tbt",
+        400: "books-l2-tbt",
+    }
+
     async def stream_order_book(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         """Yield L2 order book updates for ``symbol``."""
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        channel = f"books{depth}" if depth in (1, 5, 10, 25) else "books5"
+        channel = self.DEPTH_TO_CHANNEL.get(depth)
+        if channel is None:
+            raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
         sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
-                asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
+                if channel == "bbo-tbt":
+                    bid_px = float(d.get("bidPx", 0))
+                    bid_qty = float(d.get("bidSz", 0))
+                    ask_px = float(d.get("askPx", 0))
+                    ask_qty = float(d.get("askSz", 0))
+                    bids = [[bid_px, bid_qty]] if bid_px else []
+                    asks = [[ask_px, ask_qty]] if ask_px else []
+                else:
+                    bids = [[float(p), float(q)] for p, q, *_ in d.get("bids", [])]
+                    asks = [[float(p), float(q)] for p, q, *_ in d.get("asks", [])]
                 ts_ms = int(d.get("ts", 0))
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
                 self.state.order_book[symbol] = {"bids": bids, "asks": asks}
@@ -102,21 +119,28 @@ class OKXWSAdapter(ExchangeAdapter):
     stream_orderbook = stream_order_book
 
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
-        """Stream best bid/ask levels for ``symbol``."""
+        """Stream best bid/ask levels for ``symbol`` using the bbo channel."""
 
-        async for ob in self.stream_order_book(symbol, depth=1):
-            bid_px = ob.get("bid_px", [])
-            ask_px = ob.get("ask_px", [])
-            bid_qty = ob.get("bid_qty", [])
-            ask_qty = ob.get("ask_qty", [])
-            yield {
-                "symbol": symbol,
-                "ts": ob.get("ts"),
-                "bid_px": bid_px[0] if bid_px else None,
-                "bid_qty": bid_qty[0] if bid_qty else 0.0,
-                "ask_px": ask_px[0] if ask_px else None,
-                "ask_qty": ask_qty[0] if ask_qty else 0.0,
-            }
+        url = self.ws_public_url
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"bbo-tbt:{sym}"]}
+        async for raw in self._ws_messages(url, json.dumps(sub)):
+            msg = json.loads(raw)
+            for d in msg.get("data", []) or []:
+                bid_px = float(d.get("bidPx", 0))
+                bid_qty = float(d.get("bidSz", 0))
+                ask_px = float(d.get("askPx", 0))
+                ask_qty = float(d.get("askSz", 0))
+                ts_ms = int(d.get("ts", 0))
+                ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                yield {
+                    "symbol": symbol,
+                    "ts": ts,
+                    "bid_px": bid_px,
+                    "bid_qty": bid_qty,
+                    "ask_px": ask_px,
+                    "ask_qty": ask_qty,
+                }
 
     async def stream_book_delta(self, symbol: str, depth: int = 5) -> AsyncIterator[dict]:
         """Stream order book deltas relative to previous snapshots."""
