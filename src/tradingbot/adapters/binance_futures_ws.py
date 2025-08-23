@@ -232,6 +232,9 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                     raise NotImplementedError(
                         "openInterest channel unavailable on Binance"
                     )
+                messages = self._ws_messages(url)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
                 continue
             except StopAsyncIteration:
                 return
