@@ -14,6 +14,17 @@ from .deribit import DeribitAdapter
 log = logging.getLogger(__name__)
 
 
+def normalize(symbol: str) -> str:
+    """Return Deribit instrument name for ``symbol``.
+
+    The websocket adapter shares the symbol mapping with the REST adapter so
+    users can pass generic pairs like ``ETHUSDT`` and obtain the venue specific
+    instrument ``ETH-PERPETUAL``.
+    """
+
+    return DeribitAdapter.normalize(symbol)
+
+
 class DeribitWSAdapter(ExchangeAdapter):
     """Websocket wrapper delegando a :class:`DeribitAdapter` para REST."""
 
@@ -30,18 +41,6 @@ class DeribitWSAdapter(ExchangeAdapter):
         )
         self.name = "deribit_futures_ws_testnet" if testnet else "deribit_futures_ws"
 
-    # ------------------------------------------------------------------
-    @staticmethod
-    def normalize(symbol: str) -> str:
-        """Return Deribit instrument name for ``symbol``.
-
-        The websocket adapter shares the symbol mapping with the REST
-        adapter so users can pass generic pairs like ``ETHUSDT`` and obtain
-        the venue specific instrument ``ETH-PERPETUAL``.
-        """
-
-        return DeribitAdapter.normalize(symbol)
-
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Stream trades from Deribit public websocket.
 
@@ -50,7 +49,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         desconexión.
         """
 
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         channel = f"trades.{sym}"
         sub = {
             "jsonrpc": "2.0",
@@ -81,7 +80,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book snapshots from Deribit."""
 
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         if self.rest and hasattr(self.rest, "stream_order_book"):
             async for ob in self.rest.stream_order_book(sym, depth):
                 yield ob
@@ -110,7 +109,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
         """Stream best bid/ask levels for ``symbol``."""
 
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         async for ob in self.stream_order_book(sym, depth=1):
             bid_px = ob.get("bid_px", [])
             ask_px = ob.get("ask_px", [])
@@ -128,7 +127,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book deltas relative to previous snapshots."""
 
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         prev: dict | None = None
         async for ob in self.stream_order_book(sym, depth):
             curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
@@ -156,7 +155,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
         if not self.rest:
             raise NotImplementedError("Funding stream requires REST adapter")
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         while True:
             data = await self.fetch_funding(sym)
             yield {"symbol": sym, **data}
@@ -165,7 +164,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
         if not self.rest:
             raise NotImplementedError("Open interest stream requires REST adapter")
-        sym = self.normalize(symbol)
+        sym = normalize(symbol)
         while True:
             data = await self.fetch_oi(sym)
             yield {"symbol": sym, **data}
