@@ -304,16 +304,17 @@ async def test_binance_futures_ws_stream_funding():
 async def test_binance_futures_ws_open_interest_timeout_recovery(monkeypatch, caplog):
     ws = BinanceFuturesWSAdapter()
 
-    msg = json.dumps({"data": {"oi": "100", "E": 0}})
-    calls = {"n": 0}
+    msg = json.dumps({"data": {"oi": "100", "E": 0, "s": "BTCUSDT"}})
+    calls = {"per": 0, "arr": 0}
 
     async def _fake_messages(url):
-        calls["n"] += 1
-        if calls["n"] == 1:
+        if "!openInterest@arr@" in url:
+            calls["arr"] += 1
+            yield msg
+        else:
+            calls["per"] += 1
             while True:
                 await asyncio.sleep(0.02)
-        else:
-            yield msg
 
     ws._ws_messages = _fake_messages
 
@@ -334,6 +335,7 @@ async def test_binance_futures_ws_open_interest_timeout_recovery(monkeypatch, ca
 
     assert result["oi"] == 100.0
     assert any("No message received" in r.message for r in caplog.records)
+    assert calls["arr"] == 1
 
 
 @pytest.mark.asyncio

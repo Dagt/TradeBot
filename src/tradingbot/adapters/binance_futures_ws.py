@@ -163,7 +163,9 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 "index_px": index_px,
             }
 
-    async def stream_open_interest(self, symbol: str, interval: str = "1m") -> AsyncIterator[dict]:
+    async def stream_open_interest(
+        self, symbol: str, interval: str = "1m", per_symbol: bool = True
+    ) -> AsyncIterator[dict]:
         """Stream open interest updates for ``symbol``.
 
         Parameters
@@ -173,6 +175,10 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         interval: str, optional
             Update interval for open interest aggregation.  Binance supports
             values such as ``"1m"`` and ``"5m"``.  Defaults to ``"1m"``.
+        per_symbol: bool, optional
+            Subscribe to per-symbol stream.  If ``False`` the aggregated
+            ``!openInterest@arr`` channel is used and results are filtered
+            locally.
 
         Notes
         -----
@@ -183,9 +189,15 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         """
 
         if self._testnet:
-            raise NotImplementedError("openInterest stream not available on Binance Futures testnet")
+            raise NotImplementedError(
+                "openInterest stream not available on Binance Futures testnet"
+            )
 
-        stream = _stream_name(normalize(symbol), f"openInterest@{interval}")
+        norm_sym = normalize(symbol)
+        if per_symbol:
+            stream = _stream_name(norm_sym, f"openInterest@{interval}")
+        else:
+            stream = f"!openInterest@arr@{interval}"
         url = self.ws_base + stream
 
         messages = self._ws_messages(url)
@@ -201,13 +213,18 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 timeouts += 1
                 log.warning("No message received on %s for 15s", stream)
                 if timeouts >= 3:
-                    log.debug(
-                        "Reconnecting %s after %d consecutive timeouts", stream, timeouts
+                    if per_symbol:
+                        per_symbol = False
+                        stream = f"!openInterest@arr@{interval}"
+                        url = self.ws_base + stream
+                        messages = self._ws_messages(url)
+                        first = True
+                        timeouts = 0
+                        log.info("Falling back to aggregated open interest stream")
+                        continue
+                    raise NotImplementedError(
+                        "openInterest channel unavailable on Binance"
                     )
-                    timeouts = 0
-                    await asyncio.sleep(backoff)
-                    messages = self._ws_messages(url)
-                    backoff = min(backoff * 2, 60)
                 continue
             except StopAsyncIteration:
                 return
@@ -217,7 +234,22 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                 first = False
 
             msg = json.loads(raw)
-            d = msg.get("data") or msg
+            data = msg.get("data") or msg
+            if not per_symbol:
+                items = data if isinstance(data, list) else [data]
+                for d in items:
+                    sym = normalize(d.get("s") or d.get("symbol") or "")
+                    if sym != norm_sym:
+                        continue
+                    oi = d.get("oi") or d.get("openInterest") or d.get("o")
+                    if oi is None:
+                        continue
+                    ts_ms = d.get("E") or d.get("T") or 0
+                    ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                    yield {"symbol": symbol, "ts": ts, "oi": float(oi)}
+                continue
+
+            d = data
             oi = d.get("oi") or d.get("openInterest") or d.get("o")
             if oi is None:
                 continue
