@@ -77,14 +77,20 @@ class BybitWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [f"orderbook.{depth}.{sym}"]}
+        # Bybit v5 supports only ``orderbook.50`` and ``orderbook.200`` topics.
+        sub_depth = 50 if depth <= 50 else 200
+        sub = {"op": "subscribe", "args": [f"orderbook.{sub_depth}.{sym}"]}
         bids: dict[float, float] = {}
         asks: dict[float, float] = {}
 
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
-            data = msg.get("data") or {}
-            if not data:
+            data_raw = msg.get("data") or {}
+            if isinstance(data_raw, list):
+                data = data_raw[0] if data_raw else {}
+            else:
+                data = data_raw
+            if not data or msg.get("type") not in {"snapshot", "delta"}:
                 continue
 
             side_updates = {
@@ -107,11 +113,7 @@ class BybitWSAdapter(ExchangeAdapter):
                             book.pop(price, None)
                         else:
                             book[price] = qty
-            else:
-                # subscription acknowledgements or unknown messages
-                continue
-
-            ts_ms = int(data.get("ts", 0))
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
 
             bids_sorted = sorted(bids.items(), key=lambda x: -x[0])[:depth]
@@ -158,16 +160,21 @@ class BybitWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [f"orderbook.{depth}.{sym}"]}
+        sub_depth = 50 if depth <= 50 else 200
+        sub = {"op": "subscribe", "args": [f"orderbook.{sub_depth}.{sym}"]}
 
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
-            data = msg.get("data") or {}
-            if not data:
+            data_raw = msg.get("data") or {}
+            if isinstance(data_raw, list):
+                data = data_raw[0] if data_raw else {}
+            else:
+                data = data_raw
+            if not data or msg.get("type") not in {"snapshot", "delta"}:
                 continue
             bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
             asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
-            ts_ms = int(data.get("ts", 0))
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             yield {
                 "symbol": symbol,
