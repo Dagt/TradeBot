@@ -123,6 +123,7 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
     adapter = DeribitWSAdapter(rest=DummyRest([], {}, {}, {}))
 
     trade_msgs = [
+        json.dumps({"error": {"message": "bad"}}),
         json.dumps(
             {
                 "params": {
@@ -136,10 +137,11 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
                     ]
                 }
             }
-        )
+        ),
     ]
 
     book_msgs = [
+        json.dumps({"params": {}}),
         json.dumps(
             {
                 "params": {
@@ -150,7 +152,7 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
                     }
                 }
             }
-        )
+        ),
     ]
 
     ws_iter = iter([DummyWS(trade_msgs.copy()), DummyWS(book_msgs.copy())])
