@@ -9,7 +9,15 @@
   <style>
   @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
   #dm-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
-  .dm-kind-desc {color: #555;font-weight: 500;display: block;margin-top: 8px;}
+  .dm-kind-desc {
+    color: #444;
+    background: #f2f2f2;
+    padding: 4px 8px;
+    border-left: 3px solid #ccc;
+    border-radius: 4px;
+    margin-top: 8px;
+    display: block;
+  }
   </style>
 </head>
 <body>
@@ -138,6 +146,7 @@ const kindDescriptions={
   open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
   funding:"Funding (tasa de financiamiento): pagos periódicos entre compradores y vendedores de perpetuos para alinear el precio con el spot.",
   trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
+  trade_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
   delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
