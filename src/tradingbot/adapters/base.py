@@ -93,6 +93,21 @@ class ExchangeAdapter(ABC):
         """
         return normalize_symbol(symbol)
 
+    def _normalize(self, symbol: str) -> str:
+        """Adapter specific normalisation helper.
+
+        ``stream_*`` websocket methods historically relied on the module level
+        :func:`tradingbot.core.symbols.normalize` which yields the internal
+        representation (e.g. ``BTCUSDT``).  Certain venues such as OKX expect
+        dashes between base and quote (``BTC-USDT``) when subscribing to
+        channels.  This private helper routes all normalisation through
+        :meth:`normalize_symbol` so adapters can override that method for venue
+        specific behaviour while keeping a consistent ``_normalize`` entry
+        point for streaming helpers.
+        """
+
+        return self.normalize_symbol(symbol)
+
     def normalize_trade(self, symbol, ts, price, qty, side) -> dict:
         return {"symbol": symbol, "ts": ts, "price": price, "qty": qty, "side": side}
 

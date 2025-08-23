@@ -66,8 +66,8 @@ class OKXWSAdapter(ExchangeAdapter):
         """Yield normalised trades for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"trades:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
@@ -86,9 +86,9 @@ class OKXWSAdapter(ExchangeAdapter):
         """Yield L2 order book updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         channel = f"books{depth}" if depth in (1, 5, 10, 25) else "books5"
-        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
+        sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -149,8 +149,8 @@ class OKXWSAdapter(ExchangeAdapter):
         """Stream funding rate updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "funding-rate", "instId": sym}]}
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"funding-rate:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -171,8 +171,8 @@ class OKXWSAdapter(ExchangeAdapter):
         """Stream open interest updates for ``symbol``."""
 
         url = self.ws_public_url
-        sym = self.normalize_symbol(symbol)
-        sub = {"op": "subscribe", "args": [{"channel": "open-interest", "instId": sym}]}
+        sym = self._normalize(symbol)
+        sub = {"op": "subscribe", "args": [f"open-interest:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -189,16 +189,26 @@ class OKXWSAdapter(ExchangeAdapter):
             raise NotImplementedError("Se requiere adaptador REST para funding")
         sym = self.normalize_symbol(symbol)
         method = getattr(self.rest, "publicGetPublicFundingRate", None)
+        if method is not None:
+            data = await self._request(method, {"instId": sym})
+            lst = data.get("data") or []
+            item = lst[0] if lst else {}
+            ts_ms = int(
+                item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
+            )
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+            return {"ts": ts, "rate": rate}
+
+        # Fallback to legacy CCXT ``fetchFundingRate`` returning a single dict
+        method = getattr(self.rest, "fetchFundingRate", None)
         if method is None:  # pragma: no cover
             raise NotImplementedError("Funding no soportado")
-        data = await self._request(method, {"instId": sym})
-        lst = data.get("data") or []
-        item = lst[0] if lst else {}
-        ts_ms = int(
-            item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
-        )
+        legacy_sym = ExchangeAdapter.normalize_symbol(symbol)
+        data = await self._request(method, legacy_sym)
+        ts_ms = int(data.get("timestamp") or data.get("ts") or 0)
         ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        rate = float(data.get("fundingRate") or data.get("rate") or 0.0)
         return {"ts": ts, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
@@ -231,7 +241,7 @@ class OKXWSAdapter(ExchangeAdapter):
     async def fetch_oi(self, symbol: str):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para open interest")
-        sym = self.normalize_symbol(symbol)
+        sym = ExchangeAdapter.normalize_symbol(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:  # pragma: no cover
             raise NotImplementedError("Open interest no soportado")
