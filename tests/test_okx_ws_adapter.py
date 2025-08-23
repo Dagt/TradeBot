@@ -127,3 +127,27 @@ async def test_subscription_format(method, args, channel, msg):
         "op": "subscribe",
         "args": [{"channel": channel, "instId": expected_sym}],
     }
+
+
+@pytest.mark.asyncio
+async def test_stream_bba_discard_invalid(caplog):
+    adapter = OKXWSAdapter()
+    events = [
+        json.dumps({"data": [{"bidPx": "0", "bidSz": "1", "askPx": "2", "askSz": "2", "ts": "0"}]}),
+        json.dumps({"data": [{"bidPx": "1", "bidSz": "1", "askPx": None, "askSz": "2", "ts": "0"}]}),
+        json.dumps({"data": [{"bidPx": "1", "bidSz": "2", "askPx": "3", "askSz": "4", "ts": "0"}]})
+    ]
+
+    async def fake_messages(url, sub):
+        for e in events:
+            yield e
+
+    adapter._ws_messages = fake_messages
+    caplog.set_level("DEBUG")
+    gen = adapter.stream_bba("BTC/USDT")
+    result = await gen.__anext__()
+    await gen.aclose()
+
+    assert result["bid_px"] == pytest.approx(1.0)
+    discarded = [r for r in caplog.records if "Discarding BBA event" in r.message]
+    assert len(discarded) == 2
