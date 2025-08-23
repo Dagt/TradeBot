@@ -39,3 +39,17 @@ CREATE TABLE IF NOT EXISTS funding (
     rate DOUBLE,
     interval_sec LONG
 ) timestamp(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS open_interest (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    oi DOUBLE
+) timestamp(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS basis (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    basis DOUBLE
+) timestamp(ts) PARTITION BY DAY;
