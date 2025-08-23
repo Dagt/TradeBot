@@ -84,12 +84,23 @@ class DeribitAdapter(ExchangeAdapter):
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         sym = self.normalize(symbol)
+        last_trade_id: str | None = None
+        last_ts_ms = 0
         while True:  # poll trades vía REST; Deribit no posee WS en este adaptador
             data = await self._request(self.rest.fetch_trades, sym, limit=1)
             for t in data:
+                trade_id = t.get("id") or t.get("trade_id")
+                ts_ms = int(t.get("timestamp") or t.get("time") or 0)
+                if trade_id is not None:
+                    if trade_id == last_trade_id:
+                        continue
+                    last_trade_id = trade_id
+                else:
+                    if ts_ms <= last_ts_ms:
+                        continue
+                    last_ts_ms = ts_ms
                 price = float(t.get("price", 0.0))
                 qty = float(t.get("amount") or t.get("size") or 0.0)
-                ts_ms = int(t.get("timestamp") or 0)
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
                 side = t.get("side") or t.get("direction")
                 self.state.last_px[sym] = price
