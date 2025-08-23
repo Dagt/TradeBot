@@ -11,3 +11,11 @@ done
 
 # Apply database schema
 PGPASSWORD=postgres psql -h localhost -U postgres -d trading -f sql/schema_timescale.sql
+
+# Wait for QuestDB to be ready
+until curl -f http://localhost:9000/health >/dev/null 2>&1; do
+  sleep 1
+done
+
+# Apply QuestDB schema
+psql -h localhost -p 8812 -U admin -d qdb -f sql/schema_quest.sql
