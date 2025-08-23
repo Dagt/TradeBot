@@ -86,10 +86,13 @@ class DeribitWSAdapter(ExchangeAdapter):
         """Stream order book snapshots from Deribit."""
 
         sym = normalize(symbol)
-        if self.rest and hasattr(self.rest, "stream_order_book"):
-            async for ob in self.rest.stream_order_book(sym, depth):
-                yield ob
-            return
+        if self.rest:
+            try:
+                async for ob in self.rest.stream_order_book(sym, depth):
+                    yield ob
+                return
+            except (NotImplementedError, AttributeError):
+                pass
 
         channel = f"book.{sym}.{depth}.100ms"
         sub = {
