@@ -134,9 +134,24 @@ class DeribitAdapter(ExchangeAdapter):
         params = {"instrument_name": sym} if "public_get" in method.__name__.lower() else sym
         data = await self._request(method, params)
         res = data.get("result") or data
-        ts = int(res.get("timestamp") or res.get("time") or 0)
-        ts_dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-        rate = float(res.get("funding_rate") or res.get("fundingRate") or res.get("rate") or 0.0)
+        # Prefer the timestamp returned by the API.  If it is missing or
+        # zero, fall back to the current time to avoid epoch values.
+        ts_raw = res.get("timestamp") or res.get("time")
+        if ts_raw:
+            try:
+                ts_dt = datetime.fromtimestamp(int(ts_raw) / 1000, tz=timezone.utc)
+            except Exception:  # pragma: no cover - defensive
+                ts_dt = datetime.now(tz=timezone.utc)
+        else:
+            ts_dt = datetime.now(tz=timezone.utc)
+        if ts_dt == datetime(1970, 1, 1, tzinfo=timezone.utc):
+            ts_dt = datetime.now(tz=timezone.utc)
+        rate = float(
+            res.get("funding_rate")
+            or res.get("fundingRate")
+            or res.get("rate")
+            or 0.0
+        )
         return {"ts": ts_dt, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
