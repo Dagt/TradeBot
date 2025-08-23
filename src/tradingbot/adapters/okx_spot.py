@@ -82,7 +82,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         if depth not in (1, 5, 10, 25):
             raise ValueError("depth must be one of 1, 5, 10, 25")
         channel = f"books{depth}"
-        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
+        sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
