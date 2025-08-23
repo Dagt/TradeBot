@@ -56,7 +56,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         """
 
         sym = self._normalize(symbol)
-        channel = f"trades.{sym}.raw"
+        channel = f"trades.{sym}.100ms"
         sub = {
             "jsonrpc": "2.0",
             "method": "public/subscribe",
@@ -69,8 +69,9 @@ class DeribitWSAdapter(ExchangeAdapter):
                 async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
                     msg = json.loads(raw)
                     if msg.get("error"):
-                        log.error("WS subscription error: %s", msg)
-                        continue
+                        err = msg.get("error")
+                        log.error("WS subscription error for %s: %s", channel, err)
+                        raise ValueError(f"WS subscription error for {channel}: {err}")
                     params = msg.get("params") or {}
                     if params.get("channel") != channel:
                         raise ValueError(
