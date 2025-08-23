@@ -165,6 +165,14 @@ function updateFields(){
   document.getElementById('field-depth').style.display=showDepth?'':'none';
   document.getElementById('field-kind').style.display=act==='ingest'?'':'none';
   document.getElementById('field-persist').style.display=act==='ingest'?'':'none';
+  const desc=document.getElementById('dm-kind-desc');
+  if(act==='ingest'){
+    desc.style.display='';
+    desc.textContent=kindDescriptions[kind]||'';
+  }else{
+    desc.style.display='none';
+    desc.textContent='';
+  }
   const start=document.getElementById('dm-start').value;
   const end=document.getElementById('dm-end').value;
   const showDays=act==='backfill' && !(start && end);
@@ -187,12 +195,7 @@ document.getElementById('dm-hkind').addEventListener('change',updateFields);
 document.getElementById('dm-start').addEventListener('change',updateFields);
 document.getElementById('dm-end').addEventListener('change',updateFields);
 document.getElementById('dm-persist').addEventListener('change',updateFields);
-document.getElementById('dm-kind').addEventListener('change', e => {
-  updateFields();
-  const kind=e.target.value;
-  const desc=document.getElementById('dm-kind-desc');
-  desc.textContent=kindDescriptions[kind]||'';
-});
+document.getElementById('dm-kind').addEventListener('change', updateFields);
 
 async function runData(){
   if(evt){evt.close();evt=null;}
@@ -318,7 +321,6 @@ async function loadKinds(){
       sel.appendChild(opt);
     }
     updateFields();
-    document.getElementById('dm-kind-desc').textContent = kindDescriptions[sel.value] || '';
   }catch(e){
     console.error(e);
   }
