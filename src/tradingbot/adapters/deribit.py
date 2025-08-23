@@ -1,4 +1,9 @@
-"""REST adapter for Deribit perpetual futures."""
+"""REST adapter for Deribit perpetual futures.
+
+Only streams available via the HTTP API are exposed here.  For order book
+snapshots, best bid/ask (BBA) or incremental book deltas use the websocket
+adapter :mod:`tradingbot.adapters.deribit_ws`.
+"""
 
 from __future__ import annotations
 
@@ -29,10 +34,14 @@ except Exception:  # pragma: no cover
 
 
 class DeribitAdapter(ExchangeAdapter):
-    """Adapter simple para Deribit (perpetuos)."""
+    """Adapter simple para Deribit (perpetuos).
+
+    El streaming de ``orderbook``, ``bba`` y ``delta`` sólo está disponible a
+    través de :mod:`tradingbot.adapters.deribit_ws`.
+    """
 
     name = "deribit_futures"
-    supported_kinds = ["trades", "funding"]
+    supported_kinds = ["trades", "funding"]  # ``open_interest`` no disponible
 
     # Deribit únicamente lista perpetuos de BTC y ETH.  Este mapa traduce
     # símbolos genéricos (``ETHUSDT``) al identificador oficial del venue
