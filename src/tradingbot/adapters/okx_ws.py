@@ -67,7 +67,7 @@ class OKXWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"trades:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
@@ -97,7 +97,7 @@ class OKXWSAdapter(ExchangeAdapter):
         channel = self.DEPTH_TO_CHANNEL.get(depth)
         if channel is None:
             raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
-        sub = {"op": "subscribe", "args": [f"{channel}:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -123,7 +123,7 @@ class OKXWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"bbo-tbt:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "bbo-tbt", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -174,7 +174,7 @@ class OKXWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"funding-rate:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "funding-rate", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
@@ -196,7 +196,7 @@ class OKXWSAdapter(ExchangeAdapter):
 
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"open-interest:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "open-interest", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
