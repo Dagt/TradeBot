@@ -32,6 +32,7 @@ class DeribitAdapter(ExchangeAdapter):
     """Adapter simple para Deribit (perpetuos)."""
 
     name = "deribit_futures"
+    supported_kinds = ["trades", "funding"]
 
     # Deribit únicamente lista perpetuos de BTC y ETH.  Este mapa traduce
     # símbolos genéricos (``ETHUSDT``) al identificador oficial del venue
