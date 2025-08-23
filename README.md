@@ -46,8 +46,10 @@ entorno real de Binance Futures.
 ## Solución de problemas
 
 Si se muestra el mensaje `System clock offset`, indica que el reloj del
-sistema tiene un desfase horario. Se recomienda sincronizar el reloj con un
-servidor NTP para evitar inconsistencias.
+sistema está desincronizado. Se recomienda sincronizar la hora con un servidor
+NTP para evitar inconsistencias o, si la verificación no es crítica, desactivar
+la comprobación ajustando la variable de entorno `NTP_OFFSET_THRESHOLD` a un
+valor alto.
 
 ## Recursos
 
