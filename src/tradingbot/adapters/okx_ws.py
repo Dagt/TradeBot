@@ -127,9 +127,17 @@ class OKXWSAdapter(ExchangeAdapter):
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
-                bid_px = float(d.get("bidPx", 0))
+                bid_px_raw = d.get("bidPx")
+                ask_px_raw = d.get("askPx")
+                if bid_px_raw is None or ask_px_raw is None:
+                    log.debug("Discarding BBA event with invalid prices: %s", d)
+                    continue
+                bid_px = float(bid_px_raw)
+                ask_px = float(ask_px_raw)
+                if bid_px == 0 or ask_px == 0:
+                    log.debug("Discarding BBA event with invalid prices: %s", d)
+                    continue
                 bid_qty = float(d.get("bidSz", 0))
-                ask_px = float(d.get("askPx", 0))
                 ask_qty = float(d.get("askSz", 0))
                 ts_ms = int(d.get("ts", 0))
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
