@@ -1,4 +1,5 @@
 import json
+import logging
 import pytest
 from datetime import datetime
 
@@ -119,7 +120,7 @@ async def test_stream_trades_and_orderbook(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_deribit_ws_adapter_parsing(monkeypatch):
+async def test_deribit_ws_adapter_parsing(monkeypatch, caplog):
     adapter = DeribitWSAdapter(rest=DummyRest([], {}, {}, {}))
 
     trade_msgs = [
@@ -127,6 +128,7 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
         json.dumps(
             {
                 "params": {
+                    "channel": "trades.BTC-PERPETUAL.raw",
                     "data": [
                         {
                             "price": "100",
@@ -134,22 +136,23 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
                             "direction": "buy",
                             "timestamp": 0,
                         }
-                    ]
+                    ],
                 }
             }
         ),
     ]
 
     book_msgs = [
-        json.dumps({"params": {}}),
+        json.dumps({"error": {"message": "bad"}}),
         json.dumps(
             {
                 "params": {
+                    "channel": "book.BTC-PERPETUAL.none.10.100ms",
                     "data": {
                         "bids": [["100", "1"]],
                         "asks": [["101", "2"]],
                         "timestamp": 0,
-                    }
+                    },
                 }
             }
         ),
@@ -162,17 +165,35 @@ async def test_deribit_ws_adapter_parsing(monkeypatch):
 
     monkeypatch.setattr("websockets.connect", fake_connect)
 
-    tgen = adapter.stream_trades("BTC-PERPETUAL")
-    trade = await tgen.__anext__()
-    assert trade["price"] == 100.0
-    assert trade["qty"] == 0.5
-    await tgen.aclose()
+    with caplog.at_level(logging.ERROR):
+        tgen = adapter.stream_trades("BTC-PERPETUAL")
+        trade = await tgen.__anext__()
+        assert trade["price"] == 100.0
+        assert trade["qty"] == 0.5
+        await tgen.aclose()
 
-    ogen = adapter.stream_order_book("BTC-PERPETUAL", depth=10)
-    ob = await ogen.__anext__()
-    assert ob["bid_px"][0] == 100.0
-    assert ob["ask_qty"][0] == 2.0
-    await ogen.aclose()
+        ogen = adapter.stream_order_book("BTC-PERPETUAL", depth=10)
+        ob = await ogen.__anext__()
+        assert ob["bid_px"][0] == 100.0
+        assert ob["ask_qty"][0] == 2.0
+        await ogen.aclose()
+
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(errors) >= 2
+
+
+@pytest.mark.asyncio
+async def test_deribit_ws_adapter_channel_mismatch():
+    adapter = DeribitWSAdapter()
+
+    async def fake_messages(url, sub):
+        yield json.dumps({"params": {"channel": "other", "data": []}})
+
+    adapter._ws_messages = fake_messages
+
+    gen = adapter.stream_trades("BTC-PERPETUAL")
+    with pytest.raises(ValueError):
+        await gen.__anext__()
 
 
 @pytest.mark.asyncio

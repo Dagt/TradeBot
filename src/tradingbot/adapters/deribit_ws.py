@@ -41,6 +41,12 @@ class DeribitWSAdapter(ExchangeAdapter):
         )
         self.name = "deribit_futures_ws_testnet" if testnet else "deribit_futures_ws"
 
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Map generic pairs to Deribit instrument names."""
+
+        return normalize(symbol)
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Stream trades from Deribit public websocket.
 
@@ -49,7 +55,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         desconexión.
         """
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         channel = f"trades.{sym}.raw"
         sub = {
             "jsonrpc": "2.0",
@@ -63,8 +69,13 @@ class DeribitWSAdapter(ExchangeAdapter):
                 async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
                     msg = json.loads(raw)
                     if msg.get("error"):
+                        log.error("WS subscription error: %s", msg)
                         continue
                     params = msg.get("params") or {}
+                    if params.get("channel") != channel:
+                        raise ValueError(
+                            f"Unexpected channel {params.get('channel')} for {channel}"
+                        )
                     data = params.get("data") or []
                     if not data:
                         continue
@@ -78,6 +89,8 @@ class DeribitWSAdapter(ExchangeAdapter):
                         yield self.normalize_trade(sym, ts, price, qty, side)
             except asyncio.CancelledError:
                 raise
+            except ValueError:
+                raise
             except Exception as e:  # pragma: no cover - reconnection path
                 log.warning("WS trades disconnected (%s), reconnecting ...", e)
                 await asyncio.sleep(1.0)
@@ -90,7 +103,7 @@ class DeribitWSAdapter(ExchangeAdapter):
         if depth not in self.ORDER_BOOK_DEPTHS:
             raise ValueError(f"depth must be one of {sorted(self.ORDER_BOOK_DEPTHS)}")
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         if self.rest:
             try:
                 async for ob in self.rest.stream_order_book(sym, depth):
@@ -110,8 +123,13 @@ class DeribitWSAdapter(ExchangeAdapter):
         async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
             msg = json.loads(raw)
             if msg.get("error"):
+                log.error("WS subscription error: %s", msg)
                 continue
             params = msg.get("params") or {}
+            if params.get("channel") != channel:
+                raise ValueError(
+                    f"Unexpected channel {params.get('channel')} for {channel}"
+                )
             data = params.get("data") or {}
             if not data:
                 continue
@@ -127,7 +145,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_bba(self, symbol: str) -> AsyncIterator[dict]:
         """Stream best bid/ask levels for ``symbol``."""
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         async for ob in self.stream_order_book(sym, depth=1):
             bid_px = ob.get("bid_px", [])
             ask_px = ob.get("ask_px", [])
@@ -145,7 +163,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book deltas relative to previous snapshots."""
 
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         prev: dict | None = None
         async for ob in self.stream_order_book(sym, depth):
             curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
@@ -173,7 +191,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_funding(self, symbol: str) -> AsyncIterator[dict]:
         if not self.rest:
             raise NotImplementedError("Funding stream requires REST adapter")
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         while True:
             data = await self.fetch_funding(sym)
             yield {"symbol": sym, **data}
@@ -182,7 +200,7 @@ class DeribitWSAdapter(ExchangeAdapter):
     async def stream_open_interest(self, symbol: str) -> AsyncIterator[dict]:
         if not self.rest:
             raise NotImplementedError("Open interest stream requires REST adapter")
-        sym = normalize(symbol)
+        sym = self._normalize(symbol)
         while True:
             data = await self.fetch_oi(sym)
             yield {"symbol": sym, **data}
