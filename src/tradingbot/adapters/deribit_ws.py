@@ -69,9 +69,10 @@ class DeribitWSAdapter(ExchangeAdapter):
                 async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
                     msg = json.loads(raw)
                     if msg.get("error"):
-                        err = msg.get("error")
-                        log.error("WS subscription error for %s: %s", channel, err)
-                        raise ValueError(f"WS subscription error for {channel}: {err}")
+                        log.error("WS subscription error: %s", msg)
+                        continue
+                    if "result" in msg and "params" not in msg:
+                        continue
                     params = msg.get("params") or {}
                     if params.get("channel") != channel:
                         raise ValueError(
@@ -125,6 +126,8 @@ class DeribitWSAdapter(ExchangeAdapter):
             msg = json.loads(raw)
             if msg.get("error"):
                 log.error("WS subscription error: %s", msg)
+                continue
+            if "result" in msg and "params" not in msg:
                 continue
             params = msg.get("params") or {}
             if params.get("channel") != channel:
