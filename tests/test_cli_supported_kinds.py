@@ -25,7 +25,6 @@ EXPECTED_KINDS = {
         "bba",
         "delta",
         "funding",
-        "open_interest",
     },
     "bybit_spot": {
         "trades",

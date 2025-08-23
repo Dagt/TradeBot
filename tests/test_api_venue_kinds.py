@@ -15,7 +15,7 @@ def test_venue_kinds_endpoint(monkeypatch):
     app = get_app()
     client = TestClient(app)
 
-    resp = client.get("/venues/binance_spot/kinds", auth=("u", "p"))
+    resp = client.get("/venues/binance_futures/kinds", auth=("u", "p"))
     assert resp.status_code == 200
     data = resp.json()
     assert "trades" in data["kinds"]
