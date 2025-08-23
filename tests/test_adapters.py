@@ -423,7 +423,7 @@ async def test_okx_stream_bba(monkeypatch, adapter_cls):
             "ts": datetime.fromtimestamp(1, tz=timezone.utc),
         }
 
-    monkeypatch.setattr(adapter, "stream_order_book", lambda s: _ob(s))
+    monkeypatch.setattr(adapter, "stream_order_book", lambda s, depth=1: _ob(s))
 
     gen = adapter.stream_bba("BTC/USDT")
     bba = await gen.__anext__()
@@ -432,6 +432,32 @@ async def test_okx_stream_bba(monkeypatch, adapter_cls):
     assert bba["bid_qty"] == 2.0
     assert bba["ask_px"] == 3.0
     assert bba["ask_qty"] == 4.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adapter_cls", [OKXSpotAdapter, OKXFuturesAdapter])
+async def test_okx_stream_bba_handles_empty(monkeypatch, adapter_cls):
+    adapter = adapter_cls.__new__(adapter_cls)
+    ExchangeAdapter.__init__(adapter)
+
+    async def _ob(_symbol: str):
+        yield {
+            "bid_px": [],
+            "bid_qty": [],
+            "ask_px": [],
+            "ask_qty": [],
+            "ts": datetime.fromtimestamp(1, tz=timezone.utc),
+        }
+
+    monkeypatch.setattr(adapter, "stream_order_book", lambda s, depth=1: _ob(s))
+
+    gen = adapter.stream_bba("BTC/USDT")
+    bba = await gen.__anext__()
+    await gen.aclose()
+    assert bba["bid_px"] is None
+    assert bba["bid_qty"] is None
+    assert bba["ask_px"] is None
+    assert bba["ask_qty"] is None
 
 
 class _DummyBybitRest:
