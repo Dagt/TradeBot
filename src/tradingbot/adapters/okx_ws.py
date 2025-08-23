@@ -37,6 +37,30 @@ class OKXWSAdapter(ExchangeAdapter):
         self.rest = rest
         self.name = "okx_futures_ws_testnet" if testnet else "okx_futures_ws"
 
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Return OKX formatted perpetual contract symbol."""
+
+        sym = ExchangeAdapter.normalize_symbol(symbol)
+        if not sym:
+            return sym
+        parts = sym.split("-")
+        base_quote = parts[0]
+        suffix = parts[1] if len(parts) > 1 else "SWAP"
+        quotes = [
+            "USDT",
+            "USDC",
+            "USD",
+            "BTC",
+            "ETH",
+            "EUR",
+            "GBP",
+            "JPY",
+        ]
+        quote = next((q for q in quotes if base_quote.endswith(q)), base_quote[-4:])
+        base = base_quote[: -len(quote)]
+        return f"{base}-{quote}-{suffix}"
+
     # ------------------------------------------------------------------
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         """Yield normalised trades for ``symbol``."""
@@ -164,16 +188,18 @@ class OKXWSAdapter(ExchangeAdapter):
         if not self.rest:
             raise NotImplementedError("Se requiere adaptador REST para funding")
         sym = self.normalize_symbol(symbol)
-        method = getattr(self.rest, "fetchFundingRate", None)
+        method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:  # pragma: no cover
             raise NotImplementedError("Funding no soportado")
-        data = await self._request(method, sym)
-        ts = int(data.get("timestamp") or data.get("time") or data.get("ts") or 0)
-        if ts > 1e12:
-            ts //= 1000
-        ts_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        rate = float(data.get("fundingRate") or data.get("rate") or data.get("value") or 0.0)
-        return {"ts": ts_dt, "rate": rate}
+        data = await self._request(method, {"instId": sym})
+        lst = data.get("data") or []
+        item = lst[0] if lst else {}
+        ts_ms = int(
+            item.get("fundingTime") or item.get("ts") or item.get("timestamp") or 0
+        )
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        rate = float(item.get("fundingRate") or item.get("rate") or 0.0)
+        return {"ts": ts, "rate": rate}
 
     async def fetch_basis(self, symbol: str):
         if not self.rest:
