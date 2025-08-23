@@ -57,10 +57,15 @@ class OKXSpotAdapter(ExchangeAdapter):
         base = base_quote[: -len(quote)]
         return f"{base}-{quote}"
 
+    def _normalize(self, symbol: str) -> str:
+        """Return normalised symbol in OKX format."""
+
+        return self.normalize_symbol(symbol).replace("/", "-").upper()
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = "wss://ws.okx.com:8443/ws/v5/public"
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"trades:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
@@ -141,7 +146,7 @@ class OKXSpotAdapter(ExchangeAdapter):
             await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
@@ -163,7 +168,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         difference, returning a normalised ``{"ts": datetime, "basis": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -196,7 +201,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         ``data`` array and return it as ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")

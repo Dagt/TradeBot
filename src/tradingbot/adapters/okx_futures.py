@@ -84,10 +84,15 @@ class OKXFuturesAdapter(ExchangeAdapter):
         base = base_quote[: -len(quote)]
         return f"{base}-{quote}-{suffix}"
 
+    def _normalize(self, symbol: str) -> str:
+        """Return normalised symbol in OKX format."""
+
+        return self.normalize_symbol(symbol).replace("/", "-").upper()
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
         sym = self._normalize(symbol)
-        sub = {"op": "subscribe", "args": [f"trades:{sym}"]}
+        sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
@@ -168,7 +173,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
             await asyncio.sleep(60)
 
     async def fetch_funding(self, symbol: str):
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicFundingRate", None)
         if method is None:
             raise NotImplementedError("Funding not supported")
@@ -192,7 +197,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
         venue no soporta esta métrica.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "fetchTicker", None)
         if method is None:
             raise NotImplementedError("Basis not supported")
@@ -228,7 +233,7 @@ class OKXFuturesAdapter(ExchangeAdapter):
         ``{"ts": datetime, "oi": float}``.
         """
 
-        sym = self.normalize_symbol(symbol)
+        sym = self._normalize(symbol)
         method = getattr(self.rest, "publicGetPublicOpenInterest", None)
         if method is None:
             raise NotImplementedError("Open interest not supported")
