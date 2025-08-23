@@ -82,8 +82,13 @@ class DeribitWSAdapter(ExchangeAdapter):
                 log.warning("WS trades disconnected (%s), reconnecting ...", e)
                 await asyncio.sleep(1.0)
 
+    ORDER_BOOK_DEPTHS = {1, 5, 10, 20, 30, 50}
+
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Stream order book snapshots from Deribit."""
+
+        if depth not in self.ORDER_BOOK_DEPTHS:
+            raise ValueError(f"depth must be one of {sorted(self.ORDER_BOOK_DEPTHS)}")
 
         sym = normalize(symbol)
         if self.rest:
@@ -94,7 +99,7 @@ class DeribitWSAdapter(ExchangeAdapter):
             except (NotImplementedError, AttributeError):
                 pass
 
-        channel = f"book.{sym}.{depth}.100ms"
+        channel = f"book.{sym}.none.{depth}.100ms"
         sub = {
             "jsonrpc": "2.0",
             "method": "public/subscribe",
