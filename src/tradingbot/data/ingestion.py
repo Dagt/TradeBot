@@ -12,6 +12,7 @@ from ..connectors.kaiko import KaikoConnector
 from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
+from ..core.symbols import normalize
 import inspect
 from ..utils.metrics import ORDERBOOK_INSERT_FAILURES
 
@@ -292,13 +293,14 @@ async def download_trades(
     """
 
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    db_symbol = normalize(symbol)
     ticks: list[Tick] = []
     for t in raw_trades:
         ticks.append(
             Tick(
                 ts=t.timestamp,
                 exchange=getattr(connector, "name", "unknown"),
-                symbol=symbol,
+                symbol=db_symbol,
                 price=t.price,
                 qty=t.amount,
                 side=t.side,
@@ -317,10 +319,11 @@ async def download_order_book(
     """Fetch an order book snapshot using *connector* and persist it."""
 
     ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=getattr(connector, "name", "unknown"),
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -401,11 +404,12 @@ async def fetch_trades_kaiko(
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
         exchange, pair, **params
     )
+    db_symbol = normalize(pair)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=exchange,
-            symbol=pair,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -426,10 +430,11 @@ async def fetch_orderbook_kaiko(
 
     connector = KaikoConnector()
     ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    db_symbol = normalize(pair)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=exchange,
-        symbol=pair,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -451,11 +456,12 @@ async def download_kaiko_trades(
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
         exchange, pair, **params
     )
+    db_symbol = normalize(pair)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=exchange,
-            symbol=pair,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -476,10 +482,11 @@ async def download_kaiko_order_book(
     """Fetch an order book snapshot from Kaiko and persist it."""
 
     ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    db_symbol = normalize(pair)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=exchange,
-        symbol=pair,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -519,7 +526,7 @@ async def download_kaiko_open_interest(
         oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
-        records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
+        records.append({"ts": ts, "exchange": exchange, "symbol": normalize(pair), "oi": float(oi or 0.0)})
 
     for i in range(0, len(records), batch_size):
         persist_open_interest(records[i : i + batch_size], backend=backend)
@@ -566,7 +573,7 @@ async def download_kaiko_funding(
             {
                 "ts": ts,
                 "exchange": exchange,
-                "symbol": pair,
+                "symbol": normalize(pair),
                 "rate": float(rate or 0.0),
                 "interval_sec": int(interval),
             }
@@ -591,11 +598,12 @@ async def fetch_trades_coinapi(
 
     connector = CoinAPIConnector()
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    db_symbol = normalize(symbol)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=connector.name,
-            symbol=symbol,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -615,10 +623,11 @@ async def fetch_orderbook_coinapi(
 
     connector = CoinAPIConnector()
     ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=connector.name,
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -637,11 +646,12 @@ async def download_coinapi_trades(
     """Fetch trades from CoinAPI and persist them."""
 
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    db_symbol = normalize(symbol)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=connector.name,
-            symbol=symbol,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -661,10 +671,11 @@ async def download_coinapi_order_book(
     """Fetch an order book snapshot from CoinAPI and persist it."""
 
     ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=connector.name,
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -703,7 +714,7 @@ async def download_coinapi_open_interest(
         oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
-        records.append({"ts": ts, "exchange": connector.name, "symbol": symbol, "oi": float(oi or 0.0)})
+        records.append({"ts": ts, "exchange": connector.name, "symbol": normalize(symbol), "oi": float(oi or 0.0)})
 
     for i in range(0, len(records), batch_size):
         persist_open_interest(records[i : i + batch_size], backend=backend)
@@ -711,11 +722,12 @@ async def download_coinapi_open_interest(
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
     """Publish trades from *adapter* to an :class:`EventBus`."""
+    db_symbol = normalize(symbol)
     async for d in adapter.stream_trades(symbol):
         tick = Tick(
             ts=d.get("ts", datetime.now(timezone.utc)),
             exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
+            symbol=db_symbol,
             price=float(d.get("price") or d.get("px") or 0.0),
             qty=float(d.get("qty") or d.get("size") or 0.0),
             side=d.get("side"),
@@ -750,6 +762,7 @@ async def run_orderbook_stream(
     emit_delta: if ``True`` also publish order book deltas.
     """
 
+    db_symbol = normalize(symbol)
     storage = None if (not persist or backend == "csv") else _get_storage(backend)
 
     async def _orderbook() -> None:
@@ -762,7 +775,7 @@ async def run_orderbook_stream(
             ob = OrderBook(
                 ts=d.get("ts", datetime.now(timezone.utc)),
                 exchange=getattr(adapter, "name", "unknown"),
-                symbol=symbol,
+                symbol=db_symbol,
                 bid_px=d.get("bid_px") or [],
                 bid_qty=d.get("bid_qty") or [],
                 ask_px=d.get("ask_px") or [],
@@ -794,16 +807,19 @@ async def run_orderbook_stream(
         async def _bba() -> None:
             async for b in adapter.stream_bba(symbol):
                 await bus.publish("bba", b)
+                sym = normalize(b.get("symbol", symbol))
                 if persist:
                     if backend == "csv":
-                        persist_bba([b], backend="csv")
+                        b_rec = dict(b)
+                        b_rec["symbol"] = sym
+                        persist_bba([b_rec], backend="csv")
                     elif storage is not None and engine is not None:
                         try:
                             storage.insert_bba(
                                 engine,
                                 ts=b.get("ts", datetime.now(timezone.utc)),
                                 exchange=getattr(adapter, "name", "unknown"),
-                                symbol=b.get("symbol", symbol),
+                                symbol=sym,
                                 bid_px=b.get("bid_px"),
                                 bid_qty=b.get("bid_qty"),
                                 ask_px=b.get("ask_px"),
@@ -818,16 +834,19 @@ async def run_orderbook_stream(
         async def _delta() -> None:
             async for d in adapter.stream_book_delta(symbol, depth):
                 await bus.publish("book_delta", d)
+                sym = normalize(d.get("symbol", symbol))
                 if persist:
                     if backend == "csv":
-                        persist_book_delta([d], backend="csv")
+                        d_rec = dict(d)
+                        d_rec["symbol"] = sym
+                        persist_book_delta([d_rec], backend="csv")
                     elif storage is not None and engine is not None:
                         try:
                             storage.insert_book_delta(
                                 engine,
                                 ts=d.get("ts", datetime.now(timezone.utc)),
                                 exchange=getattr(adapter, "name", "unknown"),
-                                symbol=d.get("symbol", symbol),
+                                symbol=sym,
                                 bid_px=d.get("bid_px", []),
                                 bid_qty=d.get("bid_qty", []),
                                 ask_px=d.get("ask_px", []),
@@ -851,11 +870,12 @@ async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "times
     """
     storage = _get_storage(backend)
     engine = storage.get_engine()
+    db_symbol = normalize(symbol)
     async for d in adapter.stream_trades(symbol):
         tick = Tick(
             ts=d.get("ts", datetime.now(timezone.utc)),
             exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
+            symbol=db_symbol,
             price=float(d.get("price") or d.get("px") or 0.0),
             qty=float(d.get("qty") or d.get("size") or 0.0),
             side=d.get("side"),
@@ -874,11 +894,12 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
         agen = adapter.stream_order_book(symbol, depth=depth)
     else:
         agen = adapter.stream_order_book(symbol)
+    db_symbol = normalize(symbol)
     async for d in agen:
         data = {
             "ts": d.get("ts", datetime.now(timezone.utc)),
             "exchange": getattr(adapter, "name", "unknown"),
-            "symbol": symbol,
+            "symbol": db_symbol,
             "bid_px": d.get("bid_px") or [],
             "bid_qty": d.get("bid_qty") or [],
             "ask_px": d.get("ask_px") or [],

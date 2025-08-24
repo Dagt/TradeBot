@@ -17,6 +17,7 @@ from tradingbot.data import ingestion
 from tradingbot.types import Bar, OrderBook, Tick
 from tradingbot.connectors.kaiko import KaikoConnector
 from tradingbot.connectors.coinapi import CoinAPIConnector
+from tradingbot.core.symbols import normalize
 
 Backend = Literal["timescale", "quest", "csv"]
 
@@ -72,7 +73,7 @@ async def _download_trades(
                 Tick(
                     ts=datetime.utcfromtimestamp(t["timestamp"] / 1000),
                     exchange=exchange,
-                    symbol=symbol,
+                    symbol=normalize(symbol),
                     price=float(t["price"]),
                     qty=float(t["amount"]),
                     side=t.get("side"),
@@ -100,7 +101,7 @@ async def _download_l2(
         snapshot = OrderBook(
             ts=datetime.utcnow(),
             exchange=exchange,
-            symbol=symbol,
+            symbol=normalize(symbol),
             bid_px=[float(p) for p, _ in bids],
             bid_qty=[float(q) for _, q in bids],
             ask_px=[float(p) for p, _ in asks],

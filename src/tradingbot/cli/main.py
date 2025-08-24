@@ -250,10 +250,11 @@ def ingest(
                     async for d in adapter.stream_trades(symbol):
                         typer.echo(str(d))
                         if persist:
+                            db_symbol = normalize(symbol)
                             tick = Tick(
                                 ts=d.get("ts"),
                                 exchange=adapter.name,
-                                symbol=symbol,
+                                symbol=db_symbol,
                                 price=float(d.get("price") or 0.0),
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
@@ -266,10 +267,11 @@ def ingest(
                     async for d in adapter.stream_trades_multi(symbols):
                         typer.echo(str(d))
                         if persist:
+                            sym = normalize(d.get("symbol"))
                             tick = Tick(
                                 ts=d.get("ts"),
                                 exchange=adapter.name,
-                                symbol=d.get("symbol"),
+                                symbol=sym,
                                 price=float(d.get("price") or 0.0),
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
@@ -284,7 +286,7 @@ def ingest(
                         typer.echo(str(d))
                         if persist:
                             data = dict(d)
-                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            data.update({"exchange": adapter.name, "symbol": normalize(symbol)})
                             ing.persist_bba([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_b(sym)))
@@ -294,7 +296,7 @@ def ingest(
                         typer.echo(str(d))
                         if persist:
                             data = dict(d)
-                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            data.update({"exchange": adapter.name, "symbol": normalize(symbol)})
                             ing.persist_book_delta([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_d(sym)))
@@ -395,6 +397,15 @@ def ingest_historical(
     """Descargar datos históricos usando Kaiko o CoinAPI."""
 
     setup_logging()
+    provider_exchange = exchange
+    if exchange:
+        info = SUPPORTED_EXCHANGES.get(exchange)
+        if info is None:
+            raise typer.BadParameter(
+                f"Exchange inválido: {exchange}. Usa uno de: {_EXCHANGE_CHOICES}"
+            )
+        provider_exchange = info.get("ccxt", exchange)
+
     if source.lower() == "kaiko":
         from ..connectors.kaiko import KaikoConnector
         from ..data.ingestion import (
@@ -407,14 +418,14 @@ def ingest_historical(
         if kind == "orderbook":
             asyncio.run(
                 fetch_orderbook_kaiko(
-                    exchange, symbol, backend=backend, depth=depth
+                    provider_exchange, symbol, backend=backend, depth=depth
                 )
             )
         elif kind == "open_interest":
             connector = KaikoConnector()
             asyncio.run(
                 download_kaiko_open_interest(
-                    connector, exchange, symbol, backend=backend, limit=limit
+                    connector, provider_exchange, symbol, backend=backend, limit=limit
                 )
             )
         elif kind == "funding":
@@ -423,7 +434,7 @@ def ingest_historical(
         else:
             asyncio.run(
                 fetch_trades_kaiko(
-                    exchange, symbol, backend=backend, limit=limit
+                    provider_exchange, symbol, backend=backend, limit=limit
                 )
             )
     elif source.lower() == "coinapi":
