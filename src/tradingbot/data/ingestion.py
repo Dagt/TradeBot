@@ -232,7 +232,7 @@ def persist_funding(
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_funding"):
         return
     engine = storage.get_engine()
     for f in fundings:
@@ -262,7 +262,7 @@ def persist_open_interest(
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_open_interest"):
         return
     engine = storage.get_engine()
     for r in records:
