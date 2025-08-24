@@ -55,6 +55,21 @@ def _setup_ts_engine():
         conn.execute(
             text(
                 """
+                CREATE TABLE market.trades (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    px REAL,
+                    qty REAL,
+                    side TEXT,
+                    trade_id TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 CREATE TABLE market.orders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     strategy TEXT,
@@ -190,4 +205,36 @@ def test_insert_risk_event_timescale():
         ).fetchone()
 
     assert row == ("binance", "daily_max_loss")
+
+
+def test_insert_trade_timescale_ts():
+    from tradingbot.storage import timescale
+
+    engine = _setup_ts_engine()
+
+    t = SimpleNamespace(
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="BTCUSDT",
+        price=100.0,
+        qty=1.0,
+        side="buy",
+    )
+    timescale.insert_trade(engine, t)
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT ts, exchange, symbol, px, qty, side FROM market.trades"
+            )
+        ).fetchone()
+
+    assert row == (
+        "2024-01-01T00:00:00",
+        "binance",
+        "BTCUSDT",
+        100.0,
+        1.0,
+        "buy",
+    )
 
