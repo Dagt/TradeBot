@@ -1,5 +1,6 @@
 import logging
-from typing import Any
+from typing import Any, Iterable
+from types import SimpleNamespace
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
@@ -32,26 +33,76 @@ def get_engine():
         raise
     return engine
 
-def insert_trade(engine, t):
-    with engine.begin() as conn:
-        conn.execute(text('''
-            INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
-            VALUES (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
-        '''), dict(ts=t.ts, exchange=t.exchange, symbol=t.symbol, px=t.price, qty=t.qty, side=t.side, trade_id=None))
+def insert_trades(engine, trades: Iterable[Any]):
+    """Insert multiple trade ticks using a single batch statement."""
 
-def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
-                  low: float, c: float, v: float):
-    """Insert a 1-minute OHLCV bar into TimescaleDB."""
+    payload = [
+        dict(
+            ts=t.ts,
+            exchange=t.exchange,
+            symbol=t.symbol,
+            px=t.price,
+            qty=t.qty,
+            side=t.side,
+            trade_id=getattr(t, "trade_id", None),
+        )
+        for t in trades
+    ]
+    if not payload:
+        return
+
     with engine.begin() as conn:
         conn.execute(
             text(
-                '''
+                """
+            INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
+            VALUES (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+            """
+            ),
+            payload,
+        )
+
+
+def insert_trade(engine, t):
+    insert_trades(engine, [t])
+
+def insert_bars_1m(engine, bars: Iterable[Any]):
+    """Insert multiple 1-minute OHLCV bars."""
+
+    payload = [
+        dict(
+            ts=b.ts,
+            exchange=b.exchange,
+            symbol=b.symbol,
+            o=b.o,
+            h=b.h,
+            l=b.l,
+            c=b.c,
+            v=b.v,
+        )
+        for b in bars
+    ]
+    if not payload:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
             INSERT INTO market.bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
             VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
-        '''
+            """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v),
+            payload,
         )
+
+
+def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
+                  low: float, c: float, v: float):
+    """Insert a single 1-minute OHLCV bar into TimescaleDB."""
+
+    bar = SimpleNamespace(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v)
+    insert_bars_1m(engine, [bar])
 
 def insert_funding(
     engine,
