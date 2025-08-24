@@ -388,6 +388,8 @@ async def fetch_trades_kaiko(
     pair: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch trades from Kaiko and persist them.
@@ -399,7 +401,11 @@ async def fetch_trades_kaiko(
 
     connector = KaikoConnector()
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
-        exchange, pair, **params
+        exchange,
+        pair,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
     )
     ticks = [
         Tick(
@@ -420,12 +426,20 @@ async def fetch_orderbook_kaiko(
     pair: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch an order book snapshot from Kaiko and persist it."""
 
     connector = KaikoConnector()
-    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        exchange,
+        pair,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=exchange,
@@ -580,6 +594,8 @@ async def fetch_trades_coinapi(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch trades from CoinAPI and persist them.
@@ -590,7 +606,12 @@ async def fetch_trades_coinapi(
     """
 
     connector = CoinAPIConnector()
-    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
+        symbol,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
     ticks = [
         Tick(
             ts=t.timestamp,
@@ -609,12 +630,19 @@ async def fetch_orderbook_coinapi(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch an order book snapshot from CoinAPI and persist it."""
 
     connector = CoinAPIConnector()
-    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        symbol,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=connector.name,
