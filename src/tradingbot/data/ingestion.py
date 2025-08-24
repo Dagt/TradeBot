@@ -502,6 +502,64 @@ async def download_kaiko_order_book(
     persist_orderbooks([snapshot], backend=backend)
 
 
+async def download_kaiko_bba(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch best bid/ask from Kaiko and persist it.
+
+    Kaiko does not provide a dedicated BBA endpoint so the data is
+    derived from an order book snapshot.
+    """
+
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        exchange, pair, depth=1, **params
+    )
+    bid_px, bid_qty = (ob.bids[0] if ob.bids else (None, None))
+    ask_px, ask_qty = (ob.asks[0] if ob.asks else (None, None))
+    record = {
+        "ts": ob.timestamp,
+        "exchange": exchange,
+        "symbol": pair,
+        "bid_px": bid_px,
+        "bid_qty": bid_qty,
+        "ask_px": ask_px,
+        "ask_qty": ask_qty,
+    }
+    persist_bba([record], backend=backend)
+
+
+async def download_kaiko_book_delta(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch order book data from Kaiko and persist it as deltas.
+
+    When only snapshots are available the delta is approximated by the
+    full order book levels.
+    """
+
+    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": exchange,
+        "symbol": pair,
+        "bid_px": [p for p, _ in ob.bids],
+        "bid_qty": [q for _, q in ob.bids],
+        "ask_px": [p for p, _ in ob.asks],
+        "ask_qty": [q for _, q in ob.asks],
+    }
+    persist_book_delta([record], backend=backend)
+
+
 async def download_kaiko_open_interest(
     connector: KaikoConnector,
     exchange: str,
@@ -699,6 +757,56 @@ async def download_coinapi_order_book(
         ask_qty=[q for _, q in ob.asks],
     )
     persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_coinapi_bba(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch best bid/ask from CoinAPI and persist it.
+
+    CoinAPI exposes only order book snapshots; the BBA is derived from the
+    top levels.
+    """
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, depth=1, **params)
+    bid_px, bid_qty = (ob.bids[0] if ob.bids else (None, None))
+    ask_px, ask_qty = (ob.asks[0] if ob.asks else (None, None))
+    record = {
+        "ts": ob.timestamp,
+        "exchange": connector.name,
+        "symbol": symbol,
+        "bid_px": bid_px,
+        "bid_qty": bid_qty,
+        "ask_px": ask_px,
+        "ask_qty": ask_qty,
+    }
+    persist_bba([record], backend=backend)
+
+
+async def download_coinapi_book_delta(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch order book data from CoinAPI and persist it as deltas."""
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": connector.name,
+        "symbol": symbol,
+        "bid_px": [p for p, _ in ob.bids],
+        "bid_qty": [q for _, q in ob.bids],
+        "ask_px": [p for p, _ in ob.asks],
+        "ask_qty": [q for _, q in ob.asks],
+    }
+    persist_book_delta([record], backend=backend)
 
 
 async def download_coinapi_open_interest(

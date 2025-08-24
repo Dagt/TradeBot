@@ -98,6 +98,8 @@
         <select id="dm-hkind">
           <option value="trades">trades</option>
           <option value="orderbook">orderbook</option>
+          <option value="bba">bba</option>
+          <option value="book_delta">book_delta</option>
           <option value="open_interest">open_interest</option>
           <option value="funding">funding</option>
         </select>
@@ -147,7 +149,8 @@ const kindDescriptions={
   trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
   trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
-  delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
+  delta:"Book delta: cambios recientes en las mejores posturas de compra y venta.",
+  book_delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
 
 function showWorking() {
@@ -203,7 +206,7 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
   document.getElementById('field-hkind').style.display=hist?'':'none';
   const hk=document.getElementById('dm-hkind').value;
-  document.getElementById('field-hdepth').style.display=hist && hk==='orderbook'?'':'none';
+  document.getElementById('field-hdepth').style.display=hist && (hk==='orderbook' || hk==='book_delta')?'':'none';
   document.getElementById('field-hlimit').style.display=hist && hk==='trades'?'':'none';
   const persist=document.getElementById('dm-persist').checked;
   document.getElementById('field-backend').style.display=(hist || (act==='ingest' && persist))?'':'none';
@@ -263,7 +266,7 @@ async function runData(){
     const end=document.getElementById('dm-end').value;
     cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
     if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
-    if(kind==='orderbook') cmd+=` --depth ${depth}`;
+    if(kind==='orderbook' || kind==='book_delta') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
     if(start && end){
       const s=new Date(start);
