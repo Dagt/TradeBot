@@ -327,6 +327,9 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
+    exchange_name: str = typer.Option(
+        "binance", "--exchange-name", help="ccxt exchange name"
+    ),
     start: str | None = typer.Option(
         None, "--start", help="Start datetime in ISO format"
     ),
@@ -352,6 +355,7 @@ def backfill(
         run_backfill(
             days=days,
             symbols=symbols,
+            exchange_name=exchange_name,
             start=_parse(start),
             end=_parse(end),
         )

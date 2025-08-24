@@ -46,6 +46,7 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
 async def backfill(
     days: int,
     symbols: Sequence[str],
+    exchange_name: str = "binance",
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> None:
@@ -75,7 +76,13 @@ async def backfill(
     else:
         logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
 
-    ex = ccxt.binance({"enableRateLimit": False})
+    try:
+        ex_class = getattr(ccxt, exchange_name)
+    except AttributeError as exc:
+        raise ValueError(f"Exchange {exchange_name!r} not supported") from exc
+
+    ex = ex_class({"enableRateLimit": False})
+    ex.id = exchange_name
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
     client = AsyncTimescaleClient()
