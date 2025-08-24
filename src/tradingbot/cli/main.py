@@ -52,6 +52,7 @@ from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
 from tradingbot.core.symbols import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
+from ..exchanges import SUPPORTED_EXCHANGES
 
 
 _OFFSET_THRESHOLD = float(os.getenv("NTP_OFFSET_THRESHOLD", "1.0"))
@@ -94,6 +95,17 @@ def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
     """Return the adapter class for ``name`` if available."""
 
     return _ADAPTER_CLASS_MAP.get(name)
+
+
+_EXCHANGE_CHOICES = ", ".join(sorted(SUPPORTED_EXCHANGES))
+
+
+def _validate_exchange_name(value: str) -> str:
+    if value not in SUPPORTED_EXCHANGES:
+        raise typer.BadParameter(
+            f"Exchange must be one of: {_EXCHANGE_CHOICES}"
+        )
+    return value
 
 
 def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
@@ -328,7 +340,10 @@ def backfill(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
     exchange_name: str = typer.Option(
-        "binance", "--exchange-name", help="ccxt exchange name"
+        "binance",
+        "--exchange-name",
+        callback=_validate_exchange_name,
+        help=f"ccxt exchange name ({_EXCHANGE_CHOICES})",
     ),
     start: str | None = typer.Option(
         None, "--start", help="Start datetime in ISO format"
