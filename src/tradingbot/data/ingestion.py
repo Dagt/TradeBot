@@ -779,6 +779,20 @@ async def run_orderbook_stream(
         async def _bba() -> None:
             async for b in adapter.stream_bba(symbol):
                 await bus.publish("bba", b)
+                if storage is not None and engine is not None:
+                    try:
+                        storage.insert_bba(
+                            engine,
+                            ts=b.get("ts", datetime.now(timezone.utc)),
+                            exchange=getattr(adapter, "name", "unknown"),
+                            symbol=b.get("symbol", symbol),
+                            bid_px=b.get("bid_px"),
+                            bid_qty=b.get("bid_qty"),
+                            ask_px=b.get("ask_px"),
+                            ask_qty=b.get("ask_qty"),
+                        )
+                    except Exception as exc:  # pragma: no cover - logging only
+                        log.debug("BBA insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_bba()))
 
@@ -786,6 +800,20 @@ async def run_orderbook_stream(
         async def _delta() -> None:
             async for d in adapter.stream_book_delta(symbol, depth):
                 await bus.publish("book_delta", d)
+                if storage is not None and engine is not None:
+                    try:
+                        storage.insert_book_delta(
+                            engine,
+                            ts=d.get("ts", datetime.now(timezone.utc)),
+                            exchange=getattr(adapter, "name", "unknown"),
+                            symbol=d.get("symbol", symbol),
+                            bid_px=d.get("bid_px", []),
+                            bid_qty=d.get("bid_qty", []),
+                            ask_px=d.get("ask_px", []),
+                            ask_qty=d.get("ask_qty", []),
+                        )
+                    except Exception as exc:  # pragma: no cover - logging only
+                        log.debug("Book delta insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_delta()))
 
