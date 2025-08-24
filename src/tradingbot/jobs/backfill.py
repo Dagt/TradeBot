@@ -85,12 +85,11 @@ async def backfill(
         raise ValueError(f"Exchange {exchange_name!r} not supported")
 
     ex_class = getattr(ccxt, info["ccxt"])
-    conf = {"enableRateLimit": False}
+    conf = {"enableRateLimit": True}
     if info.get("options"):
         conf["options"] = info["options"]
     ex = ex_class(conf)
     ex.id = exchange_name
-    delay = getattr(ex, "rateLimit", 1000) / 1000
 
     client = AsyncTimescaleClient()
     await client.ensure_schema()
@@ -114,9 +113,7 @@ async def backfill(
                     "1m",
                     since,
                     1000,
-                    delay=delay,
                 )
-                await asyncio.sleep(delay)
                 if not ohlcvs:
                     break
 
@@ -141,9 +138,8 @@ async def backfill(
             since = start_ms
             while since < end_ms:
                 trades = await _retry(
-                    ex.fetch_trades, symbol, since, 1000, delay=delay
+                    ex.fetch_trades, symbol, since, 1000
                 )
-                await asyncio.sleep(delay)
                 if not trades:
                     break
                 for t in trades:
