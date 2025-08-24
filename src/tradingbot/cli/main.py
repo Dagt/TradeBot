@@ -391,6 +391,8 @@ def ingest_historical(
     backend: str = typer.Option("timescale", help="Backend de storage"),
     limit: int = typer.Option(100, help="Límite de trades"),
     depth: int = typer.Option(10, help="Profundidad del order book"),
+    start: str | None = typer.Option(None, "--start", help="Inicio ISO8601"),
+    end: str | None = typer.Option(None, "--end", help="Fin ISO8601"),
 ) -> None:
     """Descargar datos históricos usando Kaiko o CoinAPI."""
 
@@ -407,23 +409,47 @@ def ingest_historical(
         if kind == "orderbook":
             asyncio.run(
                 fetch_orderbook_kaiko(
-                    exchange, symbol, backend=backend, depth=depth
+                    exchange,
+                    symbol,
+                    backend=backend,
+                    depth=depth,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "open_interest":
             connector = KaikoConnector()
             asyncio.run(
                 download_kaiko_open_interest(
-                    connector, exchange, symbol, backend=backend, limit=limit
+                    connector,
+                    exchange,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "funding":
             connector = KaikoConnector()
-            asyncio.run(download_funding(connector, symbol, backend=backend))
+            asyncio.run(
+                download_funding(
+                    connector,
+                    symbol,
+                    backend=backend,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
         else:
             asyncio.run(
                 fetch_trades_kaiko(
-                    exchange, symbol, backend=backend, limit=limit
+                    exchange,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
     elif source.lower() == "coinapi":
@@ -438,23 +464,44 @@ def ingest_historical(
         if kind == "orderbook":
             asyncio.run(
                 fetch_orderbook_coinapi(
-                    symbol, backend=backend, depth=depth
+                    symbol,
+                    backend=backend,
+                    depth=depth,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "open_interest":
             connector = CoinAPIConnector()
             asyncio.run(
                 download_coinapi_open_interest(
-                    connector, symbol, backend=backend, limit=limit
+                    connector,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "funding":
             connector = CoinAPIConnector()
-            asyncio.run(download_funding(connector, symbol, backend=backend))
+            asyncio.run(
+                download_funding(
+                    connector,
+                    symbol,
+                    backend=backend,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
         else:
             asyncio.run(
                 fetch_trades_coinapi(
-                    symbol, backend=backend, limit=limit
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
     else:  # pragma: no cover - CLI validation

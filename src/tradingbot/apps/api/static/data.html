@@ -194,8 +194,9 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   const end=document.getElementById('dm-end').value;
   const showDays=act==='backfill' && !(start && end);
   document.getElementById('field-days').style.display=showDays?'':'none';
-  document.getElementById('field-start').style.display=act==='backfill'?'':'none';
-  document.getElementById('field-end').style.display=act==='backfill'?'':'none';
+  const showRange=act==='backfill' || act==='ingest-historical';
+  document.getElementById('field-start').style.display=showRange?'':'none';
+  document.getElementById('field-end').style.display=showRange?'':'none';
   document.getElementById('field-exchange-name').style.display=act==='backfill'?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
@@ -258,10 +259,27 @@ async function runData(){
     const depth=document.getElementById('dm-hdepth').value;
     const limit=document.getElementById('dm-hlimit').value;
     const backend=document.getElementById('dm-backend').value;
+    const start=document.getElementById('dm-start').value;
+    const end=document.getElementById('dm-end').value;
     cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
     if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
     if(kind==='orderbook') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
+    if(start && end){
+      const s=new Date(start);
+      const e=new Date(end);
+      if(!(s<e)){
+        out.textContent='Rango inválido (inicio debe ser menor que fin)';
+        out.scrollTop = out.scrollHeight;
+        runBtn.disabled=false;
+        runBtn.textContent='Ejecutar';
+        return;
+      }
+      cmd+=` --start ${s.toISOString()} --end ${e.toISOString()}`;
+    }else{
+      if(start) cmd+=` --start ${new Date(start).toISOString()}`;
+      if(end) cmd+=` --end ${new Date(end).toISOString()}`;
+    }
   }
   out.textContent='Iniciando...\n';
   out.scrollTop = out.scrollHeight;
