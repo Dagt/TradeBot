@@ -77,10 +77,9 @@ async def backfill(
     else:
         logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
 
-    try:
-        info = SUPPORTED_EXCHANGES[exchange_name]
-    except KeyError as exc:
-        raise ValueError(f"Exchange {exchange_name!r} not supported") from exc
+    info = SUPPORTED_EXCHANGES.get(exchange_name)
+    if info is None:
+        raise ValueError(f"Exchange {exchange_name!r} not supported")
 
     ex_class = getattr(ccxt, info["ccxt"])
     ex = ex_class({"enableRateLimit": False, **info.get("options", {})})

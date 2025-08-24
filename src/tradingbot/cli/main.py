@@ -343,7 +343,10 @@ def backfill(
         "binance",
         "--exchange-name",
         callback=_validate_exchange_name,
-        help=f"ccxt exchange name ({_EXCHANGE_CHOICES})",
+        help=(
+            "Exchange to use. Choose from spot/futures venues or Deribit:"
+            f" {_EXCHANGE_CHOICES}"
+        ),
     ),
     start: str | None = typer.Option(
         None, "--start", help="Start datetime in ISO format"
