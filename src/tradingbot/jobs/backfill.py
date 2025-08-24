@@ -85,7 +85,10 @@ async def backfill(
         raise ValueError(f"Exchange {exchange_name!r} not supported")
 
     ex_class = getattr(ccxt, info["ccxt"])
-    ex = ex_class({"enableRateLimit": False, **info.get("options", {})})
+    conf = {"enableRateLimit": False}
+    if info.get("options"):
+        conf["options"] = info["options"]
+    ex = ex_class(conf)
     ex.id = exchange_name
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
