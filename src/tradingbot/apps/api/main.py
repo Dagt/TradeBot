@@ -32,9 +32,13 @@ from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUE
 
 # Exchanges supported through ccxt along with their identifiers and options
 SUPPORTED_EXCHANGES = {
+    "binance_spot": {"ccxt": "binance"},
     "binance_futures": {"ccxt": "binanceusdm"},
+    "okx_spot": {"ccxt": "okx", "options": {"defaultType": "spot"}},
     "okx_futures": {"ccxt": "okx", "options": {"defaultType": "swap"}},
+    "bybit_spot": {"ccxt": "bybit", "options": {"defaultType": "spot"}},
     "bybit_futures": {"ccxt": "bybit", "options": {"defaultType": "swap"}},
+    "deribit_futures": {"ccxt": "deribit"},
 }
 
 # Persistencia
@@ -105,7 +109,11 @@ def ccxt_exchanges():
     if ccxt is None:
         return []
     available = getattr(ccxt, "exchanges", [])
-    return [name for name, ex in SUPPORTED_EXCHANGES.items() if ex["ccxt"] in available]
+    return [
+        key
+        for key, info in SUPPORTED_EXCHANGES.items()
+        if info["ccxt"] in available
+    ]
 
 
 @app.get("/venues/{name}/kinds")
