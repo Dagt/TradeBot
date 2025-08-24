@@ -145,6 +145,9 @@ async def funding_worker(
     from ..data import funding as data_funding
 
     storage = _get_storage(backend)
+    if not hasattr(storage, "insert_funding"):
+        log.warning("Backend %s does not support funding persistence", backend)
+        return
     engine = storage.get_engine()
 
     while True:
@@ -177,6 +180,9 @@ async def open_interest_worker(
     from ..data import open_interest as data_oi
 
     storage = _get_storage(backend)
+    if not hasattr(storage, "insert_open_interest"):
+        log.warning("Backend %s does not support open interest persistence", backend)
+        return
     engine = storage.get_engine()
 
     while True:

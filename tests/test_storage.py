@@ -44,6 +44,31 @@ def _setup_engine():
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE funding (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    rate REAL,
+                    interval_sec INTEGER
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE open_interest (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    oi REAL
+                )
+                """
+            )
+        )
     return engine
 
 
@@ -105,7 +130,10 @@ def _setup_ts_engine():
 
 def _reload_storage_backend(backend: str):
     settings.db_backend = backend
-    import tradingbot.storage as storage
+    if backend == "questdb":
+        import tradingbot.storage.quest as storage
+    else:
+        import tradingbot.storage.timescale as storage
 
     return importlib.reload(storage)
 
@@ -149,6 +177,45 @@ def test_insert_and_read_orderbook():
     assert json.loads(row[1]) == [1.0, 0.5]
     assert json.loads(row[2]) == [100.5, 101.0]
     assert json.loads(row[3]) == [0.8, 1.2]
+
+
+def test_insert_and_read_funding():
+    storage = _reload_storage_backend("questdb")
+    engine = _setup_engine()
+
+    storage.insert_funding(
+        engine,
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="BTCUSDT",
+        rate=0.001,
+        interval_sec=3600,
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT rate, interval_sec FROM funding")
+        ).fetchone()
+
+    assert row == (0.001, 3600)
+
+
+def test_insert_and_read_open_interest():
+    storage = _reload_storage_backend("questdb")
+    engine = _setup_engine()
+
+    storage.insert_open_interest(
+        engine,
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="BTCUSDT",
+        oi=123.45,
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT oi FROM open_interest")).fetchone()
+
+    assert row == (123.45,)
 
 
 def test_insert_order_timescale():
