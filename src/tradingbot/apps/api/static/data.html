@@ -91,7 +91,7 @@
       </div>
       <div id="field-exchange">
         <label for="dm-exchange">Exchange</label>
-        <input id="dm-exchange" placeholder="binance"/>
+        <select id="dm-exchange"></select>
       </div>
       <div id="field-hkind">
         <label for="dm-hkind">Tipo</label>
@@ -257,7 +257,7 @@ async function runData(){
   }else{
     const src=document.getElementById('dm-source').value;
     const sym=document.getElementById('dm-symbols').value.trim();
-    const ex=document.getElementById('dm-exchange').value.trim();
+    const ex=document.getElementById('dm-exchange').value;
     const kind=document.getElementById('dm-hkind').value;
     const depth=document.getElementById('dm-hdepth').value;
     const limit=document.getElementById('dm-hlimit').value;
@@ -396,6 +396,23 @@ async function loadExchanges(){
       opt.value=ex;
       opt.textContent=ex;
       sel.appendChild(opt);
+    }
+    const allowed=[
+      'binance_spot',
+      'binance_futures',
+      'okx_spot',
+      'okx_futures',
+      'bybit_spot',
+      'bybit_futures',
+      'deribit_futures'
+    ];
+    const selHist=document.getElementById('dm-exchange');
+    selHist.innerHTML='';
+    for(const ex of exchanges.filter(x=>allowed.includes(x))){
+      const opt=document.createElement('option');
+      opt.value=ex;
+      opt.textContent=ex;
+      selHist.appendChild(opt);
     }
   }catch(e){
     console.error(e);
