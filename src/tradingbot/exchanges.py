@@ -9,7 +9,7 @@ SUPPORTED_EXCHANGES: dict[str, dict] = {
     "okx_futures": {"ccxt": "okx", "options": {"defaultType": "swap"}},
     "bybit_spot": {"ccxt": "bybit", "options": {"defaultType": "spot"}},
     "bybit_futures": {"ccxt": "bybit", "options": {"defaultType": "swap"}},
-    "deribit_futures": {"ccxt": "deribit"},
+    "deribit_futures": {"ccxt": "deribit", "options": {"defaultType": "future"}},
 }
 
 __all__ = ["SUPPORTED_EXCHANGES"]
