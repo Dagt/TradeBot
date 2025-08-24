@@ -386,7 +386,8 @@ def ingest_historical(
     symbol: str = typer.Argument(..., help="Símbolo o par"),
     exchange: str = typer.Option("", help="Exchange para Kaiko"),
     kind: str = typer.Option(
-        "trades", help="Tipo de dato: trades, orderbook, open_interest o funding"
+        "trades",
+        help="Tipo de dato: trades, orderbook, bba, book_delta, open_interest o funding",
     ),
     backend: str = typer.Option("timescale", help="Backend de storage"),
     limit: int = typer.Option(100, help="Límite de trades"),
@@ -400,6 +401,8 @@ def ingest_historical(
         from ..data.ingestion import (
             fetch_trades_kaiko,
             fetch_orderbook_kaiko,
+            download_kaiko_bba,
+            download_kaiko_book_delta,
             download_kaiko_open_interest,
             download_funding,
         )
@@ -408,6 +411,20 @@ def ingest_historical(
             asyncio.run(
                 fetch_orderbook_kaiko(
                     exchange, symbol, backend=backend, depth=depth
+                )
+            )
+        elif kind == "bba":
+            connector = KaikoConnector()
+            asyncio.run(
+                download_kaiko_bba(
+                    connector, exchange, symbol, backend=backend
+                )
+            )
+        elif kind == "book_delta":
+            connector = KaikoConnector()
+            asyncio.run(
+                download_kaiko_book_delta(
+                    connector, exchange, symbol, backend=backend, depth=depth
                 )
             )
         elif kind == "open_interest":
@@ -431,6 +448,8 @@ def ingest_historical(
         from ..data.ingestion import (
             fetch_trades_coinapi,
             fetch_orderbook_coinapi,
+            download_coinapi_bba,
+            download_coinapi_book_delta,
             download_coinapi_open_interest,
             download_funding,
         )
@@ -439,6 +458,18 @@ def ingest_historical(
             asyncio.run(
                 fetch_orderbook_coinapi(
                     symbol, backend=backend, depth=depth
+                )
+            )
+        elif kind == "bba":
+            connector = CoinAPIConnector()
+            asyncio.run(
+                download_coinapi_bba(connector, symbol, backend=backend)
+            )
+        elif kind == "book_delta":
+            connector = CoinAPIConnector()
+            asyncio.run(
+                download_coinapi_book_delta(
+                    connector, symbol, backend=backend, depth=depth
                 )
             )
         elif kind == "open_interest":

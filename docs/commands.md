@@ -59,7 +59,7 @@ Obtiene datos históricos de Kaiko o CoinAPI.
 - `source`: `kaiko` o `coinapi`.
 - `symbol`: par de mercado.
 - `--exchange`: requerido para Kaiko.
-- `--kind`: `trades`, `orderbook`, `open_interest` o `funding`.
+- `--kind`: `trades`, `orderbook`, `bba`, `book_delta`, `open_interest` o `funding`.
 - `--backend`: backend de almacenamiento (por defecto `timescale`).
 - `--limit`: cantidad de registros a traer.
 - `--depth`: profundidad del order book.
