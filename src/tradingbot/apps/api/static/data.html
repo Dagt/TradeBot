@@ -91,7 +91,7 @@
       </div>
       <div id="field-exchange">
         <label for="dm-exchange">Exchange</label>
-        <input id="dm-exchange" placeholder="binance"/>
+        <select id="dm-exchange"></select>
       </div>
       <div id="field-hkind">
         <label for="dm-hkind">Tipo</label>
@@ -253,13 +253,12 @@ async function runData(){
   }else{
     const src=document.getElementById('dm-source').value;
     const sym=document.getElementById('dm-symbols').value.trim();
-    const ex=document.getElementById('dm-exchange').value.trim();
+    const ex=document.getElementById('dm-exchange').value;
     const kind=document.getElementById('dm-hkind').value;
     const depth=document.getElementById('dm-hdepth').value;
     const limit=document.getElementById('dm-hlimit').value;
     const backend=document.getElementById('dm-backend').value;
-    cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
-    if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
+    cmd=`ingest-historical ${src} ${sym} --exchange ${ex} --kind ${kind} --backend ${backend}`;
     if(kind==='orderbook') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
   }
@@ -368,13 +367,24 @@ async function loadExchanges(){
   try{
     const r=await fetch(api('/ccxt/exchanges'));
     const exchanges=await r.json();
-    const sel=document.getElementById('dm-exchange-name');
-    sel.innerHTML='';
+    const selName=document.getElementById('dm-exchange-name');
+    selName.innerHTML='';
     for(const ex of exchanges){
       const opt=document.createElement('option');
       opt.value=ex;
       opt.textContent=ex;
-      sel.appendChild(opt);
+      selName.appendChild(opt);
+    }
+    const allowed=['binance_spot','binance_futures','okx_spot','okx_futures','bybit_spot','bybit_futures','deribit_futures'];
+    const sel=document.getElementById('dm-exchange');
+    sel.innerHTML='';
+    for(const ex of exchanges){
+      if(allowed.includes(ex)){
+        const opt=document.createElement('option');
+        opt.value=ex;
+        opt.textContent=ex;
+        sel.appendChild(opt);
+      }
     }
   }catch(e){
     console.error(e);
