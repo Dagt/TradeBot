@@ -39,6 +39,12 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
     for attempt in range(1, retries + 1):
         try:
             return await func(*args, **kwargs)
+        except (ccxt.errors.DDoSProtection, ccxt.errors.RateLimitExceeded) as e:
+            if attempt >= retries:
+                raise
+            headers = getattr(e, "headers", {}) or {}
+            retry_after = headers.get("Retry-After", getattr(e, "retry_after", 60))
+            await asyncio.sleep(float(retry_after))
         except Exception:  # pragma: no cover - network errors
             if attempt >= retries:
                 raise
