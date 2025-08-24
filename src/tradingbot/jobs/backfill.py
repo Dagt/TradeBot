@@ -48,14 +48,16 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
 async def backfill(
     days: int,
     symbols: Sequence[str],
-    exchange_name: str = "binance",
+    exchange_name: str = "binance_spot",
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> None:
     """Backfill OHLCV bars and trades for *symbols*.
 
-    If *start* or *end* are not provided, the range defaults to the past
-    ``days`` days ending at ``datetime.now(timezone.utc)``.
+    ``exchange_name`` must match the identifiers used by the ingestion
+    command (``binance_spot``, ``binance_futures``, etc.).  If *start* or *end*
+    are not provided, the range defaults to the past ``days`` days ending at
+    ``datetime.now(timezone.utc)``.
     """
 
     if end is None:

@@ -340,7 +340,7 @@ def backfill(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
     exchange_name: str = typer.Option(
-        "binance",
+        "binance_spot",
         "--exchange-name",
         callback=_validate_exchange_name,
         help=(
