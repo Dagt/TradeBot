@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 SUPPORTED_EXCHANGES: dict[str, dict] = {
-    "binance_spot": {"ccxt": "binance"},
-    "binance_futures": {"ccxt": "binanceusdm"},
+    "binance_spot": {"ccxt": "binance", "options": {"defaultType": "spot"}},
+    "binance_futures": {"ccxt": "binanceusdm", "options": {"defaultType": "future"}},
     "okx_spot": {"ccxt": "okx", "options": {"defaultType": "spot"}},
     "okx_futures": {"ccxt": "okx", "options": {"defaultType": "swap"}},
     "bybit_spot": {"ccxt": "bybit", "options": {"defaultType": "spot"}},
