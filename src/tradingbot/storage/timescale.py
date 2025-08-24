@@ -36,8 +36,8 @@ def insert_trade(engine, t):
     with engine.begin() as conn:
         conn.execute(text('''
             INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
-            VALUES (now(), :exchange, :symbol, :px, :qty, :side, :trade_id)
-        '''), dict(exchange=t.exchange, symbol=t.symbol, px=t.price, qty=t.qty, side=t.side, trade_id=None))
+            VALUES (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+        '''), dict(ts=t.ts, exchange=t.exchange, symbol=t.symbol, px=t.price, qty=t.qty, side=t.side, trade_id=None))
 
 def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
                   low: float, c: float, v: float):
