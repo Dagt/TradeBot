@@ -9,6 +9,7 @@ from typing import Sequence
 import ccxt.async_support as ccxt
 import logging
 
+from tradingbot.core.symbols import normalize
 from ..storage.async_timescale import AsyncTimescaleClient
 from ..exchanges import SUPPORTED_EXCHANGES
 
@@ -99,7 +100,7 @@ async def backfill(
     try:
         for symbol in symbols:
             logger.info("Procesando %s", symbol)
-            db_symbol = symbol.replace("/", "")
+            db_symbol = normalize(symbol)
 
             # --- OHLCV backfill -------------------------------------------------
             since = start_ms

@@ -366,3 +366,51 @@ async def test_download_order_book_connector(monkeypatch):
     assert captured
     assert captured[0].bid_px == [100.0]
     assert captured[0].ask_qty == [2.0]
+
+
+def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
+    """Running the ingest CLI with CSV backend should create a CSV file."""
+
+    monkeypatch.setattr(
+        "tradingbot.utils.time_sync.check_ntp_offset", lambda: 0.0
+    )
+    import importlib
+    from typer.testing import CliRunner
+    import tradingbot.cli.main as cli_main
+
+    cli_main = importlib.reload(cli_main)
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def stream_order_book(self, symbol: str, depth: int):
+            yield {
+                "ts": datetime(2023, 1, 1, tzinfo=timezone.utc),
+                "bid_px": [1.0],
+                "bid_qty": [2.0],
+                "ask_px": [3.0],
+                "ask_qty": [4.0],
+            }
+
+    monkeypatch.setattr(cli_main, "get_adapter_class", lambda name: DummyAdapter)
+    monkeypatch.setattr(cli_main, "_AVAILABLE_VENUES", {"dummy"})
+
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli_main.app,
+        [
+            "ingest",
+            "--venue",
+            "dummy",
+            "--symbol",
+            "BTC/USDT",
+            "--kind",
+            "orderbook",
+            "--backend",
+            "csv",
+            "--persist",
+        ],
+    )
+    assert result.exit_code == 0
+    assert (tmp_path / "db" / "orderbook.csv").exists()

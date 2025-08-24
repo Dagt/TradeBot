@@ -232,7 +232,7 @@ def persist_funding(
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_funding"):
         return
     engine = storage.get_engine()
     for f in fundings:
@@ -262,7 +262,7 @@ def persist_open_interest(
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_open_interest"):
         return
     engine = storage.get_engine()
     for r in records:
@@ -750,7 +750,7 @@ async def run_orderbook_stream(
     emit_delta: if ``True`` also publish order book deltas.
     """
 
-    storage = _get_storage(backend) if persist else None
+    storage = None if (not persist or backend == "csv") else _get_storage(backend)
 
     async def _orderbook() -> None:
         sig = inspect.signature(adapter.stream_order_book)
@@ -769,21 +769,24 @@ async def run_orderbook_stream(
                 ask_qty=d.get("ask_qty") or [],
             )
             await bus.publish("orderbook", ob)
-            if storage is not None and engine is not None:
-                try:
-                    storage.insert_orderbook(
-                        engine,
-                        ts=ob.ts,
-                        exchange=ob.exchange,
-                        symbol=ob.symbol,
-                        bid_px=ob.bid_px,
-                        bid_qty=ob.bid_qty,
-                        ask_px=ob.ask_px,
-                        ask_qty=ob.ask_qty,
-                    )
-                except Exception as exc:  # pragma: no cover - logging only
-                    log.debug("Orderbook insert failed: %s", exc)
-                    ORDERBOOK_INSERT_FAILURES.inc()
+            if persist:
+                if backend == "csv":
+                    persist_orderbooks([ob], backend="csv")
+                elif storage is not None and engine is not None:
+                    try:
+                        storage.insert_orderbook(
+                            engine,
+                            ts=ob.ts,
+                            exchange=ob.exchange,
+                            symbol=ob.symbol,
+                            bid_px=ob.bid_px,
+                            bid_qty=ob.bid_qty,
+                            ask_px=ob.ask_px,
+                            ask_qty=ob.ask_qty,
+                        )
+                    except Exception as exc:  # pragma: no cover - logging only
+                        log.debug("Orderbook insert failed: %s", exc)
+                        ORDERBOOK_INSERT_FAILURES.inc()
 
     tasks = [asyncio.create_task(_orderbook())]
 
@@ -791,20 +794,23 @@ async def run_orderbook_stream(
         async def _bba() -> None:
             async for b in adapter.stream_bba(symbol):
                 await bus.publish("bba", b)
-                if storage is not None and engine is not None:
-                    try:
-                        storage.insert_bba(
-                            engine,
-                            ts=b.get("ts", datetime.now(timezone.utc)),
-                            exchange=getattr(adapter, "name", "unknown"),
-                            symbol=b.get("symbol", symbol),
-                            bid_px=b.get("bid_px"),
-                            bid_qty=b.get("bid_qty"),
-                            ask_px=b.get("ask_px"),
-                            ask_qty=b.get("ask_qty"),
-                        )
-                    except Exception as exc:  # pragma: no cover - logging only
-                        log.debug("BBA insert failed: %s", exc)
+                if persist:
+                    if backend == "csv":
+                        persist_bba([b], backend="csv")
+                    elif storage is not None and engine is not None:
+                        try:
+                            storage.insert_bba(
+                                engine,
+                                ts=b.get("ts", datetime.now(timezone.utc)),
+                                exchange=getattr(adapter, "name", "unknown"),
+                                symbol=b.get("symbol", symbol),
+                                bid_px=b.get("bid_px"),
+                                bid_qty=b.get("bid_qty"),
+                                ask_px=b.get("ask_px"),
+                                ask_qty=b.get("ask_qty"),
+                            )
+                        except Exception as exc:  # pragma: no cover - logging only
+                            log.debug("BBA insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_bba()))
 
@@ -812,20 +818,23 @@ async def run_orderbook_stream(
         async def _delta() -> None:
             async for d in adapter.stream_book_delta(symbol, depth):
                 await bus.publish("book_delta", d)
-                if storage is not None and engine is not None:
-                    try:
-                        storage.insert_book_delta(
-                            engine,
-                            ts=d.get("ts", datetime.now(timezone.utc)),
-                            exchange=getattr(adapter, "name", "unknown"),
-                            symbol=d.get("symbol", symbol),
-                            bid_px=d.get("bid_px", []),
-                            bid_qty=d.get("bid_qty", []),
-                            ask_px=d.get("ask_px", []),
-                            ask_qty=d.get("ask_qty", []),
-                        )
-                    except Exception as exc:  # pragma: no cover - logging only
-                        log.debug("Book delta insert failed: %s", exc)
+                if persist:
+                    if backend == "csv":
+                        persist_book_delta([d], backend="csv")
+                    elif storage is not None and engine is not None:
+                        try:
+                            storage.insert_book_delta(
+                                engine,
+                                ts=d.get("ts", datetime.now(timezone.utc)),
+                                exchange=getattr(adapter, "name", "unknown"),
+                                symbol=d.get("symbol", symbol),
+                                bid_px=d.get("bid_px", []),
+                                bid_qty=d.get("bid_qty", []),
+                                ask_px=d.get("ask_px", []),
+                                ask_qty=d.get("ask_qty", []),
+                            )
+                        except Exception as exc:  # pragma: no cover - logging only
+                            log.debug("Book delta insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_delta()))
 
