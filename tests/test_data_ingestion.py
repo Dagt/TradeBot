@@ -10,6 +10,7 @@ from tradingbot.data.ingestion import run_orderbook_stream, run_trades_stream
 from tradingbot.data import ingestion
 from tradingbot.types import OrderBook, Tick
 from tradingbot.connectors import Trade as ConnTrade, OrderBook as ConnOrderBook
+from tradingbot.core.symbols import normalize
 
 
 class DummyOBAdapter(ExchangeAdapter):
@@ -67,7 +68,7 @@ async def test_run_orderbook_stream_persists(monkeypatch):
     assert isinstance(ob, OrderBook)
     assert ob.bid_px == [100.0, 99.5]
     assert len(inserted) == 1
-    assert inserted[0]["symbol"] == "BTC/USDT"
+    assert inserted[0]["symbol"] == normalize("BTC/USDT")
     assert inserted[0]["bid_px"] == [100.0, 99.5]
 
 
