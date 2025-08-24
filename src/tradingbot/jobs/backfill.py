@@ -10,6 +10,7 @@ import ccxt.async_support as ccxt
 import logging
 
 from ..storage.async_timescale import AsyncTimescaleClient
+from ..exchanges import SUPPORTED_EXCHANGES
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +78,12 @@ async def backfill(
         logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
 
     try:
-        ex_class = getattr(ccxt, exchange_name)
-    except AttributeError as exc:
+        info = SUPPORTED_EXCHANGES[exchange_name]
+    except KeyError as exc:
         raise ValueError(f"Exchange {exchange_name!r} not supported") from exc
 
-    ex = ex_class({"enableRateLimit": False})
+    ex_class = getattr(ccxt, info["ccxt"])
+    ex = ex_class({"enableRateLimit": False, **info.get("options", {})})
     ex.id = exchange_name
     delay = getattr(ex, "rateLimit", 1000) / 1000
 
