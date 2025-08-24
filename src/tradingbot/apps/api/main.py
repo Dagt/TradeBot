@@ -17,6 +17,11 @@ import uuid
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
+try:  # pragma: no cover - ccxt is optional
+    import ccxt  # type: ignore
+except Exception:  # pragma: no cover - if ccxt is missing
+    ccxt = None
+
 from monitoring.metrics import router as metrics_router
 from monitoring.dashboard import router as dashboard_router
 
@@ -85,6 +90,14 @@ def health():
 def list_venues():
     """Return available venues."""
     return sorted(_AVAILABLE_VENUES)
+
+
+@app.get("/ccxt/exchanges")
+def ccxt_exchanges():
+    """Return exchanges supported by ``ccxt``."""
+    if ccxt is None:
+        return []
+    return sorted(getattr(ccxt, "exchanges", []))
 
 
 @app.get("/venues/{name}/kinds")

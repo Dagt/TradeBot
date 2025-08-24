@@ -74,6 +74,14 @@
         <label for="dm-end">Fin</label>
         <input id="dm-end" type="datetime-local"/>
       </div>
+      <div id="field-exchange-name">
+        <label for="dm-exchange-name">Exchange</label>
+        <select id="dm-exchange-name">
+          <option value="binance">binance</option>
+          <option value="okx">okx</option>
+          <option value="bybit">bybit</option>
+        </select>
+      </div>
       <div id="field-source">
         <label for="dm-source">Fuente</label>
         <select id="dm-source">
@@ -188,6 +196,7 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   document.getElementById('field-days').style.display=showDays?'':'none';
   document.getElementById('field-start').style.display=act==='backfill'?'':'none';
   document.getElementById('field-end').style.display=act==='backfill'?'':'none';
+  document.getElementById('field-exchange-name').style.display=act==='backfill'?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
@@ -225,6 +234,7 @@ async function runData(){
   }else if(act==='backfill'){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;
+    const exchange=document.getElementById('dm-exchange-name').value;
     if(start && end){
       const s=new Date(start);
       const e=new Date(end);
@@ -235,10 +245,10 @@ async function runData(){
         runBtn.textContent='Ejecutar';
         return;
       }
-      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --exchange-name ${exchange}`;
     }else{
       const days=document.getElementById('dm-days').value;
-      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --exchange-name ${exchange}`;
     }
   }else{
     const src=document.getElementById('dm-source').value;
@@ -354,6 +364,23 @@ async function loadVenues(){
   }
 }
 
+async function loadExchanges(){
+  try{
+    const r=await fetch(api('/ccxt/exchanges'));
+    const exchanges=await r.json();
+    const sel=document.getElementById('dm-exchange-name');
+    sel.innerHTML='';
+    for(const ex of exchanges){
+      const opt=document.createElement('option');
+      opt.value=ex;
+      opt.textContent=ex;
+      sel.appendChild(opt);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
 document.getElementById('dm-stop').addEventListener('click',stopData);
@@ -364,6 +391,7 @@ document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
 loadVenues();
+loadExchanges();
 </script>
 </body>
 </html>
