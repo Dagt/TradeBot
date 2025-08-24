@@ -891,6 +891,30 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
 
 async def poll_funding(adapter: Any, symbol: str, *, interval: int = 60, backend: Backends = "timescale"):
     """Poll periodic funding rates and persist them."""
+    if backend == "csv":
+        while True:
+            try:
+                info: Any = await adapter.fetch_funding(symbol)
+                ts = info.get("ts", datetime.now(timezone.utc))
+                rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
+                interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
+                persist_funding(
+                    [
+                        {
+                            "ts": ts,
+                            "exchange": getattr(adapter, "name", "unknown"),
+                            "symbol": symbol,
+                            "rate": rate,
+                            "interval_sec": interval_sec,
+                        }
+                    ],
+                    backend="csv",
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Funding poll failed: %s", exc)
+            await asyncio.sleep(interval)
+        return
+
     storage = _get_storage(backend)
     engine = storage.get_engine()
     while True:
@@ -918,8 +942,30 @@ async def poll_open_interest(
     *,
     interval: int = 60,
     backend: Backends = "timescale",
-):
+): 
     """Poll periodic open interest and persist it."""
+    if backend == "csv":
+        while True:
+            try:
+                info: Any = await adapter.fetch_oi(symbol)
+                ts = info.get("ts", datetime.now(timezone.utc))
+                oi = float(info.get("oi") or info.get("openInterest") or 0.0)
+                persist_open_interest(
+                    [
+                        {
+                            "ts": ts,
+                            "exchange": getattr(adapter, "name", "unknown"),
+                            "symbol": symbol,
+                            "oi": oi,
+                        }
+                    ],
+                    backend="csv",
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Open interest poll failed: %s", exc)
+            await asyncio.sleep(interval)
+        return
+
     storage = _get_storage(backend)
     engine = storage.get_engine()
     while True:
