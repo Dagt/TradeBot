@@ -49,11 +49,17 @@ def persist_trades(trades: Iterable[Tick], *, backend: Backends = "timescale", p
     if storage is None:
         return
     engine = storage.get_engine()
-    for t in trades:
-        try:
-            storage.insert_trade(engine, t)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Trade insert failed: %s", exc)
+    batch = list(trades)
+    if not batch:
+        return
+    try:
+        if hasattr(storage, "insert_trades"):
+            storage.insert_trades(engine, batch)
+        else:
+            for t in batch:
+                storage.insert_trade(engine, t)
+    except Exception as exc:  # pragma: no cover - logging only
+        log.debug("Trade insert failed: %s", exc)
 
 
 def persist_orderbooks(orderbooks: Iterable[OrderBook], *, backend: Backends = "timescale", path: Path | None = None) -> None:
@@ -192,11 +198,17 @@ def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: 
     if storage is None:
         return
     engine = storage.get_engine()
-    for b in bars:
-        try:
-            storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Bar insert failed: %s", exc)
+    batch = list(bars)
+    if not batch:
+        return
+    try:
+        if hasattr(storage, "insert_bars_1m"):
+            storage.insert_bars_1m(engine, batch)
+        else:
+            for b in batch:
+                storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
+    except Exception as exc:  # pragma: no cover - logging only
+        log.debug("Bar insert failed: %s", exc)
 
 
 def persist_funding(
