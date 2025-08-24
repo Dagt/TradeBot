@@ -29,17 +29,7 @@ from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
 from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
-
-# Exchanges supported through ccxt along with their identifiers and options
-SUPPORTED_EXCHANGES = {
-    "binance_spot": {"ccxt": "binance"},
-    "binance_futures": {"ccxt": "binanceusdm"},
-    "okx_spot": {"ccxt": "okx", "options": {"defaultType": "spot"}},
-    "okx_futures": {"ccxt": "okx", "options": {"defaultType": "swap"}},
-    "bybit_spot": {"ccxt": "bybit", "options": {"defaultType": "spot"}},
-    "bybit_futures": {"ccxt": "bybit", "options": {"defaultType": "swap"}},
-    "deribit_futures": {"ccxt": "deribit"},
-}
+from ...exchanges import SUPPORTED_EXCHANGES
 
 # Persistencia
 try:
