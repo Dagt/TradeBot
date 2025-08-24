@@ -30,7 +30,12 @@ from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
 from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
 
-SUPPORTED_EXCHANGES = ["binance", "okx", "bybit"]
+# Exchanges supported through ccxt along with their identifiers and options
+SUPPORTED_EXCHANGES = {
+    "binance_futures": {"ccxt": "binanceusdm"},
+    "okx_futures": {"ccxt": "okx", "options": {"defaultType": "swap"}},
+    "bybit_futures": {"ccxt": "bybit", "options": {"defaultType": "swap"}},
+}
 
 # Persistencia
 try:
@@ -100,7 +105,7 @@ def ccxt_exchanges():
     if ccxt is None:
         return []
     available = getattr(ccxt, "exchanges", [])
-    return [ex for ex in SUPPORTED_EXCHANGES if ex in available]
+    return [name for name, ex in SUPPORTED_EXCHANGES.items() if ex["ccxt"] in available]
 
 
 @app.get("/venues/{name}/kinds")
