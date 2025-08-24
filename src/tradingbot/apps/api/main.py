@@ -30,6 +30,8 @@ from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
 from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
 
+SUPPORTED_EXCHANGES = ["binance", "okx", "bybit"]
+
 # Persistencia
 try:
     from ...storage.timescale import (
@@ -97,7 +99,8 @@ def ccxt_exchanges():
     """Return exchanges supported by ``ccxt``."""
     if ccxt is None:
         return []
-    return sorted(getattr(ccxt, "exchanges", []))
+    available = getattr(ccxt, "exchanges", [])
+    return [ex for ex in SUPPORTED_EXCHANGES if ex in available]
 
 
 @app.get("/venues/{name}/kinds")
