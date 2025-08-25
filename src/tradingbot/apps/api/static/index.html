@@ -88,6 +88,26 @@
 
 <script>
 const api = (path) => `${location.origin}${path}`;
+const allowedExchanges = [
+  'binance_spot',
+  'binance_futures',
+  'binance_spot_testnet',
+  'binance_futures_testnet',
+  'okx_spot',
+  'okx_spot_testnet',
+  'okx_futures',
+  'okx_futures_testnet',
+  'bybit_spot',
+  'bybit_spot_testnet',
+  'bybit_futures',
+  'bybit_futures_testnet',
+];
+
+function updateCredInputs(){
+  const ex = document.getElementById('cfg-exchange').value;
+  document.getElementById('cfg-key').value = localStorage.getItem('key:'+ex) || '';
+  document.getElementById('cfg-secret').value = localStorage.getItem('secret:'+ex) || '';
+}
 
 async function loadExchanges(){
   try{
@@ -96,11 +116,21 @@ async function loadExchanges(){
     const sel = document.getElementById('cfg-exchange');
     sel.innerHTML = '';
     for(const ex of exchanges){
+      if(!allowedExchanges.includes(ex)) continue;
       const opt = document.createElement('option');
       opt.value = ex;
       opt.textContent = ex;
       sel.appendChild(opt);
     }
+    const last = localStorage.getItem('exchange');
+    if(last && allowedExchanges.includes(last)){
+      sel.value = last;
+    }
+    sel.addEventListener('change', () => {
+      localStorage.setItem('exchange', sel.value);
+      updateCredInputs();
+    });
+    updateCredInputs();
   }catch(e){
     console.error(e);
   }
@@ -177,6 +207,8 @@ async function saveConfig(){
       });
       const j = await r.json();
       output = (j.stdout||'') + (j.stderr ? '\n'+j.stderr : '');
+      localStorage.setItem('key:'+ex, key);
+      localStorage.setItem('secret:'+ex, sec);
     }catch(e){ output = String(e); }
   }
   document.getElementById('cfg-output').textContent = output || 'Credenciales guardadas';
