@@ -88,53 +88,64 @@ const api = (path) => `${location.origin}${path}`;
 
 const strategies = {
   breakout_atr: {
-    desc: "Ruptura basada en canales ATR",
+    desc: "Aprovecha rupturas de un canal calculado con el Average True Range (ATR). Compra al superar la banda superior y vende al romper la inferior.",
     requires: ["ohlcv"],
   },
   breakout_vol: {
-    desc: "Ruptura por volatilidad",
+    desc: "Busca expansiones de volatilidad. Entra cuando el precio abandona su rango normal con un aumento notable del rango de la vela.",
     requires: ["ohlcv"],
   },
   momentum: {
-    desc: "Sigue la tendencia con RSI",
+    desc: "Sigue la tendencia usando el RSI como medidor de impulso. Opera a favor del movimiento cuando el indicador se mantiene en zonas extremas.",
     requires: ["ohlcv"],
   },
   mean_reversion: {
-    desc: "Reversión a la media con RSI",
+    desc: "Opera la vuelta a la media apoyándose en el RSI. Compra en condiciones de sobreventa y vende en sobrecompra.",
     requires: ["ohlcv"],
   },
   triangular_arb: {
-    desc: "Arbitraje entre tres pares",
+    desc: "Explota ineficiencias entre tres pares realizando un ciclo de intercambios para obtener beneficio sin exposición direccional.",
     requires: ["prices"],
   },
   cash_and_carry: {
-    desc: "Diferencias entre spot y perp con funding",
+    desc: "Captura la base entre mercado spot y futuros perpetuos, manteniendo posiciones opuestas y cobrando la tasa de financiamiento.",
     requires: ["spot", "perp", "funding"],
   },
   order_flow_imbalance: {
-    desc: "Desequilibrio del flujo de órdenes",
+    desc: "Evalúa el desequilibrio entre órdenes de compra y venta agresivas para anticipar movimientos de precio.",
     requires: ["bba", "book_delta"],
   },
   depth_imbalance: {
-    desc: "Desequilibrio de profundidad del libro",
+    desc: "Mide la disparidad de liquidez entre el lado comprador y vendedor del libro para detectar presión latente.",
     requires: ["book_delta"],
   },
   liquidity_events: {
-    desc: "Detecta vacíos y gaps de liquidez",
+    desc: "Identifica vacíos y gaps de liquidez en el libro que pueden generar movimientos bruscos.",
     requires: ["bba", "book_delta"],
   },
   triple_barrier: {
-    desc: "Señales con etiquetado de triple barrera",
+    desc: "Genera señales usando la metodología de triple barrera con objetivos y stop temporales.",
     requires: ["ohlcv"],
   },
   ml: {
-    desc: "Modelo de machine learning",
+    desc: "Ejecuta un modelo de machine learning entrenado con indicadores y estadísticas personalizadas.",
     requires: ["features"],
   },
   mean_rev_ofi: {
-    desc: "Reversión a la media con OFI",
+    desc: "Busca la reversión a la media basada en el Order Flow Imbalance (OFI) derivado del libro de órdenes.",
     requires: ["book_delta"],
   },
+};
+
+const dataInfo = {
+  ohlcv: "Serie de velas con Open-High-Low-Close-Volume.",
+  prices: "Secuencia de precios (spot o perp) en ticks/velas, útil para spreads.",
+  bba: "Best Bid/Ask (mejor postor y oferente) con sus volúmenes.",
+  book_delta: "Variaciones por nivel del libro entre dos snapshots consecutivos.",
+  spot: "Precio de mercado spot.",
+  perp: "Precio de futuros perpetuos.",
+  funding: "Historial de tasas de financiamiento de los perpetuos.",
+  features: "Indicadores y estadísticas usados por un modelo de ML.",
 };
 
 let strategyInfo = strategies;
@@ -191,9 +202,11 @@ function updateStrategyInfo(){
   if(info.desc){
     let html=`<p>${info.desc}</p>`;
     if(info.requires && info.requires.length){
-      html+=`<p>Requiere:</p><ul>${info.requires.map(r=>`<li>${r}</li>`).join('')}</ul>`;
+      html += "<p>Datos necesarios:</p><ul>" +
+              info.requires.map(r => `<li><strong>${r}</strong>: ${dataInfo[r]}</li>`).join("") +
+              "</ul>";
     }
-    el.innerHTML=html;
+    el.innerHTML = html;
   }else{
     el.textContent='';
   }
