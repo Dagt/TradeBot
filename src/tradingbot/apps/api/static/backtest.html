@@ -59,7 +59,7 @@
       </div>
       <div id="field-venue">
         <label for="bt-venue">Exchange</label>
-        <input id="bt-venue" placeholder="binance"/>
+        <select id="bt-venue"></select>
       </div>
       <div id="field-start">
         <label for="bt-start">Inicio</label>
@@ -86,6 +86,23 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+async function loadExchanges(){
+  try{
+    const r = await fetch(api('/ccxt/exchanges'));
+    const exchanges = await r.json();
+    const sel = document.getElementById('bt-venue');
+    sel.innerHTML = '';
+    for(const ex of exchanges){
+      const opt = document.createElement('option');
+      opt.value = ex;
+      opt.textContent = ex;
+      sel.appendChild(opt);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+
 async function loadStrategies(){
   try{
     const r=await fetch(api('/strategies/status'));
@@ -106,6 +123,7 @@ function updateBtFields(){
   document.getElementById('field-strategy').style.display=(mode==='csv'||mode==='db')?'':'none';
   document.getElementById('field-config').style.display=(mode==='cfg'||mode==='walk')?'':'none';
   document.getElementById('field-venue').style.display=mode==='db'?'':'none';
+  document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
 }
@@ -160,6 +178,7 @@ document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('cli-run').addEventListener('click',runCli);
 updateBtFields();
 loadStrategies();
+loadExchanges();
 </script>
 </body>
 </html>
