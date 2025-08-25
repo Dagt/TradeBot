@@ -453,18 +453,9 @@ async function loadExchanges(){
       opt.textContent=ex;
       sel.appendChild(opt);
     }
-    const allowed=[
-      'binance_spot',
-      'binance_futures',
-      'okx_spot',
-      'okx_futures',
-      'bybit_spot',
-      'bybit_futures',
-      'deribit_futures'
-    ];
     const selHist=document.getElementById('dm-exchange');
     selHist.innerHTML='';
-    for(const ex of exchanges.filter(x=>allowed.includes(x))){
+    for(const ex of exchanges){
       const opt=document.createElement('option');
       opt.value=ex;
       opt.textContent=ex;
