@@ -402,6 +402,14 @@ def strategies_status():
     }
 
 
+@app.get("/strategies/info")
+def strategies_info():
+    """Return human-readable info for all strategies."""
+    from ...strategies import STRATEGY_INFO
+
+    return STRATEGY_INFO
+
+
 @app.get("/strategies/{name}/schema")
 def strategy_schema(name: str):
     """Return constructor parameters and defaults for a strategy.

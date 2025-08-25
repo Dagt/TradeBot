@@ -52,6 +52,7 @@
       <div id="field-strategy">
         <label for="bt-strategy">Estrategia</label>
         <select id="bt-strategy"></select>
+        <p id="bt-strategy-info" class="muted"></p>
       </div>
       <div id="field-config">
         <label for="bt-config">Archivo config</label>
@@ -86,16 +87,19 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+let strategyInfo = {};
+
 async function loadStrategies(){
   try{
-    const r=await fetch(api('/strategies/status'));
-    const j=await r.json();
+    const r=await fetch(api('/strategies/info'));
+    strategyInfo=await r.json();
     const sel=document.getElementById('bt-strategy');
     sel.innerHTML='';
-    Object.keys(j.strategies||{}).forEach(s=>{
+    Object.keys(strategyInfo||{}).forEach(s=>{
       const o=document.createElement('option');
       o.value=s;o.textContent=s;sel.appendChild(o);
     });
+    updateStrategyInfo();
   }catch(e){}
 }
 
@@ -108,6 +112,18 @@ function updateBtFields(){
   document.getElementById('field-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
+}
+
+function updateStrategyInfo(){
+  const sel=document.getElementById('bt-strategy').value;
+  const info=strategyInfo[sel];
+  const el=document.getElementById('bt-strategy-info');
+  if(info){
+    const req=(info.requires||[]).join(', ');
+    el.textContent=`${info.desc}${req?` (requiere: ${req})`:''}`;
+  }else{
+    el.textContent='';
+  }
 }
 
 async function runBacktest(){
@@ -156,6 +172,7 @@ async function runCli(){
 }
 
 document.getElementById('bt-mode').addEventListener('change',updateBtFields);
+document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('cli-run').addEventListener('click',runCli);
 updateBtFields();
