@@ -42,14 +42,16 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         self.testnet = testnet
 
         if testnet:
-            self.rest = ccxt.binanceusdm({
-                "apiKey": api_key or settings.binance_futures_api_key,
-                "secret": api_secret or settings.binance_futures_api_secret,
-                "enableRateLimit": True,
-                "options": {"defaultType": "future"},
-            })
+            self.rest = ccxt.binanceusdm(
+                {
+                    "apiKey": api_key or settings.binance_futures_api_key,
+                    "secret": api_secret or settings.binance_futures_api_secret,
+                    "enableRateLimit": True,
+                }
+            )
         else:
             self.rest = ccxt.binanceusdm()
+        self.rest.options["defaultType"] = "future"
         self.maker_fee_bps = float(
             maker_fee_bps
             if maker_fee_bps is not None

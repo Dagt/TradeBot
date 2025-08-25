@@ -42,13 +42,15 @@ class OKXFuturesAdapter(ExchangeAdapter):
             settings.okx_testnet_api_passphrase if testnet else settings.okx_api_passphrase
         )
 
-        self.rest = ccxt.okx({
-            "apiKey": key,
-            "secret": secret,
-            "password": passphrase,
-            "enableRateLimit": True,
-            "options": {"defaultType": "swap"},
-        })
+        self.rest = ccxt.okx(
+            {
+                "apiKey": key,
+                "secret": secret,
+                "password": passphrase,
+                "enableRateLimit": True,
+            }
+        )
+        self.rest.options["defaultType"] = "swap"
         self.rest.set_sandbox_mode(testnet)
         # Validar permisos disponibles
         validate_scopes(self.rest, log)

@@ -43,12 +43,14 @@ class BinanceWSAdapter(ExchangeAdapter):
         if self.rest is None and (api_key or api_secret):
             if ccxt is None:
                 raise RuntimeError("ccxt no está instalado")
-            self.rest = ccxt.binance({
-                "apiKey": api_key or "",
-                "secret": api_secret or "",
-                "enableRateLimit": True,
-                "options": {"defaultType": "future"},
-            })
+            self.rest = ccxt.binance(
+                {
+                    "apiKey": api_key or "",
+                    "secret": api_secret or "",
+                    "enableRateLimit": True,
+                }
+            )
+            self.rest.options["defaultType"] = "future"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _binance_symbol_stream(normalize(symbol))

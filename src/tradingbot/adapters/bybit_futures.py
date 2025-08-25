@@ -42,12 +42,14 @@ class BybitFuturesAdapter(ExchangeAdapter):
         key = api_key or (settings.bybit_testnet_api_key if testnet else settings.bybit_api_key)
         secret = api_secret or (settings.bybit_testnet_api_secret if testnet else settings.bybit_api_secret)
 
-        self.rest = ccxt.bybit({
-            "apiKey": key,
-            "secret": secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "swap"},
-        })
+        self.rest = ccxt.bybit(
+            {
+                "apiKey": key,
+                "secret": secret,
+                "enableRateLimit": True,
+            }
+        )
+        self.rest.options["defaultType"] = "swap"
         self.rest.set_sandbox_mode(testnet)
         # Validar permisos de la clave
         validate_scopes(self.rest, log)
