@@ -381,6 +381,11 @@ def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
 
     cli_main = importlib.reload(cli_main)
 
+    def fail():
+        raise AssertionError("get_engine should not be called for CSV backend")
+    monkeypatch.setattr("tradingbot.storage.timescale.get_engine", fail)
+    monkeypatch.setattr("tradingbot.storage.quest.get_engine", fail)
+
     class DummyAdapter:
         name = "dummy"
 

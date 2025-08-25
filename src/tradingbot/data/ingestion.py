@@ -1041,8 +1041,8 @@ async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "times
 
 async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backend: Backends = "timescale"):
     """Stream L2 orderbook snapshots and persist them."""
-    storage = _get_storage(backend)
-    engine = storage.get_engine()
+    storage = None if backend == "csv" else _get_storage(backend)
+    engine = None if storage is None else storage.get_engine()
     sig = inspect.signature(adapter.stream_order_book)
     if "depth" in sig.parameters:
         agen = adapter.stream_order_book(symbol, depth=depth)
@@ -1050,19 +1050,31 @@ async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backen
         agen = adapter.stream_order_book(symbol)
     db_symbol = normalize(symbol)
     async for d in agen:
-        data = {
-            "ts": d.get("ts", datetime.now(timezone.utc)),
-            "exchange": getattr(adapter, "name", "unknown"),
-            "symbol": db_symbol,
-            "bid_px": d.get("bid_px") or [],
-            "bid_qty": d.get("bid_qty") or [],
-            "ask_px": d.get("ask_px") or [],
-            "ask_qty": d.get("ask_qty") or [],
-        }
-        try:
-            storage.insert_orderbook(engine, **data)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Orderbook insert failed: %s", exc)
+        ob = OrderBook(
+            ts=d.get("ts", datetime.now(timezone.utc)),
+            exchange=getattr(adapter, "name", "unknown"),
+            symbol=db_symbol,
+            bid_px=d.get("bid_px") or [],
+            bid_qty=d.get("bid_qty") or [],
+            ask_px=d.get("ask_px") or [],
+            ask_qty=d.get("ask_qty") or [],
+        )
+        if backend == "csv":
+            persist_orderbooks([ob], backend="csv")
+        elif storage is not None and engine is not None:
+            try:
+                storage.insert_orderbook(
+                    engine,
+                    ts=ob.ts,
+                    exchange=ob.exchange,
+                    symbol=ob.symbol,
+                    bid_px=ob.bid_px,
+                    bid_qty=ob.bid_qty,
+                    ask_px=ob.ask_px,
+                    ask_qty=ob.ask_qty,
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Orderbook insert failed: %s", exc)
 
 async def poll_funding(adapter: Any, symbol: str, *, interval: int = 60, backend: Backends = "timescale"):
     """Poll periodic funding rates and persist them."""
