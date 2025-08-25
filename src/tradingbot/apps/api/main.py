@@ -94,22 +94,23 @@ def list_venues():
 
 
 @app.get("/ccxt/exchanges")
-def ccxt_exchanges(include_testnet: bool = Query(False)):
+def ccxt_exchanges(include_testnet: bool = Query(True)):
     """Return exchanges supported by ``ccxt``.
 
-    By default only live exchanges are returned. Pass ``include_testnet``
-    to append the corresponding ``*_testnet`` variants.
+    The list includes WebSocket-only variants (``*_ws``) which are limited to
+    streaming and do not support trading or historical backfills. Testnet
+    variants (``*_testnet``) are included by default; pass ``include_testnet=False``
+    to return only live exchanges.
     """
     if ccxt is None:
         return []
     available = getattr(ccxt, "exchanges", [])
-    live = [
-        key
-        for key, info in SUPPORTED_EXCHANGES.items()
-        if info["ccxt"] in available
-    ]
-    if include_testnet:
-        live += [f"{key}_testnet" for key in live]
+    live: list[str] = []
+    for key, info in SUPPORTED_EXCHANGES.items():
+        if info["ccxt"] in available:
+            live.append(key)
+            if include_testnet:
+                live.append(f"{key}_testnet")
     return live
 
 
