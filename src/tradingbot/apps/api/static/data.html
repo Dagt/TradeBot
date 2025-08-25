@@ -143,6 +143,9 @@
 
 <script>
 const api = (path) => `${location.origin}${path}`;
+function normalizeSymbol(sym) {
+  return sym.replace(/[^A-Za-z0-9]/g, "");
+}
 let currentJob=null;
 let evt=null;
 let kindsWithDepth=[];
@@ -238,7 +241,7 @@ async function runData(){
   runBtn.disabled=true;
   runBtn.textContent='Ejecutando...';
   const act=document.getElementById('dm-action').value;
-  const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const symbols=document.getElementById('dm-symbols').value.split(',').map(s=>normalizeSymbol(s.trim())).filter(Boolean);
   const out=document.getElementById('dm-output');
   let cmd='';
   if(act==='ingest'){
@@ -269,7 +272,7 @@ async function runData(){
     }
   }else{
     const src=document.getElementById('dm-source').value;
-    const sym=document.getElementById('dm-symbols').value.trim();
+    const sym=normalizeSymbol(document.getElementById('dm-symbols').value.trim());
     const ex=document.getElementById('dm-exchange').value;
     const kind=document.getElementById('dm-hkind').value;
     const depth=document.getElementById('dm-hdepth').value;

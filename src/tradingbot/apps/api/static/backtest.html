@@ -86,6 +86,10 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+function normalizeSymbol(sym) {
+  return sym.replace(/[^A-Za-z0-9]/g, "");
+}
+
 const strategies = {
   breakout_atr: {
     desc: "Aprovecha rupturas de un canal calculado con el Average True Range (ATR). Compra al superar la banda superior y vende al romper la inferior.",
@@ -225,7 +229,7 @@ async function runBacktest(){
   let cmd='';
   if(mode==='csv'){
     const data=document.getElementById('bt-data').value.trim();
-    const sym=document.getElementById('bt-symbol').value.trim();
+    const sym=normalizeSymbol(document.getElementById('bt-symbol').value.trim());
     const strat=document.getElementById('bt-strategy').value.trim();
     cmd=`backtest ${data} --symbol ${sym} --strategy ${strat}`;
   }else if(mode==='cfg'){
@@ -236,7 +240,7 @@ async function runBacktest(){
     cmd=`walk-forward ${cfg}`;
   }else{
     const venue=document.getElementById('bt-venue').value.trim();
-    const sym=document.getElementById('bt-symbol').value.trim();
+    const sym=normalizeSymbol(document.getElementById('bt-symbol').value.trim());
     const strat=document.getElementById('bt-strategy').value.trim();
     const start=document.getElementById('bt-start').value;
     const end=document.getElementById('bt-end').value;
