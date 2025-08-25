@@ -53,7 +53,7 @@
         <label for="bt-strategy">Estrategia</label>
         <select id="bt-strategy"></select>
       </div>
-      <p id="bt-strategy-info" class="muted" style="grid-column:1 / -1;"></p>
+      <div id="bt-strategy-info" class="muted" style="grid-column:1 / -1;"></div>
       <div id="field-config">
         <label for="bt-config">Archivo config</label>
         <input id="bt-config" placeholder="config.yaml"/>
@@ -87,7 +87,58 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
-let strategyInfo = {};
+const strategies = {
+  breakout_atr: {
+    desc: "Ruptura basada en canales ATR",
+    requires: ["ohlcv"],
+  },
+  breakout_vol: {
+    desc: "Ruptura por volatilidad",
+    requires: ["ohlcv"],
+  },
+  momentum: {
+    desc: "Sigue la tendencia con RSI",
+    requires: ["ohlcv"],
+  },
+  mean_reversion: {
+    desc: "Reversión a la media con RSI",
+    requires: ["ohlcv"],
+  },
+  triangular_arb: {
+    desc: "Arbitraje entre tres pares",
+    requires: ["prices"],
+  },
+  cash_and_carry: {
+    desc: "Diferencias entre spot y perp con funding",
+    requires: ["spot", "perp", "funding"],
+  },
+  order_flow_imbalance: {
+    desc: "Desequilibrio del flujo de órdenes",
+    requires: ["bba", "book_delta"],
+  },
+  depth_imbalance: {
+    desc: "Desequilibrio de profundidad del libro",
+    requires: ["book_delta"],
+  },
+  liquidity_events: {
+    desc: "Detecta vacíos y gaps de liquidez",
+    requires: ["bba", "book_delta"],
+  },
+  triple_barrier: {
+    desc: "Señales con etiquetado de triple barrera",
+    requires: ["ohlcv"],
+  },
+  ml: {
+    desc: "Modelo de machine learning",
+    requires: ["features"],
+  },
+  mean_rev_ofi: {
+    desc: "Reversión a la media con OFI",
+    requires: ["book_delta"],
+  },
+};
+
+let strategyInfo = strategies;
 
 async function loadExchanges(){
   try{
@@ -118,8 +169,6 @@ async function loadStrategies(){
       const o=document.createElement('option');
       o.value=s;o.textContent=s;sel.appendChild(o);
     });
-    const infoResp=await fetch(api('/strategies/info'));
-    strategyInfo=await infoResp.json();
     updateStrategyInfo();
   }catch(e){console.error(e);}
 }
@@ -141,8 +190,11 @@ function updateStrategyInfo(){
   const info=strategyInfo[sel.value]||{};
   const el=document.getElementById('bt-strategy-info');
   if(info.desc){
-    const req=(info.requires||[]).join(', ');
-    el.textContent=`${info.desc}. Requiere: ${req}`;
+    let html=`<p>${info.desc}</p>`;
+    if(info.requires && info.requires.length){
+      html+=`<p>Requiere:</p><ul>${info.requires.map(r=>`<li>${r}</li>`).join('')}</ul>`;
+    }
+    el.innerHTML=html;
   }else{
     el.textContent='';
   }
