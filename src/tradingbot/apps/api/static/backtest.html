@@ -53,6 +53,7 @@
         <label for="bt-strategy">Estrategia</label>
         <select id="bt-strategy"></select>
       </div>
+      <p id="bt-strategy-info" class="muted" style="grid-column:1 / -1;"></p>
       <div id="field-config">
         <label for="bt-config">Archivo config</label>
         <input id="bt-config" placeholder="config.yaml"/>
@@ -86,6 +87,8 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+let strategyInfo = {};
+
 async function loadExchanges(){
   try{
     const r = await fetch(api('/ccxt/exchanges'));
@@ -113,7 +116,10 @@ async function loadStrategies(){
       const o=document.createElement('option');
       o.value=s;o.textContent=s;sel.appendChild(o);
     });
-  }catch(e){}
+    const infoResp=await fetch(api('/strategies/info'));
+    strategyInfo=await infoResp.json();
+    updateStrategyInfo();
+  }catch(e){console.error(e);}
 }
 
 function updateBtFields(){
@@ -126,6 +132,18 @@ function updateBtFields(){
   document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
+}
+
+function updateStrategyInfo(){
+  const sel=document.getElementById('bt-strategy');
+  const info=strategyInfo[sel.value]||{};
+  const el=document.getElementById('bt-strategy-info');
+  if(info.desc){
+    const req=(info.requires||[]).join(', ');
+    el.textContent=`${info.desc}. Requiere: ${req}`;
+  }else{
+    el.textContent='';
+  }
 }
 
 async function runBacktest(){
@@ -176,6 +194,7 @@ async function runCli(){
 document.getElementById('bt-mode').addEventListener('change',updateBtFields);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('cli-run').addEventListener('click',runCli);
+document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
 updateBtFields();
 loadStrategies();
 loadExchanges();
