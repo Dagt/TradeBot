@@ -467,9 +467,16 @@ async function loadExchanges(){
     }
     const r=await fetch(api('/ccxt/exchanges'));
     const exchanges=await r.json();
+    const allowed=[
+      "binance_spot", "binance_futures",
+      "okx_spot", "okx_futures",
+      "bybit_spot", "bybit_futures",
+      "deribit_futures"
+    ];
     const selHist=document.getElementById('dm-exchange');
     selHist.innerHTML='';
-    for(const ex of exchanges){
+    for(const ex of allowed){
+      if(!exchanges.includes(ex)) continue;
       const opt=document.createElement('option');
       opt.value=ex;
       opt.textContent=ex;
