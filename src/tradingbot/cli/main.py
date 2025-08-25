@@ -108,6 +108,16 @@ def _validate_venue(value: str) -> str:
     return value
 
 
+def _validate_backtest_venue(value: str) -> str:
+    """Reject venues not suitable for backtesting."""
+
+    if value.endswith("_testnet") or value.endswith("_ws"):
+        raise typer.BadParameter(
+            "Testnet and WebSocket venues are not supported; use *_spot or *_futures"
+        )
+    return _validate_venue(value)
+
+
 def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
     """Return a sorted list of stream kinds supported by ``adapter_cls``.
 
@@ -890,7 +900,7 @@ def backtest_db(
     venue: str = typer.Option(
         "binance_spot",
         "--venue",
-        callback=_validate_venue,
+        callback=_validate_backtest_venue,
         help=f"Venue name ({_VENUE_CHOICES})",
     ),
     symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),

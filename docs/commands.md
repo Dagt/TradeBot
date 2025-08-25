@@ -115,6 +115,10 @@ Inicia trabajadores de ingesta de funding y open interest definidos en un YAML.
 Valida que un archivo YAML de configuración contenga los campos mínimos
 necesarios para backtesting y walk-forward.
 
+Los comandos de backtesting solo aceptan venues en modo live con sufijo
+`*_spot` o `*_futures`; los venues que terminan en `_testnet` o `_ws` son
+rechazados.
+
 ## `backtest`
 Ejecuta un backtest vectorizado desde un archivo CSV.
 - `data`: ruta al CSV.
