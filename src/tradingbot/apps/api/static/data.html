@@ -135,30 +135,6 @@
   </div>
 
   <div class="card" style="margin-top:16px">
-    <h2>Credenciales</h2>
-    <div class="grid4" style="margin-top:10px">
-      <div>
-        <label for="cfg-kaiko-key">Kaiko API Key</label>
-        <input id="cfg-kaiko-key" placeholder="clave"/>
-      </div>
-      <div>
-        <label for="cfg-kaiko-secret">Kaiko API Secret</label>
-        <input id="cfg-kaiko-secret" placeholder="secreto (opcional)"/>
-      </div>
-      <div>
-        <label for="cfg-coinapi-key">CoinAPI Key</label>
-        <input id="cfg-coinapi-key" placeholder="clave"/>
-      </div>
-      <div>
-        <label for="cfg-coinapi-secret">CoinAPI Secret</label>
-        <input id="cfg-coinapi-secret" placeholder="secreto"/>
-      </div>
-    </div>
-    <button id="cfg-save" style="margin-top:10px">Guardar credenciales</button>
-    <pre id="cfg-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
-  </div>
-
-  <div class="card" style="margin-top:16px">
     <h2>Comandos CLI</h2>
     <div class="muted">Ejecuta cualquier comando de <code>tradingbot.cli</code></div>
     <input id="cli-input" class="mono" placeholder="--help"/>
@@ -368,38 +344,6 @@ async function stopData(){
   hideWorking();
 }
 
-async function saveCreds(){
-  const kaikoKey=document.getElementById('cfg-kaiko-key').value.trim();
-  const kaikoSec=document.getElementById('cfg-kaiko-secret').value.trim();
-  const coinKey=document.getElementById('cfg-coinapi-key').value.trim();
-  const coinSec=document.getElementById('cfg-coinapi-secret').value.trim();
-  let output='';
-  try{
-    if(kaikoKey){
-      const r=await fetch(api('/cli/run'),{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({command:`secrets set kaiko ${kaikoKey} ${kaikoSec}`})
-      });
-      const j=await r.json();
-      output+=(j.stdout||'')+(j.stderr?'\n'+j.stderr:'');
-    }
-    if(coinKey){
-      const r2=await fetch(api('/cli/run'),{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({command:`secrets set coinapi ${coinKey} ${coinSec}`})
-      });
-      const j2=await r2.json();
-      if(output) output+='\n';
-      output+=(j2.stdout||'')+(j2.stderr?'\n'+j2.stderr:'');
-    }
-  }catch(e){
-    output=String(e);
-  }
-  document.getElementById('cfg-output').textContent=output||'Credenciales guardadas';
-}
-
 async function runCli(){
   const cmd=document.getElementById('cli-input').value.trim();
   if(!cmd) return;
@@ -493,7 +437,6 @@ document.getElementById('dm-stop').addEventListener('click',stopData);
 document.getElementById('dm-clear').addEventListener(
   'click', () => (document.getElementById('dm-output').textContent = '')
 );
-document.getElementById('cfg-save').addEventListener('click',saveCreds);
 document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
