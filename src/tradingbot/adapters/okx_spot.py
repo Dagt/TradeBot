@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover
     NetworkError = ExchangeError = Exception
 
 from .base import ExchangeAdapter
+from ..config import settings
 from ..utils.secrets import validate_scopes
 
 log = logging.getLogger(__name__)
@@ -26,13 +27,33 @@ class OKXSpotAdapter(ExchangeAdapter):
 
     name = "okx_spot"
 
-    def __init__(self):
+    def __init__(self, testnet: bool = False):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
-        self.rest = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        key = settings.okx_testnet_api_key if testnet else settings.okx_api_key
+        secret = settings.okx_testnet_api_secret if testnet else settings.okx_api_secret
+        passphrase = (
+            settings.okx_testnet_api_passphrase if testnet else settings.okx_api_passphrase
+        )
+        self.rest = ccxt.okx(
+            {
+                "apiKey": key,
+                "secret": secret,
+                "password": passphrase,
+                "enableRateLimit": True,
+                "options": {"defaultType": "spot"},
+            }
+        )
+        self.rest.set_sandbox_mode(testnet)
         # Validar permisos disponibles en la API key
         validate_scopes(self.rest, log)
+        self.ws_public_url = (
+            "wss://wspap.okx.com:8443/ws/v5/public"
+            if testnet
+            else "wss://ws.okx.com:8443/ws/v5/public"
+        )
+        self.name = "okx_spot_testnet" if testnet else "okx_spot"
 
     @staticmethod
     def normalize_symbol(symbol: str) -> str:
@@ -63,7 +84,7 @@ class OKXSpotAdapter(ExchangeAdapter):
         return self.normalize_symbol(symbol).replace("/", "-").upper()
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://ws.okx.com:8443/ws/v5/public"
+        url = self.ws_public_url
         sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
@@ -89,7 +110,7 @@ class OKXSpotAdapter(ExchangeAdapter):
 
         Events with incomplete bid or ask data are discarded.
         """
-        url = "wss://ws.okx.com:8443/ws/v5/public"
+        url = self.ws_public_url
         sym = self._normalize(symbol)
         channel = self.DEPTH_TO_CHANNEL.get(depth)
         if channel is None:
