@@ -141,6 +141,7 @@
     <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
+<script src="/static/data-info.js"></script>
 <script>
 const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
@@ -156,14 +157,12 @@ const BACKFILL_EXCHANGES=[
   "deribit_futures",
 ];
 const kindDescriptions={
-  bba:"BBA (Best Bid & Ask): muestra las mejores posturas de compra (bid) y venta (ask) en el libro de órdenes.",
+  ...DATA_INFO,
   open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
-  funding:"Funding (tasa de financiamiento): pagos periódicos entre compradores y vendedores de perpetuos para alinear el precio con el spot.",
   trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
   trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
   delta:"Book delta: cambios recientes en las mejores posturas de compra y venta.",
-  book_delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
 
 function showWorking() {

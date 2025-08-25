@@ -83,6 +83,7 @@
     <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
+<script src="/static/data-info.js"></script>
 <script>
 const api = (path) => `${location.origin}${path}`;
 
@@ -191,7 +192,10 @@ function updateStrategyInfo(){
   if(info.desc){
     let html=`<p>${info.desc}</p>`;
     if(info.requires && info.requires.length){
-      html+=`<p>Requiere:</p><ul>${info.requires.map(r=>`<li>${r}</li>`).join('')}</ul>`;
+      html+=`<p>Requiere:</p><ul>${info.requires.map(r=>{
+        const raw = DATA_INFO[r] || r;
+        return `<li>${raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>')}</li>`;
+      }).join('')}</ul>`;
     }
     el.innerHTML=html;
   }else{
