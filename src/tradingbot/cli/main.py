@@ -430,6 +430,9 @@ def ingest_historical(
 
         if not provider_exchange:
             raise typer.BadParameter("exchange required for Kaiko")
+        if not os.getenv("KAIKO_API_KEY"):
+            typer.echo("KAIKO_API_KEY missing")
+            raise typer.Exit(code=1)
 
         if kind == "orderbook":
             asyncio.run(
@@ -501,6 +504,10 @@ def ingest_historical(
             download_coinapi_open_interest,
             download_funding,
         )
+
+        if not os.getenv("COINAPI_KEY"):
+            typer.echo("COINAPI_KEY missing")
+            raise typer.Exit(code=1)
 
         if kind == "orderbook":
             asyncio.run(

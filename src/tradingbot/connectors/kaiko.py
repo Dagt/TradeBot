@@ -29,6 +29,8 @@ class KaikoConnector:
 
     def __init__(self, api_key: str | None = None, rate_limit: int = 5) -> None:
         self.api_key = api_key or os.getenv("KAIKO_API_KEY", "")
+        if not self.api_key:
+            raise ValueError("KAIKO_API_KEY missing")
         # very small semaphore based limiter for historical downloads
         self._sem = asyncio.Semaphore(rate_limit)
 
