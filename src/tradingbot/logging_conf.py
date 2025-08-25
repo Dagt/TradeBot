@@ -30,7 +30,9 @@ def setup_logging():
     logging.basicConfig(level=level, handlers=handlers)
 
     if settings.log_json and jsonlogger is not None:
-        formatter: logging.Formatter = jsonlogger.JsonFormatter()
+        formatter: logging.Formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
     else:
         formatter = logging.Formatter(
             "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

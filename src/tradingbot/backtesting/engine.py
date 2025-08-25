@@ -195,6 +195,12 @@ class EventDrivenBacktestEngine:
     # ------------------------------------------------------------------
     def run(self) -> dict:
         """Execute the backtest and return summary results."""
+        max_len = max(len(df) for df in self.data.values())
+        log.info(
+            "Ejecutando backtest con %d estrategias y %d barras",
+            len(self.strategies),
+            max_len,
+        )
 
         equity = 0.0
         fills: List[tuple] = []
@@ -204,8 +210,9 @@ class EventDrivenBacktestEngine:
         funding_total = 0.0
         equity_curve: List[float] = []
 
-        max_len = max(len(df) for df in self.data.values())
         for i in range(max_len):
+            if i and i % 1000 == 0:
+                log.info("Progreso: %d/%d barras", i, max_len)
             # Actualiza límites por correlación/covarianza con retornos recientes
             if i >= self.window:
                 returns_dict: Dict[str, List[float]] = {}
@@ -423,7 +430,12 @@ class EventDrivenBacktestEngine:
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
         }
-        log.info("Backtest result: %s", result)
+        log.info(
+            "Backtest finalizado: equity %.2f, fills %d, drawdown %.2f%%",
+            result["equity"],
+            len(result["fills"]),
+            result["max_drawdown"] * 100,
+        )
         return result
 
 

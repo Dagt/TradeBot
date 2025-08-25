@@ -70,6 +70,7 @@ from tradingbot.core.symbols import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
 from ..exchanges import SUPPORTED_EXCHANGES
 
+log = logging.getLogger(__name__)
 
 _OFFSET_THRESHOLD = float(os.getenv("NTP_OFFSET_THRESHOLD", "1.0"))
 try:
@@ -878,11 +879,18 @@ def backtest(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
 ) -> None:
     """Run a simple vectorised backtest from a CSV file."""
+    from pathlib import Path
+
+    import pandas as pd
+
+    from ..backtest.event_engine import EventDrivenBacktestEngine
 
     setup_logging()
-    from ..backtest.event_engine import run_backtest_csv
-
-    result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
+    log.info("Iniciando backtest CSV: %s %s", symbol, data)
+    df = pd.read_csv(Path(data))
+    log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+    result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))
 
@@ -909,13 +917,19 @@ def backtest_cfg(config: str) -> None:
         version_base=None,
     )
     def _run(cfg) -> None:  # type: ignore[override]
-        from ..backtest.event_engine import run_backtest_csv
+        import pandas as pd
+
+        from ..backtest.event_engine import EventDrivenBacktestEngine
 
         data = cfg.backtest.data
         symbol = cfg.backtest.symbol
         strategy = cfg.backtest.strategy
 
-        result = run_backtest_csv({symbol: data}, [(strategy, symbol)])
+        log.info("Iniciando backtest CSV: %s %s", symbol, data)
+        df = pd.read_csv(data)
+        log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+        eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+        result = eng.run()
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
         typer.echo(generate_report(result))
@@ -949,6 +963,14 @@ def backtest_db(
     from ..backtest.event_engine import EventDrivenBacktestEngine
 
     setup_logging()
+    log.info(
+        "Iniciando backtest DB: %s %s %s–%s (%s)",
+        venue,
+        symbol,
+        start,
+        end,
+        timeframe,
+    )
     engine = get_engine()
     start_dt = datetime.fromisoformat(start)
     end_dt = datetime.fromisoformat(end)
@@ -971,6 +993,7 @@ def backtest_db(
         )
         .set_index("ts")
     )
+    log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
     eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
     result = eng.run()
     typer.echo(result)
