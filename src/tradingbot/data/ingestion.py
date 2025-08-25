@@ -232,7 +232,7 @@ def persist_funding(
                     [
                         f["ts"].isoformat(),
                         f["exchange"],
-                        f["symbol"],
+                        normalize(f["symbol"]),
                         f["rate"],
                         f.get("interval_sec", 0),
                     ]
@@ -249,7 +249,7 @@ def persist_funding(
                 engine,
                 ts=f["ts"],
                 exchange=f["exchange"],
-                symbol=f["symbol"],
+                symbol=normalize(f["symbol"]),
                 rate=f["rate"],
                 interval_sec=f.get("interval_sec", 0),
             )
@@ -266,7 +266,9 @@ def persist_open_interest(
         with csv_path.open("a", newline="") as fh:
             writer = csv.writer(fh)
             for r in records:
-                writer.writerow([r["ts"].isoformat(), r["exchange"], r["symbol"], r["oi"]])
+                writer.writerow(
+                    [r["ts"].isoformat(), r["exchange"], normalize(r["symbol"]), r["oi"]]
+                )
         return
 
     storage = _get_storage(backend)
@@ -279,7 +281,7 @@ def persist_open_interest(
                 engine,
                 ts=r["ts"],
                 exchange=r["exchange"],
-                symbol=r["symbol"],
+                symbol=normalize(r["symbol"]),
                 oi=r["oi"],
             )
         except Exception as exc:  # pragma: no cover - logging only

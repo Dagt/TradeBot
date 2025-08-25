@@ -227,7 +227,7 @@ def test_persist_funding(monkeypatch):
     record = {
         "ts": ts,
         "exchange": "binance",
-        "symbol": "BTCUSDT",
+        "symbol": "btc/usdt",
         "rate": 0.002,
         "interval_sec": 7200,
     }
@@ -235,10 +235,10 @@ def test_persist_funding(monkeypatch):
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT rate, interval_sec FROM funding")
+            text("SELECT symbol, rate, interval_sec FROM funding")
         ).fetchone()
 
-    assert row == (0.002, 7200)
+    assert row == ("BTCUSDT", 0.002, 7200)
 
 
 def test_persist_open_interest(monkeypatch):
@@ -248,15 +248,15 @@ def test_persist_open_interest(monkeypatch):
     record = {
         "ts": ts,
         "exchange": "binance",
-        "symbol": "BTCUSDT",
+        "symbol": "btc-usdt",
         "oi": 321.0,
     }
     ingestion.persist_open_interest([record], backend="quest")
 
     with engine.begin() as conn:
-        row = conn.execute(text("SELECT oi FROM open_interest")).fetchone()
+        row = conn.execute(text("SELECT symbol, oi FROM open_interest")).fetchone()
 
-    assert row == (321.0,)
+    assert row == ("BTCUSDT", 321.0)
 
 
 def test_insert_order_timescale():
@@ -267,7 +267,7 @@ def test_insert_order_timescale():
         engine,
         strategy="s",
         exchange="binance",
-        symbol="BTCUSDT",
+        symbol="btc/usdt",
         side="buy",
         type_="limit",
         qty=1.0,
@@ -323,7 +323,7 @@ def test_insert_trade_timescale_ts():
     t = SimpleNamespace(
         ts="2024-01-01T00:00:00",
         exchange="binance",
-        symbol="BTCUSDT",
+        symbol="btc-usdt",
         price=100.0,
         qty=1.0,
         side="buy",

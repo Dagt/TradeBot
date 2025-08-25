@@ -19,6 +19,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 
 from ..config import settings
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def insert_trade(engine, t):
             dict(
                 ts=ts,
                 exchange=t.exchange,
-                symbol=t.symbol,
+                symbol=normalize(getattr(t, "symbol", "")),
                 px=t.price,
                 qty=t.qty,
                 side=t.side,
@@ -98,7 +99,7 @@ def insert_orderbook(
     payload = dict(
         ts=ts,
         exchange=exchange,
-        symbol=symbol,
+        symbol=normalize(symbol),
         bid_px=json.dumps(bid_px),
         bid_qty=json.dumps(bid_qty),
         ask_px=json.dumps(ask_px),
@@ -141,7 +142,7 @@ def insert_bba(
             dict(
                 ts=ts,
                 exchange=exchange,
-                symbol=symbol,
+                symbol=normalize(symbol),
                 bid_px=bid_px,
                 bid_qty=bid_qty,
                 ask_px=ask_px,
@@ -166,7 +167,7 @@ def insert_book_delta(
     payload = dict(
         ts=ts,
         exchange=exchange,
-        symbol=symbol,
+        symbol=normalize(symbol),
         bid_px=json.dumps(bid_px),
         bid_qty=json.dumps(bid_qty),
         ask_px=json.dumps(ask_px),
@@ -196,7 +197,7 @@ def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
                 VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
                 """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=l, c=c, v=v),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), o=o, h=h, l=l, c=c, v=v),
         )
 
 
@@ -210,7 +211,7 @@ def insert_funding(engine, *, ts, exchange: str, symbol: str, rate: float, inter
                 VALUES (:ts, :exchange, :symbol, :rate, :interval_sec)
                 """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, rate=rate, interval_sec=interval_sec),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), rate=rate, interval_sec=interval_sec),
         )
 
 
@@ -224,7 +225,7 @@ def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
                 VALUES (:ts, :exchange, :symbol, :oi)
                 """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, oi=oi),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), oi=oi),
         )
 
 
@@ -238,7 +239,7 @@ def insert_basis(engine, *, ts, exchange: str, symbol: str, basis: float):
                 VALUES (:ts, :exchange, :symbol, :basis)
                 """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, basis=basis),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), basis=basis),
         )
 
 
@@ -260,7 +261,7 @@ def insert_order(
     payload = dict(
         strategy=strategy,
         exchange=exchange,
-        symbol=symbol,
+        symbol=normalize(symbol),
         side=side,
         type=type_,
         qty=qty,
@@ -343,7 +344,7 @@ def insert_cross_signal(
                 """
             ),
             dict(
-                symbol=symbol,
+                symbol=normalize(symbol),
                 spot_exchange=spot_exchange,
                 perp_exchange=perp_exchange,
                 spot_px=spot_px,
