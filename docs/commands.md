@@ -64,6 +64,16 @@ Obtiene datos históricos de Kaiko o CoinAPI.
 - `--limit`: cantidad de registros a traer.
 - `--depth`: profundidad del order book.
 
+Para establecer las credenciales, use:
+
+```
+secrets set kaiko <key> <secret>
+secrets set coinapi <key> <secret>
+```
+
+Como alternativa, las variables de entorno `KAIKO_API_KEY` y `COINAPI_KEY`
+pueden definirse con los valores correspondientes.
+
 ## `run-bot`
 Ejecuta el bot en modo en vivo (testnet o real).
 - `--exchange`: nombre del exchange (`binance`).
