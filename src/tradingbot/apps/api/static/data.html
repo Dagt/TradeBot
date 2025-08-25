@@ -76,10 +76,14 @@
       </div>
       <div id="field-exchange-name">
         <label for="dm-exchange-name">Exchange</label>
-        <select id="dm-exchange-name">
+        <select id="dm-exchange-name" title="binance_spot, binance_futures, okx_spot, okx_futures, bybit_spot, bybit_futures, deribit_futures">
+          <option value="binance_spot">binance_spot</option>
           <option value="binance_futures">binance_futures</option>
+          <option value="okx_spot">okx_spot</option>
           <option value="okx_futures">okx_futures</option>
+          <option value="bybit_spot">bybit_spot</option>
           <option value="bybit_futures">bybit_futures</option>
+          <option value="deribit_futures">deribit_futures</option>
         </select>
       </div>
       <div id="field-source">
@@ -167,6 +171,15 @@ const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
 let evt=null;
 let kindsWithDepth=[];
+const BACKFILL_EXCHANGES=[
+  "binance_spot",
+  "binance_futures",
+  "okx_spot",
+  "okx_futures",
+  "bybit_spot",
+  "bybit_futures",
+  "deribit_futures",
+];
 const kindDescriptions={
   bba:"BBA (Best Bid & Ask): muestra las mejores posturas de compra (bid) y venta (ask) en el libro de órdenes.",
   open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
@@ -444,17 +457,16 @@ async function loadVenues(){
 
 async function loadExchanges(){
   try{
-    const r=await fetch(api('/ccxt/exchanges'));
-    const exchanges=await r.json();
     const sel=document.getElementById('dm-exchange-name');
-    const rest=exchanges.filter(e=>!e.endsWith('_ws'));
     sel.innerHTML='';
-    for(const ex of rest){
+    for(const ex of BACKFILL_EXCHANGES){
       const opt=document.createElement('option');
       opt.value=ex;
       opt.textContent=ex;
       sel.appendChild(opt);
     }
+    const r=await fetch(api('/ccxt/exchanges'));
+    const exchanges=await r.json();
     const selHist=document.getElementById('dm-exchange');
     selHist.innerHTML='';
     for(const ex of exchanges){

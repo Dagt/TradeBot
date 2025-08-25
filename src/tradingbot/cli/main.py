@@ -31,6 +31,7 @@ import ast
 import textwrap
 from typing import List
 
+import click
 import typer
 
 from .. import adapters
@@ -98,6 +99,16 @@ def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
 
 
 _VENUE_CHOICES = ", ".join(sorted(SUPPORTED_EXCHANGES))
+
+BACKFILL_EXCHANGES = [
+    "binance_spot",
+    "binance_futures",
+    "okx_spot",
+    "okx_futures",
+    "bybit_spot",
+    "bybit_futures",
+    "deribit_futures",
+]
 
 
 def _validate_venue(value: str) -> str:
@@ -365,14 +376,15 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
-    venue: str = typer.Option(
+    exchange: str = typer.Option(
         "binance_spot",
-        "--venue",
+        "--exchange",
         "--exchange-name",
-        callback=_validate_venue,
+        "--venue",
+        click.Choice(BACKFILL_EXCHANGES),
         help=(
-            "Venue to use. Choose from spot/futures venues or Deribit:"
-            f" {_VENUE_CHOICES}"
+            "Exchange to backfill. Choose from: "
+            f"{', '.join(BACKFILL_EXCHANGES)}"
         ),
     ),
     start: str | None = typer.Option(
@@ -400,7 +412,7 @@ def backfill(
         run_backfill(
             days=days,
             symbols=symbols,
-            exchange_name=venue,
+            exchange_name=exchange,
             start=_parse(start),
             end=_parse(end),
         )
