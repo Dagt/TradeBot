@@ -965,7 +965,10 @@ def backtest_db(
         raise typer.Exit()
     df = (
         pd.DataFrame(rows)
-        .rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        .astype({"o": float, "h": float, "l": float, "c": float, "v": float})
+        .rename(
+            columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"}
+        )
         .set_index("ts")
     )
     eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
