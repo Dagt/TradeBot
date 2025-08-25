@@ -16,7 +16,7 @@ class DummyStrategy:
 
 @pytest.mark.integration
 def test_event_engine_runs(tmp_path, monkeypatch):
-    rng = pd.date_range("2021-01-01", periods=5, freq="T")
+    rng = pd.date_range("2021-01-01", periods=5, freq="min")
     price = np.linspace(100, 104, num=5)
     df = pd.DataFrame({
         "timestamp": rng.view("int64") // 10**9,
@@ -29,6 +29,27 @@ def test_event_engine_runs(tmp_path, monkeypatch):
     data = {"SYM": df}
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
     engine = EventDrivenBacktestEngine(data, [("dummy", "SYM")], latency=1, window=1)
+    res = engine.run()
+    assert "equity" in res
+    assert len(res["fills"]) > 0
+
+
+def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=6, freq="min")
+    price = np.linspace(100, 105, num=6)
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": price,
+            "high": price + 0.5,
+            "low": price - 0.5,
+            "close": price,
+            "volume": 1000,
+        }
+    )
+    data = {"SYM": df}
+    monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
+    engine = EventDrivenBacktestEngine(data, [("dummy", "SYM")], latency=1, window=3)
     res = engine.run()
     assert "equity" in res
     assert len(res["fills"]) > 0
