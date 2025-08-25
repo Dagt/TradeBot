@@ -167,6 +167,11 @@ class RiskManager:
         n = min((len(a) for a in arrays), default=0)
         if n == 0:
             return {}
+        if len(syms) == 1:
+            arr = arrays[0][-n:]
+            ddof = 1 if arr.size > 1 else 0
+            cov = np.var(arr, ddof=ddof)
+            return {(syms[0], syms[0]): float(cov)}
         data = np.stack([a[-n:] for a in arrays])
         cov = np.cov(data)
         mat: Dict[Tuple[str, str], float] = {}
