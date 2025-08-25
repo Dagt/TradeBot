@@ -91,7 +91,7 @@ const api = (path) => `${location.origin}${path}`;
 
 async function loadExchanges(){
   try{
-    const r = await fetch(api('/ccxt/exchanges'));
+    const r = await fetch(api('/ccxt/exchanges?include_testnet=1'));
     const exchanges = await r.json();
     const sel = document.getElementById('cfg-exchange');
     sel.innerHTML = '';

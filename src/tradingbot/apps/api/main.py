@@ -94,17 +94,23 @@ def list_venues():
 
 
 @app.get("/ccxt/exchanges")
-def ccxt_exchanges():
-    """Return exchanges supported by ``ccxt``."""
+def ccxt_exchanges(include_testnet: bool = Query(False)):
+    """Return exchanges supported by ``ccxt``.
+
+    By default only live exchanges are returned. Pass ``include_testnet``
+    to append the corresponding ``*_testnet`` variants.
+    """
     if ccxt is None:
         return []
     available = getattr(ccxt, "exchanges", [])
-    return [
-        variant
+    live = [
+        key
         for key, info in SUPPORTED_EXCHANGES.items()
         if info["ccxt"] in available
-        for variant in (key, f"{key}_testnet")
     ]
+    if include_testnet:
+        live += [f"{key}_testnet" for key in live]
+    return live
 
 
 @app.get("/venues/{name}/kinds")
