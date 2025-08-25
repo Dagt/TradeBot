@@ -42,9 +42,9 @@ class OKXSpotAdapter(ExchangeAdapter):
                 "secret": secret,
                 "password": passphrase,
                 "enableRateLimit": True,
-                "options": {"defaultType": "spot"},
             }
         )
+        self.rest.options["defaultType"] = "spot"
         self.rest.set_sandbox_mode(testnet)
         # Validar permisos disponibles en la API key
         validate_scopes(self.rest, log)

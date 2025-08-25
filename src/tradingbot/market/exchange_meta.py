@@ -20,12 +20,14 @@ class ExchangeMeta:
     def binanceusdm_testnet(cls, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         if ccxt is None:
             raise RuntimeError("ccxt no disponible")
-        client = ccxt.binanceusdm({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        })
+        client = ccxt.binanceusdm(
+            {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+            }
+        )
+        client.options["defaultType"] = "future"
         client.set_sandbox_mode(True)
         return cls(name="binanceusdm_testnet", client=client)
 
@@ -33,12 +35,14 @@ class ExchangeMeta:
     def binance_spot_testnet(cls, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         if ccxt is None:
             raise RuntimeError("ccxt no disponible")
-        client = ccxt.binance({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "spot"},
-        })
+        client = ccxt.binance(
+            {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+            }
+        )
+        client.options["defaultType"] = "spot"
         client.set_sandbox_mode(True)
         return cls(name="binance_spot_testnet", client=client)
 
@@ -46,12 +50,14 @@ class ExchangeMeta:
     def binance_spot(cls, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         if ccxt is None:
             raise RuntimeError("ccxt no disponible")
-        client = ccxt.binance({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "spot"},
-        })
+        client = ccxt.binance(
+            {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+            }
+        )
+        client.options["defaultType"] = "spot"
         return cls(name="binance_spot", client=client)
 
     def load_markets(self):

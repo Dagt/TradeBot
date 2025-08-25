@@ -36,10 +36,10 @@ class BybitSpotAdapter(ExchangeAdapter):
                 "apiKey": key,
                 "secret": secret,
                 "enableRateLimit": True,
-                "options": {"defaultType": "spot"},
                 "testnet": testnet,
             }
         )
+        self.rest.options["defaultType"] = "spot"
         self.rest.set_sandbox_mode(testnet)
         # Advertir si la clave carece de permisos de trade o tiene retiros habilitados
         validate_scopes(self.rest, log)

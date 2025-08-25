@@ -92,8 +92,8 @@ async def backfill(
 
     ex_class = getattr(ccxt, info["ccxt"])
     conf = {"enableRateLimit": True}
-    if info.get("options"):
-        conf["options"] = info["options"]
+    if info.get("defaultType"):
+        conf["options"] = {"defaultType": info["defaultType"]}
     ex = ex_class(conf)
     ex.id = exchange_name
 
