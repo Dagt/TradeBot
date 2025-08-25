@@ -100,9 +100,10 @@ def ccxt_exchanges():
         return []
     available = getattr(ccxt, "exchanges", [])
     return [
-        key
+        variant
         for key, info in SUPPORTED_EXCHANGES.items()
         if info["ccxt"] in available
+        for variant in (key, f"{key}_testnet")
     ]
 
 
