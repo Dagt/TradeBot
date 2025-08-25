@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import importlib
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
 from tradingbot.config import settings
+import tradingbot.data.ingestion as ingestion
 
 
 def _setup_engine():
@@ -216,6 +218,45 @@ def test_insert_and_read_open_interest():
         row = conn.execute(text("SELECT oi FROM open_interest")).fetchone()
 
     assert row == (123.45,)
+
+
+def test_persist_funding(monkeypatch):
+    engine = _setup_engine()
+    monkeypatch.setattr(ingestion.qs_storage, "get_engine", lambda: engine)
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = {
+        "ts": ts,
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "rate": 0.002,
+        "interval_sec": 7200,
+    }
+    ingestion.persist_funding([record], backend="quest")
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT rate, interval_sec FROM funding")
+        ).fetchone()
+
+    assert row == (0.002, 7200)
+
+
+def test_persist_open_interest(monkeypatch):
+    engine = _setup_engine()
+    monkeypatch.setattr(ingestion.qs_storage, "get_engine", lambda: engine)
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = {
+        "ts": ts,
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "oi": 321.0,
+    }
+    ingestion.persist_open_interest([record], backend="quest")
+
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT oi FROM open_interest")).fetchone()
+
+    assert row == (321.0,)
 
 
 def test_insert_order_timescale():
