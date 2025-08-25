@@ -6,6 +6,10 @@
   <title>DMI - TradingBot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" href="/static/styles.css"/>
+  <style>
+  @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
+  .loading{animation:blink 1s linear infinite;margin-left:8px;width:16px;height:16px;border-radius:50%;background:var(--primary);}
+  </style>
 </head>
 <body>
 <header class="center" style="margin-bottom:8px">
@@ -72,6 +76,8 @@
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
+    <button id="bt-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
+    <div id="bt-progress" class="loading" hidden></div>
     <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
@@ -88,6 +94,11 @@ const api = (path) => `${location.origin}${path}`;
 
 function normalizeSymbol(sym) {
   return sym.replace(/[^A-Za-z0-9]/g, "");
+}
+
+function appendOutput(out,text){
+  out.textContent+=text;
+  requestAnimationFrame(()=>out.scrollTop=out.scrollHeight);
 }
 
 const strategies = {
@@ -246,13 +257,27 @@ async function runBacktest(){
     const end=document.getElementById('bt-end').value;
     cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
   }
+  const prog=document.getElementById('bt-progress');
+  const outEl=document.getElementById('bt-output');
+  prog.hidden=false;
+  outEl.textContent='';
   try{
     const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
-    const j=await r.json();
-    const out=(j.stdout||'')+(j.stderr?`\n${j.stderr}`:'');
-    document.getElementById('bt-output').textContent=out;
+    if(r.body){
+      const reader=r.body.getReader();
+      const decoder=new TextDecoder();
+      while(true){
+        const {value,done}=await reader.read();
+        if(done) break;
+        appendOutput(outEl,decoder.decode(value,{stream:true}));
+      }
+    }else{
+      appendOutput(outEl,await r.text());
+    }
   }catch(e){
-    document.getElementById('bt-output').textContent=String(e);
+    appendOutput(outEl,String(e));
+  }finally{
+    prog.hidden=true;
   }
 }
 
@@ -271,6 +296,10 @@ async function runCli(){
 
 document.getElementById('bt-mode').addEventListener('change',updateBtFields);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
+document.getElementById('bt-clear').addEventListener('click',()=>{
+  document.getElementById('bt-output').textContent='';
+  document.getElementById('bt-progress').hidden=true;
+});
 document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
 updateBtFields();
