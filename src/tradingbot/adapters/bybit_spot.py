@@ -24,17 +24,26 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     name = "bybit_spot"
 
-    def __init__(self):
+    def __init__(self, testnet: bool = False):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
         # enableRateLimit respeta límites de la API
         self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        self.rest.set_sandbox_mode(testnet)
+        self.testnet = testnet
         # Advertir si la clave carece de permisos de trade o tiene retiros habilitados
         validate_scopes(self.rest, log)
+        self.ws_public_url = (
+            "wss://stream-testnet.bybit.com/v5/public/spot"
+            if testnet
+            else "wss://stream.bybit.com/v5/public/spot"
+        )
+        if testnet:
+            self.name = "bybit_spot_testnet"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/spot"
+        url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
@@ -48,7 +57,7 @@ class BybitSpotAdapter(ExchangeAdapter):
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/spot"
+        url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):

@@ -56,11 +56,10 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
                       max_consecutive_losses: int, corr_threshold: float,
                       config_path: str | None = None) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
-    ws_kwargs: Dict[str, Any] = {}
-    exec_kwargs: Dict[str, Any] = {}
+    ws_kwargs: Dict[str, Any] = {"testnet": True}
+    exec_kwargs: Dict[str, Any] = {"testnet": True}
     if market == "futures":
-        ws_kwargs["testnet"] = True
-        exec_kwargs.update({"leverage": leverage, "testnet": True})
+        exec_kwargs["leverage"] = leverage
     try:
         ws = ws_cls(**ws_kwargs)
     except TypeError:
