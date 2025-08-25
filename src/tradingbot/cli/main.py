@@ -105,6 +105,10 @@ def _validate_venue(value: str) -> str:
         raise typer.BadParameter(
             f"Venue must be one of: {_VENUE_CHOICES}"
         )
+    if value.endswith("_ws"):
+        raise typer.BadParameter(
+            "WebSocket venues are streaming-only and do not support trading or backfills"
+        )
     return value
 
 
@@ -171,6 +175,7 @@ def _get_available_venues() -> set[str]:
 
 
 _AVAILABLE_VENUES = _get_available_venues()
+_WS_ONLY_VENUES = {v for v in SUPPORTED_EXCHANGES if v.endswith("_ws")}
 
 
 @app.command()
