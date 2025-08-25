@@ -232,19 +232,28 @@ def ingest(
         tasks = []
         for sym in symbols:
             if kind == "orderbook":
-                tasks.append(
-                    asyncio.create_task(
-                        ing.run_orderbook_stream(
-                            adapter,
-                            sym,
-                            depth,
-                            bus,
-                            engine,
-                            persist=persist,
-                            backend=backend,
+                if persist and backend == "csv":
+                    tasks.append(
+                        asyncio.create_task(
+                            ing.stream_orderbook(
+                                adapter, sym, depth, backend="csv"
+                            )
                         )
                     )
-                )
+                else:
+                    tasks.append(
+                        asyncio.create_task(
+                            ing.run_orderbook_stream(
+                                adapter,
+                                sym,
+                                depth,
+                                bus,
+                                engine,
+                                persist=persist,
+                                backend=backend,
+                            )
+                        )
+                    )
             elif kind == "trades":
                 async def _t(symbol: str) -> None:
                     async for d in adapter.stream_trades(symbol):
