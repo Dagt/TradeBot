@@ -31,6 +31,25 @@ python -m tradingbot.cli --help
 
 Para una guía detallada de cada comando, consulte [docs/commands.md](docs/commands.md).
 
+## Modo testnet en el CLI
+
+Para operar contra los entornos de prueba de los exchanges se puede
+añadir la opción `--testnet` a cualquier comando del CLI. Por ejemplo:
+
+```bash
+python -m tradingbot.cli run --testnet
+```
+
+Antes de ejecutar en este modo es necesario definir las credenciales de
+cada exchange mediante variables de entorno:
+
+- `BINANCE_TESTNET_API_KEY` y `BINANCE_TESTNET_API_SECRET`
+- `BYBIT_TESTNET_API_KEY` y `BYBIT_TESTNET_API_SECRET`
+- `OKX_TESTNET_API_KEY`, `OKX_TESTNET_API_SECRET` y `OKX_TESTNET_API_PASSPHRASE`
+
+Puedes copiar estas claves desde `.env.example` a tu archivo `.env` o
+exportarlas en la terminal antes de ejecutar el bot.
+
 ## Variables de entorno
 
 De forma predeterminada, Binance Futures opera contra el entorno real. Para
