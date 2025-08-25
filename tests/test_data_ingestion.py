@@ -105,6 +105,75 @@ async def test_run_orderbook_stream_no_persist(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_orderbook_stream_persists_bba(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    snapshot = {
+        "ts": ts,
+        "bid_px": [100.0],
+        "bid_qty": [1.0],
+        "ask_px": [100.5],
+        "ask_qty": [1.5],
+    }
+
+    class DummyAdapter(ExchangeAdapter):
+        name = "dummy"
+
+        async def stream_trades(self, symbol: str):
+            if False:
+                yield {}
+
+        async def stream_orderbook(self, symbol: str, depth: int):
+            yield snapshot
+
+        stream_order_book = stream_orderbook
+
+        async def stream_bba(self, symbol: str):
+            yield {
+                "symbol": symbol,
+                "ts": ts,
+                "bid_px": snapshot["bid_px"][0],
+                "bid_qty": snapshot["bid_qty"][0],
+                "ask_px": snapshot["ask_px"][0],
+                "ask_qty": snapshot["ask_qty"][0],
+            }
+
+        async def place_order(self, *args, **kwargs):
+            return {}
+
+        async def cancel_order(self, order_id: str):
+            return {}
+
+    inserted: list[dict] = []
+
+    class DummyStorage:
+        def insert_orderbook(self, engine, **data):
+            pass
+
+        def insert_bba(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    bus = EventBus()
+    await run_orderbook_stream(
+        DummyAdapter(),
+        "BTC/USDT",
+        depth=5,
+        bus=bus,
+        engine="engine",
+        persist=True,
+        emit_bba=True,
+    )
+
+    assert len(inserted) == 1
+    rec = inserted[0]
+    assert rec["bid_px"] == 100.0
+    assert rec["bid_qty"] == 1.0
+    assert rec["ask_px"] == 100.5
+    assert rec["ask_qty"] == 1.5
+
+
+@pytest.mark.asyncio
 async def test_stream_orderbook_persists_levels(monkeypatch):
     ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
     snapshot = {

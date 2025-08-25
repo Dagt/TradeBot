@@ -188,8 +188,10 @@ async def test_binance_spot_rest_streams():
     gen3 = adapter.stream_bba("BTC/USDT")
     bba = await gen3.__anext__()
     await gen3.aclose()
-    assert bba["bid"] == 1.0
-    assert bba["ask"] == 3.0
+    assert bba["bid_px"] == 1.0
+    assert bba["bid_qty"] == 2.0
+    assert bba["ask_px"] == 3.0
+    assert bba["ask_qty"] == 4.0
 
     gen4 = adapter.stream_book_delta("BTC/USDT")
     delta = await gen4.__anext__()
