@@ -92,7 +92,9 @@ let strategyInfo = {};
 async function loadExchanges(){
   try{
     const r = await fetch(api('/ccxt/exchanges'));
-    const exchanges = await r.json();
+    const exchanges = (await r.json()).filter(
+      ex => !ex.endsWith('_testnet') && !ex.endsWith('_ws')
+    );
     const sel = document.getElementById('bt-venue');
     sel.innerHTML = '';
     for(const ex of exchanges){
