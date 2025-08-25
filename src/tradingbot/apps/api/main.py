@@ -28,7 +28,7 @@ from monitoring.dashboard import router as dashboard_router
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
-from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
+from ...cli.main import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 
 # Persistencia
@@ -90,7 +90,7 @@ def health():
 @app.get("/venues")
 def list_venues():
     """Return available venues."""
-    return sorted(_AVAILABLE_VENUES)
+    return sorted(SUPPORTED_EXCHANGES)
 
 
 @app.get("/ccxt/exchanges")
@@ -636,8 +636,7 @@ class BotConfig(BaseModel):
     strategy: str
     pairs: list[str] | None = None
     notional: float | None = None
-    exchange: str | None = None
-    market: str | None = None
+    venue: str | None = None
     trade_qty: float | None = None
     leverage: int | None = None
     stop_loss: float | None = None
@@ -688,10 +687,8 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--symbol", pair])
     if cfg.notional is not None:
         args.extend(["--notional", str(cfg.notional)])
-    if cfg.exchange:
-        args.extend(["--exchange", cfg.exchange])
-    if cfg.market:
-        args.extend(["--market", cfg.market])
+    if cfg.venue:
+        args.extend(["--venue", cfg.venue])
     if cfg.trade_qty is not None:
         args.extend(["--trade-qty", str(cfg.trade_qty)])
     if cfg.leverage is not None:

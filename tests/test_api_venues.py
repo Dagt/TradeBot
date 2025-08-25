@@ -2,7 +2,7 @@ import importlib
 
 from fastapi.testclient import TestClient
 
-from tradingbot.cli.main import _AVAILABLE_VENUES
+from tradingbot.exchanges import SUPPORTED_EXCHANGES
 
 
 def get_app():
@@ -19,4 +19,4 @@ def test_list_venues(monkeypatch):
 
     resp = client.get("/venues", auth=("u", "p"))
     assert resp.status_code == 200
-    assert resp.json() == sorted(_AVAILABLE_VENUES)
+    assert resp.json() == sorted(SUPPORTED_EXCHANGES)

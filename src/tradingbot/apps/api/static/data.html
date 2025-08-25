@@ -273,10 +273,10 @@ async function runData(){
         runBtn.textContent='Ejecutar';
         return;
       }
-      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --exchange-name ${exchange}`;
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
     }else{
       const days=document.getElementById('dm-days').value;
-      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --exchange-name ${exchange}`;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
     }
   }else{
     const src=document.getElementById('dm-source').value;
