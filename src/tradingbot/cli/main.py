@@ -34,6 +34,21 @@ from typing import List
 import click
 import typer
 
+# Typer's ``Option`` uses ``click_type`` for custom parameter types. To allow
+# the more intuitive ``type=`` keyword (which mirrors ``click.Option``), we
+# monkey-patch ``typer.Option`` so any provided ``type`` argument is forwarded
+# as ``click_type``.
+_original_option = typer.Option
+
+
+def _option(*args, **kwargs):
+    if "type" in kwargs:
+        kwargs["click_type"] = kwargs.pop("type")
+    return _original_option(*args, **kwargs)
+
+
+typer.Option = _option  # type: ignore[assignment]
+
 from .. import adapters
 from ..adapters import (
     BinanceFuturesAdapter,
@@ -381,7 +396,7 @@ def backfill(
         "--exchange",
         "--exchange-name",
         "--venue",
-        click.Choice(BACKFILL_EXCHANGES),
+        type=click.Choice(BACKFILL_EXCHANGES),
         help=(
             "Exchange to backfill. Choose from: "
             f"{', '.join(BACKFILL_EXCHANGES)}"
