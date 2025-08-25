@@ -86,7 +86,8 @@ class BybitFuturesAdapter(ExchangeAdapter):
                 continue
             bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
             asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
-            ts = datetime.fromtimestamp(int(data.get("ts", 0)) / 1000, tz=timezone.utc)
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             self.state.order_book[symbol] = {"bids": bids, "asks": asks}
             yield self.normalize_order_book(symbol, ts, bids, asks)
 
@@ -98,8 +99,17 @@ class BybitFuturesAdapter(ExchangeAdapter):
 
         async for ob in self.stream_order_book(symbol):
             bid = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
             ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid,
+                "bid_qty": bid_qty,
+                "ask_px": ask,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""
