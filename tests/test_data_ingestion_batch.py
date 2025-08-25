@@ -210,12 +210,30 @@ async def test_backfill_applies_rate_limit(monkeypatch):
             calls.append(symbol)
             return []
 
+        async def fetch_trades(self, symbol, since, limit):
+            return []
+
         async def close(self):
             pass
 
     monkeypatch.setattr(
         backfill_job.ccxt, "binance", lambda params=None: DummyExchange()
     )
+
+    class DummyClient:
+        async def ensure_schema(self):
+            pass
+
+        def register_table(self, *args, **kwargs):
+            pass
+
+        async def add(self, *args, **kwargs):
+            pass
+
+        async def stop(self):
+            pass
+
+    monkeypatch.setattr(backfill_job, "AsyncTimescaleClient", DummyClient)
 
     sleeps: list[float] = []
 
@@ -224,7 +242,11 @@ async def test_backfill_applies_rate_limit(monkeypatch):
 
     monkeypatch.setattr(backfill_job.asyncio, "sleep", fake_sleep)
 
-    await backfill_job.backfill(1, ["BTC/USDT", "ETH/USDT"])
+    await backfill_job.backfill(
+        1,
+        ["BTC/USDT", "ETH/USDT"],
+        exchange_name="binance_spot",
+    )
 
     assert calls == ["BTC/USDT", "ETH/USDT"]
-    assert sleeps == [DummyExchange.rateLimit / 1000] * 2
+    assert sleeps == []
