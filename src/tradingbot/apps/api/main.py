@@ -17,13 +17,19 @@ import uuid
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
+try:  # pragma: no cover - ccxt is optional
+    import ccxt  # type: ignore
+except Exception:  # pragma: no cover - if ccxt is missing
+    ccxt = None
+
 from monitoring.metrics import router as metrics_router
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
-from ...cli.main import get_adapter_class, get_supported_kinds, _AVAILABLE_VENUES
+from ...cli.main import get_adapter_class, get_supported_kinds
+from ...exchanges import SUPPORTED_EXCHANGES
 
 # Persistencia
 try:
@@ -84,7 +90,28 @@ def health():
 @app.get("/venues")
 def list_venues():
     """Return available venues."""
-    return sorted(_AVAILABLE_VENUES)
+    return sorted(SUPPORTED_EXCHANGES)
+
+
+@app.get("/ccxt/exchanges")
+def ccxt_exchanges(include_testnet: bool = Query(True)):
+    """Return exchanges supported by ``ccxt``.
+
+    The list includes WebSocket-only variants (``*_ws``) which are limited to
+    streaming and do not support trading or historical backfills. Testnet
+    variants (``*_testnet``) are included by default; pass ``include_testnet=False``
+    to return only live exchanges.
+    """
+    if ccxt is None:
+        return []
+    available = getattr(ccxt, "exchanges", [])
+    live: list[str] = []
+    for key, info in SUPPORTED_EXCHANGES.items():
+        if info["ccxt"] in available:
+            live.append(key)
+            if include_testnet:
+                live.append(f"{key}_testnet")
+    return live
 
 
 @app.get("/venues/{name}/kinds")
@@ -382,6 +409,14 @@ def strategies_status():
     }
 
 
+@app.get("/strategies/info")
+def strategies_info():
+    """Return metadata for available strategies."""
+    from ...strategies import STRATEGY_INFO
+
+    return STRATEGY_INFO
+
+
 @app.get("/strategies/{name}/schema")
 def strategy_schema(name: str):
     """Return constructor parameters and defaults for a strategy.
@@ -616,8 +651,7 @@ class BotConfig(BaseModel):
     strategy: str
     pairs: list[str] | None = None
     notional: float | None = None
-    exchange: str | None = None
-    market: str | None = None
+    venue: str | None = None
     trade_qty: float | None = None
     leverage: int | None = None
     stop_loss: float | None = None
@@ -668,10 +702,8 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--symbol", pair])
     if cfg.notional is not None:
         args.extend(["--notional", str(cfg.notional)])
-    if cfg.exchange:
-        args.extend(["--exchange", cfg.exchange])
-    if cfg.market:
-        args.extend(["--market", cfg.market])
+    if cfg.venue:
+        args.extend(["--venue", cfg.venue])
     if cfg.trade_qty is not None:
         args.extend(["--trade-qty", str(cfg.trade_qty)])
     if cfg.leverage is not None:

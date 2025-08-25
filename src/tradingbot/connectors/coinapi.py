@@ -29,13 +29,27 @@ class CoinAPIConnector:
 
     def __init__(self, api_key: str | None = None, rate_limit: int = 5) -> None:
         self.api_key = api_key or os.getenv("COINAPI_KEY", "")
+        if not self.api_key:
+            raise ValueError("COINAPI_KEY missing")
         self._sem = asyncio.Semaphore(rate_limit)
 
-    async def fetch_trades(self, symbol: str, limit: int = 100) -> List[Trade]:
+    async def fetch_trades(
+        self,
+        symbol: str,
+        limit: int = 100,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> List[Trade]:
         url = f"{self._BASE_URL}/trades/{symbol}"
         headers = {"X-CoinAPI-Key": self.api_key}
+        params: dict[str, Any] = {"limit": limit}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params={"limit": limit}, headers=headers)
+            resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()
             data = resp.json()
 
@@ -55,11 +69,23 @@ class CoinAPIConnector:
             )
         return trades
 
-    async def fetch_order_book(self, symbol: str, depth: int = 10) -> OrderBook:
+    async def fetch_order_book(
+        self,
+        symbol: str,
+        depth: int = 10,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> OrderBook:
         url = f"{self._BASE_URL}/orderbooks/current/{symbol}"
         headers = {"X-CoinAPI-Key": self.api_key}
+        params: dict[str, Any] = {}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers)
+            resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()
             payload = resp.json()
 

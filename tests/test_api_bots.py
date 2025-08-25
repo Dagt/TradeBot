@@ -35,8 +35,7 @@ def test_bot_endpoints(monkeypatch):
     payload = {
         "strategy": "dummy",
         "pairs": ["BTC/USDT"],
-        "exchange": "binance",
-        "market": "spot",
+        "venue": "binance_spot",
         "trade_qty": 1.0,
         "leverage": 1,
         "stop_loss": 0.02,
@@ -51,6 +50,7 @@ def test_bot_endpoints(monkeypatch):
     assert resp.status_code == 200
     pid = resp.json()["pid"]
     argv = list(calls["args"])
+    assert "--venue" in argv and "binance_spot" in argv
     assert "--stop-loss" in argv and "0.02" in argv
     assert "--take-profit" in argv and "0.05" in argv
     assert "--stop-loss-pct" in argv and "0.03" in argv

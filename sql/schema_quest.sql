@@ -20,6 +20,28 @@ CREATE TABLE IF NOT EXISTS orderbook (
     ask_qty STRING
 ) timestamp(ts) PARTITION BY DAY;
 
+-- Best bid/ask snapshots
+CREATE TABLE IF NOT EXISTS bba (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    bid_px DOUBLE,
+    bid_qty DOUBLE,
+    ask_px DOUBLE,
+    ask_qty DOUBLE
+) timestamp(ts) PARTITION BY DAY;
+
+-- Order book delta updates (price/qty lists stored as JSON strings)
+CREATE TABLE IF NOT EXISTS book_delta (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    bid_px STRING,
+    bid_qty STRING,
+    ask_px STRING,
+    ask_qty STRING
+) timestamp(ts) PARTITION BY DAY;
+
 CREATE TABLE IF NOT EXISTS bars (
     ts TIMESTAMP,
     timeframe SYMBOL,
@@ -38,4 +60,18 @@ CREATE TABLE IF NOT EXISTS funding (
     symbol SYMBOL,
     rate DOUBLE,
     interval_sec LONG
+) timestamp(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS open_interest (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    oi DOUBLE
+) timestamp(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS basis (
+    ts TIMESTAMP,
+    exchange SYMBOL,
+    symbol SYMBOL,
+    basis DOUBLE
 ) timestamp(ts) PARTITION BY DAY;

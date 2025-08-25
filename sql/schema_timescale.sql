@@ -26,6 +26,30 @@ CREATE TABLE IF NOT EXISTS market.orderbook (
 );
 SELECT create_hypertable('market.orderbook', by_range('ts'), if_not_exists => TRUE);
 
+-- Best bid/ask snapshots (single level of the order book)
+CREATE TABLE IF NOT EXISTS market.bba (
+  ts timestamptz NOT NULL,
+  exchange text NOT NULL,
+  symbol text NOT NULL,
+  bid_px numeric,
+  bid_qty numeric,
+  ask_px numeric,
+  ask_qty numeric
+);
+SELECT create_hypertable('market.bba', by_range('ts'), if_not_exists => TRUE);
+
+-- Order book deltas (price and quantity arrays representing incremental updates)
+CREATE TABLE IF NOT EXISTS market.book_delta (
+  ts timestamptz NOT NULL,
+  exchange text NOT NULL,
+  symbol text NOT NULL,
+  bid_px numeric[] NOT NULL,
+  bid_qty numeric[] NOT NULL,
+  ask_px numeric[] NOT NULL,
+  ask_qty numeric[] NOT NULL
+);
+SELECT create_hypertable('market.book_delta', by_range('ts'), if_not_exists => TRUE);
+
 -- Bars
 CREATE TABLE IF NOT EXISTS market.bars (
   ts timestamptz NOT NULL,

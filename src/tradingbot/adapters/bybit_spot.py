@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - ccxt optional during tests
 from .base import ExchangeAdapter
 from ..core.symbols import normalize
 from ..utils.secrets import validate_scopes
+from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -24,17 +25,33 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     name = "bybit_spot"
 
-    def __init__(self):
+    def __init__(self, testnet: bool = False):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
-        # enableRateLimit respeta límites de la API
-        self.rest = ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        key = settings.bybit_testnet_api_key if testnet else settings.bybit_api_key
+        secret = settings.bybit_testnet_api_secret if testnet else settings.bybit_api_secret
+        self.rest = ccxt.bybit(
+            {
+                "apiKey": key,
+                "secret": secret,
+                "enableRateLimit": True,
+                "testnet": testnet,
+            }
+        )
+        self.rest.options["defaultType"] = "spot"
+        self.rest.set_sandbox_mode(testnet)
         # Advertir si la clave carece de permisos de trade o tiene retiros habilitados
         validate_scopes(self.rest, log)
+        self.ws_public_url = (
+            "wss://stream-testnet.bybit.com/v5/public/spot"
+            if testnet
+            else "wss://stream.bybit.com/v5/public/spot"
+        )
+        self.name = "bybit_spot_testnet" if testnet else "bybit_spot"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/spot"
+        url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
@@ -48,7 +65,7 @@ class BybitSpotAdapter(ExchangeAdapter):
                 yield self.normalize_trade(symbol, ts, price, qty, side)
 
     async def stream_order_book(self, symbol: str) -> AsyncIterator[dict]:
-        url = "wss://stream.bybit.com/v5/public/spot"
+        url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
         async for raw in self._ws_messages(url, json.dumps(sub)):
@@ -58,7 +75,8 @@ class BybitSpotAdapter(ExchangeAdapter):
                 continue
             bids = [[float(p), float(q)] for p, q, *_ in data.get("b", [])]
             asks = [[float(p), float(q)] for p, q, *_ in data.get("a", [])]
-            ts = datetime.fromtimestamp(int(data.get("ts", 0)) / 1000, tz=timezone.utc)
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             self.state.order_book[symbol] = {"bids": bids, "asks": asks}
             yield self.normalize_order_book(symbol, ts, bids, asks)
 
@@ -69,8 +87,17 @@ class BybitSpotAdapter(ExchangeAdapter):
 
         async for ob in self.stream_order_book(symbol):
             bid = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
             ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid,
+                "bid_qty": bid_qty,
+                "ask_px": ask,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental book updates for ``symbol``."""

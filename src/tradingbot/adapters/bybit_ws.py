@@ -139,7 +139,7 @@ class BybitWSAdapter(ExchangeAdapter):
             ask_px = data.get("ask1Price")
             if bid_px is None and ask_px is None:
                 continue
-            ts_ms = int(data.get("ts", 0))
+            ts_ms = int(msg.get("ts") or data.get("ts", 0))
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
             yield {
                 "symbol": symbol,

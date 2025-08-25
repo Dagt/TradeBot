@@ -10,6 +10,7 @@ from tradingbot.data.ingestion import run_orderbook_stream, run_trades_stream
 from tradingbot.data import ingestion
 from tradingbot.types import OrderBook, Tick
 from tradingbot.connectors import Trade as ConnTrade, OrderBook as ConnOrderBook
+from tradingbot.core.symbols import normalize
 
 
 class DummyOBAdapter(ExchangeAdapter):
@@ -67,7 +68,7 @@ async def test_run_orderbook_stream_persists(monkeypatch):
     assert isinstance(ob, OrderBook)
     assert ob.bid_px == [100.0, 99.5]
     assert len(inserted) == 1
-    assert inserted[0]["symbol"] == "BTC/USDT"
+    assert inserted[0]["symbol"] == normalize("BTC/USDT")
     assert inserted[0]["bid_px"] == [100.0, 99.5]
 
 
@@ -101,6 +102,75 @@ async def test_run_orderbook_stream_no_persist(monkeypatch):
 
     assert len(published) == 1
     assert not called
+
+
+@pytest.mark.asyncio
+async def test_run_orderbook_stream_persists_bba(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    snapshot = {
+        "ts": ts,
+        "bid_px": [100.0],
+        "bid_qty": [1.0],
+        "ask_px": [100.5],
+        "ask_qty": [1.5],
+    }
+
+    class DummyAdapter(ExchangeAdapter):
+        name = "dummy"
+
+        async def stream_trades(self, symbol: str):
+            if False:
+                yield {}
+
+        async def stream_orderbook(self, symbol: str, depth: int):
+            yield snapshot
+
+        stream_order_book = stream_orderbook
+
+        async def stream_bba(self, symbol: str):
+            yield {
+                "symbol": symbol,
+                "ts": ts,
+                "bid_px": snapshot["bid_px"][0],
+                "bid_qty": snapshot["bid_qty"][0],
+                "ask_px": snapshot["ask_px"][0],
+                "ask_qty": snapshot["ask_qty"][0],
+            }
+
+        async def place_order(self, *args, **kwargs):
+            return {}
+
+        async def cancel_order(self, order_id: str):
+            return {}
+
+    inserted: list[dict] = []
+
+    class DummyStorage:
+        def insert_orderbook(self, engine, **data):
+            pass
+
+        def insert_bba(self, engine, **data):
+            inserted.append(data)
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    bus = EventBus()
+    await run_orderbook_stream(
+        DummyAdapter(),
+        "BTC/USDT",
+        depth=5,
+        bus=bus,
+        engine="engine",
+        persist=True,
+        emit_bba=True,
+    )
+
+    assert len(inserted) == 1
+    rec = inserted[0]
+    assert rec["bid_px"] == 100.0
+    assert rec["bid_qty"] == 1.0
+    assert rec["ask_px"] == 100.5
+    assert rec["ask_qty"] == 1.5
 
 
 @pytest.mark.asyncio
@@ -366,3 +436,56 @@ async def test_download_order_book_connector(monkeypatch):
     assert captured
     assert captured[0].bid_px == [100.0]
     assert captured[0].ask_qty == [2.0]
+
+
+def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
+    """Running the ingest CLI with CSV backend should create a CSV file."""
+
+    monkeypatch.setattr(
+        "tradingbot.utils.time_sync.check_ntp_offset", lambda: 0.0
+    )
+    import importlib
+    from typer.testing import CliRunner
+    import tradingbot.cli.main as cli_main
+
+    cli_main = importlib.reload(cli_main)
+
+    def fail():
+        raise AssertionError("get_engine should not be called for CSV backend")
+    monkeypatch.setattr("tradingbot.storage.timescale.get_engine", fail)
+    monkeypatch.setattr("tradingbot.storage.quest.get_engine", fail)
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def stream_order_book(self, symbol: str, depth: int):
+            yield {
+                "ts": datetime(2023, 1, 1, tzinfo=timezone.utc),
+                "bid_px": [1.0],
+                "bid_qty": [2.0],
+                "ask_px": [3.0],
+                "ask_qty": [4.0],
+            }
+
+    monkeypatch.setattr(cli_main, "get_adapter_class", lambda name: DummyAdapter)
+    monkeypatch.setattr(cli_main, "_AVAILABLE_VENUES", {"dummy"})
+
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli_main.app,
+        [
+            "ingest",
+            "--venue",
+            "dummy",
+            "--symbol",
+            "BTC/USDT",
+            "--kind",
+            "orderbook",
+            "--backend",
+            "csv",
+            "--persist",
+        ],
+    )
+    assert result.exit_code == 0
+    assert (tmp_path / "db" / "orderbook.csv").exists()

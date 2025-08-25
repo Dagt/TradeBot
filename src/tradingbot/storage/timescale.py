@@ -1,10 +1,12 @@
 import logging
-from typing import Any
+from typing import Any, Iterable
+from types import SimpleNamespace
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
 
 from ..config import settings
+from ..core.symbols import normalize
 
 log = logging.getLogger(__name__)
 
@@ -32,26 +34,85 @@ def get_engine():
         raise
     return engine
 
-def insert_trade(engine, t):
-    with engine.begin() as conn:
-        conn.execute(text('''
-            INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
-            VALUES (now(), :exchange, :symbol, :px, :qty, :side, :trade_id)
-        '''), dict(exchange=t.exchange, symbol=t.symbol, px=t.price, qty=t.qty, side=t.side, trade_id=None))
+def insert_trades(engine, trades: Iterable[Any]):
+    """Insert multiple trade ticks using a single batch statement."""
 
-def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
-                  low: float, c: float, v: float):
-    """Insert a 1-minute OHLCV bar into TimescaleDB."""
+    payload = [
+        dict(
+            ts=t.ts,
+            exchange=t.exchange,
+            symbol=normalize(getattr(t, "symbol", "")),
+            px=t.price,
+            qty=t.qty,
+            side=t.side,
+            trade_id=getattr(t, "trade_id", None),
+        )
+        for t in trades
+    ]
+    if not payload:
+        return
+
     with engine.begin() as conn:
         conn.execute(
             text(
-                '''
+                """
+            INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
+            VALUES (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+            """
+            ),
+            payload,
+        )
+
+
+def insert_trade(engine, t):
+    insert_trades(engine, [t])
+
+def insert_bars_1m(engine, bars: Iterable[Any]):
+    """Insert multiple 1-minute OHLCV bars."""
+
+    payload = [
+        dict(
+            ts=b.ts,
+            exchange=b.exchange,
+            symbol=normalize(getattr(b, "symbol", "")),
+            o=b.o,
+            h=b.h,
+            l=b.l,
+            c=b.c,
+            v=b.v,
+        )
+        for b in bars
+    ]
+    if not payload:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
             INSERT INTO market.bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
             VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
-        '''
+            """
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, o=o, h=h, l=low, c=c, v=v),
+            payload,
         )
+
+
+def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
+                  low: float, c: float, v: float):
+    """Insert a single 1-minute OHLCV bar into TimescaleDB."""
+
+    bar = SimpleNamespace(
+        ts=ts,
+        exchange=exchange,
+        symbol=normalize(symbol),
+        o=o,
+        h=h,
+        l=low,
+        c=c,
+        v=v,
+    )
+    insert_bars_1m(engine, [bar])
 
 def insert_funding(
     engine,
@@ -75,7 +136,7 @@ def insert_funding(
             dict(
                 ts=ts,
                 exchange=exchange,
-                symbol=symbol,
+                symbol=normalize(symbol),
                 rate=rate,
                 interval_sec=interval_sec,
             ),
@@ -92,7 +153,7 @@ def insert_open_interest(engine, *, ts, exchange: str, symbol: str, oi: float):
             VALUES (:ts, :exchange, :symbol, :oi)
         '''
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, oi=oi),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), oi=oi),
         )
 
 
@@ -106,25 +167,101 @@ def insert_basis(engine, *, ts, exchange: str, symbol: str, basis: float):
             VALUES (:ts, :exchange, :symbol, :basis)
         '''
             ),
-            dict(ts=ts, exchange=exchange, symbol=symbol, basis=basis),
+            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), basis=basis),
         )
 
 def insert_orderbook(engine, *, ts, exchange: str, symbol: str,
                      bid_px: list[float], bid_qty: list[float],
                      ask_px: list[float], ask_qty: list[float]):
     with engine.begin() as conn:
-        conn.execute(text('''
+        conn.execute(
+            text('''
             INSERT INTO market.orderbook (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
             VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
-        '''), dict(ts=ts, exchange=exchange, symbol=symbol,
-                   bid_px=bid_px, bid_qty=bid_qty, ask_px=ask_px, ask_qty=ask_qty))
+        '''),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=normalize(symbol),
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
+
+
+def insert_bba(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: float | None,
+    bid_qty: float | None,
+    ask_px: float | None,
+    ask_qty: float | None,
+):
+    """Persist best bid/ask snapshots."""
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.bba (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+            VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+        '''
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=normalize(symbol),
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
+
+
+def insert_book_delta(
+    engine,
+    *,
+    ts,
+    exchange: str,
+    symbol: str,
+    bid_px: list[float],
+    bid_qty: list[float],
+    ask_px: list[float],
+    ask_qty: list[float],
+):
+    """Persist order book delta updates."""
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                '''
+            INSERT INTO market.book_delta (ts, exchange, symbol, bid_px, bid_qty, ask_px, ask_qty)
+            VALUES (:ts, :exchange, :symbol, :bid_px, :bid_qty, :ask_px, :ask_qty)
+        '''
+            ),
+            dict(
+                ts=ts,
+                exchange=exchange,
+                symbol=normalize(symbol),
+                bid_px=bid_px,
+                bid_qty=bid_qty,
+                ask_px=ask_px,
+                ask_qty=ask_qty,
+            ),
+        )
 
 def insert_order(engine, *, strategy: str, exchange: str, symbol: str, side: str, type_: str, qty: float, px: float | None, status: str, ext_order_id: str | None = None, notes: dict | None = None):
     with engine.begin() as conn:
         conn.execute(text('''
             INSERT INTO market.orders (strategy, exchange, symbol, side, type, qty, px, status, ext_order_id, notes)
             VALUES (:strategy, :exchange, :symbol, :side, :type, :qty, :px, :status, :ext_order_id, :notes)
-        '''), dict(strategy=strategy, exchange=exchange, symbol=symbol, side=side, type=type_, qty=qty, px=px, status=status, ext_order_id=ext_order_id, notes=notes))
+        '''), dict(strategy=strategy, exchange=exchange, symbol=normalize(symbol), side=side, type=type_, qty=qty, px=px, status=status, ext_order_id=ext_order_id, notes=notes))
 
 def insert_tri_signal(engine, *, exchange: str, base: str, mid: str, quote: str, direction: str, edge: float, notional_quote: float, taker_fee_bps: float, buffer_bps: float, bq: float, mq: float, mb: float):
     with engine.begin() as conn:
@@ -141,7 +278,7 @@ def insert_cross_signal(engine, *, symbol: str, spot_exchange: str, perp_exchang
         conn.execute(text('''
             INSERT INTO market.cross_signals (symbol, spot_exchange, perp_exchange, spot_px, perp_px, edge)
             VALUES (:symbol, :spot_exchange, :perp_exchange, :spot_px, :perp_px, :edge)
-        '''), dict(symbol=symbol, spot_exchange=spot_exchange, perp_exchange=perp_exchange,
+        '''), dict(symbol=normalize(symbol), spot_exchange=spot_exchange, perp_exchange=perp_exchange,
                    spot_px=spot_px, perp_px=perp_px, edge=edge))
 
 def select_bars(
@@ -233,7 +370,7 @@ def insert_portfolio_snapshot(engine, *, venue: str, symbol: str, position: floa
         conn.execute(text('''
             INSERT INTO market.portfolio_snapshots (venue, symbol, position, price, notional_usd)
             VALUES (:venue, :symbol, :position, :price, :notional_usd)
-        '''), dict(venue=venue, symbol=symbol, position=position, price=price, notional_usd=notional_usd))
+        '''), dict(venue=venue, symbol=normalize(symbol), position=position, price=price, notional_usd=notional_usd))
 
 def select_latest_portfolio(engine, venue: str, limit_per_symbol: int = 1) -> list[dict]:
     # Trae la última fila por símbolo para un venue
@@ -251,7 +388,7 @@ def insert_risk_event(engine, *, venue: str, symbol: str, kind: str, message: st
         conn.execute(text('''
             INSERT INTO market.risk_events (venue, symbol, kind, message, details)
             VALUES (:venue, :symbol, :kind, :message, :details)
-        '''), dict(venue=venue, symbol=symbol, kind=kind, message=message, details=details or {}))
+        '''), dict(venue=venue, symbol=normalize(symbol), kind=kind, message=message, details=details or {}))
 
 def select_recent_risk_events(engine, venue: str, limit: int = 50) -> list[dict]:
     with engine.begin() as conn:
@@ -274,14 +411,14 @@ def upsert_position(engine, *, venue: str, symbol: str, qty: float, avg_price: f
                 avg_price = EXCLUDED.avg_price,
                 realized_pnl = EXCLUDED.realized_pnl,
                 fees_paid = EXCLUDED.fees_paid
-        '''), dict(venue=venue, symbol=symbol, qty=qty, avg_price=avg_price, realized_pnl=realized_pnl, fees_paid=fees_paid))
+        '''), dict(venue=venue, symbol=normalize(symbol), qty=qty, avg_price=avg_price, realized_pnl=realized_pnl, fees_paid=fees_paid))
 
 def insert_pnl_snapshot(engine, *, venue: str, symbol: str, qty: float, price: float, avg_price: float, upnl: float, rpnl: float, fees: float):
     with engine.begin() as conn:
         conn.execute(text('''
             INSERT INTO market.pnl_snapshots (venue, symbol, qty, price, avg_price, upnl, rpnl, fees)
             VALUES (:venue, :symbol, :qty, :price, :avg_price, :upnl, :rpnl, :fees)
-        '''), dict(venue=venue, symbol=symbol, qty=qty, price=price, avg_price=avg_price, upnl=upnl, rpnl=rpnl, fees=fees))
+        '''), dict(venue=venue, symbol=normalize(symbol), qty=qty, price=price, avg_price=avg_price, upnl=upnl, rpnl=rpnl, fees=fees))
 
 def select_pnl_summary(engine, venue: str, symbol: str | None = None) -> dict:
     with engine.begin() as conn:
@@ -406,14 +543,22 @@ def insert_fill(engine, *, ts, venue: str, strategy: str, symbol: str, side: str
     with engine.begin() as conn:
         conn.execute(text('''
             INSERT INTO market.fills (ts, venue, strategy, symbol, side, type, qty, price, notional, fee_usdt, reduce_only, ext_order_id, raw)
-            VALUES (:ts, :venue, :strategy, :symbol, :side, :type, :qty, :price, 
+            VALUES (:ts, :venue, :strategy, :symbol, :side, :type, :qty, :price,
                     CASE WHEN :price IS NULL THEN NULL ELSE :qty * :price END,
                     :fee_usdt, :reduce_only, :ext_order_id, :raw)
         '''), dict(
-            ts=ts, venue=venue, strategy=strategy, symbol=symbol, side=side, type=type_,
-            qty=float(qty), price=(float(price) if price is not None else None),
+            ts=ts,
+            venue=venue,
+            strategy=strategy,
+            symbol=normalize(symbol),
+            side=side,
+            type=type_,
+            qty=float(qty),
+            price=(float(price) if price is not None else None),
             fee_usdt=(float(fee_usdt) if fee_usdt is not None else None),
-            reduce_only=bool(reduce_only), ext_order_id=ext_order_id, raw=raw or {}
+            reduce_only=bool(reduce_only),
+            ext_order_id=ext_order_id,
+            raw=raw or {},
         ))
 
 def select_recent_fills(engine, venue: str, symbol: str | None = None, limit: int = 100) -> list[dict]:
@@ -567,13 +712,18 @@ def upsert_oco(engine, *, venue: str, symbol: str, side: str,
       SET status='cancelled', updated_at=now()
       WHERE venue=:venue AND symbol=:symbol AND status='active'
     """)
+    norm_symbol = normalize(symbol)
     with engine.begin() as conn:
-        conn.execute(sql_cancel_old, {"venue": venue, "symbol": symbol})
+        conn.execute(sql_cancel_old, {"venue": venue, "symbol": norm_symbol})
         conn.execute(sql, {
-            "venue": venue, "symbol": symbol, "side": side,
-            "qty": float(qty), "entry_price": float(entry_price),
-            "sl_price": float(sl_price), "tp_price": float(tp_price),
-            "status": status
+            "venue": venue,
+            "symbol": norm_symbol,
+            "side": side,
+            "qty": float(qty),
+            "entry_price": float(entry_price),
+            "sl_price": float(sl_price),
+            "tp_price": float(tp_price),
+            "status": status,
         })
 
 def update_oco_active(engine, *, venue: str, symbol: str,
@@ -583,11 +733,15 @@ def update_oco_active(engine, *, venue: str, symbol: str,
       SET qty=:qty, entry_price=:entry_price, sl_price=:sl_price, tp_price=:tp_price, updated_at=now()
       WHERE venue=:venue AND symbol=:symbol AND status='active'
     """)
+    norm_symbol = normalize(symbol)
     with engine.begin() as conn:
         conn.execute(sql, {
-            "venue": venue, "symbol": symbol,
-            "qty": float(qty), "entry_price": float(entry_price),
-            "sl_price": float(sl_price), "tp_price": float(tp_price)
+            "venue": venue,
+            "symbol": norm_symbol,
+            "qty": float(qty),
+            "entry_price": float(entry_price),
+            "sl_price": float(sl_price),
+            "tp_price": float(tp_price),
         })
 
 def mark_oco_triggered(engine, *, venue: str, symbol: str, triggered: str):
@@ -596,8 +750,9 @@ def mark_oco_triggered(engine, *, venue: str, symbol: str, triggered: str):
       SET status='triggered', triggered=:triggered, updated_at=now()
       WHERE venue=:venue AND symbol=:symbol AND status='active'
     """)
+    norm_symbol = normalize(symbol)
     with engine.begin() as conn:
-        conn.execute(sql, {"venue": venue, "symbol": symbol, "triggered": triggered})
+        conn.execute(sql, {"venue": venue, "symbol": norm_symbol, "triggered": triggered})
 
 def cancel_oco(engine, *, venue: str, symbol: str):
     sql = text("""
@@ -605,8 +760,9 @@ def cancel_oco(engine, *, venue: str, symbol: str):
       SET status='cancelled', updated_at=now()
       WHERE venue=:venue AND symbol=:symbol AND status='active'
     """)
+    norm_symbol = normalize(symbol)
     with engine.begin() as conn:
-        conn.execute(sql, {"venue": venue, "symbol": symbol})
+        conn.execute(sql, {"venue": venue, "symbol": norm_symbol})
 
 def load_active_oco_by_symbols(engine, *, venue: str, symbols: list[str]):
     if not symbols:

@@ -74,6 +74,18 @@
         <label for="dm-end">Fin</label>
         <input id="dm-end" type="datetime-local"/>
       </div>
+      <div id="field-exchange-name">
+        <label for="dm-exchange-name">Exchange</label>
+        <select id="dm-exchange-name" title="binance_spot, binance_futures, okx_spot, okx_futures, bybit_spot, bybit_futures, deribit_futures">
+          <option value="binance_spot">binance_spot</option>
+          <option value="binance_futures">binance_futures</option>
+          <option value="okx_spot">okx_spot</option>
+          <option value="okx_futures">okx_futures</option>
+          <option value="bybit_spot">bybit_spot</option>
+          <option value="bybit_futures">bybit_futures</option>
+          <option value="deribit_futures">deribit_futures</option>
+        </select>
+      </div>
       <div id="field-source">
         <label for="dm-source">Fuente</label>
         <select id="dm-source">
@@ -83,13 +95,15 @@
       </div>
       <div id="field-exchange">
         <label for="dm-exchange">Exchange</label>
-        <input id="dm-exchange" placeholder="binance"/>
+        <select id="dm-exchange"></select>
       </div>
       <div id="field-hkind">
         <label for="dm-hkind">Tipo</label>
         <select id="dm-hkind">
           <option value="trades">trades</option>
           <option value="orderbook">orderbook</option>
+          <option value="bba">bba</option>
+          <option value="book_delta">book_delta</option>
           <option value="open_interest">open_interest</option>
           <option value="funding">funding</option>
         </select>
@@ -132,6 +146,15 @@ const api = (path) => `${location.origin}${path}`;
 let currentJob=null;
 let evt=null;
 let kindsWithDepth=[];
+const BACKFILL_EXCHANGES=[
+  "binance_spot",
+  "binance_futures",
+  "okx_spot",
+  "okx_futures",
+  "bybit_spot",
+  "bybit_futures",
+  "deribit_futures",
+];
 const kindDescriptions={
   bba:"BBA (Best Bid & Ask): muestra las mejores posturas de compra (bid) y venta (ask) en el libro de órdenes.",
   open_interest:"Open interest: cantidad total de contratos abiertos (posiciones vigentes) en un mercado de derivados.",
@@ -139,7 +162,8 @@ const kindDescriptions={
   trades:"Trades: cada transacción ejecutada (precio, cantidad y lado).",
   trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
-  delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
+  delta:"Book delta: cambios recientes en las mejores posturas de compra y venta.",
+  book_delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
 };
 
 function showWorking() {
@@ -186,14 +210,16 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   const end=document.getElementById('dm-end').value;
   const showDays=act==='backfill' && !(start && end);
   document.getElementById('field-days').style.display=showDays?'':'none';
-  document.getElementById('field-start').style.display=act==='backfill'?'':'none';
-  document.getElementById('field-end').style.display=act==='backfill'?'':'none';
+  const showRange=act==='backfill' || act==='ingest-historical';
+  document.getElementById('field-start').style.display=showRange?'':'none';
+  document.getElementById('field-end').style.display=showRange?'':'none';
+  document.getElementById('field-exchange-name').style.display=act==='backfill'?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
   document.getElementById('field-hkind').style.display=hist?'':'none';
   const hk=document.getElementById('dm-hkind').value;
-  document.getElementById('field-hdepth').style.display=hist && hk==='orderbook'?'':'none';
+  document.getElementById('field-hdepth').style.display=hist && (hk==='orderbook' || hk==='book_delta')?'':'none';
   document.getElementById('field-hlimit').style.display=hist && hk==='trades'?'':'none';
   const persist=document.getElementById('dm-persist').checked;
   document.getElementById('field-backend').style.display=(hist || (act==='ingest' && persist))?'':'none';
@@ -225,6 +251,7 @@ async function runData(){
   }else if(act==='backfill'){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;
+    const exchange=document.getElementById('dm-exchange-name').value;
     if(start && end){
       const s=new Date(start);
       const e=new Date(end);
@@ -235,23 +262,40 @@ async function runData(){
         runBtn.textContent='Ejecutar';
         return;
       }
-      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
     }else{
       const days=document.getElementById('dm-days').value;
-      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')}`;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
     }
   }else{
     const src=document.getElementById('dm-source').value;
     const sym=document.getElementById('dm-symbols').value.trim();
-    const ex=document.getElementById('dm-exchange').value.trim();
+    const ex=document.getElementById('dm-exchange').value;
     const kind=document.getElementById('dm-hkind').value;
     const depth=document.getElementById('dm-hdepth').value;
     const limit=document.getElementById('dm-hlimit').value;
     const backend=document.getElementById('dm-backend').value;
+    const start=document.getElementById('dm-start').value;
+    const end=document.getElementById('dm-end').value;
     cmd=`ingest-historical ${src} ${sym} --kind ${kind} --backend ${backend}`;
     if(src==='kaiko' && ex) cmd+=` --exchange ${ex}`;
-    if(kind==='orderbook') cmd+=` --depth ${depth}`;
+    if(kind==='orderbook' || kind==='book_delta') cmd+=` --depth ${depth}`;
     if(kind==='trades') cmd+=` --limit ${limit}`;
+    if(start && end){
+      const s=new Date(start);
+      const e=new Date(end);
+      if(!(s<e)){
+        out.textContent='Rango inválido (inicio debe ser menor que fin)';
+        out.scrollTop = out.scrollHeight;
+        runBtn.disabled=false;
+        runBtn.textContent='Ejecutar';
+        return;
+      }
+      cmd+=` --start ${s.toISOString()} --end ${e.toISOString()}`;
+    }else{
+      if(start) cmd+=` --start ${new Date(start).toISOString()}`;
+      if(end) cmd+=` --end ${new Date(end).toISOString()}`;
+    }
   }
   out.textContent='Iniciando...\n';
   out.scrollTop = out.scrollHeight;
@@ -354,6 +398,38 @@ async function loadVenues(){
   }
 }
 
+async function loadExchanges(){
+  try{
+    const sel=document.getElementById('dm-exchange-name');
+    sel.innerHTML='';
+    for(const ex of BACKFILL_EXCHANGES){
+      const opt=document.createElement('option');
+      opt.value=ex;
+      opt.textContent=ex;
+      sel.appendChild(opt);
+    }
+    const r=await fetch(api('/ccxt/exchanges'));
+    const exchanges=await r.json();
+    const allowed=[
+      "binance_spot", "binance_futures",
+      "okx_spot", "okx_futures",
+      "bybit_spot", "bybit_futures",
+      "deribit_futures"
+    ];
+    const selHist=document.getElementById('dm-exchange');
+    selHist.innerHTML='';
+    for(const ex of allowed){
+      if(!exchanges.includes(ex)) continue;
+      const opt=document.createElement('option');
+      opt.value=ex;
+      opt.textContent=ex;
+      selHist.appendChild(opt);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+
 document.getElementById('dm-action').addEventListener('change',updateFields);
 document.getElementById('dm-run').addEventListener('click',runData);
 document.getElementById('dm-stop').addEventListener('click',stopData);
@@ -364,6 +440,7 @@ document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('dm-venue').addEventListener('change',loadKinds);
 updateFields();
 loadVenues();
+loadExchanges();
 </script>
 </body>
 </html>

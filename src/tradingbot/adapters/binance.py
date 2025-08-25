@@ -43,12 +43,14 @@ class BinanceWSAdapter(ExchangeAdapter):
         if self.rest is None and (api_key or api_secret):
             if ccxt is None:
                 raise RuntimeError("ccxt no está instalado")
-            self.rest = ccxt.binance({
-                "apiKey": api_key or "",
-                "secret": api_secret or "",
-                "enableRateLimit": True,
-                "options": {"defaultType": "future"},
-            })
+            self.rest = ccxt.binance(
+                {
+                    "apiKey": api_key or "",
+                    "secret": api_secret or "",
+                    "enableRateLimit": True,
+                }
+            )
+            self.rest.options["defaultType"] = "future"
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _binance_symbol_stream(normalize(symbol))
@@ -87,8 +89,17 @@ class BinanceWSAdapter(ExchangeAdapter):
 
         async for ob in self.stream_order_book(symbol):
             bid = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
             ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid,
+                "bid_qty": bid_qty,
+                "ask_px": ask,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""

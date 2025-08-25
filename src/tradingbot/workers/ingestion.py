@@ -144,25 +144,48 @@ async def funding_worker(
 
     from ..data import funding as data_funding
 
-    storage = _get_storage(backend)
-    engine = storage.get_engine()
+    if backend == "csv":
+        from ..data import ingestion as ing
 
-    while True:
-        try:
-            info = await data_funding.fetch_funding(adapter, symbol)
-            storage.insert_funding(
-                engine,
-                ts=info["ts"],
-                exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
-                symbol=symbol,
-                rate=info.get("rate", 0.0),
-                interval_sec=info.get("interval_sec", 0),
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # pragma: no cover - logging only
-            log.warning("funding_worker error: %s", exc)
-        await asyncio.sleep(interval)
+        while True:
+            try:
+                info = await data_funding.fetch_funding(adapter, symbol)
+                record = {
+                    "ts": info["ts"],
+                    "exchange": info.get("exchange", getattr(adapter, "name", "unknown")),
+                    "symbol": symbol,
+                    "rate": info.get("rate", 0.0),
+                    "interval_sec": info.get("interval_sec", 0),
+                }
+                ing.persist_funding([record], backend="csv")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - logging only
+                log.warning("funding_worker error: %s", exc)
+            await asyncio.sleep(interval)
+    else:
+        storage = _get_storage(backend)
+        if not hasattr(storage, "insert_funding"):
+            log.warning("Backend %s does not support funding persistence", backend)
+            return
+        engine = storage.get_engine()
+
+        while True:
+            try:
+                info = await data_funding.fetch_funding(adapter, symbol)
+                storage.insert_funding(
+                    engine,
+                    ts=info["ts"],
+                    exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
+                    symbol=symbol,
+                    rate=info.get("rate", 0.0),
+                    interval_sec=info.get("interval_sec", 0),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - logging only
+                log.warning("funding_worker error: %s", exc)
+            await asyncio.sleep(interval)
 
 
 async def open_interest_worker(
@@ -176,22 +199,44 @@ async def open_interest_worker(
 
     from ..data import open_interest as data_oi
 
-    storage = _get_storage(backend)
-    engine = storage.get_engine()
+    if backend == "csv":
+        from ..data import ingestion as ing
 
-    while True:
-        try:
-            info = await data_oi.fetch_oi(adapter, symbol)
-            storage.insert_open_interest(
-                engine,
-                ts=info["ts"],
-                exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
-                symbol=symbol,
-                oi=info.get("oi", 0.0),
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # pragma: no cover - logging only
-            log.warning("open_interest_worker error: %s", exc)
-        await asyncio.sleep(interval)
+        while True:
+            try:
+                info = await data_oi.fetch_oi(adapter, symbol)
+                record = {
+                    "ts": info["ts"],
+                    "exchange": info.get("exchange", getattr(adapter, "name", "unknown")),
+                    "symbol": symbol,
+                    "oi": info.get("oi", 0.0),
+                }
+                ing.persist_open_interest([record], backend="csv")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - logging only
+                log.warning("open_interest_worker error: %s", exc)
+            await asyncio.sleep(interval)
+    else:
+        storage = _get_storage(backend)
+        if not hasattr(storage, "insert_open_interest"):
+            log.warning("Backend %s does not support open interest persistence", backend)
+            return
+        engine = storage.get_engine()
+
+        while True:
+            try:
+                info = await data_oi.fetch_oi(adapter, symbol)
+                storage.insert_open_interest(
+                    engine,
+                    ts=info["ts"],
+                    exchange=info.get("exchange", getattr(adapter, "name", "unknown")),
+                    symbol=symbol,
+                    oi=info.get("oi", 0.0),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - logging only
+                log.warning("open_interest_worker error: %s", exc)
+            await asyncio.sleep(interval)
 

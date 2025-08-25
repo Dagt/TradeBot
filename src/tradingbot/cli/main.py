@@ -31,7 +31,23 @@ import ast
 import textwrap
 from typing import List
 
+import click
 import typer
+
+# Typer's ``Option`` uses ``click_type`` for custom parameter types. To allow
+# the more intuitive ``type=`` keyword (which mirrors ``click.Option``), we
+# monkey-patch ``typer.Option`` so any provided ``type`` argument is forwarded
+# as ``click_type``.
+_original_option = typer.Option
+
+
+def _option(*args, **kwargs):
+    if "type" in kwargs:
+        kwargs["click_type"] = kwargs.pop("type")
+    return _original_option(*args, **kwargs)
+
+
+typer.Option = _option  # type: ignore[assignment]
 
 from .. import adapters
 from ..adapters import (
@@ -52,6 +68,7 @@ from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
 from tradingbot.core.symbols import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
+from ..exchanges import SUPPORTED_EXCHANGES
 
 
 _OFFSET_THRESHOLD = float(os.getenv("NTP_OFFSET_THRESHOLD", "1.0"))
@@ -94,6 +111,41 @@ def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
     """Return the adapter class for ``name`` if available."""
 
     return _ADAPTER_CLASS_MAP.get(name)
+
+
+_VENUE_CHOICES = ", ".join(sorted(SUPPORTED_EXCHANGES))
+
+BACKFILL_EXCHANGES = [
+    "binance_spot",
+    "binance_futures",
+    "okx_spot",
+    "okx_futures",
+    "bybit_spot",
+    "bybit_futures",
+    "deribit_futures",
+]
+
+
+def _validate_venue(value: str) -> str:
+    if value not in SUPPORTED_EXCHANGES:
+        raise typer.BadParameter(
+            f"Venue must be one of: {_VENUE_CHOICES}"
+        )
+    if value.endswith("_ws"):
+        raise typer.BadParameter(
+            "WebSocket venues are streaming-only and do not support trading or backfills"
+        )
+    return value
+
+
+def _validate_backtest_venue(value: str) -> str:
+    """Reject venues not suitable for backtesting."""
+
+    if value.endswith("_testnet") or value.endswith("_ws"):
+        raise typer.BadParameter(
+            "Testnet and WebSocket venues are not supported; use *_spot or *_futures"
+        )
+    return _validate_venue(value)
 
 
 def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
@@ -159,6 +211,7 @@ def _get_available_venues() -> set[str]:
 
 
 _AVAILABLE_VENUES = _get_available_venues()
+_WS_ONLY_VENUES = {v for v in SUPPORTED_EXCHANGES if v.endswith("_ws")}
 
 
 @app.command()
@@ -220,28 +273,38 @@ def ingest(
         tasks = []
         for sym in symbols:
             if kind == "orderbook":
-                tasks.append(
-                    asyncio.create_task(
-                        ing.run_orderbook_stream(
-                            adapter,
-                            sym,
-                            depth,
-                            bus,
-                            engine,
-                            persist=persist,
-                            backend=backend,
+                if persist and backend == "csv":
+                    tasks.append(
+                        asyncio.create_task(
+                            ing.stream_orderbook(
+                                adapter, sym, depth, backend="csv"
+                            )
                         )
                     )
-                )
+                else:
+                    tasks.append(
+                        asyncio.create_task(
+                            ing.run_orderbook_stream(
+                                adapter,
+                                sym,
+                                depth,
+                                bus,
+                                engine,
+                                persist=persist,
+                                backend=backend,
+                            )
+                        )
+                    )
             elif kind == "trades":
                 async def _t(symbol: str) -> None:
                     async for d in adapter.stream_trades(symbol):
                         typer.echo(str(d))
                         if persist:
+                            db_symbol = normalize(symbol)
                             tick = Tick(
                                 ts=d.get("ts"),
                                 exchange=adapter.name,
-                                symbol=symbol,
+                                symbol=db_symbol,
                                 price=float(d.get("price") or 0.0),
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
@@ -254,10 +317,11 @@ def ingest(
                     async for d in adapter.stream_trades_multi(symbols):
                         typer.echo(str(d))
                         if persist:
+                            db_symbol = normalize(d.get("symbol", ""))
                             tick = Tick(
                                 ts=d.get("ts"),
                                 exchange=adapter.name,
-                                symbol=d.get("symbol"),
+                                symbol=db_symbol,
                                 price=float(d.get("price") or 0.0),
                                 qty=float(d.get("qty") or 0.0),
                                 side=d.get("side"),
@@ -272,7 +336,7 @@ def ingest(
                         typer.echo(str(d))
                         if persist:
                             data = dict(d)
-                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            data.update({"exchange": adapter.name, "symbol": normalize(symbol)})
                             ing.persist_bba([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_b(sym)))
@@ -282,7 +346,7 @@ def ingest(
                         typer.echo(str(d))
                         if persist:
                             data = dict(d)
-                            data.update({"exchange": adapter.name, "symbol": symbol})
+                            data.update({"exchange": adapter.name, "symbol": normalize(symbol)})
                             ing.persist_book_delta([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_d(sym)))
@@ -327,6 +391,17 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
+    exchange: str = typer.Option(
+        "binance_spot",
+        "--exchange",
+        "--exchange-name",
+        "--venue",
+        type=click.Choice(BACKFILL_EXCHANGES),
+        help=(
+            "Exchange to backfill. Choose from: "
+            f"{', '.join(BACKFILL_EXCHANGES)}"
+        ),
+    ),
     start: str | None = typer.Option(
         None, "--start", help="Start datetime in ISO format"
     ),
@@ -352,6 +427,7 @@ def backfill(
         run_backfill(
             days=days,
             symbols=symbols,
+            exchange_name=exchange,
             start=_parse(start),
             end=_parse(end),
         )
@@ -364,44 +440,100 @@ def ingest_historical(
     symbol: str = typer.Argument(..., help="Símbolo o par"),
     exchange: str = typer.Option("", help="Exchange para Kaiko"),
     kind: str = typer.Option(
-        "trades", help="Tipo de dato: trades, orderbook, open_interest o funding"
+        "trades",
+        help="Tipo de dato: trades, orderbook, bba, book_delta, open_interest o funding",
     ),
     backend: str = typer.Option("timescale", help="Backend de storage"),
     limit: int = typer.Option(100, help="Límite de trades"),
     depth: int = typer.Option(10, help="Profundidad del order book"),
+    start: str | None = typer.Option(None, "--start", help="Inicio ISO8601"),
+    end: str | None = typer.Option(None, "--end", help="Fin ISO8601"),
 ) -> None:
     """Descargar datos históricos usando Kaiko o CoinAPI."""
 
     setup_logging()
+    provider_exchange = exchange
+    if exchange:
+        info = SUPPORTED_EXCHANGES.get(exchange)
+        if info is None:
+            choices = ", ".join(sorted(SUPPORTED_EXCHANGES))
+            raise typer.BadParameter(f"exchange must be one of: {choices}")
+        provider_exchange = info.get("ccxt", exchange)
     if source.lower() == "kaiko":
         from ..connectors.kaiko import KaikoConnector
         from ..data.ingestion import (
             fetch_trades_kaiko,
             fetch_orderbook_kaiko,
+            download_kaiko_bba,
+            download_kaiko_book_delta,
             download_kaiko_open_interest,
             download_funding,
         )
 
+        if not provider_exchange:
+            raise typer.BadParameter("exchange required for Kaiko")
+        if not os.getenv("KAIKO_API_KEY"):
+            typer.echo("KAIKO_API_KEY missing")
+            raise typer.Exit(code=1)
+
         if kind == "orderbook":
             asyncio.run(
                 fetch_orderbook_kaiko(
-                    exchange, symbol, backend=backend, depth=depth
+                    provider_exchange,
+                    symbol,
+                    backend=backend,
+                    depth=depth,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
+        elif kind == "bba":
+            connector = KaikoConnector()
+            asyncio.run(
+                download_kaiko_bba(
+                    connector, provider_exchange, symbol, backend=backend
+                )
+            )
+        elif kind == "book_delta":
+            connector = KaikoConnector()
+            asyncio.run(
+                download_kaiko_book_delta(
+                    connector, provider_exchange, symbol, backend=backend, depth=depth
                 )
             )
         elif kind == "open_interest":
             connector = KaikoConnector()
             asyncio.run(
                 download_kaiko_open_interest(
-                    connector, exchange, symbol, backend=backend, limit=limit
+                    connector,
+                    provider_exchange,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "funding":
             connector = KaikoConnector()
-            asyncio.run(download_funding(connector, symbol, backend=backend))
+            asyncio.run(
+                download_funding(
+                    connector,
+                    symbol,
+                    backend=backend,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
         else:
             asyncio.run(
                 fetch_trades_kaiko(
-                    exchange, symbol, backend=backend, limit=limit
+                    provider_exchange,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
     elif source.lower() == "coinapi":
@@ -409,30 +541,69 @@ def ingest_historical(
         from ..data.ingestion import (
             fetch_trades_coinapi,
             fetch_orderbook_coinapi,
+            download_coinapi_bba,
+            download_coinapi_book_delta,
             download_coinapi_open_interest,
             download_funding,
         )
 
+        if not os.getenv("COINAPI_KEY"):
+            typer.echo("COINAPI_KEY missing")
+            raise typer.Exit(code=1)
+
         if kind == "orderbook":
             asyncio.run(
                 fetch_orderbook_coinapi(
-                    symbol, backend=backend, depth=depth
+                    symbol,
+                    backend=backend,
+                    depth=depth,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
+        elif kind == "bba":
+            connector = CoinAPIConnector()
+            asyncio.run(
+                download_coinapi_bba(connector, symbol, backend=backend)
+            )
+        elif kind == "book_delta":
+            connector = CoinAPIConnector()
+            asyncio.run(
+                download_coinapi_book_delta(
+                    connector, symbol, backend=backend, depth=depth
                 )
             )
         elif kind == "open_interest":
             connector = CoinAPIConnector()
             asyncio.run(
                 download_coinapi_open_interest(
-                    connector, symbol, backend=backend, limit=limit
+                    connector,
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
         elif kind == "funding":
             connector = CoinAPIConnector()
-            asyncio.run(download_funding(connector, symbol, backend=backend))
+            asyncio.run(
+                download_funding(
+                    connector,
+                    symbol,
+                    backend=backend,
+                    start_time=start,
+                    end_time=end,
+                )
+            )
         else:
             asyncio.run(
                 fetch_trades_coinapi(
-                    symbol, backend=backend, limit=limit
+                    symbol,
+                    backend=backend,
+                    limit=limit,
+                    start_time=start,
+                    end_time=end,
                 )
             )
     else:  # pragma: no cover - CLI validation
@@ -441,8 +612,12 @@ def ingest_historical(
 
 @app.command("run-bot")
 def run_bot(
-    exchange: str = typer.Option("binance", help="Exchange name"),
-    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_venue,
+        help=f"Trading venue ({_VENUE_CHOICES})",
+    ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
     trade_qty: float = typer.Option(0.001, help="Order size"),
@@ -453,12 +628,13 @@ def run_bot(
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk manager stop loss percentage"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk manager max drawdown percentage"),
 ) -> None:
-    """Run the live trading bot with configurable exchange and symbols."""
+    """Run the live trading bot with configurable venue and symbols."""
 
     setup_logging()
     if testnet:
         from ..live.runner_testnet import run_live_testnet
 
+        exchange, market = venue.split("_", 1)
         asyncio.run(
             run_live_testnet(
                 exchange=exchange,
@@ -499,8 +675,12 @@ def paper_run(
 
 @app.command("real-run")
 def real_run(
-    exchange: str = typer.Option("binance", help="Exchange name"),
-    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_venue,
+        help=f"Trading venue ({_VENUE_CHOICES})",
+    ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     trade_qty: float = typer.Option(0.001, help="Order size"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
@@ -518,6 +698,8 @@ def real_run(
 
     setup_logging()
     from ..live.runner_real import run_live_real
+
+    exchange, market = venue.split("_", 1)
 
     asyncio.run(
         run_live_real(
@@ -747,7 +929,12 @@ def backtest_cfg(config: str) -> None:
 
 @app.command("backtest-db")
 def backtest_db(
-    exchange: str = typer.Option("binance", help="Exchange name"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_backtest_venue,
+        help=f"Venue name ({_VENUE_CHOICES})",
+    ),
     symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
@@ -767,7 +954,7 @@ def backtest_db(
     end_dt = datetime.fromisoformat(end)
     rows = select_bars(
         engine,
-        exchange=exchange,
+        exchange=venue,
         symbol=symbol,
         start=start_dt,
         end=end_dt,

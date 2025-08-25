@@ -29,22 +29,36 @@ class KaikoConnector:
 
     def __init__(self, api_key: str | None = None, rate_limit: int = 5) -> None:
         self.api_key = api_key or os.getenv("KAIKO_API_KEY", "")
+        if not self.api_key:
+            raise ValueError("KAIKO_API_KEY missing")
         # very small semaphore based limiter for historical downloads
         self._sem = asyncio.Semaphore(rate_limit)
 
     async def fetch_trades(
-        self, exchange: str, pair: str, limit: int = 100
+        self,
+        exchange: str,
+        pair: str,
+        limit: int = 100,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> List[Trade]:
         """Fetch recent trades for *pair* on *exchange*.
 
-        Parameters match Kaiko's "recent trades" endpoint. Only a subset of the
-        response fields is mapped to :class:`Trade` objects.
+        Optional ``start_time`` and ``end_time`` parameters (ISO8601 strings) are
+        forwarded to the Kaiko REST API allowing constrained historical
+        downloads when supported by the endpoint.
         """
 
         url = f"{self._BASE_URL}/trades.v1/exchanges/{exchange}/spot/{pair}/recent"
         headers = {"X-Api-Key": self.api_key}
+        params: dict[str, Any] = {"limit": limit}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params={"limit": limit}, headers=headers)
+            resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()
             data = resp.json().get("data", [])
 
@@ -66,7 +80,13 @@ class KaikoConnector:
         return trades
 
     async def fetch_order_book(
-        self, exchange: str, pair: str, depth: int = 10
+        self,
+        exchange: str,
+        pair: str,
+        depth: int = 10,
+        *,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> OrderBook:
         """Fetch a snapshot of the order book."""
 
@@ -74,7 +94,11 @@ class KaikoConnector:
             f"{self._BASE_URL}/order_book.snapshots.v1/exchanges/{exchange}/spot/{pair}/books/latest"
         )
         headers = {"X-Api-Key": self.api_key}
-        params = {"depth": depth}
+        params: dict[str, Any] = {"depth": depth}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, params=params, headers=headers)
             resp.raise_for_status()

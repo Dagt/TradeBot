@@ -57,7 +57,11 @@ class OKXWSAdapter(ExchangeAdapter):
             "GBP",
             "JPY",
         ]
-        quote = next((q for q in quotes if base_quote.endswith(q)), base_quote[-4:])
+        quote = next((q for q in quotes if base_quote.endswith(q)), None)
+        if quote is None:
+            # ``base_quote`` may include unsupported suffixes like "PERP".
+            unknown = base_quote[-4:]
+            raise ValueError(f"Unsupported quote asset '{unknown}' in symbol '{symbol}'")
         base = base_quote[: -len(quote)]
         return f"{base}-{quote}-{suffix}"
 

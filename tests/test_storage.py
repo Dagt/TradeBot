@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import importlib
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
 from tradingbot.config import settings
+import tradingbot.data.ingestion as ingestion
 
 
 def _setup_engine():
@@ -44,6 +46,31 @@ def _setup_engine():
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE funding (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    rate REAL,
+                    interval_sec INTEGER
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE open_interest (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    oi REAL
+                )
+                """
+            )
+        )
     return engine
 
 
@@ -52,6 +79,21 @@ def _setup_ts_engine():
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
         conn.exec_driver_sql("ATTACH DATABASE ':memory:' AS market")
+        conn.execute(
+            text(
+                """
+                CREATE TABLE market.trades (
+                    ts TEXT,
+                    exchange TEXT,
+                    symbol TEXT,
+                    px REAL,
+                    qty REAL,
+                    side TEXT,
+                    trade_id TEXT
+                )
+                """
+            )
+        )
         conn.execute(
             text(
                 """
@@ -90,7 +132,10 @@ def _setup_ts_engine():
 
 def _reload_storage_backend(backend: str):
     settings.db_backend = backend
-    import tradingbot.storage as storage
+    if backend == "questdb":
+        import tradingbot.storage.quest as storage
+    else:
+        import tradingbot.storage.timescale as storage
 
     return importlib.reload(storage)
 
@@ -136,6 +181,84 @@ def test_insert_and_read_orderbook():
     assert json.loads(row[3]) == [0.8, 1.2]
 
 
+def test_insert_and_read_funding():
+    storage = _reload_storage_backend("questdb")
+    engine = _setup_engine()
+
+    storage.insert_funding(
+        engine,
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="BTCUSDT",
+        rate=0.001,
+        interval_sec=3600,
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT rate, interval_sec FROM funding")
+        ).fetchone()
+
+    assert row == (0.001, 3600)
+
+
+def test_insert_and_read_open_interest():
+    storage = _reload_storage_backend("questdb")
+    engine = _setup_engine()
+
+    storage.insert_open_interest(
+        engine,
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="BTCUSDT",
+        oi=123.45,
+    )
+
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT oi FROM open_interest")).fetchone()
+
+    assert row == (123.45,)
+
+
+def test_persist_funding(monkeypatch):
+    engine = _setup_engine()
+    monkeypatch.setattr(ingestion.qs_storage, "get_engine", lambda: engine)
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = {
+        "ts": ts,
+        "exchange": "binance",
+        "symbol": "btc/usdt",
+        "rate": 0.002,
+        "interval_sec": 7200,
+    }
+    ingestion.persist_funding([record], backend="quest")
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT symbol, rate, interval_sec FROM funding")
+        ).fetchone()
+
+    assert row == ("BTCUSDT", 0.002, 7200)
+
+
+def test_persist_open_interest(monkeypatch):
+    engine = _setup_engine()
+    monkeypatch.setattr(ingestion.qs_storage, "get_engine", lambda: engine)
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    record = {
+        "ts": ts,
+        "exchange": "binance",
+        "symbol": "btc-usdt",
+        "oi": 321.0,
+    }
+    ingestion.persist_open_interest([record], backend="quest")
+
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT symbol, oi FROM open_interest")).fetchone()
+
+    assert row == ("BTCUSDT", 321.0)
+
+
 def test_insert_order_timescale():
     from tradingbot.storage import timescale
 
@@ -144,7 +267,7 @@ def test_insert_order_timescale():
         engine,
         strategy="s",
         exchange="binance",
-        symbol="BTCUSDT",
+        symbol="btc/usdt",
         side="buy",
         type_="limit",
         qty=1.0,
@@ -190,4 +313,36 @@ def test_insert_risk_event_timescale():
         ).fetchone()
 
     assert row == ("binance", "daily_max_loss")
+
+
+def test_insert_trade_timescale_ts():
+    from tradingbot.storage import timescale
+
+    engine = _setup_ts_engine()
+
+    t = SimpleNamespace(
+        ts="2024-01-01T00:00:00",
+        exchange="binance",
+        symbol="btc-usdt",
+        price=100.0,
+        qty=1.0,
+        side="buy",
+    )
+    timescale.insert_trade(engine, t)
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT ts, exchange, symbol, px, qty, side FROM market.trades"
+            )
+        ).fetchone()
+
+    assert row == (
+        "2024-01-01T00:00:00",
+        "binance",
+        "BTCUSDT",
+        100.0,
+        1.0,
+        "buy",
+    )
 

@@ -42,12 +42,14 @@ class BinanceSpotAdapter(ExchangeAdapter):
         key = api_key or (settings.binance_testnet_api_key if testnet else settings.binance_api_key)
         secret = api_secret or (settings.binance_testnet_api_secret if testnet else settings.binance_api_secret)
 
-        self.rest = ccxt.binance({
-            "apiKey": key,
-            "secret": secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "spot"},
-        })
+        self.rest = ccxt.binance(
+            {
+                "apiKey": key,
+                "secret": secret,
+                "enableRateLimit": True,
+            }
+        )
+        self.rest.options["defaultType"] = "spot"
         self.maker_fee_bps = float(
             maker_fee_bps
             if maker_fee_bps is not None
@@ -222,8 +224,17 @@ class BinanceSpotAdapter(ExchangeAdapter):
 
         async for ob in self.stream_order_book(symbol):
             bid = ob.get("bid_px", [None])[0]
+            bid_qty = ob.get("bid_qty", [None])[0]
             ask = ob.get("ask_px", [None])[0]
-            yield {"symbol": symbol, "ts": ob.get("ts"), "bid": bid, "ask": ask}
+            ask_qty = ob.get("ask_qty", [None])[0]
+            yield {
+                "symbol": symbol,
+                "ts": ob.get("ts"),
+                "bid_px": bid,
+                "bid_qty": bid_qty,
+                "ask_px": ask,
+                "ask_qty": ask_qty,
+            }
 
     async def stream_book_delta(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         """Yield incremental order book updates for ``symbol``."""

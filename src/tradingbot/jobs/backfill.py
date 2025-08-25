@@ -9,7 +9,9 @@ from typing import Sequence
 import ccxt.async_support as ccxt
 import logging
 
+from tradingbot.core.symbols import normalize
 from ..storage.async_timescale import AsyncTimescaleClient
+from ..exchanges import SUPPORTED_EXCHANGES
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,12 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
     for attempt in range(1, retries + 1):
         try:
             return await func(*args, **kwargs)
+        except (ccxt.errors.DDoSProtection, ccxt.errors.RateLimitExceeded) as e:
+            if attempt >= retries:
+                raise
+            headers = getattr(e, "headers", {}) or {}
+            retry_after = headers.get("Retry-After", getattr(e, "retry_after", 60))
+            await asyncio.sleep(float(retry_after))
         except Exception:  # pragma: no cover - network errors
             if attempt >= retries:
                 raise
@@ -46,13 +54,16 @@ async def _retry(func, *args, retries: int = 3, delay: float = 1.0, **kwargs):
 async def backfill(
     days: int,
     symbols: Sequence[str],
+    exchange_name: str = "binance_spot",
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> None:
     """Backfill OHLCV bars and trades for *symbols*.
 
-    If *start* or *end* are not provided, the range defaults to the past
-    ``days`` days ending at ``datetime.now(timezone.utc)``.
+    ``exchange_name`` must match the identifiers used by the ingestion
+    command (``binance_spot``, ``binance_futures``, etc.).  If *start* or *end*
+    are not provided, the range defaults to the past ``days`` days ending at
+    ``datetime.now(timezone.utc)``.
     """
 
     if end is None:
@@ -75,8 +86,16 @@ async def backfill(
     else:
         logger.info("Backfill start: %d day(s) for %s", days, ", ".join(symbols))
 
-    ex = ccxt.binance({"enableRateLimit": False})
-    delay = getattr(ex, "rateLimit", 1000) / 1000
+    info = SUPPORTED_EXCHANGES.get(exchange_name)
+    if info is None:
+        raise ValueError(f"Exchange {exchange_name!r} not supported")
+
+    ex_class = getattr(ccxt, info["ccxt"])
+    conf = {"enableRateLimit": True}
+    if info.get("defaultType"):
+        conf["options"] = {"defaultType": info["defaultType"]}
+    ex = ex_class(conf)
+    ex.id = exchange_name
 
     client = AsyncTimescaleClient()
     await client.ensure_schema()
@@ -89,7 +108,7 @@ async def backfill(
     try:
         for symbol in symbols:
             logger.info("Procesando %s", symbol)
-            db_symbol = symbol.replace("/", "")
+            db_symbol = normalize(symbol)
 
             # --- OHLCV backfill -------------------------------------------------
             since = start_ms
@@ -100,9 +119,7 @@ async def backfill(
                     "1m",
                     since,
                     1000,
-                    delay=delay,
                 )
-                await asyncio.sleep(delay)
                 if not ohlcvs:
                     break
 
@@ -127,9 +144,8 @@ async def backfill(
             since = start_ms
             while since < end_ms:
                 trades = await _retry(
-                    ex.fetch_trades, symbol, since, 1000, delay=delay
+                    ex.fetch_trades, symbol, since, 1000
                 )
-                await asyncio.sleep(delay)
                 if not trades:
                     break
                 for t in trades:

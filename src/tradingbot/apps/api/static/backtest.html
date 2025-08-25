@@ -59,7 +59,7 @@
       </div>
       <div id="field-venue">
         <label for="bt-venue">Exchange</label>
-        <input id="bt-venue" placeholder="binance"/>
+        <select id="bt-venue"></select>
       </div>
       <div id="field-start">
         <label for="bt-start">Inicio</label>
@@ -70,7 +70,7 @@
         <input id="bt-end" type="date"/>
       </div>
     </div>
-    <div class="muted" style="margin-top:8px">Los resultados y reportes se muestran abajo y pueden guardarse en archivos según la configuración.</div>
+    <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
     <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
@@ -86,6 +86,97 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
+const strategies = {
+  breakout_atr: {
+    desc: "Aprovecha rupturas de un canal calculado con el Average True Range (ATR). Compra al superar la banda superior y vende al romper la inferior.",
+    requires: ["ohlcv"],
+  },
+  breakout_vol: {
+    desc: "Busca expansiones de volatilidad. Entra cuando el precio abandona su rango normal con un aumento notable del rango de la vela.",
+    requires: ["ohlcv"],
+  },
+  momentum: {
+    desc: "Sigue la tendencia usando el RSI como medidor de impulso. Opera a favor del movimiento cuando el indicador se mantiene en zonas extremas.",
+    requires: ["ohlcv"],
+  },
+  mean_reversion: {
+    desc: "Opera la vuelta a la media apoyándose en el RSI. Compra en condiciones de sobreventa y vende en sobrecompra.",
+    requires: ["ohlcv"],
+  },
+  triangular_arb: {
+    desc: "Explota ineficiencias entre tres pares realizando un ciclo de intercambios para obtener beneficio sin exposición direccional.",
+    requires: ["prices"],
+  },
+  cash_and_carry: {
+    desc: "Captura la base entre mercado spot y futuros perpetuos, manteniendo posiciones opuestas y cobrando la tasa de financiamiento.",
+    requires: ["spot", "perp", "funding"],
+  },
+  order_flow_imbalance: {
+    desc: "Evalúa el desequilibrio entre órdenes de compra y venta agresivas para anticipar movimientos de precio.",
+    requires: ["bba", "book_delta"],
+  },
+  depth_imbalance: {
+    desc: "Mide la disparidad de liquidez entre el lado comprador y vendedor del libro para detectar presión latente.",
+    requires: ["book_delta"],
+  },
+  liquidity_events: {
+    desc: "Identifica vacíos y gaps de liquidez en el libro que pueden generar movimientos bruscos.",
+    requires: ["bba", "book_delta"],
+  },
+  triple_barrier: {
+    desc: "Genera señales usando la metodología de triple barrera con objetivos y stop temporales.",
+    requires: ["ohlcv"],
+  },
+  ml: {
+    desc: "Ejecuta un modelo de machine learning entrenado con indicadores y estadísticas personalizadas.",
+    requires: ["features"],
+  },
+  mean_rev_ofi: {
+    desc: "Busca la reversión a la media basada en el Order Flow Imbalance (OFI) derivado del libro de órdenes.",
+    requires: ["book_delta"],
+  },
+  orderflow: {
+    desc: "Analiza el flujo de órdenes agresivas vs. pasivas para estimar micro‑tendencias.",
+    requires: ["trades", "book_delta"],
+  },
+  cross_arbitrage: {
+    desc: "Arbitraje del mismo par entre dos exchanges; compra donde esté barato y vende donde esté caro.",
+    requires: ["prices"],
+  },
+};
+
+const dataInfo = {
+  ohlcv: "Serie de velas con Open-High-Low-Close-Volume.",
+  prices: "Secuencia de precios (spot o perp) en ticks/velas, útil para spreads.",
+  bba: "Best Bid/Ask (mejor postor y oferente) con sus volúmenes.",
+  book_delta: "Variaciones por nivel del libro entre dos snapshots consecutivos.",
+  spot: "Precio de mercado spot.",
+  perp: "Precio de futuros perpetuos.",
+  funding: "Historial de tasas de financiamiento de los perpetuos.",
+  features: "Indicadores y estadísticas usados por un modelo de ML.",
+};
+
+let strategyInfo = strategies;
+
+async function loadExchanges(){
+  try{
+    const r = await fetch(api('/ccxt/exchanges'));
+    const exchanges = (await r.json()).filter(
+      ex => !ex.endsWith('_testnet') && !ex.endsWith('_ws')
+    );
+    const sel = document.getElementById('bt-venue');
+    sel.innerHTML = '';
+    for(const ex of exchanges){
+      const opt = document.createElement('option');
+      opt.value = ex;
+      opt.textContent = ex;
+      sel.appendChild(opt);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+
 async function loadStrategies(){
   try{
     const r=await fetch(api('/strategies/status'));
@@ -96,7 +187,8 @@ async function loadStrategies(){
       const o=document.createElement('option');
       o.value=s;o.textContent=s;sel.appendChild(o);
     });
-  }catch(e){}
+    updateStrategyInfo();
+  }catch(e){console.error(e);}
 }
 
 function updateBtFields(){
@@ -106,8 +198,26 @@ function updateBtFields(){
   document.getElementById('field-strategy').style.display=(mode==='csv'||mode==='db')?'':'none';
   document.getElementById('field-config').style.display=(mode==='cfg'||mode==='walk')?'':'none';
   document.getElementById('field-venue').style.display=mode==='db'?'':'none';
+  document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
+}
+
+function updateStrategyInfo(){
+  const sel=document.getElementById('bt-strategy');
+  const info=strategyInfo[sel.value]||{};
+  const el=document.getElementById('bt-strategy-info');
+  if(info.desc){
+    let html=`<p>${info.desc}</p>`;
+    if(info.requires && info.requires.length){
+      html += "<p>Datos necesarios:</p><ul>" +
+              info.requires.map(r => `<li><strong>${r}</strong>: ${dataInfo[r]}</li>`).join("") +
+              "</ul>";
+    }
+    el.innerHTML = html;
+  }else{
+    el.textContent='';
+  }
 }
 
 async function runBacktest(){
@@ -130,7 +240,7 @@ async function runBacktest(){
     const strat=document.getElementById('bt-strategy').value.trim();
     const start=document.getElementById('bt-start').value;
     const end=document.getElementById('bt-end').value;
-    cmd=`backtest-db --exchange ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
+    cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
   }
   try{
     const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
@@ -158,8 +268,10 @@ async function runCli(){
 document.getElementById('bt-mode').addEventListener('change',updateBtFields);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('cli-run').addEventListener('click',runCli);
+document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
 updateBtFields();
 loadStrategies();
+loadExchanges();
 </script>
 </body>
 </html>

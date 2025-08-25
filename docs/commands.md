@@ -51,6 +51,7 @@ BINANCE_FUTURES_TESTNET=false python -m tradingbot.cli ingest --venue binance_fu
 Descarga datos históricos con límites de velocidad.
 - `--days`: número de días hacia atrás (1 por defecto).
 - `--symbols`: lista de símbolos a descargar.
+- `--venue`: nombre del venue (`binance_spot`, `binance_futures`, etc.).
 - `--start`: fecha inicial en formato ISO.
 - `--end`: fecha final en formato ISO.
 
@@ -59,15 +60,24 @@ Obtiene datos históricos de Kaiko o CoinAPI.
 - `source`: `kaiko` o `coinapi`.
 - `symbol`: par de mercado.
 - `--exchange`: requerido para Kaiko.
-- `--kind`: `trades`, `orderbook`, `open_interest` o `funding`.
+- `--kind`: `trades`, `orderbook`, `bba`, `book_delta`, `open_interest` o `funding`.
 - `--backend`: backend de almacenamiento (por defecto `timescale`).
 - `--limit`: cantidad de registros a traer.
 - `--depth`: profundidad del order book.
 
+Para establecer las credenciales, use:
+
+```
+secrets set kaiko <key> <secret>
+secrets set coinapi <key> <secret>
+```
+
+Como alternativa, las variables de entorno `KAIKO_API_KEY` y `COINAPI_KEY`
+pueden definirse con los valores correspondientes.
+
 ## `run-bot`
 Ejecuta el bot en modo en vivo (testnet o real).
-- `--exchange`: nombre del exchange (`binance`).
-- `--market`: `spot` o `futures`.
+- `--venue`: nombre del venue (ej. `binance_spot`, `okx_futures`).
 - `--symbol`: puede repetirse; símbolo a operar.
 - `--testnet`: usa endpoints de prueba.
 - `--trade-qty`: tamaño de la orden.
@@ -85,8 +95,7 @@ Corre una estrategia en modo paper (sin dinero real) y expone métricas.
 
 ## `real-run`
 Ejecuta el bot contra un exchange real.
-- `--exchange`: nombre del exchange.
-- `--market`: `spot` o `futures`.
+- `--venue`: nombre del venue.
 - `--symbol`: puede repetirse.
 - `--trade-qty`: tamaño de la orden.
 - `--leverage`: apalancamiento.
@@ -106,6 +115,10 @@ Inicia trabajadores de ingesta de funding y open interest definidos en un YAML.
 Valida que un archivo YAML de configuración contenga los campos mínimos
 necesarios para backtesting y walk-forward.
 
+Los comandos de backtesting solo aceptan venues en modo live con sufijo
+`*_spot` o `*_futures`; los venues que terminan en `_testnet` o `_ws` son
+rechazados.
+
 ## `backtest`
 Ejecuta un backtest vectorizado desde un archivo CSV.
 - `data`: ruta al CSV.
@@ -118,7 +131,7 @@ Ejecuta un backtest basado en un archivo de configuración Hydra.
 
 ## `backtest-db`
 Realiza un backtest usando datos almacenados en la base de datos.
-- `--exchange`: nombre del exchange.
+- `--venue`: nombre del venue.
 - `--symbol`: par a evaluar.
 - `--strategy`: estrategia.
 - `--start` y `--end`: rango de fechas (YYYY-MM-DD).

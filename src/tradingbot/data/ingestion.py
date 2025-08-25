@@ -13,6 +13,9 @@ from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 import inspect
+from ..utils.metrics import ORDERBOOK_INSERT_FAILURES
+from ..core.symbols import normalize
+from ..exchanges import SUPPORTED_EXCHANGES
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +27,12 @@ def _get_storage(backend: Backends):
     if backend == "csv":
         return None
     return ts_storage if backend == "timescale" else qs_storage
+
+
+def _resolve_exchange(name: str) -> str:
+    """Map internal exchange identifiers to provider-specific names."""
+
+    return SUPPORTED_EXCHANGES.get(name, {}).get("ccxt", name)
 
 
 def _csv_path(name: str, path: Path | None = None) -> Path:
@@ -48,11 +57,17 @@ def persist_trades(trades: Iterable[Tick], *, backend: Backends = "timescale", p
     if storage is None:
         return
     engine = storage.get_engine()
-    for t in trades:
-        try:
-            storage.insert_trade(engine, t)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Trade insert failed: %s", exc)
+    batch = list(trades)
+    if not batch:
+        return
+    try:
+        if hasattr(storage, "insert_trades"):
+            storage.insert_trades(engine, batch)
+        else:
+            for t in batch:
+                storage.insert_trade(engine, t)
+    except Exception as exc:  # pragma: no cover - logging only
+        log.debug("Trade insert failed: %s", exc)
 
 
 def persist_orderbooks(orderbooks: Iterable[OrderBook], *, backend: Backends = "timescale", path: Path | None = None) -> None:
@@ -191,11 +206,17 @@ def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: 
     if storage is None:
         return
     engine = storage.get_engine()
-    for b in bars:
-        try:
-            storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Bar insert failed: %s", exc)
+    batch = list(bars)
+    if not batch:
+        return
+    try:
+        if hasattr(storage, "insert_bars_1m"):
+            storage.insert_bars_1m(engine, batch)
+        else:
+            for b in batch:
+                storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
+    except Exception as exc:  # pragma: no cover - logging only
+        log.debug("Bar insert failed: %s", exc)
 
 
 def persist_funding(
@@ -211,7 +232,7 @@ def persist_funding(
                     [
                         f["ts"].isoformat(),
                         f["exchange"],
-                        f["symbol"],
+                        normalize(f["symbol"]),
                         f["rate"],
                         f.get("interval_sec", 0),
                     ]
@@ -219,7 +240,7 @@ def persist_funding(
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_funding"):
         return
     engine = storage.get_engine()
     for f in fundings:
@@ -228,7 +249,7 @@ def persist_funding(
                 engine,
                 ts=f["ts"],
                 exchange=f["exchange"],
-                symbol=f["symbol"],
+                symbol=normalize(f["symbol"]),
                 rate=f["rate"],
                 interval_sec=f.get("interval_sec", 0),
             )
@@ -245,11 +266,13 @@ def persist_open_interest(
         with csv_path.open("a", newline="") as fh:
             writer = csv.writer(fh)
             for r in records:
-                writer.writerow([r["ts"].isoformat(), r["exchange"], r["symbol"], r["oi"]])
+                writer.writerow(
+                    [r["ts"].isoformat(), r["exchange"], normalize(r["symbol"]), r["oi"]]
+                )
         return
 
     storage = _get_storage(backend)
-    if storage is None:
+    if storage is None or not hasattr(storage, "insert_open_interest"):
         return
     engine = storage.get_engine()
     for r in records:
@@ -258,7 +281,7 @@ def persist_open_interest(
                 engine,
                 ts=r["ts"],
                 exchange=r["exchange"],
-                symbol=r["symbol"],
+                symbol=normalize(r["symbol"]),
                 oi=r["oi"],
             )
         except Exception as exc:  # pragma: no cover - logging only
@@ -279,13 +302,14 @@ async def download_trades(
     """
 
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    db_symbol = normalize(symbol)
     ticks: list[Tick] = []
     for t in raw_trades:
         ticks.append(
             Tick(
                 ts=t.timestamp,
                 exchange=getattr(connector, "name", "unknown"),
-                symbol=symbol,
+                symbol=db_symbol,
                 price=t.price,
                 qty=t.amount,
                 side=t.side,
@@ -304,10 +328,11 @@ async def download_order_book(
     """Fetch an order book snapshot using *connector* and persist it."""
 
     ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=getattr(connector, "name", "unknown"),
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -375,6 +400,8 @@ async def fetch_trades_kaiko(
     pair: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch trades from Kaiko and persist them.
@@ -385,14 +412,20 @@ async def fetch_trades_kaiko(
     """
 
     connector = KaikoConnector()
+    api_exchange = _resolve_exchange(exchange)
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
-        exchange, pair, **params
+        api_exchange,
+        pair,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
     )
+    db_symbol = normalize(pair)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=exchange,
-            symbol=pair,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -407,16 +440,26 @@ async def fetch_orderbook_kaiko(
     pair: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch an order book snapshot from Kaiko and persist it."""
 
     connector = KaikoConnector()
-    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    api_exchange = _resolve_exchange(exchange)
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        api_exchange,
+        pair,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
+    db_symbol = normalize(pair)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=exchange,
-        symbol=pair,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -435,14 +478,16 @@ async def download_kaiko_trades(
 ) -> None:
     """Fetch trades from Kaiko and persist them."""
 
+    api_exchange = _resolve_exchange(exchange)
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
-        exchange, pair, **params
+        api_exchange, pair, **params
     )
+    db_symbol = normalize(pair)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=exchange,
-            symbol=pair,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -462,17 +507,81 @@ async def download_kaiko_order_book(
 ) -> None:
     """Fetch an order book snapshot from Kaiko and persist it."""
 
-    ob: ConnOrderBook = await connector.fetch_order_book(exchange, pair, **params)
+    api_exchange = _resolve_exchange(exchange)
+    ob: ConnOrderBook = await connector.fetch_order_book(api_exchange, pair, **params)
+    db_symbol = normalize(pair)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=exchange,
-        symbol=pair,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
         ask_qty=[q for _, q in ob.asks],
     )
     persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_kaiko_bba(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch best bid/ask from Kaiko and persist it.
+
+    Kaiko does not provide a dedicated BBA endpoint so the data is
+    derived from an order book snapshot.
+    """
+
+    api_exchange = _resolve_exchange(exchange)
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        api_exchange, pair, depth=1, **params
+    )
+    bid_px, bid_qty = (ob.bids[0] if ob.bids else (None, None))
+    ask_px, ask_qty = (ob.asks[0] if ob.asks else (None, None))
+    db_symbol = normalize(pair)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": exchange,
+        "symbol": db_symbol,
+        "bid_px": bid_px,
+        "bid_qty": bid_qty,
+        "ask_px": ask_px,
+        "ask_qty": ask_qty,
+    }
+    persist_bba([record], backend=backend)
+
+
+async def download_kaiko_book_delta(
+    connector: KaikoConnector,
+    exchange: str,
+    pair: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch order book data from Kaiko and persist it as deltas.
+
+    When only snapshots are available the delta is approximated by the
+    full order book levels.
+    """
+
+    api_exchange = _resolve_exchange(exchange)
+    ob: ConnOrderBook = await connector.fetch_order_book(api_exchange, pair, **params)
+    db_symbol = normalize(pair)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": exchange,
+        "symbol": db_symbol,
+        "bid_px": [p for p, _ in ob.bids],
+        "bid_qty": [q for _, q in ob.bids],
+        "ask_px": [p for p, _ in ob.asks],
+        "ask_qty": [q for _, q in ob.asks],
+    }
+    persist_book_delta([record], backend=backend)
 
 
 async def download_kaiko_open_interest(
@@ -487,10 +596,11 @@ async def download_kaiko_open_interest(
 ) -> None:
     """Fetch open interest from Kaiko and persist it."""
 
+    api_exchange = _resolve_exchange(exchange)
     last_exc: Exception | None = None
     for attempt in range(retries):
         try:
-            raw = await connector.fetch_open_interest(exchange, pair, **params)
+            raw = await connector.fetch_open_interest(api_exchange, pair, **params)
             break
         except Exception as exc:  # pragma: no cover - network errors
             last_exc = exc
@@ -506,7 +616,7 @@ async def download_kaiko_open_interest(
         oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
-        records.append({"ts": ts, "exchange": exchange, "symbol": pair, "oi": float(oi or 0.0)})
+        records.append({"ts": ts, "exchange": exchange, "symbol": normalize(pair), "oi": float(oi or 0.0)})
 
     for i in range(0, len(records), batch_size):
         persist_open_interest(records[i : i + batch_size], backend=backend)
@@ -524,10 +634,11 @@ async def download_kaiko_funding(
 ) -> None:
     """Fetch funding rates from Kaiko and persist them."""
 
+    api_exchange = _resolve_exchange(exchange)
     last_exc: Exception | None = None
     for attempt in range(retries):
         try:
-            raw = await connector.fetch_funding(exchange, pair, **params)
+            raw = await connector.fetch_funding(api_exchange, pair, **params)
             break
         except Exception as exc:  # pragma: no cover - network errors
             last_exc = exc
@@ -553,7 +664,7 @@ async def download_kaiko_funding(
             {
                 "ts": ts,
                 "exchange": exchange,
-                "symbol": pair,
+                "symbol": normalize(pair),
                 "rate": float(rate or 0.0),
                 "interval_sec": int(interval),
             }
@@ -567,6 +678,8 @@ async def fetch_trades_coinapi(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch trades from CoinAPI and persist them.
@@ -577,12 +690,18 @@ async def fetch_trades_coinapi(
     """
 
     connector = CoinAPIConnector()
-    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(
+        symbol,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
+    db_symbol = normalize(symbol)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=connector.name,
-            symbol=symbol,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -596,16 +715,24 @@ async def fetch_orderbook_coinapi(
     symbol: str,
     *,
     backend: Backends = "timescale",
+    start_time: str | None = None,
+    end_time: str | None = None,
     **params: Any,
 ) -> None:
     """Fetch an order book snapshot from CoinAPI and persist it."""
 
     connector = CoinAPIConnector()
-    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    ob: ConnOrderBook = await connector.fetch_order_book(
+        symbol,
+        start_time=start_time,
+        end_time=end_time,
+        **params,
+    )
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=connector.name,
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
@@ -624,11 +751,12 @@ async def download_coinapi_trades(
     """Fetch trades from CoinAPI and persist them."""
 
     raw_trades: Iterable[ConnTrade] = await connector.fetch_trades(symbol, **params)
+    db_symbol = normalize(symbol)
     ticks = [
         Tick(
             ts=t.timestamp,
             exchange=connector.name,
-            symbol=symbol,
+            symbol=db_symbol,
             price=t.price,
             qty=t.amount,
             side=t.side,
@@ -648,16 +776,69 @@ async def download_coinapi_order_book(
     """Fetch an order book snapshot from CoinAPI and persist it."""
 
     ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
     snapshot = OrderBook(
         ts=ob.timestamp,
         exchange=connector.name,
-        symbol=symbol,
+        symbol=db_symbol,
         bid_px=[p for p, _ in ob.bids],
         bid_qty=[q for _, q in ob.bids],
         ask_px=[p for p, _ in ob.asks],
         ask_qty=[q for _, q in ob.asks],
     )
     persist_orderbooks([snapshot], backend=backend)
+
+
+async def download_coinapi_bba(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch best bid/ask from CoinAPI and persist it.
+
+    CoinAPI exposes only order book snapshots; the BBA is derived from the
+    top levels.
+    """
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, depth=1, **params)
+    bid_px, bid_qty = (ob.bids[0] if ob.bids else (None, None))
+    ask_px, ask_qty = (ob.asks[0] if ob.asks else (None, None))
+    db_symbol = normalize(symbol)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": connector.name,
+        "symbol": db_symbol,
+        "bid_px": bid_px,
+        "bid_qty": bid_qty,
+        "ask_px": ask_px,
+        "ask_qty": ask_qty,
+    }
+    persist_bba([record], backend=backend)
+
+
+async def download_coinapi_book_delta(
+    connector: CoinAPIConnector,
+    symbol: str,
+    *,
+    backend: Backends = "timescale",
+    **params: Any,
+) -> None:
+    """Fetch order book data from CoinAPI and persist it as deltas."""
+
+    ob: ConnOrderBook = await connector.fetch_order_book(symbol, **params)
+    db_symbol = normalize(symbol)
+    record = {
+        "ts": ob.timestamp,
+        "exchange": connector.name,
+        "symbol": db_symbol,
+        "bid_px": [p for p, _ in ob.bids],
+        "bid_qty": [q for _, q in ob.bids],
+        "ask_px": [p for p, _ in ob.asks],
+        "ask_qty": [q for _, q in ob.asks],
+    }
+    persist_book_delta([record], backend=backend)
 
 
 async def download_coinapi_open_interest(
@@ -684,13 +865,14 @@ async def download_coinapi_open_interest(
     else:  # pragma: no cover - defensive
         raise last_exc or RuntimeError("fetch_open_interest failed")
 
+    db_symbol = normalize(symbol)
     records = []
     for r in raw if isinstance(raw, Iterable) else [raw]:
         ts = getattr(r, "timestamp", None) or getattr(r, "ts", None) or r.get("ts")
         oi = getattr(r, "oi", None) or r.get("oi") or r.get("openInterest")
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / 1000 if ts > 1e12 else ts, timezone.utc)
-        records.append({"ts": ts, "exchange": connector.name, "symbol": symbol, "oi": float(oi or 0.0)})
+        records.append({"ts": ts, "exchange": connector.name, "symbol": db_symbol, "oi": float(oi or 0.0)})
 
     for i in range(0, len(records), batch_size):
         persist_open_interest(records[i : i + batch_size], backend=backend)
@@ -698,11 +880,12 @@ async def download_coinapi_open_interest(
 
 async def run_trades_stream(adapter: Any, symbol: str, bus: EventBus) -> None:
     """Publish trades from *adapter* to an :class:`EventBus`."""
+    db_symbol = normalize(symbol)
     async for d in adapter.stream_trades(symbol):
         tick = Tick(
             ts=d.get("ts", datetime.now(timezone.utc)),
             exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
+            symbol=db_symbol,
             price=float(d.get("price") or d.get("px") or 0.0),
             qty=float(d.get("qty") or d.get("size") or 0.0),
             side=d.get("side"),
@@ -737,7 +920,8 @@ async def run_orderbook_stream(
     emit_delta: if ``True`` also publish order book deltas.
     """
 
-    storage = _get_storage(backend) if persist else None
+    storage = None if (not persist or backend == "csv") else _get_storage(backend)
+    db_symbol = normalize(symbol)
 
     async def _orderbook() -> None:
         sig = inspect.signature(adapter.stream_order_book)
@@ -749,38 +933,83 @@ async def run_orderbook_stream(
             ob = OrderBook(
                 ts=d.get("ts", datetime.now(timezone.utc)),
                 exchange=getattr(adapter, "name", "unknown"),
-                symbol=symbol,
+                symbol=db_symbol,
                 bid_px=d.get("bid_px") or [],
                 bid_qty=d.get("bid_qty") or [],
                 ask_px=d.get("ask_px") or [],
                 ask_qty=d.get("ask_qty") or [],
             )
             await bus.publish("orderbook", ob)
-            if storage is not None and engine is not None:
-                storage.insert_orderbook(
-                    engine,
-                    ts=ob.ts,
-                    exchange=ob.exchange,
-                    symbol=ob.symbol,
-                    bid_px=ob.bid_px,
-                    bid_qty=ob.bid_qty,
-                    ask_px=ob.ask_px,
-                    ask_qty=ob.ask_qty,
-                )
+            if persist:
+                if backend == "csv":
+                    persist_orderbooks([ob], backend="csv")
+                elif storage is not None and engine is not None:
+                    try:
+                        storage.insert_orderbook(
+                            engine,
+                            ts=ob.ts,
+                            exchange=ob.exchange,
+                            symbol=ob.symbol,
+                            bid_px=ob.bid_px,
+                            bid_qty=ob.bid_qty,
+                            ask_px=ob.ask_px,
+                            ask_qty=ob.ask_qty,
+                        )
+                    except Exception as exc:  # pragma: no cover - logging only
+                        log.debug("Orderbook insert failed: %s", exc)
+                        ORDERBOOK_INSERT_FAILURES.inc()
 
     tasks = [asyncio.create_task(_orderbook())]
 
     if emit_bba and hasattr(adapter, "stream_bba"):
         async def _bba() -> None:
             async for b in adapter.stream_bba(symbol):
-                await bus.publish("bba", b)
+                data = dict(b)
+                data["symbol"] = normalize(data.get("symbol", symbol))
+                await bus.publish("bba", data)
+                if persist:
+                    if backend == "csv":
+                        persist_bba([data], backend="csv")
+                    elif storage is not None and engine is not None:
+                        try:
+                            storage.insert_bba(
+                                engine,
+                                ts=data.get("ts", datetime.now(timezone.utc)),
+                                exchange=getattr(adapter, "name", "unknown"),
+                                symbol=data.get("symbol", db_symbol),
+                                bid_px=data.get("bid_px"),
+                                bid_qty=data.get("bid_qty"),
+                                ask_px=data.get("ask_px"),
+                                ask_qty=data.get("ask_qty"),
+                            )
+                        except Exception as exc:  # pragma: no cover - logging only
+                            log.debug("BBA insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_bba()))
 
     if emit_delta and hasattr(adapter, "stream_book_delta"):
         async def _delta() -> None:
             async for d in adapter.stream_book_delta(symbol, depth):
-                await bus.publish("book_delta", d)
+                data = dict(d)
+                data["symbol"] = normalize(data.get("symbol", symbol))
+                await bus.publish("book_delta", data)
+                if persist:
+                    if backend == "csv":
+                        persist_book_delta([data], backend="csv")
+                    elif storage is not None and engine is not None:
+                        try:
+                            storage.insert_book_delta(
+                                engine,
+                                ts=data.get("ts", datetime.now(timezone.utc)),
+                                exchange=getattr(adapter, "name", "unknown"),
+                                symbol=data.get("symbol", db_symbol),
+                                bid_px=data.get("bid_px", []),
+                                bid_qty=data.get("bid_qty", []),
+                                ask_px=data.get("ask_px", []),
+                                ask_qty=data.get("ask_qty", []),
+                            )
+                        except Exception as exc:  # pragma: no cover - logging only
+                            log.debug("Book delta insert failed: %s", exc)
 
         tasks.append(asyncio.create_task(_delta()))
 
@@ -797,11 +1026,12 @@ async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "times
     """
     storage = _get_storage(backend)
     engine = storage.get_engine()
+    db_symbol = normalize(symbol)
     async for d in adapter.stream_trades(symbol):
         tick = Tick(
             ts=d.get("ts", datetime.now(timezone.utc)),
             exchange=getattr(adapter, "name", "unknown"),
-            symbol=symbol,
+            symbol=db_symbol,
             price=float(d.get("price") or d.get("px") or 0.0),
             qty=float(d.get("qty") or d.get("size") or 0.0),
             side=d.get("side"),
@@ -813,30 +1043,67 @@ async def stream_trades(adapter: Any, symbol: str, *, backend: Backends = "times
 
 async def stream_orderbook(adapter: Any, symbol: str, depth: int = 10, *, backend: Backends = "timescale"):
     """Stream L2 orderbook snapshots and persist them."""
-    storage = _get_storage(backend)
-    engine = storage.get_engine()
+    storage = None if backend == "csv" else _get_storage(backend)
+    engine = None if storage is None else storage.get_engine()
     sig = inspect.signature(adapter.stream_order_book)
     if "depth" in sig.parameters:
         agen = adapter.stream_order_book(symbol, depth=depth)
     else:
         agen = adapter.stream_order_book(symbol)
+    db_symbol = normalize(symbol)
     async for d in agen:
-        data = {
-            "ts": d.get("ts", datetime.now(timezone.utc)),
-            "exchange": getattr(adapter, "name", "unknown"),
-            "symbol": symbol,
-            "bid_px": d.get("bid_px") or [],
-            "bid_qty": d.get("bid_qty") or [],
-            "ask_px": d.get("ask_px") or [],
-            "ask_qty": d.get("ask_qty") or [],
-        }
-        try:
-            storage.insert_orderbook(engine, **data)
-        except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Orderbook insert failed: %s", exc)
+        ob = OrderBook(
+            ts=d.get("ts", datetime.now(timezone.utc)),
+            exchange=getattr(adapter, "name", "unknown"),
+            symbol=db_symbol,
+            bid_px=d.get("bid_px") or [],
+            bid_qty=d.get("bid_qty") or [],
+            ask_px=d.get("ask_px") or [],
+            ask_qty=d.get("ask_qty") or [],
+        )
+        if backend == "csv":
+            persist_orderbooks([ob], backend="csv")
+        elif storage is not None and engine is not None:
+            try:
+                storage.insert_orderbook(
+                    engine,
+                    ts=ob.ts,
+                    exchange=ob.exchange,
+                    symbol=ob.symbol,
+                    bid_px=ob.bid_px,
+                    bid_qty=ob.bid_qty,
+                    ask_px=ob.ask_px,
+                    ask_qty=ob.ask_qty,
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Orderbook insert failed: %s", exc)
 
 async def poll_funding(adapter: Any, symbol: str, *, interval: int = 60, backend: Backends = "timescale"):
     """Poll periodic funding rates and persist them."""
+    if backend == "csv":
+        while True:
+            try:
+                info: Any = await adapter.fetch_funding(symbol)
+                ts = info.get("ts", datetime.now(timezone.utc))
+                rate = float(info.get("rate") or info.get("fundingRate") or 0.0)
+                interval_sec = int(info.get("interval_sec") or info.get("interval", 0))
+                persist_funding(
+                    [
+                        {
+                            "ts": ts,
+                            "exchange": getattr(adapter, "name", "unknown"),
+                            "symbol": symbol,
+                            "rate": rate,
+                            "interval_sec": interval_sec,
+                        }
+                    ],
+                    backend="csv",
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Funding poll failed: %s", exc)
+            await asyncio.sleep(interval)
+        return
+
     storage = _get_storage(backend)
     engine = storage.get_engine()
     while True:
@@ -864,8 +1131,30 @@ async def poll_open_interest(
     *,
     interval: int = 60,
     backend: Backends = "timescale",
-):
+): 
     """Poll periodic open interest and persist it."""
+    if backend == "csv":
+        while True:
+            try:
+                info: Any = await adapter.fetch_oi(symbol)
+                ts = info.get("ts", datetime.now(timezone.utc))
+                oi = float(info.get("oi") or info.get("openInterest") or 0.0)
+                persist_open_interest(
+                    [
+                        {
+                            "ts": ts,
+                            "exchange": getattr(adapter, "name", "unknown"),
+                            "symbol": symbol,
+                            "oi": oi,
+                        }
+                    ],
+                    backend="csv",
+                )
+            except Exception as exc:  # pragma: no cover - logging only
+                log.debug("Open interest poll failed: %s", exc)
+            await asyncio.sleep(interval)
+        return
+
     storage = _get_storage(backend)
     engine = storage.get_engine()
     while True:

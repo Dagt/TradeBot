@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import AsyncIterator, Iterable
 
@@ -76,13 +77,25 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
             if price is None:
                 continue
             symbol_key = stream.split("@")[0].upper()
-            if symbol_key.endswith("USDT"):
-                base = symbol_key[:-4]
-                symbol = f"{base}/USDT"
+            quotes: list[str] = []
+            if self.rest and getattr(self.rest, "meta", None):
+                try:
+                    markets = getattr(self.rest.meta.client, "markets", {})
+                    quotes = sorted(
+                        {m.get("quote") for m in markets.values() if m.get("quote")},
+                        key=len,
+                        reverse=True,
+                    )
+                except Exception:
+                    pass
+            if not quotes:
+                quotes = ["USDT", "BUSD", "BTC", "ETH", "BNB", "FDUSD", "TUSD", "USDC"]
+            match = next((q for q in quotes if symbol_key.endswith(q)), None)
+            if match:
+                symbol = f"{symbol_key[:-len(match)]}/{match}"
             else:
-                candidates = ("USDT","BUSD","BTC","ETH","BNB","FDUSD","TUSD")
-                match = next((q for q in candidates if symbol_key.endswith(q)), None)
-                symbol = f"{symbol_key[:-len(match)]}/{match}" if match else symbol_key
+                m = re.match(r"([A-Z0-9]+?)([A-Z]{2,6})$", symbol_key)
+                symbol = f"{m.group(1)}/{m.group(2)}" if m else symbol_key
 
             price = float(price)
             qty = float(qty or 0.0)

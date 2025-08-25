@@ -27,6 +27,20 @@ class DummyRest:
         return {"status": "canceled"}
 
 
+@pytest.mark.parametrize(
+    "symbol, suffix",
+    [
+        ("BTC-PERP", "PERP"),
+        ("BTC-FOO", "FOO"),
+    ],
+)
+def test_normalize_symbol_invalid(symbol, suffix):
+    adapter = OKXWSAdapter()
+    with pytest.raises(ValueError) as excinfo:
+        adapter.normalize_symbol(symbol)
+    assert suffix in str(excinfo.value)
+
+
 @pytest.mark.asyncio
 async def test_fetch_funding_oi_and_orders():
     rest = DummyRest()

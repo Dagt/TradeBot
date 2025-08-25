@@ -75,7 +75,8 @@ async def setup_db():
 
 
 @pytest.mark.asyncio
-async def test_backfill_persists_data(monkeypatch, setup_db):
+@pytest.mark.parametrize("input_symbol", ["BTC/USDT", "BTC-USDT"])
+async def test_backfill_persists_data(monkeypatch, setup_db, input_symbol):
     monkeypatch.setenv("PG_HOST", "localhost")
     monkeypatch.setenv("PG_USER", "postgres")
     monkeypatch.setenv("PG_PASSWORD", "postgres")
@@ -85,7 +86,9 @@ async def test_backfill_persists_data(monkeypatch, setup_db):
 
     monkeypatch.setattr(job_backfill.ccxt, "binance", lambda *_, **__: DummyExchange())
 
-    await job_backfill.backfill(days=1, symbols=["BTC/USDT"])
+    await job_backfill.backfill(
+        days=1, symbols=[input_symbol], exchange_name="binance_spot"
+    )
 
     from tradingbot.storage.async_timescale import AsyncTimescaleClient
 
@@ -101,7 +104,8 @@ async def test_backfill_persists_data(monkeypatch, setup_db):
 
 
 @pytest.mark.asyncio
-async def test_backfill_overlapping_range(monkeypatch, setup_db):
+@pytest.mark.parametrize("input_symbol", ["BTC/USDT", "BTC-USDT"])
+async def test_backfill_overlapping_range(monkeypatch, setup_db, input_symbol):
     # Ensure database is empty
     dsn = "postgresql+asyncpg://postgres:postgres@localhost/tradebot_test"
     eng = create_async_engine(dsn, echo=False)
@@ -121,11 +125,23 @@ async def test_backfill_overlapping_range(monkeypatch, setup_db):
 
     start1 = datetime(2023, 1, 1, tzinfo=timezone.utc)
     end1 = start1 + timedelta(minutes=2)
-    await job_backfill.backfill(days=1, symbols=["BTC/USDT"], start=start1, end=end1)
+    await job_backfill.backfill(
+        days=1,
+        symbols=[input_symbol],
+        start=start1,
+        end=end1,
+        exchange_name="binance_spot",
+    )
 
     start2 = start1 + timedelta(minutes=1)
     end2 = start2 + timedelta(minutes=2)
-    await job_backfill.backfill(days=1, symbols=["BTC/USDT"], start=start2, end=end2)
+    await job_backfill.backfill(
+        days=1,
+        symbols=[input_symbol],
+        start=start2,
+        end=end2,
+        exchange_name="binance_spot",
+    )
 
     from tradingbot.storage.async_timescale import AsyncTimescaleClient
 
