@@ -30,6 +30,7 @@ from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
 from ...cli.main import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
+from ...core.symbols import normalize as normalize_symbol
 
 # Persistencia
 try:
@@ -157,6 +158,7 @@ def orders_history(
 ):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
+    symbol = normalize_symbol(symbol) if symbol else None
     return {
         "items": select_order_history(
             _ENGINE, limit=limit, search=search, symbol=symbol, status=status
@@ -275,6 +277,7 @@ def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
     from ...storage.timescale import select_pnl_summary
+    symbol = normalize_symbol(symbol) if symbol else None
     return select_pnl_summary(_ENGINE, venue=venue, symbol=symbol)
 
 @app.get("/pnl/timeseries")
@@ -287,6 +290,7 @@ def pnl_timeseries(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": []}
     from ...storage.timescale import select_pnl_timeseries
+    symbol = normalize_symbol(symbol) if symbol else None
     points = select_pnl_timeseries(_ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours)
     return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": points}
 
@@ -298,6 +302,7 @@ def fills_recent(
 ):
     if not _CAN_PG:
         return {"venue": venue, "items": []}
+    symbol = normalize_symbol(symbol) if symbol else None
     items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
     return {"venue": venue, "symbol": symbol, "items": items}
 
@@ -310,6 +315,7 @@ def fills_summary(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": []}
     from ...storage.timescale import select_fills_summary
+    symbol = normalize_symbol(symbol) if symbol else None
     items = select_fills_summary(_ENGINE, venue=venue, symbol=symbol, strategy=strategy)
     return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": items}
 
@@ -334,6 +340,7 @@ def fills_slippage(
     if not _CAN_PG:
         return {"venue": venue, "hours": hours, "symbol": symbol, "global": {}, "buy": {}, "sell": {}}
     from ...storage.timescale import select_slippage
+    symbol = normalize_symbol(symbol) if symbol else None
     return select_slippage(_ENGINE, venue=venue, symbol=symbol, hours=hours)
 
 
@@ -346,6 +353,7 @@ def pnl_intraday(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "net": 0.0, "points": []}
     from ...storage.timescale import select_pnl_timeseries
+    symbol = normalize_symbol(symbol) if symbol else None
     points = select_pnl_timeseries(
         _ENGINE, venue=venue, symbol=symbol, bucket="1 hour", hours=24
     )
@@ -360,7 +368,7 @@ def oco_active(venue: str, symbols: str):
     if not _CAN_PG:
         return {}
     from ...storage.timescale import load_active_oco_by_symbols
-    lst = [s.strip().upper().replace("-", "/") for s in symbols.split(",") if s.strip()]
+    lst = [normalize_symbol(s.strip()) for s in symbols.split(",") if s.strip()]
     return load_active_oco_by_symbols(_ENGINE, venue=venue, symbols=lst)
 
 
@@ -487,7 +495,7 @@ def get_funding():
 @app.post("/funding")
 def set_funding(data: dict[str, float]):
     """Update funding rates for one or more symbols."""
-
+    data = {normalize_symbol(k): v for k, v in data.items()}
     _funding.update(data)
     return {"funding": _funding}
 
@@ -502,7 +510,7 @@ def get_basis():
 @app.post("/basis")
 def set_basis(data: dict[str, float]):
     """Update basis values for one or more symbols."""
-
+    data = {normalize_symbol(k): v for k, v in data.items()}
     _basis.update(data)
     return {"basis": _basis}
 
@@ -680,7 +688,7 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
             "-m",
             "tradingbot.cli",
             "run-cross-arb",
-            cfg.pairs[0],
+            normalize_symbol(cfg.pairs[0]),
             cfg.spot,
             cfg.perp,
         ]
@@ -699,7 +707,7 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         cfg.strategy,
     ]
     for pair in cfg.pairs or []:
-        args.extend(["--symbol", pair])
+        args.extend(["--symbol", normalize_symbol(pair)])
     if cfg.notional is not None:
         args.extend(["--notional", str(cfg.notional)])
     if cfg.venue:
