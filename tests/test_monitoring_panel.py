@@ -14,8 +14,7 @@ def test_config_roundtrip():
         "strategy": "mean_reversion",
         "pairs": ["BTC/USDT"],
         "notional": 50,
-        "exchange": "binance",
-        "market": "futures",
+        "venue": "binance_futures",
         "trade_qty": 0.01,
         "leverage": 3,
         "testnet": True,
@@ -41,8 +40,7 @@ def test_start_stop(monkeypatch):
         "/config",
         json={
             "strategy": "dummy",
-            "exchange": "binance",
-            "market": "spot",
+            "venue": "binance_spot",
             "trade_qty": 0.001,
             "leverage": 1,
             "testnet": True,
@@ -76,8 +74,7 @@ def test_start_stop(monkeypatch):
     assert data["pid"] == 123
     assert calls
     argv = list(calls["args"])
-    assert "--exchange" in argv and argv[argv.index("--exchange") + 1] == "binance"
-    assert "--market" in argv and argv[argv.index("--market") + 1] == "spot"
+    assert "--venue" in argv and argv[argv.index("--venue") + 1] == "binance_spot"
     assert "--trade-qty" in argv and argv[argv.index("--trade-qty") + 1] == "0.001"
     assert "--leverage" in argv and argv[argv.index("--leverage") + 1] == "1"
     assert "--testnet" in argv

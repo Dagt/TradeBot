@@ -97,13 +97,13 @@ def get_adapter_class(name: str) -> type[adapters.ExchangeAdapter] | None:
     return _ADAPTER_CLASS_MAP.get(name)
 
 
-_EXCHANGE_CHOICES = ", ".join(sorted(SUPPORTED_EXCHANGES))
+_VENUE_CHOICES = ", ".join(sorted(SUPPORTED_EXCHANGES))
 
 
-def _validate_exchange_name(value: str) -> str:
+def _validate_venue(value: str) -> str:
     if value not in SUPPORTED_EXCHANGES:
         raise typer.BadParameter(
-            f"Exchange must be one of: {_EXCHANGE_CHOICES}"
+            f"Venue must be one of: {_VENUE_CHOICES}"
         )
     return value
 
@@ -341,13 +341,14 @@ def backfill(
     symbols: List[str] = typer.Option(
         ["BTC/USDT"], "--symbols", help="Symbols to download"
     ),
-    exchange_name: str = typer.Option(
+    venue: str = typer.Option(
         "binance_spot",
+        "--venue",
         "--exchange-name",
-        callback=_validate_exchange_name,
+        callback=_validate_venue,
         help=(
-            "Exchange to use. Choose from spot/futures venues or Deribit:"
-            f" {_EXCHANGE_CHOICES}"
+            "Venue to use. Choose from spot/futures venues or Deribit:"
+            f" {_VENUE_CHOICES}"
         ),
     ),
     start: str | None = typer.Option(
@@ -375,7 +376,7 @@ def backfill(
         run_backfill(
             days=days,
             symbols=symbols,
-            exchange_name=exchange_name,
+            exchange_name=venue,
             start=_parse(start),
             end=_parse(end),
         )
@@ -553,8 +554,12 @@ def ingest_historical(
 
 @app.command("run-bot")
 def run_bot(
-    exchange: str = typer.Option("binance", help="Exchange name"),
-    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_venue,
+        help=f"Trading venue ({_VENUE_CHOICES})",
+    ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
     trade_qty: float = typer.Option(0.001, help="Order size"),
@@ -565,12 +570,13 @@ def run_bot(
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk manager stop loss percentage"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk manager max drawdown percentage"),
 ) -> None:
-    """Run the live trading bot with configurable exchange and symbols."""
+    """Run the live trading bot with configurable venue and symbols."""
 
     setup_logging()
     if testnet:
         from ..live.runner_testnet import run_live_testnet
 
+        exchange, market = venue.split("_", 1)
         asyncio.run(
             run_live_testnet(
                 exchange=exchange,
@@ -611,8 +617,12 @@ def paper_run(
 
 @app.command("real-run")
 def real_run(
-    exchange: str = typer.Option("binance", help="Exchange name"),
-    market: str = typer.Option("spot", help="Market type (spot or futures)"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_venue,
+        help=f"Trading venue ({_VENUE_CHOICES})",
+    ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     trade_qty: float = typer.Option(0.001, help="Order size"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
@@ -630,6 +640,8 @@ def real_run(
 
     setup_logging()
     from ..live.runner_real import run_live_real
+
+    exchange, market = venue.split("_", 1)
 
     asyncio.run(
         run_live_real(
@@ -859,7 +871,12 @@ def backtest_cfg(config: str) -> None:
 
 @app.command("backtest-db")
 def backtest_db(
-    exchange: str = typer.Option("binance", help="Exchange name"),
+    venue: str = typer.Option(
+        "binance_spot",
+        "--venue",
+        callback=_validate_venue,
+        help=f"Venue name ({_VENUE_CHOICES})",
+    ),
     symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
@@ -879,7 +896,7 @@ def backtest_db(
     end_dt = datetime.fromisoformat(end)
     rows = select_bars(
         engine,
-        exchange=exchange,
+        exchange=venue,
         symbol=symbol,
         start=start_dt,
         end=end_dt,

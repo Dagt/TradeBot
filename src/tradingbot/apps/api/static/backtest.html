@@ -130,7 +130,7 @@ async function runBacktest(){
     const strat=document.getElementById('bt-strategy').value.trim();
     const start=document.getElementById('bt-start').value;
     const end=document.getElementById('bt-end').value;
-    cmd=`backtest-db --exchange ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
+    cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
   }
   try{
     const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
