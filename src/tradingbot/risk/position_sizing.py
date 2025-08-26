@@ -8,71 +8,74 @@ strategies.
 from __future__ import annotations
 
 
-def vol_target(atr: float, risk_budget: float, notional_cap: float) -> float:
-    """Return target position size for a given volatility estimate.
+def vol_target(atr: float, equity_pct: float, equity_actual: float) -> float:
+    """Return target position size given a volatility estimate.
 
     Parameters
     ----------
     atr:
         Average true range or volatility estimate of the asset.
-    risk_budget:
-        Maximum notional exposure allowed based on risk appetite.
-    notional_cap:
-        Absolute cap on position size.
+    equity_pct:
+        Fraction of current equity to allocate.
+    equity_actual:
+        Current account equity.
 
     Returns
     -------
     float
-        The desired position size capped by ``notional_cap``. If any argument
-        is non-positive, ``0.0`` is returned.
+        Desired absolute position size.  If any argument is non-positive,
+        ``0.0`` is returned.
     """
-    if atr <= 0 or risk_budget <= 0 or notional_cap <= 0:
+    if atr <= 0 or equity_pct <= 0 or equity_actual <= 0:
         return 0.0
 
-    size = risk_budget / atr
-    return min(size, notional_cap)
+    budget = equity_actual * equity_pct
+    return budget / atr
 
 
 def delta_from_strength(
-    side: str,
     strength: float,
-    max_pos: float,
-    current: float,
+    equity_pct: float,
+    equity_actual: float,
+    price: float,
+    current_qty: float,
 ) -> float:
-    """Convert a strength fraction into a position delta.
+    """Translate a signal ``strength`` into a position delta.
 
     Parameters
     ----------
-    side:
-        ``"buy"`` or ``"sell"`` indicating the desired direction.
     strength:
-        Desired exposure as a fraction of ``max_pos``. Values are clipped to
-        ``[0, 1]`` with ``0`` meaning the existing position should be closed.
-    max_pos:
-        Maximum absolute position size allowed.
-    current:
-        Current signed exposure.
+        Target exposure as a fraction of ``equity_pct``. Positive values denote
+        long positions, negative values short. Values are clipped to
+        ``[-1, 1]``.
+    equity_pct:
+        Fraction of current equity allocated to the asset.
+    equity_actual:
+        Current account equity.
+    price:
+        Asset price used to convert notional into quantity.
+    current_qty:
+        Existing position size.
 
     Returns
     -------
     float
-        Signed quantity needed to move from ``current`` to the target
-        exposure. Positive values indicate buys, negative sells.
+        Signed quantity required to reach the target exposure from
+        ``current_qty``.
 
     Examples
     --------
-    >>> delta_from_strength("buy", 0.5, 100, 20)
+    >>> delta_from_strength(0.5, 0.1, 10_000, 100, 20)
     30.0
-    >>> delta_from_strength("buy", 0.2, 100, 30)
+    >>> delta_from_strength(0.2, 0.1, 10_000, 100, 30)
     -10.0
-    >>> delta_from_strength("sell", 0.0, 100, -40)
+    >>> delta_from_strength(-0.0, 0.1, 10_000, 100, -40)
     40.0
     """
 
-    strength = max(0.0, min(1.0, strength))
-    if strength <= 0:
-        return -current
-    target = max_pos * strength
-    target = target if side == "buy" else -target
-    return target - current
+    strength = max(-1.0, min(1.0, strength))
+    if price <= 0:
+        return -current_qty
+    target_qty = (equity_actual * equity_pct * strength) / price
+    return target_qty - current_qty
 

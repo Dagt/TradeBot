@@ -103,7 +103,7 @@ class DummyExec:
 async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
@@ -164,7 +164,7 @@ async def test_run_real(monkeypatch):
     rr = importlib.reload(rr)
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rr, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rr, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rr, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
@@ -218,7 +218,7 @@ class DummyExec2(DummyExec):
 async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)

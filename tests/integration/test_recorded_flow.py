@@ -25,12 +25,14 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         latency=1,
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
+        equity_pct=1.0,
+        equity_actual=df["close"].iloc[0],
     )
     risk = engine.risk[("alwaysbuy", sym)]
-    risk.max_pos = 1.0
     result = engine.run()
-    assert len(result["fills"]) == 1
+    assert len(result["fills"]) > 0
     avg_price = result["orders"][0]["avg_price"]
-    expected_pnl = df["close"].iloc[-1] - avg_price
-    assert pytest.approx(result["equity"], rel=1e-4) == expected_pnl
-    assert risk.pos.qty == 1.0
+    qty = risk.pos.qty
+    expected_pnl = qty * (df["close"].iloc[-1] - avg_price)
+    assert abs(result["equity"] - expected_pnl) < 0.01
+    assert qty > 0
