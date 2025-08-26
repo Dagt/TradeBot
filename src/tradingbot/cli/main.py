@@ -745,12 +745,15 @@ def run_daemon(config: str = "config/config.yaml") -> None:
 
         adapter = BinanceSpotWSAdapter()
         bus = EventBus()
-        risk = RiskManager(bus=bus)
+        r_cfg = getattr(cfg, "risk", {})
+        eq_pct = getattr(r_cfg, "equity_pct", 0.0)
+        r_pct = getattr(r_cfg, "risk_pct", 0.0)
+        risk = RiskManager(bus=bus, equity_pct=eq_pct, risk_pct=r_pct)
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 
-        corr_thr = getattr(getattr(cfg, "risk", {}), "correlation_threshold", 0.8)
-        ret_win = getattr(getattr(cfg, "risk", {}), "returns_window", 100)
+        corr_thr = getattr(r_cfg, "correlation_threshold", 0.8)
+        ret_win = getattr(r_cfg, "returns_window", 100)
         bal_cfg = getattr(cfg, "balance", {})
         bal_assets = getattr(bal_cfg, "assets", [])
         bal_thr = getattr(bal_cfg, "threshold", 0.0)
@@ -881,7 +884,8 @@ def backtest(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Equity allocation %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk per trade %"),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -902,7 +906,8 @@ def backtest(
         [(strategy, symbol)],
         initial_equity=capital,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        equity_pct=equity_pct,
+        risk_pct=risk_pct,
         stop_loss_pct=stop_loss_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
@@ -917,7 +922,8 @@ def backtest_cfg(
     config: str,
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Equity allocation %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk per trade %"),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -958,7 +964,8 @@ def backtest_cfg(
             [(strategy, symbol)],
             initial_equity=capital,
             trade_qty=trade_qty,
-            max_pos=max_pos,
+            equity_pct=equity_pct,
+            risk_pct=risk_pct,
             stop_loss_pct=stop_loss_pct,
             max_drawdown_pct=max_drawdown_pct,
             max_notional=max_notional,
@@ -990,7 +997,8 @@ def backtest_db(
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Equity allocation %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk per trade %"),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -1039,7 +1047,8 @@ def backtest_db(
         [(strategy, symbol)],
         initial_equity=capital,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        equity_pct=equity_pct,
+        risk_pct=risk_pct,
         stop_loss_pct=stop_loss_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,

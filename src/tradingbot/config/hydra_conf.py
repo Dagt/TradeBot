@@ -57,6 +57,9 @@ class RiskConfig:
 
     correlation_threshold: float = 0.8
     returns_window: int = 100
+    equity_pct: float = 0.0
+    risk_pct: float = 0.0
+    pyramid_pct_step: float | None = None
 
 
 @dataclass

@@ -81,9 +81,13 @@
         <label for="bt-trade-qty">Tamaño orden</label>
         <input id="bt-trade-qty" type="number" step="any"/>
       </div>
-      <div id="field-max-pos">
-        <label for="bt-max-pos">Posición máxima</label>
-        <input id="bt-max-pos" type="number" step="any"/>
+      <div id="field-equity-pct">
+        <label for="bt-equity-pct">Equity %</label>
+        <input id="bt-equity-pct" type="number" step="any"/>
+      </div>
+      <div id="field-risk-pct">
+        <label for="bt-risk-pct">Riesgo %</label>
+        <input id="bt-risk-pct" type="number" step="any"/>
       </div>
       <div id="field-stop-loss-pct">
         <label for="bt-stop-loss-pct">Stop loss %</label>
@@ -288,7 +292,7 @@ function updateBtFields(){
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
   const showRisk = mode!=='walk';
-  ['field-trade-qty','field-max-pos','field-stop-loss-pct','field-max-dd-pct','field-max-notional'].forEach(id=>{
+  ['field-trade-qty','field-equity-pct','field-risk-pct','field-stop-loss-pct','field-max-dd-pct','field-max-notional'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
   });
 }
@@ -345,12 +349,14 @@ async function runBacktest(){
   }
   if(mode!=='walk'){
     const tq=document.getElementById('bt-trade-qty').value.trim();
-    const mp=document.getElementById('bt-max-pos').value.trim();
+    const eqp=document.getElementById('bt-equity-pct').value.trim();
+    const rp=document.getElementById('bt-risk-pct').value.trim();
     const sl=document.getElementById('bt-stop-loss-pct').value.trim();
     const dd=document.getElementById('bt-max-drawdown-pct').value.trim();
     const mn=document.getElementById('bt-max-notional').value.trim();
     if(tq) cmd+=` --trade-qty ${tq}`;
-    if(mp) cmd+=` --max-pos ${mp}`;
+    if(eqp) cmd+=` --equity-pct ${eqp}`;
+    if(rp) cmd+=` --risk-pct ${rp}`;
     if(sl) cmd+=` --stop-loss-pct ${sl}`;
     if(dd) cmd+=` --max-drawdown-pct ${dd}`;
     if(mn) cmd+=` --max-notional ${mn}`;

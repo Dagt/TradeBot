@@ -24,6 +24,9 @@ storage:
 risk:
   correlation_threshold: 0.8
   returns_window: 100
+  equity_pct: 0.0
+  risk_pct: 0.0
+  pyramid_pct_step: null
 balance:
   enabled: false
   threshold: 0.0

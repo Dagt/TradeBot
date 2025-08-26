@@ -54,6 +54,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
                       soft_cap_pct: float, soft_cap_grace_sec: int,
                       daily_max_loss_usdt: float, daily_max_drawdown_pct: float,
                       max_consecutive_losses: int, corr_threshold: float,
+                      equity_pct: float, risk_pct: float,
                       config_path: str | None = None) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     ws_kwargs: Dict[str, Any] = {"testnet": True}
@@ -74,7 +75,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
             exec_adapter = exec_cls()
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_pos=1.0, equity_pct=equity_pct, risk_pct=risk_pct)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,
@@ -159,6 +160,8 @@ async def run_live_testnet(
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
     corr_threshold: float = 0.8,
+    equity_pct: float = 0.0,
+    risk_pct: float = 0.0,
     *,
     config_path: str | None = None,
 ) -> None:
@@ -182,6 +185,8 @@ async def run_live_testnet(
             daily_max_drawdown_pct,
             max_consecutive_losses,
             corr_threshold,
+            equity_pct,
+            risk_pct,
             config_path=config_path,
         )
         for c in cfgs

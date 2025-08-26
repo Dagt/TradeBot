@@ -97,6 +97,8 @@ async def _run_symbol(
     daily_max_drawdown_pct: float,
     max_consecutive_losses: int,
     corr_threshold: float,
+    equity_pct: float,
+    risk_pct: float,
     config_path: str | None = None,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
@@ -108,7 +110,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_pos=1.0, equity_pct=equity_pct, risk_pct=risk_pct)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_usdt=total_cap_usdt,
@@ -201,6 +203,8 @@ async def run_live_real(
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
     corr_threshold: float = 0.8,
+    equity_pct: float = 0.0,
+    risk_pct: float = 0.0,
     config_path: str | None = None,
 ) -> None:
     """Run a simple live loop on a real crypto exchange."""
@@ -232,6 +236,8 @@ async def run_live_real(
             daily_max_drawdown_pct,
             max_consecutive_losses,
             corr_threshold,
+            equity_pct,
+            risk_pct,
             config_path=config_path,
         )
         for c in cfgs

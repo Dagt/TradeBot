@@ -150,6 +150,8 @@ class EventDrivenBacktestEngine:
         max_drawdown_pct: float = 0.0,
         stop_loss_pct: float = 0.0,
         max_notional: float = 0.0,
+        equity_pct: float = 0.0,
+        risk_pct: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -176,6 +178,8 @@ class EventDrivenBacktestEngine:
         self._max_drawdown_pct = float(max_drawdown_pct)
         self._stop_loss_pct = float(stop_loss_pct)
         self._max_notional = float(max_notional)
+        self._equity_pct = float(equity_pct)
+        self._risk_pct = float(risk_pct)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -212,6 +216,8 @@ class EventDrivenBacktestEngine:
                 max_pos=self._max_pos,
                 stop_loss_pct=self._stop_loss_pct,
                 max_drawdown_pct=self._max_drawdown_pct,
+                equity_pct=self._equity_pct,
+                risk_pct=self._risk_pct,
                 limits=limits,
             )
             self.strategy_exchange[key] = exchange

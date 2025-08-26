@@ -41,7 +41,8 @@ class TriConfig:
     edge_threshold: float = 0.001
     persist_pg: bool = False  # <-- nuevo flag
 
-async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None):
+async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None,
+                                 equity_pct: float = 0.0, risk_pct: float = 0.0):
     syms = make_symbols(cfg.route)
     streams = [_stream_name(syms.bq), _stream_name(syms.mq), _stream_name(syms.mb)]
     url = BINANCE_WS + "/".join(streams)
@@ -51,7 +52,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     fills = 0
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=equity_pct, risk_pct=risk_pct),
             PortfolioGuard(GuardConfig(venue="binance")),
         )
 

@@ -55,6 +55,9 @@ class RiskManager:
         *,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
+        equity_pct: float = 0.0,
+        risk_pct: float = 0.0,
+        pyramid_pct_step: float | None = None,
         limits: RiskLimits | None = None,
         bus: EventBus | None = None,
     ):
@@ -79,6 +82,10 @@ class RiskManager:
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
         self.daily_pnl: float = 0.0
         self._daily_peak: float = 0.0
+
+        self.equity_pct = abs(equity_pct)
+        self.risk_pct = abs(risk_pct)
+        self.pyramid_pct_step = pyramid_pct_step
 
         self.enabled = True
         self.last_kill_reason: str | None = None

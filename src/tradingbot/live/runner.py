@@ -94,6 +94,8 @@ async def run_live_binance(
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
+    equity_pct: float = 0.0,
+    risk_pct: float = 0.0,
     *,
     config_path: str | None = None,
 ):
@@ -103,7 +105,7 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_pos=1.0, equity_pct=equity_pct, risk_pct=risk_pct)
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,

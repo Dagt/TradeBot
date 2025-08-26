@@ -27,7 +27,8 @@ except Exception:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 
-async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = None) -> None:
+async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = None,
+                            equity_pct: float = 0.0, risk_pct: float = 0.0) -> None:
     """Run cross exchange arbitrage using ``ExecutionRouter``.
 
     Parameters
@@ -40,7 +41,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     bus = EventBus()
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=equity_pct, risk_pct=risk_pct),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )
