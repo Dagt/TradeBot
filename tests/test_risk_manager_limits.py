@@ -83,6 +83,21 @@ def test_risk_service_updates_and_persists(monkeypatch):
     assert events and events[0]["kind"] == "VIOLATION"
 
 
+def test_risk_service_stop_loss_triggers_close():
+    rm = RiskManager(risk_pct=0.05)
+    rm.equity_pct = 1.0
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    svc = RiskService(rm, guard)
+    rm.set_position(1.0)
+    svc.update_position("X", "BTC", 1.0)
+    rm.check_limits(100.0)
+
+    allowed, reason, delta = svc.check_order("BTC", "buy", 10_000.0, 94.0)
+    assert allowed is True
+    assert reason == "stop_loss"
+    assert delta == pytest.approx(-1.0)
+
+
 @pytest.mark.asyncio
 async def test_update_correlation_emits_pause():
     bus = EventBus()
