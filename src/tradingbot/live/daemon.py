@@ -168,6 +168,7 @@ class TradeBotDaemon:
             rebalance_interval if rebalance_interval is not None else balance_interval
         )
         self.rebalance_enabled = rebalance_enabled
+        self.equity = 0.0
 
         # initialize position books for all venues/symbols
         for venue in self.adapters:
@@ -505,10 +506,16 @@ class TradeBotDaemon:
             self.risk.update_correlation(corr_pairs, self.corr_threshold)
             self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
-        delta = self.risk.size(side, price, strength)
-        delta += self.risk.size_with_volatility(symbol_vol)
-        delta = self.risk.adjust_size_for_correlation(
-            symbol, delta, corr_pairs, self.corr_threshold
+        equity = self.guard.equity if self.guard else self.equity
+        delta = self.risk.size(
+            side,
+            price,
+            equity,
+            strength,
+            symbol=symbol,
+            symbol_vol=symbol_vol,
+            correlations=corr_pairs,
+            threshold=self.corr_threshold,
         )
         if abs(delta) <= 0:
             return

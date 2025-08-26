@@ -8,7 +8,7 @@ strategies.
 from __future__ import annotations
 
 
-def vol_target(atr: float, equity_pct: float, equity_actual: float) -> float:
+def vol_target(atr: float, equity_pct: float, equity: float) -> float:
     """Return target position size given a volatility estimate.
 
     Parameters
@@ -17,7 +17,7 @@ def vol_target(atr: float, equity_pct: float, equity_actual: float) -> float:
         Average true range or volatility estimate of the asset.
     equity_pct:
         Fraction of current equity to allocate.
-    equity_actual:
+    equity:
         Current account equity.
 
     Returns
@@ -26,17 +26,17 @@ def vol_target(atr: float, equity_pct: float, equity_actual: float) -> float:
         Desired absolute position size.  If any argument is non-positive,
         ``0.0`` is returned.
     """
-    if atr <= 0 or equity_pct <= 0 or equity_actual <= 0:
+    if atr <= 0 or equity_pct <= 0 or equity <= 0:
         return 0.0
 
-    budget = equity_actual * equity_pct
+    budget = equity * equity_pct
     return budget / atr
 
 
 def delta_from_strength(
     strength: float,
     equity_pct: float,
-    equity_actual: float,
+    equity: float,
     price: float,
     current_qty: float,
 ) -> float:
@@ -50,7 +50,7 @@ def delta_from_strength(
         ``[-1, 1]``.
     equity_pct:
         Fraction of current equity allocated to the asset.
-    equity_actual:
+    equity:
         Current account equity.
     price:
         Asset price used to convert notional into quantity.
@@ -76,6 +76,6 @@ def delta_from_strength(
     strength = max(-1.0, min(1.0, strength))
     if price <= 0:
         return -current_qty
-    target_qty = (equity_actual * equity_pct * strength) / price
+    target_qty = (equity * equity_pct * strength) / price
     return target_qty - current_qty
 

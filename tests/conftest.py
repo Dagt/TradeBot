@@ -108,18 +108,17 @@ def risk_manager():
 
     equity = 10_000.0
     position_pct = 0.10  # 10% del equity
-    risk_pct = 0.02      # arriesgar 2% del equity invertido
+    risk_pct = 0.02      # arriesgar 2% del notional
     price = 100.0
-    stop_loss_pct = risk_pct / position_pct
 
     rm = RiskManager(
         equity_pct=position_pct,
-        equity_actual=equity,
-        stop_loss_pct=stop_loss_pct,
+        risk_pct=risk_pct,
     )
     # Atributos auxiliares para las pruebas
     rm.price = price
     rm.position_pct = position_pct
+    rm.equity = equity
     rm.risk_pct = risk_pct
     return rm
 

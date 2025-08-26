@@ -2,6 +2,8 @@ import asyncio
 import pytest
 import asyncio
 
+import asyncio
+import pytest
 from tradingbot.live.daemon import TradeBotDaemon
 from tradingbot.risk.manager import RiskManager
 from tradingbot.execution.router import ExecutionRouter
@@ -41,8 +43,9 @@ async def test_daemon_processes_trades():
     paper.update_last_price("BTCUSDT", 100.0)
     router = ExecutionRouter(paper)
     bus = EventBus()
-    risk = RiskManager(equity_pct=1.0, equity_actual=5.0, bus=bus)
+    risk = RiskManager(equity_pct=1.0, bus=bus)
     daemon = TradeBotDaemon({"feed": adapter}, [AlwaysBuy()], risk, router, ["BTCUSDT"])
+    daemon.equity = 5.0
     task = asyncio.create_task(daemon.run())
     await asyncio.sleep(0.3)
     daemon._stop.set()
@@ -67,9 +70,10 @@ async def test_daemon_adjusts_size_for_correlation():
             self.orders.append(order)
             return {"status": "filled"}
 
-    risk = DummyRisk(equity_pct=1.0, equity_actual=4.0)
+    risk = DummyRisk(equity_pct=1.0)
     router = DummyRouter()
     daemon = TradeBotDaemon({}, [], risk, router, ["AAA"], returns_window=10)
+    daemon.equity = 4.0
     daemon.price_history["AAA"] = deque([1, 2, 3], maxlen=10)
     daemon.price_history["BBB"] = deque([2, 4, 6, 8], maxlen=10)
 
@@ -86,9 +90,10 @@ async def test_daemon_emits_event_on_high_correlation():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    risk = RiskManager(equity_pct=1.0, equity_actual=2.0, bus=bus)
+    risk = RiskManager(equity_pct=1.0, bus=bus)
     router = ExecutionRouter(PaperAdapter())
     daemon = TradeBotDaemon({}, [], risk, router, ["AAA", "BBB"], returns_window=5)
+    daemon.equity = 2.0
     daemon.price_history["AAA"] = deque([1, 2, 3], maxlen=5)
     daemon.price_history["BBB"] = deque([2, 4, 6], maxlen=5)
     trade = type("T", (), {"symbol": "AAA", "price": 4.0})

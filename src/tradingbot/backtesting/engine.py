@@ -146,11 +146,9 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 0.0,
         trade_qty: float = 1.0,
-        max_drawdown_pct: float = 0.0,
-        stop_loss_pct: float = 0.0,
+        risk_pct: float = 0.0,
         max_notional: float = 0.0,
         equity_pct: float = 0.0,
-        equity_actual: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -174,9 +172,7 @@ class EventDrivenBacktestEngine:
         self.initial_equity = float(initial_equity)
         self.trade_qty = float(trade_qty)
         self._equity_pct = float(equity_pct)
-        self._equity_actual = float(equity_actual)
-        self._max_drawdown_pct = float(max_drawdown_pct)
-        self._stop_loss_pct = float(stop_loss_pct)
+        self._risk_pct = float(risk_pct)
         self._max_notional = float(max_notional)
 
         # Exchange specific configurations
@@ -212,9 +208,7 @@ class EventDrivenBacktestEngine:
             )
             self.risk[key] = RiskManager(
                 equity_pct=self._equity_pct,
-                equity_actual=self._equity_actual,
-                stop_loss_pct=self._stop_loss_pct,
-                max_drawdown_pct=self._max_drawdown_pct,
+                risk_pct=self._risk_pct,
                 limits=limits,
             )
             self.strategy_exchange[key] = exchange
@@ -367,10 +361,16 @@ class EventDrivenBacktestEngine:
                 place_price = float(df["close"].iloc[i])
                 if not risk.check_limits(place_price):
                     continue
-                delta = risk.size(sig.side, place_price, sig.strength)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
-                delta += risk.size_with_volatility(symbol_vol)
+                delta = risk.size(
+                    sig.side,
+                    place_price,
+                    equity,
+                    sig.strength,
+                    symbol=symbol,
+                    symbol_vol=symbol_vol,
+                )
                 if abs(delta) < 1e-9:
                     continue
                 side = "buy" if delta > 0 else "sell"
@@ -493,11 +493,10 @@ def run_backtest_csv(
     stress: StressConfig | None = None,
     seed: int | None = None,
     trade_qty: float = 1.0,
-    max_drawdown_pct: float = 0.0,
-    stop_loss_pct: float = 0.0,
+    risk_pct: float = 0.0,
     max_notional: float = 0.0,
     equity_pct: float = 0.0,
-    equity_actual: float = 0.0,
+    initial_equity: float = 0.0,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -515,11 +514,10 @@ def run_backtest_csv(
         stress=stress,
         seed=seed,
         trade_qty=trade_qty,
-        max_drawdown_pct=max_drawdown_pct,
-        stop_loss_pct=stop_loss_pct,
+        risk_pct=risk_pct,
         max_notional=max_notional,
         equity_pct=equity_pct,
-        equity_actual=equity_actual,
+        initial_equity=initial_equity,
     )
     return engine.run()
 
@@ -543,11 +541,10 @@ def run_backtest_mlflow(
     seed: int | None = None,
     experiment: str = "backtest",
     trade_qty: float = 1.0,
-    max_drawdown_pct: float = 0.0,
-    stop_loss_pct: float = 0.0,
+    risk_pct: float = 0.0,
     max_notional: float = 0.0,
     equity_pct: float = 0.0,
-    equity_actual: float = 0.0,
+    initial_equity: float = 0.0,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -578,11 +575,10 @@ def run_backtest_mlflow(
             stress=stress,
             seed=seed,
             trade_qty=trade_qty,
-        max_drawdown_pct=max_drawdown_pct,
-        stop_loss_pct=stop_loss_pct,
-        max_notional=max_notional,
-        equity_pct=equity_pct,
-        equity_actual=equity_actual,
+            risk_pct=risk_pct,
+            max_notional=max_notional,
+            equity_pct=equity_pct,
+            initial_equity=initial_equity,
         )
         log_backtest_metrics(result)
         return result

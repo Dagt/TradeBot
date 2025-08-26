@@ -49,9 +49,7 @@ class RiskManager:
     def __init__(
         self,
         equity_pct: float = 0.0,
-        equity_actual: float = 0.0,
-        stop_loss_pct: float = 0.0,
-        max_drawdown_pct: float = 0.0,
+        risk_pct: float = 0.0,
         vol_target: float = 0.0,
         *,
         daily_loss_limit: float = 0.0,
@@ -69,9 +67,7 @@ class RiskManager:
         """
 
         self.equity_pct = abs(equity_pct)
-        self.equity_actual = abs(equity_actual)
-        self.stop_loss_pct = abs(stop_loss_pct)
-        self.max_drawdown_pct = abs(max_drawdown_pct)
+        self.risk_pct = abs(risk_pct)
         self.vol_target = abs(vol_target)
         self._base_equity_pct = self.equity_pct
         self._base_vol_target = self.vol_target
@@ -91,10 +87,8 @@ class RiskManager:
         self.pnl_multi: Dict[str, float] = defaultdict(float)
         # Flag metric for kill switch status
         KILL_SWITCH_ACTIVE.set(0)
-        # Variables internas para cálculo de SL/DD
+        # Variable interna para cálculo de SL
         self._entry_price: float | None = None
-        self._peak_price: float | None = None  # máximo a favor (long) / mínimo a favor (short)
-        self._trough_price: float | None = None
 
         self.bus = bus
         if self.bus is not None:
@@ -108,8 +102,6 @@ class RiskManager:
 
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
-        self._peak_price = None
-        self._trough_price = None
 
     def set_position(self, qty: float) -> None:
         """Sincroniza la posición mantenida por el RiskManager con el qty real."""
@@ -233,6 +225,7 @@ class RiskManager:
         self,
         signal_side: str,
         price: float,
+        equity: float,
         strength: float = 1.0,
         *,
         symbol: str | None = None,
@@ -242,38 +235,22 @@ class RiskManager:
     ) -> float:
         """Compute position delta for a strength-based signal.
 
-        Parameters
-        ----------
-        signal_side:
-            ``"buy"`` para posición larga, ``"sell"`` para corta.
-        price:
-            Precio actual del activo.
-        strength:
-            Fracción de ``equity_pct`` que se desea alcanzar. Valores fuera de
-            ``[0, 1]`` se recortan. ``0`` cierra la posición.
-        symbol:
-            Símbolo del activo (necesario si se aplican correlaciones).
-        symbol_vol:
-            Volatilidad actual del símbolo para ajustar al objetivo
-            ``vol_target``.
-        correlations:
-            Mapa de correlaciones ``{(sym_a, sym_b): rho}`` para limitar
-            tamaño.
-        threshold:
-            Umbral de correlación sobre el cual se reduce la posición.
+        ``equity`` es el equity actual de la cuenta utilizado para dimensionar
+        la posición. ``price`` es el precio del activo. ``strength`` controla la
+        fracción de ``equity_pct`` deseada.
         """
 
         signed_strength = strength if signal_side == "buy" else -strength
         delta = delta_from_strength(
             signed_strength,
             self.equity_pct,
-            self.equity_actual,
+            equity,
             price,
             self.pos.qty,
         )
 
         if symbol_vol > 0:
-            delta += self.size_with_volatility(symbol_vol)
+            delta += self.size_with_volatility(symbol_vol, price, equity)
 
         if correlations:
             if symbol is None:
@@ -282,19 +259,25 @@ class RiskManager:
 
         return delta
 
-    def size_with_volatility(self, symbol_vol: float) -> float:
+    def size_with_volatility(self, symbol_vol: float, price: float, equity: float) -> float:
         """Dimensiona la posición basada en un objetivo de volatilidad.
 
-        Si ``vol_target`` o ``symbol_vol`` no son positivos, no se ajusta tamaño.
-        Devuelve el delta necesario para alcanzar el objetivo.
+        Devuelve el delta necesario para alcanzar el objetivo usando
+        :func:`delta_from_strength` para mantener piramidado consistente.
         """
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
-        target_abs = vol_target(symbol_vol, self.equity_pct, self.equity_actual)
+
+        target_abs = vol_target(symbol_vol, self.equity_pct, equity)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
+        if equity <= 0 or self.equity_pct <= 0 or price <= 0:
+            strength = 0.0
+        else:
+            strength = target * price / (equity * self.equity_pct)
+        strength = max(-1.0, min(1.0, strength))
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return target - self.pos.qty
+        return delta_from_strength(strength, self.equity_pct, equity, price, self.pos.qty)
 
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
@@ -466,11 +449,10 @@ class RiskManager:
         return True
 
     def check_limits(self, price: float) -> bool:
-        """Verifica stop loss y drawdown.
+        """Verifica stop loss basado en ``risk_pct``.
 
-        Actualiza precios de referencia y retorna ``True`` si aún se pueden
-        operar órdenes.  Si un límite se viola, ``enabled`` pasa a ``False`` y
-        la función devuelve ``False``.
+        Si la pérdida latente excede ``notional * risk_pct`` se activa el
+        *kill switch*.
         """
 
         if not self.enabled:
@@ -480,42 +462,18 @@ class RiskManager:
 
         qty = self.pos.qty
         if abs(qty) < 1e-12:
-            # Sin posición -> resetea referencias
             self._reset_price_trackers()
             return True
 
         px = float(price)
         if self._entry_price is None:
-            # Primer precio tras abrir posición
             self._entry_price = px
-            self._peak_price = px
-            self._trough_price = px
             return True
 
-        if qty > 0:  # posición larga
-            if px > (self._peak_price or px):
-                self._peak_price = px
-            if px < (self._trough_price or px):
-                self._trough_price = px
-            loss_pct = (self._entry_price - px) / self._entry_price if self.stop_loss_pct > 0 else 0.0
-            drawdown = (
-                (self._peak_price - px) / self._peak_price if self.max_drawdown_pct > 0 and self._peak_price else 0.0
-            )
-        else:  # posición corta
-            if px < (self._trough_price or px):
-                self._trough_price = px
-            if px > (self._peak_price or px):
-                self._peak_price = px
-            loss_pct = (px - self._entry_price) / self._entry_price if self.stop_loss_pct > 0 else 0.0
-            drawdown = (
-                (px - self._trough_price) / self._trough_price if self.max_drawdown_pct > 0 and self._trough_price else 0.0
-            )
-
-        if self.stop_loss_pct > 0 and loss_pct >= self.stop_loss_pct:
+        notional = abs(qty) * self._entry_price
+        pnl = (px - self._entry_price) * qty
+        if self.risk_pct > 0 and pnl < 0 and abs(pnl) >= notional * self.risk_pct:
             self.kill_switch("stop_loss")
-            return False
-        if self.max_drawdown_pct > 0 and drawdown >= self.max_drawdown_pct:
-            self.kill_switch("drawdown")
             return False
 
         return self._check_daily_limits()

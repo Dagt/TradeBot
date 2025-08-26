@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
 import pytest
+from datetime import datetime, timedelta, timezone
 
 from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -24,10 +25,11 @@ async def test_risk_service_correlation_limits_and_sizing():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(equity_pct=1.0, equity_actual=200.0, bus=bus)
+    rm = RiskManager(equity_pct=1.0, bus=bus)
     guard = PortfolioGuard(
         GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="test")
     )
+    guard.equity = 200.0
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
 
