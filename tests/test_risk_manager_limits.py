@@ -65,7 +65,7 @@ def test_daily_loss_limit_triggers_kill_switch():
 
 
 def test_risk_service_updates_and_persists(monkeypatch):
-    rm = RiskManager()
+    rm = RiskManager(max_pos=2)
     guard = PortfolioGuard(GuardConfig(total_cap_usdt=1.0, per_symbol_cap_usdt=1.0, venue="X"))
     daily = DailyGuard(GuardLimits(), venue="X")
     events: list = []
@@ -75,7 +75,7 @@ def test_risk_service_updates_and_persists(monkeypatch):
     svc.update_position("ex2", "BTC", -0.4)
     agg = svc.aggregate_positions()
     assert agg["BTC"] == pytest.approx(0.6)
-    allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, strength=2.0)
+    allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, strength=1.0)
     assert not allowed
     assert events and events[0]["kind"] == "VIOLATION"
 

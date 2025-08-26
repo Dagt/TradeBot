@@ -80,11 +80,12 @@ class MLStrategy(Strategy):
             proba = float(self.model.predict_proba(X_scaled)[0, 1])
         except NotFittedError:
             return None
+        proba = max(0.0, min(1.0, proba))
         if proba >= self.threshold:
             return Signal("buy", proba)
         if proba <= 1 - self.threshold:
             return Signal("sell", 1 - proba)
-        return Signal("flat", 1.0 - abs(0.5 - proba) * 2)
+        return Signal("flat", 0.0)
 
 
 __all__ = ["MLStrategy"]

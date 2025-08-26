@@ -11,8 +11,16 @@ from ..storage import timescale
 
 @dataclass
 class Signal:
+    """Simple trading signal.
+
+    ``strength`` expresses the desired exposure as a fraction of the
+    maximum position size allowed by the risk manager.  ``1.0`` requests the
+    full allocation while ``0`` or a negative value signals that any existing
+    position should be closed.
+    """
+
     side: str  # 'buy' | 'sell' | 'flat'
-    strength: float = 1.0
+    strength: float = 1.0  # fraction of the max permitted allocation
     reduce_only: bool = False
 
 class Strategy(ABC):
