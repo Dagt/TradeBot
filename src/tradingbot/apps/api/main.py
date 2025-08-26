@@ -670,6 +670,8 @@ class BotConfig(BaseModel):
     equity_pct: float | None = None
     leverage: int | None = None
     risk_pct: float | None = None
+    daily_max_loss_pct: float | None = None
+    daily_max_drawdown_pct: float | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
     spot: str | None = None
@@ -722,6 +724,10 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--leverage", str(cfg.leverage)])
     if cfg.risk_pct is not None:
         args.extend(["--risk-pct", str(cfg.risk_pct)])
+    if cfg.daily_max_loss_pct is not None:
+        args.extend(["--daily-max-loss-pct", str(cfg.daily_max_loss_pct)])
+    if cfg.daily_max_drawdown_pct is not None:
+        args.extend(["--daily-max-drawdown-pct", str(cfg.daily_max_drawdown_pct)])
     if cfg.testnet is not None:
         args.append("--testnet" if cfg.testnet else "--no-testnet")
     if cfg.dry_run is not None:
