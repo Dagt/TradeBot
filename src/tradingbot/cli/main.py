@@ -892,7 +892,6 @@ def backtest(
     capital: float = typer.Option(0.0, help="Capital inicial"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
-    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
     """Run a simple vectorised backtest from a CSV file."""
@@ -912,7 +911,6 @@ def backtest(
         initial_equity=capital,
         equity_pct=equity_pct,
         risk_pct=risk_pct,
-        max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
     )
     result = eng.run()
@@ -926,7 +924,6 @@ def backtest_cfg(
     capital: float = typer.Option(0.0, help="Capital inicial"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
-    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
     """Run a backtest using a Hydra YAML configuration."""
@@ -966,7 +963,6 @@ def backtest_cfg(
             initial_equity=capital,
             equity_pct=equity_pct,
             risk_pct=risk_pct,
-            max_drawdown_pct=max_drawdown_pct,
             max_notional=max_notional,
         )
         result = eng.run()
@@ -997,7 +993,6 @@ def backtest_db(
     capital: float = typer.Option(0.0, help="Capital inicial"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
-    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
     """Run a backtest using data stored in the database."""
@@ -1045,7 +1040,6 @@ def backtest_db(
         initial_equity=capital,
         equity_pct=equity_pct,
         risk_pct=risk_pct,
-        max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
     )
     result = eng.run()
