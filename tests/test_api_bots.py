@@ -38,8 +38,6 @@ def test_bot_endpoints(monkeypatch):
         "venue": "binance_spot",
         "equity_pct": 1.0,
         "leverage": 1,
-        "stop_loss": 0.02,
-        "take_profit": 0.05,
         "risk_pct": 0.03,
         "testnet": True,
         "dry_run": False,
@@ -50,8 +48,6 @@ def test_bot_endpoints(monkeypatch):
     pid = resp.json()["pid"]
     argv = list(calls["args"])
     assert "--venue" in argv and "binance_spot" in argv
-    assert "--stop-loss" in argv and "0.02" in argv
-    assert "--take-profit" in argv and "0.05" in argv
     assert "--equity-pct" in argv and "1.0" in argv
     assert "--risk-pct" in argv and "0.03" in argv
 
