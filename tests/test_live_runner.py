@@ -32,7 +32,7 @@ class DummyStrat:
 
 
 class DummyRisk:
-    def size(self, side, strength, **kwargs):
+    def size(self, side, price, equity, strength, **kwargs):
         return 1.0
 
     def check_limits(self, price):
@@ -118,7 +118,7 @@ async def test_bybit_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec, "bybit_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
     await rt._run_symbol(
         "bybit",
         "futures",
@@ -178,7 +178,7 @@ async def test_run_real(monkeypatch):
         (lambda: DummyWS(), DummyExecReal, "binance_spot"),
     )
 
-    cfg = rr._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
+    cfg = rr._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
     await rr._run_symbol(
         "binance",
         "spot",
@@ -233,7 +233,7 @@ async def test_okx_futures_order(monkeypatch):
         (lambda: DummyWS(), DummyExec2, "okx_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), trade_qty=1.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
     await rt._run_symbol(
         "okx",
         "futures",

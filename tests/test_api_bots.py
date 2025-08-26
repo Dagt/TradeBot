@@ -36,12 +36,11 @@ def test_bot_endpoints(monkeypatch):
         "strategy": "dummy",
         "pairs": ["BTC/USDT"],
         "venue": "binance_spot",
-        "trade_qty": 1.0,
+        "equity_pct": 1.0,
         "leverage": 1,
         "stop_loss": 0.02,
         "take_profit": 0.05,
         "risk_pct": 0.03,
-        "max_drawdown_pct": 0.1,
         "testnet": True,
         "dry_run": False,
     }
@@ -53,8 +52,8 @@ def test_bot_endpoints(monkeypatch):
     assert "--venue" in argv and "binance_spot" in argv
     assert "--stop-loss" in argv and "0.02" in argv
     assert "--take-profit" in argv and "0.05" in argv
+    assert "--equity-pct" in argv and "1.0" in argv
     assert "--risk-pct" in argv and "0.03" in argv
-    assert "--max-drawdown-pct" in argv and "0.1" in argv
 
     lst = client.get("/bots", auth=("admin", "admin"))
     assert lst.status_code == 200
@@ -95,10 +94,6 @@ def test_cross_arbitrage_start(monkeypatch):
         "perp": "binance_futures",
         "notional": 25.0,
         "threshold": 0.001,
-        "stop_loss": 0.02,
-        "take_profit": 0.05,
-        "risk_pct": 0.03,
-        "max_drawdown_pct": 0.1,
     }
 
     resp = client.post("/bots", json=payload, auth=("admin", "admin"))

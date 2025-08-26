@@ -202,7 +202,7 @@ const api = (path) => `${location.origin}${path}`;
   async function updateForm(){
     const strat=document.getElementById('bot-strategy').value;
     const cross=strat==='cross_arbitrage';
-    ['field-exchange','field-market','field-trade-qty'].forEach(id=>{
+    ['field-exchange','field-market','field-equity-pct','field-risk-pct'].forEach(id=>{
       document.getElementById(id).style.display = cross ? 'none' : '';
     });
     ['field-spot','field-perp','field-threshold'].forEach(id=>{
@@ -218,10 +218,9 @@ async function startBot(){
   const notional = document.getElementById('bot-notional').value;
   const exchange = document.getElementById('bot-exchange').value;
   const market = document.getElementById('bot-market').value;
-  const trade_qty = document.getElementById('bot-trade-qty').value;
-  const leverage = document.getElementById('bot-leverage').value;
+  const equity_pct = document.getElementById('bot-equity-pct').value;
   const risk_pct = document.getElementById('bot-risk-pct').value;
-  const max_drawdown_pct = document.getElementById('bot-max-drawdown-pct').value;
+  const leverage = document.getElementById('bot-leverage').value;
   const env = document.getElementById('bot-env').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
@@ -240,10 +239,9 @@ async function startBot(){
     });
     const payload = {strategy, pairs, exchange, market, testnet, dry_run};
     if(notional) payload.notional = Number(notional);
-    if(trade_qty) payload.trade_qty = Number(trade_qty);
-    if(leverage) payload.leverage = Number(leverage);
+    if(equity_pct) payload.equity_pct = Number(equity_pct);
     if(risk_pct) payload.risk_pct = Number(risk_pct);
-    if(max_drawdown_pct) payload.max_drawdown_pct = Number(max_drawdown_pct);
+    if(leverage) payload.leverage = Number(leverage);
   if(strategy==='cross_arbitrage'){
     payload.spot = spot;
       payload.perp = perp;

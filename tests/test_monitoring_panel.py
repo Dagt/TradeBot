@@ -15,7 +15,8 @@ def test_config_roundtrip():
         "pairs": ["BTC/USDT"],
         "notional": 50,
         "venue": "binance_futures",
-        "trade_qty": 0.01,
+        "equity_pct": 0.01,
+        "risk_pct": 0.005,
         "leverage": 3,
         "testnet": True,
         "dry_run": False,
@@ -41,7 +42,8 @@ def test_start_stop(monkeypatch):
         json={
             "strategy": "dummy",
             "venue": "binance_spot",
-            "trade_qty": 0.001,
+            "equity_pct": 0.001,
+            "risk_pct": 0.0,
             "leverage": 1,
             "testnet": True,
             "dry_run": False,
@@ -75,7 +77,8 @@ def test_start_stop(monkeypatch):
     assert calls
     argv = list(calls["args"])
     assert "--venue" in argv and argv[argv.index("--venue") + 1] == "binance_spot"
-    assert "--trade-qty" in argv and argv[argv.index("--trade-qty") + 1] == "0.001"
+    assert "--equity-pct" in argv and argv[argv.index("--equity-pct") + 1] == "0.001"
+    assert "--risk-pct" in argv and argv[argv.index("--risk-pct") + 1] == "0.0"
     assert "--leverage" in argv and argv[argv.index("--leverage") + 1] == "1"
     assert "--testnet" in argv
     assert "--no-dry-run" in argv

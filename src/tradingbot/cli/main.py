@@ -623,13 +623,12 @@ def run_bot(
     ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
-    trade_qty: float = typer.Option(0.001, help="Order size"),
+    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Fraction of equity to use"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
     stop_loss: float = typer.Option(0.0, "--stop-loss", help="Strategy stop loss percentage"),
     take_profit: float = typer.Option(0.0, "--take-profit", help="Strategy take profit percentage"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
-    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk manager max drawdown percentage"),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
@@ -643,7 +642,8 @@ def run_bot(
                 exchange=exchange,
                 market=market,
                 symbols=symbols,
-                trade_qty=trade_qty,
+                equity_pct=equity_pct,
+                risk_pct=risk_pct,
                 leverage=leverage,
                 dry_run=dry_run,
             )
@@ -651,7 +651,13 @@ def run_bot(
     else:
         from ..live.runner import run_live_binance
 
-        asyncio.run(run_live_binance(symbol=symbols[0]))
+        asyncio.run(
+            run_live_binance(
+                symbol=symbols[0],
+                equity_pct=equity_pct,
+                risk_pct=risk_pct,
+            )
+        )
 
 
 @app.command("paper-run")

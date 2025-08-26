@@ -32,5 +32,5 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     result = engine.run()
     assert len(result["fills"]) > 0
     avg_price = result["orders"][0]["avg_price"]
-    qty = risk.pos.qty
+    qty = risk.rm.pos.qty
     assert abs(result["equity"] - engine.initial_equity) > 0
