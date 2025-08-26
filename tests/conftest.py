@@ -114,17 +114,13 @@ def equity_data():
 def risk_manager(equity_data):
     from tradingbot.risk.manager import RiskManager
 
-    position_pct = 0.10  # 10% del equity
     risk_pct = 0.02      # arriesgar 2% del notional
     price = 100.0
 
-    rm = RiskManager(
-        equity_pct=position_pct,
-        risk_pct=risk_pct,
-    )
+    rm = RiskManager(risk_pct=risk_pct)
+    rm.equity_pct = 1.0
     # Atributos auxiliares para las pruebas
     rm.price = price
-    rm.position_pct = position_pct
     rm.equity = float(equity_data.iloc[-1])
     rm.risk_pct = risk_pct
     rm.equity_history = equity_data

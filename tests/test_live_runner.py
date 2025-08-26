@@ -112,13 +112,20 @@ async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rt, "_CAN_PG", False)
 
+    monkeypatch.setattr(
+        rt,
+        "_SymbolConfig",
+        lambda symbol, risk_pct: types.SimpleNamespace(
+            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+        ),
+    )
     monkeypatch.setitem(
         rt.ADAPTERS,
         ("bybit", "futures"),
         (lambda: DummyWS(), DummyExec, "bybit_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), risk_pct=0.0)
     await rt._run_symbol(
         "bybit",
         "futures",
@@ -172,13 +179,20 @@ async def test_run_real(monkeypatch):
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rr, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rr,
+        "_SymbolConfig",
+        lambda symbol, risk_pct: types.SimpleNamespace(
+            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+        ),
+    )
     monkeypatch.setitem(
         rr.ADAPTERS,
         ("binance", "spot"),
         (lambda: DummyWS(), DummyExecReal, "binance_spot"),
     )
 
-    cfg = rr._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
+    cfg = rr._SymbolConfig(symbol=normalize("BTC-USDT"), risk_pct=0.0)
     await rr._run_symbol(
         "binance",
         "spot",
@@ -227,13 +241,20 @@ async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rt, "_CAN_PG", False)
 
+    monkeypatch.setattr(
+        rt,
+        "_SymbolConfig",
+        lambda symbol, risk_pct: types.SimpleNamespace(
+            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+        ),
+    )
     monkeypatch.setitem(
         rt.ADAPTERS,
         ("okx", "futures"),
         (lambda: DummyWS(), DummyExec2, "okx_futures_testnet"),
     )
 
-    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), equity_pct=1.0, risk_pct=0.0)
+    cfg = rt._SymbolConfig(symbol=normalize("BTC-USDT"), risk_pct=0.0)
     await rt._run_symbol(
         "okx",
         "futures",
