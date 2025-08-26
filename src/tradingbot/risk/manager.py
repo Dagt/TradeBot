@@ -91,7 +91,9 @@ class RiskManager:
         KILL_SWITCH_ACTIVE.set(0)
         # Variables internas para cálculo de SL/DD
         self._entry_price: float | None = None
-        self._peak_price: float | None = None  # máximo a favor (long) / mínimo a favor (short)
+        self._peak_price: float | None = (
+            None  # máximo a favor (long) / mínimo a favor (short)
+        )
         self._trough_price: float | None = None
 
         self.bus = bus
@@ -158,7 +160,9 @@ class RiskManager:
             for sym in list(self.positions_multi[exch].keys()):
                 self.positions_multi[exch][sym] = 0.0
 
-    def covariance_matrix(self, returns: Dict[str, List[float]]) -> Dict[Tuple[str, str], float]:
+    def covariance_matrix(
+        self, returns: Dict[str, List[float]]
+    ) -> Dict[Tuple[str, str], float]:
         """Calcula matriz de covarianza a partir de retornos por símbolo."""
         if not returns:
             return {}
@@ -232,6 +236,8 @@ class RiskManager:
         signal_side: str,
         strength: float = 1.0,
         *,
+        equity: float | None = None,
+        price: float | None = None,
         symbol: str | None = None,
         symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
@@ -244,7 +250,15 @@ class RiskManager:
         signal_side:
             "buy" para posición larga, "sell" para corta.
         strength:
-            Factor para escalar la posición objetivo.
+            Factor de exposición objetivo relativo a ``equity`` cuando este se
+            proporciona.  Si ``equity`` es ``None`` mantiene el comportamiento
+            anterior donde ``strength`` escala ``max_pos``.
+        equity:
+            Equity disponible para calcular exposición objetivo.  Si es ``None``
+            se usa ``max_pos`` como antes.
+        price:
+            Precio actual para convertir exposición (equity) a cantidad base.
+            Requerido cuando ``equity`` se especifica.
         symbol:
             Símbolo del activo (necesario si se aplican correlaciones).
         symbol_vol:
@@ -255,10 +269,21 @@ class RiskManager:
             Umbral de correlación sobre el cual se reduce la posición.
         """
 
-        target = self.max_pos * (
-            1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
-        )
-        delta = (target - self.pos.qty) * strength
+        if equity is not None and price is not None and price > 0:
+            current = self.aggregate_positions().get(symbol, self.pos.qty)
+            target_abs = (equity * strength) / price
+            target_abs = min(target_abs, self.max_pos)
+            target = (
+                target_abs
+                if signal_side == "buy"
+                else -target_abs if signal_side == "sell" else 0.0
+            )
+            delta = target - current
+        else:
+            target = self.max_pos * (
+                1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
+            )
+            delta = (target - self.pos.qty) * strength
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol)
@@ -266,7 +291,9 @@ class RiskManager:
         if correlations:
             if symbol is None:
                 raise ValueError("symbol requerido para aplicar correlaciones")
-            delta = self.adjust_size_for_correlation(symbol, delta, correlations, threshold)
+            delta = self.adjust_size_for_correlation(
+                symbol, delta, correlations, threshold
+            )
 
         return delta
 
@@ -336,7 +363,7 @@ class RiskManager:
             va = vars.get(a)
             vb = vars.get(b)
             if va and vb and va > 0 and vb > 0:
-                corr = cov / ((va ** 0.5) * (vb ** 0.5))
+                corr = cov / ((va**0.5) * (vb**0.5))
                 if abs(corr) >= threshold:
                     exceeded.append((a, b))
         if exceeded:
@@ -448,7 +475,8 @@ class RiskManager:
         if (
             self.daily_drawdown_pct > 0
             and self._daily_peak > 0
-            and (self._daily_peak - self.daily_pnl) / self._daily_peak >= self.daily_drawdown_pct
+            and (self._daily_peak - self.daily_pnl) / self._daily_peak
+            >= self.daily_drawdown_pct
         ):
             self.kill_switch("daily_drawdown")
             return False
@@ -486,18 +514,30 @@ class RiskManager:
                 self._peak_price = px
             if px < (self._trough_price or px):
                 self._trough_price = px
-            loss_pct = (self._entry_price - px) / self._entry_price if self.stop_loss_pct > 0 else 0.0
+            loss_pct = (
+                (self._entry_price - px) / self._entry_price
+                if self.stop_loss_pct > 0
+                else 0.0
+            )
             drawdown = (
-                (self._peak_price - px) / self._peak_price if self.max_drawdown_pct > 0 and self._peak_price else 0.0
+                (self._peak_price - px) / self._peak_price
+                if self.max_drawdown_pct > 0 and self._peak_price
+                else 0.0
             )
         else:  # posición corta
             if px < (self._trough_price or px):
                 self._trough_price = px
             if px > (self._peak_price or px):
                 self._peak_price = px
-            loss_pct = (px - self._entry_price) / self._entry_price if self.stop_loss_pct > 0 else 0.0
+            loss_pct = (
+                (px - self._entry_price) / self._entry_price
+                if self.stop_loss_pct > 0
+                else 0.0
+            )
             drawdown = (
-                (px - self._trough_price) / self._trough_price if self.max_drawdown_pct > 0 and self._trough_price else 0.0
+                (px - self._trough_price) / self._trough_price
+                if self.max_drawdown_pct > 0 and self._trough_price
+                else 0.0
             )
 
         if self.stop_loss_pct > 0 and loss_pct >= self.stop_loss_pct:
@@ -525,17 +565,22 @@ def load_positions(engine, venue: str) -> dict:
         return {}
     try:  # pragma: no cover - si faltan dependencias simplemente ignoramos
         from ..storage.timescale import load_positions as _load
+
         return _load(engine, venue)
     except Exception:
         try:  # fallback para motores sin esquema Timescale (ej. SQLite)
             with engine.begin() as conn:
-                rows = conn.execute(
-                    text(
-                        'SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid'
-                        ' FROM "market.positions" WHERE venue = :venue'
-                    ),
-                    {"venue": venue},
-                ).mappings().all()
+                rows = (
+                    conn.execute(
+                        text(
+                            "SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid"
+                            ' FROM "market.positions" WHERE venue = :venue'
+                        ),
+                        {"venue": venue},
+                    )
+                    .mappings()
+                    .all()
+                )
             out: dict = {}
             for r in rows:
                 out[r["symbol"]] = {
@@ -547,4 +592,3 @@ def load_positions(engine, venue: str) -> dict:
             return out
         except Exception:
             return {}
-

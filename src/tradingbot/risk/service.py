@@ -61,6 +61,7 @@ class RiskService:
         symbol: str,
         side: str,
         price: float,
+        equity: float | None = None,
         strength: float = 1.0,
         *,
         symbol_vol: float | None = None,
@@ -82,12 +83,25 @@ class RiskService:
         delta = self.rm.size(
             side,
             strength,
+            equity=equity,
+            price=price,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,
             correlations=correlations,
             threshold=corr_threshold,
         )
         qty = abs(delta)
+
+        if (
+            equity is not None
+            and price > 0
+            and delta * (1 if side == "buy" else -1) > 0
+        ):
+            free_eq = max(0.0, equity - self.guard.exposure_total())
+            max_qty = free_eq / price
+            if qty > max_qty > 0:
+                qty = max_qty
+                delta = qty if delta > 0 else -qty
 
         if qty <= 0:
             return False, "zero_size", 0.0
@@ -96,7 +110,9 @@ class RiskService:
             self._persist("VIOLATION", symbol, "kill_switch", {})
             return False, "kill_switch", 0.0
 
-        action, reason, metrics = self.guard.soft_cap_decision(symbol, side, qty, price)
+        action, reason, metrics = self.guard.soft_cap_decision(
+            symbol, side, qty, price, equity=equity, strength=strength
+        )
         if action == "block":
             self._persist("VIOLATION", symbol, reason, metrics)
             return False, reason, delta
@@ -114,7 +130,9 @@ class RiskService:
 
     # ------------------------------------------------------------------
     # Fill / PnL updates
-    def on_fill(self, symbol: str, side: str, qty: float, venue: str | None = None) -> None:
+    def on_fill(
+        self, symbol: str, side: str, qty: float, venue: str | None = None
+    ) -> None:
         """Update internal position books after a fill."""
         self.rm.add_fill(side, qty)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
@@ -122,7 +140,9 @@ class RiskService:
             book = self.guard.st.venue_positions.get(venue, {})
             self.rm.update_position(venue, symbol, book.get(symbol, 0.0))
 
-    def daily_mark(self, broker, symbol: str, price: float, delta_rpnl: float) -> tuple[bool, str]:
+    def daily_mark(
+        self, broker, symbol: str, price: float, delta_rpnl: float
+    ) -> tuple[bool, str]:
         """Update daily guard with latest mark and realized PnL delta."""
         if self.daily is None:
             return False, ""

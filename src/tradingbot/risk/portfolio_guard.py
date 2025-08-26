@@ -7,19 +7,21 @@ from collections import defaultdict, deque
 
 import numpy as np
 
+
 @dataclass
 class GuardConfig:
     total_cap_usdt: float = 1000.0
     per_symbol_cap_usdt: float = 500.0
     venue: str = "binance_spot_testnet"
     # --- Soft caps ---
-    soft_cap_pct: float = 0.10            # hasta +10% sobre el cap
-    soft_cap_grace_sec: int = 30          # por hasta 30s
+    soft_cap_pct: float = 0.10  # hasta +10% sobre el cap
+    soft_cap_grace_sec: int = 30  # por hasta 30s
+
 
 @dataclass
 class GuardState:
-    positions: Dict[str, float] = field(default_factory=dict)   # qty base
-    prices: Dict[str, float] = field(default_factory=dict)      # último mark
+    positions: Dict[str, float] = field(default_factory=dict)  # qty base
+    prices: Dict[str, float] = field(default_factory=dict)  # último mark
     # retornos simples (dprice/price_prev) para correlaciones intraportafolio
     returns: Dict[str, deque] = field(
         default_factory=lambda: defaultdict(lambda: deque(maxlen=50))
@@ -32,6 +34,7 @@ class GuardState:
         default_factory=lambda: defaultdict(dict)
     )
     venue_pnl: Dict[str, float] = field(default_factory=dict)
+
 
 class PortfolioGuard:
     def __init__(self, cfg: GuardConfig):
@@ -47,9 +50,11 @@ class PortfolioGuard:
             ret = (price / prev) - 1.0
             self.st.returns[symbol].append(ret)
 
-    def update_position_on_order(self, symbol: str, side: str, qty: float, venue: str | None = None):
+    def update_position_on_order(
+        self, symbol: str, side: str, qty: float, venue: str | None = None
+    ):
         cur = self.st.positions.get(symbol, 0.0)
-        delta = qty if side.lower()=="buy" else -qty
+        delta = qty if side.lower() == "buy" else -qty
         self.st.positions[symbol] = cur + delta
         if venue is not None:
             book = self.st.venue_positions.setdefault(venue, {})
@@ -67,7 +72,10 @@ class PortfolioGuard:
         return abs(pos) * px
 
     def exposure_total(self) -> float:
-        return sum(abs(self.st.positions.get(s, 0.0)) * self.st.prices.get(s, 0.0) for s in self.st.positions)
+        return sum(
+            abs(self.st.positions.get(s, 0.0)) * self.st.prices.get(s, 0.0)
+            for s in self.st.positions
+        )
 
     def correlations(self) -> Dict[Tuple[str, str], float]:
         """Calcula correlaciones de retornos entre pares de símbolos."""
@@ -94,9 +102,11 @@ class PortfolioGuard:
         return float(np.std(rets) * np.sqrt(365))
 
     # ---- hard caps (como antes) ----
-    def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:
+    def would_exceed_caps(
+        self, symbol: str, side: str, add_qty: float, price: float
+    ) -> Tuple[bool, str, dict]:
         cur_pos = self.st.positions.get(symbol, 0.0)
-        new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
+        new_pos = cur_pos + (add_qty if side.lower() == "buy" else -add_qty)
         sym_exp = abs(new_pos) * price
 
         total = 0.0
@@ -112,9 +122,17 @@ class PortfolioGuard:
             total += abs(new_pos) * price
 
         if sym_exp > self.cfg.per_symbol_cap_usdt:
-            return True, f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.cfg.per_symbol_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
+            return (
+                True,
+                f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.cfg.per_symbol_cap_usdt:.2f})",
+                {"sym_exp": sym_exp, "total": total},
+            )
         if total > self.cfg.total_cap_usdt:
-            return True, f"total_cap_usdt excedido ({total:.2f} > {self.cfg.total_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
+            return (
+                True,
+                f"total_cap_usdt excedido ({total:.2f} > {self.cfg.total_cap_usdt:.2f})",
+                {"sym_exp": sym_exp, "total": total},
+            )
         return False, "", {"sym_exp": sym_exp, "total": total}
 
     # ---- soft caps ----
@@ -127,7 +145,16 @@ class PortfolioGuard:
             self.cfg.total_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
         )
 
-    def soft_cap_decision(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[str, str, dict]:
+    def soft_cap_decision(
+        self,
+        symbol: str,
+        side: str,
+        add_qty: float,
+        price: float,
+        *,
+        equity: float | None = None,
+        strength: float = 1.0,
+    ) -> Tuple[str, str, dict]:
         """
         Devuelve:
           action: "allow" | "soft_allow" | "block"
@@ -141,7 +168,7 @@ class PortfolioGuard:
         """
         now = self._now()
         cur_pos = self.st.positions.get(symbol, 0.0)
-        new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
+        new_pos = cur_pos + (add_qty if side.lower() == "buy" else -add_qty)
         sym_exp = abs(new_pos) * price
 
         total = 0.0
@@ -168,7 +195,16 @@ class PortfolioGuard:
 
         # 2) excede soft (símbolo o total) -> bloqueo
         if sym_exp > per_soft or total > total_soft:
-            return "block", "sobre soft cap", {"sym_exp": sym_exp, "total": total, "per_soft": per_soft, "total_soft": total_soft}
+            return (
+                "block",
+                "sobre soft cap",
+                {
+                    "sym_exp": sym_exp,
+                    "total": total,
+                    "per_soft": per_soft,
+                    "total_soft": total_soft,
+                },
+            )
 
         # 3) entre hard y soft -> tolerado por ventana
         # ventana por símbolo
@@ -182,22 +218,41 @@ class PortfolioGuard:
 
         # tiempo restante por las ventanas activas
         rem_sym = self.cfg.soft_cap_grace_sec - (now - sym_start).total_seconds()
-        rem_tot = self.cfg.soft_cap_grace_sec - (now - (self.st.total_soft_started or now)).total_seconds()
+        rem_tot = (
+            self.cfg.soft_cap_grace_sec
+            - (now - (self.st.total_soft_started or now)).total_seconds()
+        )
         remaining = max(0.0, min(rem_sym, rem_tot))
 
         if remaining > 0:
-            return "soft_allow", f"soft cap activo ({remaining:.1f}s restantes)", {
-                "sym_exp": sym_exp, "total": total, "remaining_sec": remaining,
-                "per_soft": per_soft, "total_soft": total_soft
-            }
+            return (
+                "soft_allow",
+                f"soft cap activo ({remaining:.1f}s restantes)",
+                {
+                    "sym_exp": sym_exp,
+                    "total": total,
+                    "remaining_sec": remaining,
+                    "per_soft": per_soft,
+                    "total_soft": total_soft,
+                },
+            )
         # expirado
-        return "block", "soft cap expirado", {
-            "sym_exp": sym_exp, "total": total, "remaining_sec": 0.0,
-            "per_soft": per_soft, "total_soft": total_soft
-        }
+        return (
+            "block",
+            "soft cap expirado",
+            {
+                "sym_exp": sym_exp,
+                "total": total,
+                "remaining_sec": 0.0,
+                "per_soft": per_soft,
+                "total_soft": total_soft,
+            },
+        )
 
     # ---- auto-close qty (como antes) ----
-    def compute_auto_close_qty(self, symbol: str, price: float) -> Tuple[float, str, dict]:
+    def compute_auto_close_qty(
+        self, symbol: str, price: float
+    ) -> Tuple[float, str, dict]:
         pos = self.st.positions.get(symbol, 0.0)
         if abs(pos) <= 0 or price <= 0:
             return 0.0, "sin posición o precio inválido", {"pos": pos, "price": price}
@@ -217,6 +272,10 @@ class PortfolioGuard:
 
         need_qty_cut = max(0.0, min(abs(pos), need_qty_cut))
         if need_qty_cut <= 0:
-            return 0.0, "dentro de límites", {"pos": pos, "price": price, "total": total}
+            return (
+                0.0,
+                "dentro de límites",
+                {"pos": pos, "price": price, "total": total},
+            )
         msg = f"auto-close {symbol}: recortar {need_qty_cut:.6f} (pos={pos:.6f}, px={price:.2f})"
         return need_qty_cut, msg, {"pos": pos, "price": price, "total": total}
