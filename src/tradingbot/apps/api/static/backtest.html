@@ -190,6 +190,7 @@ let strategyInfo = strategies;
 function appendSummary(text){
   try{
     const eq=text.match(/'equity':\s*([0-9\.e+-]+)/);
+    const pnl=text.match(/'pnl':\s*([0-9\.e+-]+)/);
     const slip=text.match(/'slippage':\s*([0-9\.e+-]+)/);
     const dd=text.match(/'max_drawdown':\s*([0-9\.e+-]+)/);
     const fillsMatch=text.match(/'fills':\s*\[(.*)\]/s);
@@ -200,6 +201,7 @@ function appendSummary(text){
     const lines=[
       '',
       `equity final ≈ ${eq?parseFloat(eq[1]).toFixed(2):'N/A'}`,
+      `pnl total ≈ ${pnl?parseFloat(pnl[1]).toFixed(2):'N/A'}`,
       `${fills} fills (operaciones ejecutadas)`,
       `slippage total ≈ ${slip?parseFloat(slip[1]).toFixed(2):'N/A'}`,
       `drawdown máximo ≈ ${dd?parseFloat(dd[1]).toFixed(2):'N/A'}`,
