@@ -8,24 +8,32 @@ strategies.
 from __future__ import annotations
 
 
-def vol_target(atr: float, vol_target: float, equity: float) -> float:
+def vol_target(atr: float, equity: float, vol_target: float) -> float:
     """Return target position size given a volatility estimate.
 
     Parameters
     ----------
     atr:
         Average true range or volatility estimate of the asset.
-    vol_target:
-        Fraction of current equity to allocate based on the desired
-        volatility target.
     equity:
         Current account equity.
+    vol_target:
+        Desired volatility target as a fraction of equity. ``0.02`` for
+        example would size the position such that one ATR move represents
+        a 2\% change in equity.
 
     Returns
     -------
     float
         Desired absolute position size.  If any argument is non-positive,
         ``0.0`` is returned.
+
+    Examples
+    --------
+    >>> vol_target(atr=2.0, equity=10.0, vol_target=1.0)
+    5.0
+    >>> vol_target(atr=1.0, equity=20.0, vol_target=0.5)
+    10.0
     """
     if atr <= 0 or vol_target <= 0 or equity <= 0:
         return 0.0
@@ -46,8 +54,7 @@ def delta_from_strength(
     ----------
     strength:
         Target exposure as a fraction of account equity. Positive values denote
-        long positions, negative values short. Values are clipped to
-        ``[-1, 1]``.
+        long positions, negative values short. No clipping is applied.
     equity:
         Current account equity.
     price:
@@ -69,9 +76,10 @@ def delta_from_strength(
     -10.0
     >>> delta_from_strength(-0.0, 10_000, 100, -40)
     40.0
+    >>> delta_from_strength(2.0, 10_000, 100, 0)
+    200.0
     """
 
-    strength = max(-1.0, min(1.0, strength))
     if price <= 0:
         return -current_qty
     target_qty = (equity * strength) / price

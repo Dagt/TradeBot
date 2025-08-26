@@ -30,11 +30,11 @@ def test_risk_vol_sizing(synthetic_volatility):
 
 
 def test_vol_target_basic():
-    assert vol_target(atr=2.0, equity_pct=1.0, equity=10.0) == pytest.approx(5.0)
+    assert vol_target(atr=2.0, equity=10.0, vol_target=1.0) == pytest.approx(5.0)
 
 
 def test_vol_target_scales_linearly():
-    assert vol_target(atr=1.0, equity_pct=0.5, equity=20.0) == pytest.approx(10.0)
+    assert vol_target(atr=1.0, equity=20.0, vol_target=0.5) == pytest.approx(10.0)
 
 
 def test_risk_vol_sizing_with_correlation(synthetic_volatility):
