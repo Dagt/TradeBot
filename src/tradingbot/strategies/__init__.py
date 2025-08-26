@@ -2,6 +2,7 @@ from .breakout_atr import BreakoutATR
 from .breakout_vol import BreakoutVol
 from .momentum import Momentum
 from .mean_reversion import MeanReversion
+from .trend_following import TrendFollowing
 from .arbitrage_triangular import TriangularArb
 from .cash_and_carry import CashAndCarry
 from .order_flow import OrderFlow
@@ -16,6 +17,7 @@ STRATEGIES = {
     BreakoutATR.name: BreakoutATR,
     BreakoutVol.name: BreakoutVol,
     Momentum.name: Momentum,
+    TrendFollowing.name: TrendFollowing,
     MeanReversion.name: MeanReversion,
     TriangularArb.name: TriangularArb,
     CashAndCarry.name: CashAndCarry,
@@ -42,6 +44,10 @@ STRATEGY_INFO: dict[str, dict] = {
     },
     "momentum": {
         "desc": "Sigue la tendencia con RSI",
+        "requires": ["ohlcv"],
+    },
+    "trend_following": {
+        "desc": "Seguimiento de tendencia con fuerza adaptativa",
         "requires": ["ohlcv"],
     },
     "mean_reversion": {
@@ -87,6 +93,7 @@ __all__ = [
     "BreakoutVol",
     "Momentum",
     "MeanReversion",
+    "TrendFollowing",
     "TriangularArb",
     "CashAndCarry",
     "OrderFlow",

@@ -77,12 +77,19 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
 
     The trade size can be capped via ``cfg.max_notional`` or ``cfg.max_qty``
     and a simulated network latency can be injected via ``cfg.latency``. Prior
-    to submitting orders the required balances on both venues are verified.
+    to submitting orders the required balances on both venues are verified.  In
+    addition, the notional of each trade is scaled by a ``strength`` factor
+    derived from how the spot/perp premium has evolved since the current
+    position was opened. A widening premium increases ``strength`` while a
+    contraction reduces it and can even flip the trade direction.
     """
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
     balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}
     trade_lock = asyncio.Lock()
+    # Track edge at which current position was opened to adapt trade strength
+    position_sign = 0  # +1 for spot buy/perp sell, -1 for opposite
+    entry_edge = 0.0
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
@@ -90,6 +97,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     risk = RiskManager(risk_pct=0.0)
 
     async def maybe_trade() -> None:
+        nonlocal position_sign, entry_edge
         if last["spot"] is None or last["perp"] is None:
             return
         # compute premium: perp vs spot
@@ -102,7 +110,12 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             if abs(edge) < cfg.threshold:
                 return
 
-            qty = cfg.notional / last["spot"]
+            # adapt strength according to edge movement relative to entry
+            strength = 1.0
+            if position_sign != 0:
+                pnl_edge = (edge - entry_edge) * position_sign
+                strength += pnl_edge
+            qty = abs(cfg.notional * strength) / last["spot"]
             if cfg.max_notional is not None:
                 qty = min(qty, cfg.max_notional / last["spot"])
             if cfg.max_qty is not None:
@@ -124,11 +137,16 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 except Exception as e:  # pragma: no cover - logging only
                     log.debug("No se pudo insertar cross_signal: %s", e)
 
-            # determine sides
-            if edge > 0:
-                spot_side, perp_side = "buy", "sell"
+            # determine sides, flipping if strength turned negative
+            if strength >= 0:
+                spot_side, perp_side = ("buy", "sell") if edge > 0 else ("sell", "buy")
+                position = 1 if spot_side == "buy" else -1
             else:
-                spot_side, perp_side = "sell", "buy"
+                spot_side, perp_side = ("sell", "buy") if edge > 0 else ("buy", "sell")
+                position = -1 if spot_side == "buy" else 1
+                strength = -strength  # use absolute value after flipping
+            position_sign = position
+            entry_edge = edge
 
             base, quote = cfg.symbol.split("/")
             fetch_spot = getattr(cfg.spot, "fetch_balance", None)
