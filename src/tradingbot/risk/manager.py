@@ -244,7 +244,7 @@ class RiskManager:
         signal_side:
             "buy" para posición larga, "sell" para corta.
         strength:
-            Factor para escalar la posición objetivo.
+            Fracción de la asignación permitida a la que se desea llegar (0-1).
         symbol:
             Símbolo del activo (necesario si se aplican correlaciones).
         symbol_vol:
@@ -258,7 +258,8 @@ class RiskManager:
         target = self.max_pos * (
             1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
         )
-        delta = (target - self.pos.qty) * strength
+        desired = target * strength
+        delta = desired - self.pos.qty
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol)

@@ -9,8 +9,24 @@ import yaml
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
 
+
 @dataclass
 class Signal:
+    """Strategy decision representing the desired exposure.
+
+    Attributes
+    ----------
+    side:
+        ``"buy"``, ``"sell"`` or ``"flat"``.
+    strength:
+        Fraction of the allowed equity allocation the strategy wishes to hold
+        (0.0 - 1.0).  A value above the current allocation pyramids the
+        position while a lower value requests de-scaling.
+    reduce_only:
+        When ``True`` the resulting order may only reduce an existing position,
+        preventing accidental position flips during partial exits.
+    """
+
     side: str  # 'buy' | 'sell' | 'flat'
     strength: float = 1.0
     reduce_only: bool = False

@@ -68,8 +68,26 @@ class RiskService:
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
-        Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
-        proposed after volatility and correlation adjustments.
+        Parameters
+        ----------
+        symbol:
+            Instrument identifier.
+        side:
+            ``"buy"`` or ``"sell"``.
+        price:
+            Reference price used for limit checks.
+        strength:
+            Desired fraction of the maximum allowed position (0-1).
+        symbol_vol:
+            Optional volatility override for the symbol.
+        corr_threshold:
+            Correlation threshold above which sizing is reduced.
+
+        Returns
+        -------
+        tuple[bool, str, float]
+            ``(allowed, reason, delta)`` where ``delta`` is the signed size
+            proposed after volatility and correlation adjustments.
         """
 
         if symbol_vol is None or symbol_vol <= 0:
