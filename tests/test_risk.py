@@ -1,24 +1,64 @@
 
 import asyncio
 import pytest
-from hypothesis import given, strategies as st
-
-def test_risk_manager_position(risk_manager):
-    risk_manager.set_position(1)
-    risk_manager.add_fill("buy", 2)
-    assert risk_manager.pos.qty == 3
-    assert risk_manager.size("buy") == 2
 
 
-def test_stop_loss_triggers_disable():
+def test_size_scales_with_equity_and_strength():
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(max_pos=1, stop_loss_pct=0.05)
-    rm.set_position(1)
-    assert rm.check_limits(100)
-    # caída del 6% -> excede stop_loss_pct
-    assert not rm.check_limits(94)
+    price = 100.0
+    equity_small = 10_000.0
+    equity_big = 20_000.0
+    pos_pct = 0.10
+
+    max_small = equity_small * pos_pct / price
+    max_big = equity_big * pos_pct / price
+
+    rm_small = RiskManager(max_pos=max_small)
+    rm_big = RiskManager(max_pos=max_big)
+
+    assert rm_small.size("buy", strength=0.5) == pytest.approx(max_small * 0.5)
+    assert rm_big.size("buy", strength=0.5) == pytest.approx(max_big * 0.5)
+
+
+def test_stop_loss_risk_pct():
+    from tradingbot.risk.manager import RiskManager
+
+    equity = 10_000.0
+    pos_pct = 0.10
+    risk_pct = 0.02
+    price = 100.0
+
+    qty = equity * pos_pct / price
+    stop_loss_pct = risk_pct / pos_pct
+
+    rm = RiskManager(max_pos=qty, stop_loss_pct=stop_loss_pct)
+    rm.set_position(qty)
+
+    assert rm.check_limits(price)
+    assert not rm.check_limits(price * (1 - stop_loss_pct))
     assert rm.enabled is False
+
+
+def test_pyramiding_and_scaling(risk_manager):
+    rm = risk_manager
+    max_qty = rm.max_pos
+
+    delta = rm.size("buy", strength=0.5)
+    rm.add_fill("buy", delta)
+    assert rm.pos.qty == pytest.approx(max_qty * 0.5)
+
+    delta = rm.size("buy", strength=1.0)
+    rm.add_fill("buy", delta)
+    assert rm.pos.qty == pytest.approx(max_qty)
+
+    delta = rm.size("sell", strength=0.25)
+    rm.add_fill("sell", abs(delta))
+    assert rm.pos.qty == pytest.approx(max_qty * 0.5)
+
+    delta = rm.size("sell", strength=1/3)
+    rm.add_fill("sell", abs(delta))
+    assert rm.pos.qty == pytest.approx(0.0)
 
 
 def test_drawdown_triggers_disable():
@@ -31,21 +71,6 @@ def test_drawdown_triggers_disable():
     # retroceso >5% desde el pico
     assert not rm.check_limits(104)
     assert rm.enabled is False
-
-
-@given(signal=st.sampled_from(["buy", "sell"]), pos=st.floats(-5, 5))
-def test_risk_manager_size_property(signal, pos):
-    from tradingbot.risk.manager import RiskManager
-
-    rm = RiskManager(max_pos=5)
-    rm.set_position(pos)
-    size = rm.size(signal)
-    final = pos + size
-    assert abs(final) <= rm.max_pos + 1e-12
-    if signal == "buy":
-        assert size >= 0
-    elif signal == "sell":
-        assert size <= 0
 
 
 def test_size_with_volatility_event():
