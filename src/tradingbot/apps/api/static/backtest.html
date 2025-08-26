@@ -164,7 +164,7 @@ const strategies = {
     desc: "Busca la reversión a la media basada en el Order Flow Imbalance (OFI) derivado del libro de órdenes.",
     requires: ["book_delta"],
   },
-  orderflow: {
+  order_flow: {
     desc: "Analiza el flujo de órdenes agresivas vs. pasivas para estimar micro‑tendencias.",
     requires: ["trades", "book_delta"],
   },
@@ -179,6 +179,7 @@ const dataInfo = {
   prices: "Secuencia de precios (spot o perp) en ticks/velas, útil para spreads.",
   bba: "Best Bid/Ask (mejor postor y oferente) con sus volúmenes.",
   book_delta: "Variaciones por nivel del libro entre dos snapshots consecutivos.",
+  trades: "Historial de operaciones ejecutadas (agresivas).",
   spot: "Precio de mercado spot.",
   perp: "Precio de futuros perpetuos.",
   funding: "Historial de tasas de financiamiento de los perpetuos.",
