@@ -9,8 +9,18 @@ python -m tradingbot.cli <comando> [opciones]
 A continuación se describen los comandos disponibles. Todas las estrategias
 emiten señales con un campo `strength` que se traduce en `notional = equity * strength`.
 Valores mayores a `1.0` piramidan la exposición, menores la desescalan. El
-parámetro `risk_pct` define un stop‑loss local: la posición se cierra si la
-pérdida supera `notional * risk_pct`.
+parámetro `risk_pct` establece la pérdida máxima permitida y `vol_target`
+dimensiona la posición según la volatilidad.
+
+Ejemplo de configuración de riesgo:
+
+```yaml
+risk:
+  risk_pct: 0.02
+  vol_target: 0.01
+  total_cap_pct: null
+  per_symbol_cap_pct: null
+```
 
 ## `ingest`
 Recibe datos de mercado en vivo y opcionalmente los almacena.
@@ -84,7 +94,7 @@ Ejecuta el bot en modo en vivo (testnet o real).
 - `--venue`: nombre del venue (ej. `binance_spot`, `okx_futures`).
 - `--symbol`: puede repetirse; símbolo a operar.
 - `--testnet`: usa endpoints de prueba.
-- `--risk-pct`: stop‑loss como porcentaje del equity asignado.
+- `--risk-pct`: porcentaje de pérdida máxima del equity asignado.
 - `--leverage`: apalancamiento para futuros.
 - `--dry-run`: simula órdenes en testnet.
 - `--take-profit`: porcentaje de toma de ganancias.
@@ -100,7 +110,7 @@ Corre una estrategia en modo paper (sin dinero real) y expone métricas.
 Ejecuta el bot contra un exchange real.
 - `--venue`: nombre del venue.
 - `--symbol`: puede repetirse.
-- `--risk-pct`: stop‑loss como porcentaje del equity asignado.
+- `--risk-pct`: porcentaje de pérdida máxima del equity asignado.
 - `--leverage`: apalancamiento.
 - `--dry-run`: simula órdenes sin enviarlas.
 - `--i-know-what-im-doing`: confirmación necesaria para operar con dinero real.

@@ -6,12 +6,12 @@ Cada señal trae un `strength` que define el tamaño según la fórmula
 `notional = equity * strength`. Un valor de `1.0` utiliza todo el capital
 disponible, valores mayores piramidan la posición y menores la reducen.
 Por ejemplo, `strength = 1.5` incrementa la exposición un 50 %, mientras que
-`strength = 0.5` la reduce a la mitad. El campo `risk_pct` actúa como
-stop‑loss local: la posición se cierra si la pérdida supera `notional * risk_pct`.
+`strength = 0.5` la reduce a la mitad. El campo `risk_pct` establece la pérdida
+máxima permitida y `vol_target` dimensiona la posición según la volatilidad.
 
 ## PortfolioGuard
 
-Para limitar el uso de capital se puede emplear `PortfolioGuard`, que permite fijar límites globales (`total_cap_pct`) o por símbolo (`per_symbol_cap_pct`).
+Para limitar el uso de capital se puede emplear `PortfolioGuard`, que permite fijar límites globales (`total_cap_pct`) o por símbolo (`per_symbol_cap_pct`). Estos valores pueden establecerse en `null` para deshabilitar los límites.
 
 ## DailyGuard y drawdown global
 
@@ -27,4 +27,10 @@ backtest:
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100
+
+risk:
+  risk_pct: 0.02
+  vol_target: 0.01
+  total_cap_pct: null
+  per_symbol_cap_pct: null
 ```
