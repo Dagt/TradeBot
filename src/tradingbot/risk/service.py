@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
-from .manager import RiskManager
+from .manager import RiskManager, InsufficientCash
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
@@ -79,14 +79,18 @@ class RiskService:
         if self.corr is not None:
             correlations = self.corr.get_correlations()
 
-        delta = self.rm.size(
-            side,
-            strength,
-            symbol=symbol,
-            symbol_vol=symbol_vol or 0.0,
-            correlations=correlations,
-            threshold=corr_threshold,
-        )
+        try:
+            delta = self.rm.size(
+                side,
+                strength,
+                price=price,
+                symbol=symbol,
+                symbol_vol=symbol_vol or 0.0,
+                correlations=correlations,
+                threshold=corr_threshold,
+            )
+        except InsufficientCash:
+            return False, "insufficient_cash", 0.0
         qty = abs(delta)
 
         if qty <= 0:

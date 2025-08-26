@@ -33,10 +33,14 @@ class GuardState:
     )
     venue_pnl: Dict[str, float] = field(default_factory=dict)
 
+from ..execution.equity_provider import EquityProvider
+
+
 class PortfolioGuard:
-    def __init__(self, cfg: GuardConfig):
+    def __init__(self, cfg: GuardConfig, provider: EquityProvider | None = None):
         self.cfg = cfg
         self.st = GuardState()
+        self._provider = provider
 
     # ---- utilidades base ----
     def mark_price(self, symbol: str, price: float):
@@ -143,6 +147,12 @@ class PortfolioGuard:
         cur_pos = self.st.positions.get(symbol, 0.0)
         new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
         sym_exp = abs(new_pos) * price
+
+        if self._provider is not None and side.lower() == "buy":
+            cash = self._provider.available_cash()
+            needed = add_qty * price
+            if needed > cash:
+                return "block", "insufficient_cash", {"required": needed, "cash": cash}
 
         total = 0.0
         seen = set()

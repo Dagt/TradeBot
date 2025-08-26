@@ -28,6 +28,7 @@ from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
 from .position_sizing import vol_target
 from sqlalchemy import text
+from ..execution.equity_provider import EquityProvider
 
 
 @dataclass
@@ -232,6 +233,7 @@ class RiskManager:
         signal_side: str,
         strength: float = 1.0,
         *,
+        price: float | None = None,
         symbol: str | None = None,
         symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
@@ -547,4 +549,31 @@ def load_positions(engine, venue: str) -> dict:
             return out
         except Exception:
             return {}
+
+
+class InsufficientCash(Exception):
+    """Raised when an order would exceed available cash."""
+
+
+class EquityRiskManager(RiskManager):
+    """Risk manager that verifies available cash before sizing."""
+
+    def __init__(self, *args, provider: EquityProvider, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.provider = provider
+
+    def size(
+        self,
+        signal_side: str,
+        strength: float = 1.0,
+        *,
+        price: float | None = None,
+        **kwargs,
+    ) -> float:
+        delta = super().size(signal_side, strength, price=price, **kwargs)
+        if signal_side == "buy" and price is not None:
+            cash = self.provider.available_cash()
+            if delta * price > cash:
+                raise InsufficientCash()
+        return delta
 

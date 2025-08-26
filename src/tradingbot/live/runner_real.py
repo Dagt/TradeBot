@@ -24,7 +24,7 @@ import pandas as pd
 from .runner import BarAggregator
 from ..config import settings
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import RiskManager, load_positions, EquityRiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
@@ -108,7 +108,8 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    broker = PaperAdapter(fee_bps=1.5)
+    risk_core = EquityRiskManager(max_pos=1.0, provider=broker)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_usdt=total_cap_usdt,
@@ -116,7 +117,8 @@ async def _run_symbol(
             venue=venue,
             soft_cap_pct=soft_cap_pct,
             soft_cap_grace_sec=soft_cap_grace_sec,
-        )
+        ),
+        provider=broker,
     )
     dguard = DailyGuard(
         GuardLimits(
@@ -129,7 +131,6 @@ async def _run_symbol(
     )
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, dguard, corr_service=corr)
-    broker = PaperAdapter(fee_bps=1.5)
     engine = get_engine() if _CAN_PG else None
     oco_book = OcoBook()
     if engine is not None:

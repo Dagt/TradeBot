@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from typing import AsyncIterator, Mapping
 import asyncio
 import contextlib
 import logging
 import time
 import random
 import json
+import threading
 
 import websockets
 
@@ -81,6 +82,70 @@ class ExchangeAdapter(ABC):
                     await res
             except Exception as e:  # pragma: no cover - best effort
                 self.log.warning("%s close failed: %s", self.name, e)
+
+    # ------------------------------------------------------------------
+    # Equity helpers
+    def _run_sync(self, coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            result: dict = {}
+            error: Exception | None = None
+
+            def runner():
+                nonlocal result, error
+                try:
+                    result["value"] = asyncio.run(coro)
+                except Exception as e:  # pragma: no cover
+                    error = e
+
+            t = threading.Thread(target=runner)
+            t.start()
+            t.join()
+            if error:
+                raise error
+            return result.get("value")
+        return asyncio.run(coro)
+
+    def equity(self, mark_prices: Mapping[str, float] | None = None) -> float:
+        rest = getattr(self, "rest", None)
+        if rest is None or not hasattr(rest, "fetch_balance"):
+            raise NotImplementedError("Se requiere adaptador REST para equity()")
+        fn = rest.fetch_balance
+        if asyncio.iscoroutinefunction(fn):
+            bal = self._run_sync(fn())
+        else:
+            bal = fn()
+        total = 0.0
+        marks = mark_prices or {}
+        for asset, info in bal.items():
+            if not isinstance(info, dict):
+                continue
+            qty = float(info.get("free") or 0.0) + float(info.get("used") or 0.0)
+            price = 1.0
+            if asset not in {"USD", "USDT", "USDC"}:
+                price = float(
+                    marks.get(asset)
+                    or marks.get(f"{asset}/USDT")
+                    or marks.get(f"{asset}USDT")
+                    or 1.0
+                )
+            total += qty * price
+        return total
+
+    def available_cash(self) -> float:
+        rest = getattr(self, "rest", None)
+        if rest is None or not hasattr(rest, "fetch_balance"):
+            raise NotImplementedError("Se requiere adaptador REST para balances")
+        fn = rest.fetch_balance
+        if asyncio.iscoroutinefunction(fn):
+            bal = self._run_sync(fn())
+        else:
+            bal = fn()
+        data = bal.get("USDT") or bal.get("USD") or {}
+        return float(data.get("free") or 0.0)
 
     # ------------------------------------------------------------------
     # Normalization helpers

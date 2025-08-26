@@ -12,7 +12,7 @@ import pandas as pd
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import RiskManager, load_positions, EquityRiskManager
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
@@ -103,7 +103,7 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = EquityRiskManager(max_pos=1.0, provider=broker)
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
@@ -111,7 +111,7 @@ async def run_live_binance(
         venue="binance",
         soft_cap_pct=soft_cap_pct,
         soft_cap_grace_sec=soft_cap_grace_sec,
-    ))
+    ), provider=broker)
     dguard = DailyGuard(GuardLimits(
         daily_max_loss_usdt=daily_max_loss_usdt,
         daily_max_drawdown_pct=daily_max_drawdown_pct,

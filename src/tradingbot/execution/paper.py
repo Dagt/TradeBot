@@ -55,6 +55,10 @@ class PaperAdapter(ExchangeAdapter):
     def update_last_price(self, symbol: str, px: float):
         self.state.last_px[symbol] = px
 
+    def available_cash(self) -> float:
+        """Return simulated free cash balance."""
+        return self.state.cash
+
     async def stream_trades(
         self,
         symbol: str,

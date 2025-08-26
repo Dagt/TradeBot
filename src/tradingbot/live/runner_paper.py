@@ -10,7 +10,7 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import RiskManager, load_positions, EquityRiskManager
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
 from ..risk.correlation_service import CorrelationService
@@ -49,8 +49,8 @@ async def run_paper(
     broker = PaperAdapter()
     router = ExecutionRouter([broker])
 
-    risk_core = RiskManager(max_pos=1.0)
-    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
+    risk_core = EquityRiskManager(max_pos=1.0, provider=broker)
+    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"), provider=broker)
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, corr_service=corr)
     engine = get_engine() if _CAN_PG else None
