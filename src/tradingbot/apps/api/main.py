@@ -667,7 +667,6 @@ class BotConfig(BaseModel):
     pairs: list[str] | None = None
     notional: float | None = None
     venue: str | None = None
-    equity_pct: float | None = None
     leverage: int | None = None
     risk_pct: float | None = None
     daily_max_loss_pct: float | None = None
@@ -718,8 +717,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--notional", str(cfg.notional)])
     if cfg.venue:
         args.extend(["--venue", cfg.venue])
-    if cfg.equity_pct is not None:
-        args.extend(["--equity-pct", str(cfg.equity_pct)])
     if cfg.leverage is not None:
         args.extend(["--leverage", str(cfg.leverage)])
     if cfg.risk_pct is not None:

@@ -77,10 +77,6 @@
         <label for="bt-end">Fin</label>
         <input id="bt-end" type="date"/>
       </div>
-      <div id="field-equity-pct">
-        <label for="bt-equity-pct">Equity %</label>
-        <input id="bt-equity-pct" type="number" step="any"/>
-      </div>
       <div id="field-risk-pct">
         <label for="bt-risk-pct">Risk %</label>
         <input id="bt-risk-pct" type="number" step="any"/>
@@ -336,10 +332,8 @@ async function runBacktest(){
     cmd+=` --capital ${capital}`;
   }
   if(mode!=='walk'){
-    const eq=document.getElementById('bt-equity-pct').value.trim();
     const sl=document.getElementById('bt-risk-pct').value.trim();
     const mn=document.getElementById('bt-max-notional').value.trim();
-    if(eq) cmd+=` --equity-pct ${eq}`;
     if(sl) cmd+=` --risk-pct ${sl}`;
     if(mn) cmd+=` --max-notional ${mn}`;
   }
