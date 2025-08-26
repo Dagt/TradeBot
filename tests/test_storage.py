@@ -302,7 +302,7 @@ def test_insert_risk_event_timescale():
         engine,
         venue="binance",
         symbol="",
-        kind="daily_max_loss",
+        kind="daily_loss",
         message="",
         details="{}",
     )
@@ -312,7 +312,7 @@ def test_insert_risk_event_timescale():
             text("SELECT venue, kind FROM market.risk_events")
         ).fetchone()
 
-    assert row == ("binance", "daily_max_loss")
+    assert row == ("binance", "daily_loss")
 
 
 def test_insert_trade_timescale_ts():

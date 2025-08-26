@@ -110,7 +110,8 @@ async def test_daily_guard_halts_on_loss():
 
     broker = PaperAdapter()
     symbol = "BTC/USDT"
-    guard = DailyGuard(GuardLimits(daily_max_loss_usdt=5.0), venue="paper")
+    guard = DailyGuard(GuardLimits(daily_max_loss_pct=0.05), venue="paper")
+    broker.state.cash = 100.0
 
     broker.update_last_price(symbol, 100.0)
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 100.0}))
@@ -122,7 +123,7 @@ async def test_daily_guard_halts_on_loss():
     delta = (sell["price"] - buy["price"]) * 1
     guard.on_realized_delta(delta)
     halted, reason = guard.check_halt()
-    assert halted and reason == "daily_max_loss"
+    assert halted and reason == "daily_loss"
 
 
 def test_covariance_limit_triggers_kill():
