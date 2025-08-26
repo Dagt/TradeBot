@@ -13,6 +13,7 @@ import pandas as pd
 import random
 
 from ..risk.manager import RiskManager
+from ..risk.limits import RiskLimits
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
 
@@ -144,6 +145,11 @@ class EventDrivenBacktestEngine:
         stress: StressConfig | None = None,
         seed: int | None = None,
         initial_equity: float = 0.0,
+        trade_qty: float = 1.0,
+        max_pos: float = 1.0,
+        max_drawdown_pct: float = 0.0,
+        stop_loss_pct: float = 0.0,
+        max_notional: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -165,6 +171,11 @@ class EventDrivenBacktestEngine:
             self.slippage.spread_mult *= self.stress.spread
 
         self.initial_equity = float(initial_equity)
+        self.trade_qty = float(trade_qty)
+        self._max_pos = float(max_pos)
+        self._max_drawdown_pct = float(max_drawdown_pct)
+        self._stop_loss_pct = float(stop_loss_pct)
+        self._max_notional = float(max_notional)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -192,7 +203,17 @@ class EventDrivenBacktestEngine:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
-            self.risk[key] = RiskManager(max_pos=1.0)
+            limits = (
+                RiskLimits(max_notional=self._max_notional)
+                if self._max_notional > 0
+                else None
+            )
+            self.risk[key] = RiskManager(
+                max_pos=self._max_pos,
+                stop_loss_pct=self._stop_loss_pct,
+                max_drawdown_pct=self._max_drawdown_pct,
+                limits=limits,
+            )
             self.strategy_exchange[key] = exchange
 
     # ------------------------------------------------------------------
@@ -312,8 +333,10 @@ class EventDrivenBacktestEngine:
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty
-                if order.remaining_qty <= 1e-9 and order.latency is None:
-                    order.latency = i - order.place_index
+                if order.remaining_qty <= 1e-9:
+                    if order.latency is None:
+                        order.latency = i - order.place_index
+                    self.risk[(order.strategy, order.symbol)].complete_order()
                 fills.append(
                     (
                         bar.get("timestamp", i),
@@ -338,6 +361,9 @@ class EventDrivenBacktestEngine:
                 if sig is None or sig.side == "flat":
                     continue
                 risk = self.risk[(strat_name, symbol)]
+                place_price = float(df["close"].iloc[i])
+                if not risk.check_limits(place_price):
+                    continue
                 delta = risk.size(sig.side, sig.strength)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
@@ -345,11 +371,15 @@ class EventDrivenBacktestEngine:
                 if abs(delta) < 1e-9:
                     continue
                 side = "buy" if delta > 0 else "sell"
-                qty = abs(delta)
+                qty = min(abs(delta), self.trade_qty)
+                if qty < 1e-9:
+                    continue
+                notional = qty * place_price
+                if not risk.register_order(notional):
+                    continue
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 base_latency = self.exchange_latency.get(exchange, self.latency)
                 exec_index = i + int(base_latency * self.stress.latency)
-                place_price = float(df["close"].iloc[i])
                 queue_pos = 0.0
                 if self.use_l2:
                     vol_key = "ask_size" if side == "buy" else "bid_size"
@@ -459,6 +489,11 @@ def run_backtest_csv(
     cancel_unfilled: bool = False,
     stress: StressConfig | None = None,
     seed: int | None = None,
+    trade_qty: float = 1.0,
+    max_pos: float = 1.0,
+    max_drawdown_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    max_notional: float = 0.0,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -475,6 +510,11 @@ def run_backtest_csv(
         cancel_unfilled=cancel_unfilled,
         stress=stress,
         seed=seed,
+        trade_qty=trade_qty,
+        max_pos=max_pos,
+        max_drawdown_pct=max_drawdown_pct,
+        stop_loss_pct=stop_loss_pct,
+        max_notional=max_notional,
     )
     return engine.run()
 
@@ -497,6 +537,11 @@ def run_backtest_mlflow(
     stress: StressConfig | None = None,
     seed: int | None = None,
     experiment: str = "backtest",
+    trade_qty: float = 1.0,
+    max_pos: float = 1.0,
+    max_drawdown_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    max_notional: float = 0.0,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -526,6 +571,11 @@ def run_backtest_mlflow(
             cancel_unfilled=cancel_unfilled,
             stress=stress,
             seed=seed,
+            trade_qty=trade_qty,
+            max_pos=max_pos,
+            max_drawdown_pct=max_drawdown_pct,
+            stop_loss_pct=stop_loss_pct,
+            max_notional=max_notional,
         )
         log_backtest_metrics(result)
         return result
