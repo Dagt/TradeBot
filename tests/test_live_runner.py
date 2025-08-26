@@ -65,6 +65,9 @@ class DummyPG:
     def update_position_on_order(self, symbol, side, qty, venue=None):
         pass
 
+    def refresh_usd_caps(self, equity):
+        self.equity = equity
+
 
 class DummyDG:
     def on_mark(self, *a, **k):
@@ -122,8 +125,8 @@ async def test_bybit_futures_order(monkeypatch):
         cfg,
         leverage=5,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_pct=0.05,
@@ -182,8 +185,8 @@ async def test_run_real(monkeypatch):
         cfg,
         leverage=1,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_pct=0.05,
@@ -237,8 +240,8 @@ async def test_okx_futures_order(monkeypatch):
         cfg,
         leverage=7,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_pct=0.05,

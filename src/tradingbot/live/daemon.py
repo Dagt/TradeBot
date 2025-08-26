@@ -546,12 +546,15 @@ class TradeBotDaemon:
         """Adjust portfolio guard limits from external controller."""
         if not self.guard:
             return
-        tot = evt.get("total_cap_usdt")
-        per = evt.get("per_symbol_cap_usdt")
+        tot = evt.get("total_cap_pct")
+        per = evt.get("per_symbol_cap_pct")
         if tot is not None:
-            self.guard.cfg.total_cap_usdt = float(tot)
+            self.guard.cfg.total_cap_pct = float(tot)
         if per is not None:
-            self.guard.cfg.per_symbol_cap_usdt = float(per)
+            self.guard.cfg.per_symbol_cap_pct = float(per)
+        eq = evt.get("equity")
+        if eq is not None:
+            self.guard.refresh_usd_caps(float(eq))
 
     # ------------------------------------------------------------------
     async def _on_halt(self, _evt: dict) -> None:

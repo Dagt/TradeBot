@@ -49,10 +49,10 @@ def test_risk_vol_sizing_with_correlation(synthetic_volatility):
 
 
 def test_risk_service_uses_guard_volatility():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_usdt=10000, total_cap_usdt=20000))
+    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
     rm = RiskManager(equity_pct=0.1, vol_target=0.02)
     rm_guard_equity = 1.0
-    guard.equity = rm_guard_equity
+    guard.refresh_usd_caps(rm_guard_equity)
     svc = RiskService(rm, guard)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     allowed, _, delta = svc.check_order("BTC", "buy", price=1.0)

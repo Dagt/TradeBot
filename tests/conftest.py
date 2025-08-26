@@ -132,13 +132,11 @@ def portfolio_guard():
     per_symbol_pct = 0.20  # 20% por símbolo
 
     cfg = GuardConfig(
-        total_cap_usdt=equity * total_pct,
-        per_symbol_cap_usdt=equity * per_symbol_pct,
+        total_cap_pct=total_pct,
+        per_symbol_cap_pct=per_symbol_pct,
         venue="test",
     )
 
     guard = PortfolioGuard(cfg)
-    guard.equity = equity
-    guard.total_pct = total_pct
-    guard.per_symbol_pct = per_symbol_pct
+    guard.refresh_usd_caps(equity)
     return guard

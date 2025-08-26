@@ -63,7 +63,8 @@ def test_daily_loss_limit_triggers_kill_switch():
 
 def test_risk_service_updates_and_persists(monkeypatch):
     rm = RiskManager(equity_pct=1.0)
-    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1.0, per_symbol_cap_usdt=1.0, venue="X"))
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    guard.refresh_usd_caps(1.0)
     daily = DailyGuard(GuardLimits(), venue="X")
     events: list = []
     monkeypatch.setattr(timescale, "insert_risk_event", lambda engine, **kw: events.append(kw))

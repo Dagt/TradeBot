@@ -27,9 +27,9 @@ async def test_risk_service_correlation_limits_and_sizing():
     bus.subscribe("risk:paused", lambda e: events.append(e))
     rm = RiskManager(equity_pct=1.0, bus=bus)
     guard = PortfolioGuard(
-        GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="test")
+        GuardConfig(total_cap_pct=5.0, per_symbol_cap_pct=2.5, venue="test")
     )
-    guard.equity = 200.0
+    guard.refresh_usd_caps(200.0)
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
 

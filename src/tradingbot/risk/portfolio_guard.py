@@ -9,8 +9,8 @@ import numpy as np
 
 @dataclass
 class GuardConfig:
-    total_cap_usdt: float = 1000.0
-    per_symbol_cap_usdt: float = 500.0
+    total_cap_pct: float = 1.0
+    per_symbol_cap_pct: float = 0.5
     venue: str = "binance_spot_testnet"
     # --- Soft caps ---
     soft_cap_pct: float = 0.10            # hasta +10% sobre el cap
@@ -32,11 +32,19 @@ class GuardState:
         default_factory=lambda: defaultdict(dict)
     )
     venue_pnl: Dict[str, float] = field(default_factory=dict)
+    per_symbol_cap_usdt: float = 0.0
+    total_cap_usdt: float = 0.0
 
 class PortfolioGuard:
     def __init__(self, cfg: GuardConfig):
         self.cfg = cfg
         self.st = GuardState()
+        self.equity: float = 0.0
+
+    def refresh_usd_caps(self, equity: float) -> None:
+        self.equity = float(equity)
+        self.st.per_symbol_cap_usdt = self.equity * self.cfg.per_symbol_cap_pct
+        self.st.total_cap_usdt = self.equity * self.cfg.total_cap_pct
 
     # ---- utilidades base ----
     def mark_price(self, symbol: str, price: float):
@@ -111,10 +119,10 @@ class PortfolioGuard:
         if symbol not in seen:
             total += abs(new_pos) * price
 
-        if sym_exp > self.cfg.per_symbol_cap_usdt:
-            return True, f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.cfg.per_symbol_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
-        if total > self.cfg.total_cap_usdt:
-            return True, f"total_cap_usdt excedido ({total:.2f} > {self.cfg.total_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
+        if sym_exp > self.st.per_symbol_cap_usdt:
+            return True, f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.st.per_symbol_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
+        if total > self.st.total_cap_usdt:
+            return True, f"total_cap_usdt excedido ({total:.2f} > {self.st.total_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
         return False, "", {"sym_exp": sym_exp, "total": total}
 
     # ---- soft caps ----
@@ -123,8 +131,8 @@ class PortfolioGuard:
 
     def _soft_bounds(self) -> Tuple[float, float]:
         return (
-            self.cfg.per_symbol_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
-            self.cfg.total_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
+            self.st.per_symbol_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
+            self.st.total_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
         )
 
     def soft_cap_decision(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[str, str, dict]:
@@ -159,10 +167,10 @@ class PortfolioGuard:
         per_soft, total_soft = self._soft_bounds()
         # casos
         # 1) dentro de hard caps
-        if sym_exp <= self.cfg.per_symbol_cap_usdt and total <= self.cfg.total_cap_usdt:
+        if sym_exp <= self.st.per_symbol_cap_usdt and total <= self.st.total_cap_usdt:
             # si había ventanas, se cierran
             self.st.sym_soft_started.pop(symbol, None)
-            if self.st.total_soft_started and total <= self.cfg.total_cap_usdt:
+            if self.st.total_soft_started and total <= self.st.total_cap_usdt:
                 self.st.total_soft_started = None
             return "allow", "dentro de hard caps", {"sym_exp": sym_exp, "total": total}
 
@@ -177,7 +185,7 @@ class PortfolioGuard:
             self.st.sym_soft_started[symbol] = now
             sym_start = now
         # ventana global
-        if self.st.total_soft_started is None and total > self.cfg.total_cap_usdt:
+        if self.st.total_soft_started is None and total > self.st.total_cap_usdt:
             self.st.total_soft_started = now
 
         # tiempo restante por las ventanas activas
@@ -203,16 +211,16 @@ class PortfolioGuard:
             return 0.0, "sin posición o precio inválido", {"pos": pos, "price": price}
 
         cur_sym_exp = abs(pos) * price
-        target_sym_exp = min(cur_sym_exp, self.cfg.per_symbol_cap_usdt)
-        if cur_sym_exp > self.cfg.per_symbol_cap_usdt:
+        target_sym_exp = min(cur_sym_exp, self.st.per_symbol_cap_usdt)
+        if cur_sym_exp > self.st.per_symbol_cap_usdt:
             need_exp_cut = cur_sym_exp - target_sym_exp
             need_qty_cut = need_exp_cut / price
         else:
             need_qty_cut = 0.0
 
         total = self.exposure_total()
-        if total > self.cfg.total_cap_usdt:
-            extra = total - self.cfg.total_cap_usdt
+        if total > self.st.total_cap_usdt:
+            extra = total - self.st.total_cap_usdt
             need_qty_cut += extra / price
 
         need_qty_cut = max(0.0, min(abs(pos), need_qty_cut))
