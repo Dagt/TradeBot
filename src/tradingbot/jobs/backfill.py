@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 import ccxt.async_support as ccxt
+from ccxt.base.errors import BadSymbol
 import logging
 
 from tradingbot.core.symbols import normalize
@@ -109,13 +110,22 @@ async def backfill(
         for symbol in symbols:
             logger.info("Procesando %s", symbol)
             db_symbol = normalize(symbol)
+            await ex.load_markets()
+            ccxt_symbol = next(
+                (s for s in ex.symbols if normalize(s) == db_symbol),
+                None,
+            )
+            if ccxt_symbol is None:
+                raise BadSymbol(
+                    f"{symbol} no se encontró. Usa formato BASE/QUOTE"
+                )
 
             # --- OHLCV backfill -------------------------------------------------
             since = start_ms
             while since < end_ms:
                 ohlcvs = await _retry(
                     ex.fetch_ohlcv,
-                    symbol,
+                    ccxt_symbol,
                     "1m",
                     since,
                     1000,
@@ -144,7 +154,7 @@ async def backfill(
             since = start_ms
             while since < end_ms:
                 trades = await _retry(
-                    ex.fetch_trades, symbol, since, 1000
+                    ex.fetch_trades, ccxt_symbol, since, 1000
                 )
                 if not trades:
                     break

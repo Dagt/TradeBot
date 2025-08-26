@@ -390,7 +390,9 @@ def ingest(
 def backfill(
     days: int = typer.Option(1, "--days", help="Number of days to backfill"),
     symbols: List[str] = typer.Option(
-        ["BTC/USDT"], "--symbols", help="Symbols to download"
+        ["BTC/USDT"],
+        "--symbols",
+        help="Symbols to download. Accepts values without separators and normalizes them for CCXT.",
     ),
     exchange: str = typer.Option(
         "binance_spot",
