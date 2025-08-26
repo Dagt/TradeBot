@@ -619,9 +619,9 @@ async def _stream_process(proc: asyncio.subprocess.Process):
     finally:
         for t in tasks:
             t.cancel()
-
-    returncode = await proc.wait()
-    yield f"event: end\ndata: {returncode}\n\n"
+        # Ensure the process is fully awaited so that ``proc.returncode``
+        # is available for the caller of :func:`cli_stream`.
+        await proc.wait()
 
 
 @app.get("/cli/stream/{job_id}")
@@ -633,9 +633,15 @@ async def cli_stream(job_id: str):
         raise HTTPException(status_code=404, detail="job not found")
 
     async def event_gen():
-        async for chunk in _stream_process(proc):
-            yield chunk
-        _CLI_PROCS.pop(job_id, None)
+        try:
+            async for chunk in _stream_process(proc):
+                yield chunk
+        finally:
+            # Remove job and always emit an ``end`` event so that the client
+            # knows the stream is finished even if many lines were produced.
+            _CLI_PROCS.pop(job_id, None)
+            returncode = proc.returncode if proc.returncode is not None else 0
+            yield f"event: end\ndata: {returncode}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
