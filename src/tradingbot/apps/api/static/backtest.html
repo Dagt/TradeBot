@@ -114,6 +114,7 @@ function hideWorking(){
 
 let currentJob=null;
 let evt=null;
+let endTimer=null;
 
 const strategies = {
   breakout_atr: {
@@ -307,9 +308,12 @@ async function runBacktest(){
     currentJob=j.id;
     stopBtn.disabled=false;
     showWorking();
+    if(endTimer){clearTimeout(endTimer);}
+    endTimer=setTimeout(()=>{hideWorking();},60000);
     evt=new EventSource(api(`/cli/stream/${j.id}`));
     evt.onmessage=(e)=>appendOutput(outEl,e.data);
     evt.addEventListener('end',(e)=>{
+      if(endTimer){clearTimeout(endTimer);endTimer=null;}
       stopBtn.disabled=true;
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
@@ -320,6 +324,7 @@ async function runBacktest(){
       appendOutput(outEl,`Proceso finalizado (código ${e.data}).`);
     });
     evt.onerror=()=>{
+      if(endTimer){clearTimeout(endTimer);endTimer=null;}
       appendOutput(outEl,'[error de conexión]');
       stopBtn.disabled=true;
       runBtn.disabled=false;
@@ -327,6 +332,7 @@ async function runBacktest(){
       hideWorking();
     };
   }catch(e){
+    if(endTimer){clearTimeout(endTimer);endTimer=null;}
     appendOutput(outEl,String(e));
     runBtn.disabled=false;
     runBtn.textContent='Ejecutar';
@@ -343,6 +349,7 @@ async function stopBacktest(){
   runBtn.disabled=false;
   runBtn.textContent='Ejecutar';
   currentJob=null;
+  if(endTimer){clearTimeout(endTimer);endTimer=null;}
   hideWorking();
 }
 
@@ -364,6 +371,7 @@ document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('bt-stop').addEventListener('click',stopBacktest);
 document.getElementById('bt-clear').addEventListener('click',()=>{
   document.getElementById('bt-output').textContent='';
+  if(endTimer){clearTimeout(endTimer);endTimer=null;}
   hideWorking();
 });
 document.getElementById('cli-run').addEventListener('click',runCli);
