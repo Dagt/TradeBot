@@ -32,7 +32,7 @@ class DummyStrat:
 
 
 class DummyRisk:
-    def size(self, side, strength):
+    def size(self, side, strength, **kwargs):
         return 1.0
 
     def check_limits(self, price):
@@ -41,13 +41,29 @@ class DummyRisk:
     def add_fill(self, side, qty):
         pass
 
+    def update_correlation(self, pairs, threshold):
+        return []
+
+    def update_position(self, exchange, symbol, qty):
+        pass
+
 
 class DummyPG:
+    def __init__(self):
+        from types import SimpleNamespace
+        self.st = SimpleNamespace(venue_positions={})
+
     def mark_price(self, symbol, px):
         pass
 
     def soft_cap_decision(self, *a):
         return ("allow", "", None)
+
+    def volatility(self, symbol):
+        return 0.0
+
+    def update_position_on_order(self, symbol, side, qty, venue=None):
+        pass
 
 
 class DummyDG:
@@ -86,11 +102,12 @@ class DummyExec:
 @pytest.mark.asyncio
 async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
-    monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
+    monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
     monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rt, "_CAN_PG", False)
 
     monkeypatch.setitem(
         rt.ADAPTERS,
@@ -109,9 +126,9 @@ async def test_bybit_futures_order(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.05,
         daily_max_drawdown_pct=0.05,
-        max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExec.last_instance
@@ -146,11 +163,12 @@ async def test_run_real(monkeypatch):
     import tradingbot.live.runner_real as rr
     rr = importlib.reload(rr)
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
-    monkeypatch.setattr(rr, "BreakoutATR", lambda: DummyStrat())
+    monkeypatch.setattr(rr, "BreakoutATR", lambda config_path=None: DummyStrat())
     monkeypatch.setattr(rr, "RiskManager", lambda max_pos: DummyRisk())
     monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rr, "_CAN_PG", False)
     monkeypatch.setitem(
         rr.ADAPTERS,
         ("binance", "spot"),
@@ -168,9 +186,9 @@ async def test_run_real(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.05,
         daily_max_drawdown_pct=0.05,
-        max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExecReal.last_instance
@@ -199,11 +217,12 @@ class DummyExec2(DummyExec):
 @pytest.mark.asyncio
 async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
-    monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
+    monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
     monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rt, "_CAN_PG", False)
 
     monkeypatch.setitem(
         rt.ADAPTERS,
@@ -222,9 +241,9 @@ async def test_okx_futures_order(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.05,
         daily_max_drawdown_pct=0.05,
-        max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExec2.last_instance

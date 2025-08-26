@@ -19,7 +19,7 @@ async def test_daily_guard_close_and_persist(monkeypatch):
     broker.update_last_price(symbol, 100.0)
 
     guard = DailyGuard(
-        GuardLimits(daily_max_drawdown_pct=0.05, halt_action="close_all"),
+        GuardLimits(daily_max_loss_pct=1.0, daily_max_drawdown_pct=0.05, halt_action="close_all"),
         venue="paper",
         storage_engine="eng",
     )
