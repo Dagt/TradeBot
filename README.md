@@ -62,6 +62,37 @@ export BINANCE_FUTURES_TESTNET=true
 Si esta variable no está definida o se establece en `false`, el bot usará el
 entorno real de Binance Futures.
 
+## Gestión de riesgo
+
+El tamaño de cada operación se calcula a partir del capital disponible:
+
+- `equity_pct` indica la fracción de equity utilizada como notional por
+  señal: `notional = equity_total * equity_pct`.
+- `risk_pct` define la pérdida máxima aceptada sobre ese notional:
+  `max_loss = notional * risk_pct`.
+
+El parámetro `strength` de las señales escala el cambio propuesto en la
+posición. Valores mayores a `1.0` permiten piramidar entradas mientras que
+valores menores reducen exposición.
+
+`DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
+superan los límites configurados, detiene el bot o cierra las posiciones
+abiertas.
+
+### Ejemplo para cuenta pequeña
+
+```yaml
+backtest:
+  data: data/examples/btcusdt_1m.csv   # reemplazar con datos del activo elegido
+  symbol: DOGE/USDT
+  strategy: breakout_atr
+  initial_equity: 100
+
+risk:
+  equity_pct: 0.05   # usa el 5% del capital por operación
+  risk_pct: 0.02     # arriesga como máximo el 2% de la cuenta
+```
+
 ## Solución de problemas
 
 Si se muestra el mensaje `System clock offset`, indica que el reloj del
