@@ -38,12 +38,6 @@
         <label for="bot-pairs">Pares (coma)</label>
         <input id="bot-pairs" placeholder="BTC/USDT,ETH/USDT"/>
       </div>
-      <div>
-        <label for="bot-notional">Notional (USDT)
-          <span class="help-icon" title="Monto en USDT por operación">?</span>
-        </label>
-        <input id="bot-notional" type="number" step="0.01"/>
-      </div>
       <div id="field-exchange">
         <label for="bot-exchange">Exchange</label>
         <select id="bot-exchange">
@@ -215,7 +209,6 @@ const api = (path) => `${location.origin}${path}`;
 async function startBot(){
   const strategy = document.getElementById('bot-strategy').value;
   const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const notional = document.getElementById('bot-notional').value;
   const exchange = document.getElementById('bot-exchange').value;
   const market = document.getElementById('bot-market').value;
   const risk_pct = document.getElementById('bot-risk-pct').value;
@@ -239,7 +232,6 @@ async function startBot(){
       params[el.dataset.name]=v;
     });
     const payload = {strategy, pairs, exchange, market, testnet, dry_run};
-    if(notional) payload.notional = Number(notional);
     if(risk_pct) payload.risk_pct = Number(risk_pct);
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct);
     if(daily_max_drawdown_pct) payload.daily_max_drawdown_pct = Number(daily_max_drawdown_pct);
