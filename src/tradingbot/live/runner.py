@@ -87,8 +87,8 @@ async def run_live_binance(
     symbol: str = "BTC/USDT",
     fee_bps: float = 1.5,
     persist_pg: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
     daily_max_loss_usdt: float = 100.0,
@@ -105,13 +105,16 @@ async def run_live_binance(
     broker = PaperAdapter(fee_bps=fee_bps)
     risk_core = RiskManager(max_pos=1.0)
     strat = BreakoutATR(config_path=config_path)
-    guard = PortfolioGuard(GuardConfig(
-        total_cap_usdt=total_cap_usdt,
-        per_symbol_cap_usdt=per_symbol_cap_usdt,
-        venue="binance",
-        soft_cap_pct=soft_cap_pct,
-        soft_cap_grace_sec=soft_cap_grace_sec,
-    ))
+    guard = PortfolioGuard(
+        GuardConfig(
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
+            venue="binance",
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec,
+        ),
+        equity_provider=lambda: broker.equity(),
+    )
     dguard = DailyGuard(GuardLimits(
         daily_max_loss_usdt=daily_max_loss_usdt,
         daily_max_drawdown_pct=daily_max_drawdown_pct,

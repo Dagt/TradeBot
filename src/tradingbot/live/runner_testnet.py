@@ -50,7 +50,7 @@ class _SymbolConfig:
     trade_qty: float
 
 async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: int,
-                      dry_run: bool, total_cap_usdt: float, per_symbol_cap_usdt: float,
+                      dry_run: bool, total_cap_pct: float, per_symbol_cap_pct: float,
                       soft_cap_pct: float, soft_cap_grace_sec: int,
                       daily_max_loss_usdt: float, daily_max_drawdown_pct: float,
                       max_consecutive_losses: int, corr_threshold: float,
@@ -75,13 +75,17 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
     risk_core = RiskManager(max_pos=1.0)
-    guard = PortfolioGuard(GuardConfig(
-        total_cap_usdt=total_cap_usdt,
-        per_symbol_cap_usdt=per_symbol_cap_usdt,
-        venue=venue,
-        soft_cap_pct=soft_cap_pct,
-        soft_cap_grace_sec=soft_cap_grace_sec,
-    ))
+    broker = PaperAdapter(fee_bps=1.5)
+    guard = PortfolioGuard(
+        GuardConfig(
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
+            venue=venue,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec,
+        ),
+        equity_provider=lambda: broker.equity(),
+    )
     dguard = DailyGuard(GuardLimits(
         daily_max_loss_usdt=daily_max_loss_usdt,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
@@ -90,7 +94,6 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
     ), venue=venue)
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, dguard, corr_service=corr)
-    broker = PaperAdapter(fee_bps=1.5)
     engine = get_engine() if _CAN_PG else None
     oco_book = OcoBook()
     if engine is not None:
@@ -151,8 +154,8 @@ async def run_live_testnet(
     trade_qty: float = 0.001,
     leverage: int = 1,
     dry_run: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
     daily_max_loss_usdt: float = 100.0,
@@ -174,8 +177,8 @@ async def run_live_testnet(
             c,
             leverage,
             dry_run,
-            total_cap_usdt,
-            per_symbol_cap_usdt,
+            total_cap_pct,
+            per_symbol_cap_pct,
             soft_cap_pct,
             soft_cap_grace_sec,
             daily_max_loss_usdt,

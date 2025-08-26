@@ -88,7 +88,7 @@ async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
     monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
-    monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
+    monkeypatch.setattr(rt, "PortfolioGuard", lambda config, equity_provider=None: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
 
@@ -105,8 +105,8 @@ async def test_bybit_futures_order(monkeypatch):
         cfg,
         leverage=5,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_usdt=100.0,
@@ -148,7 +148,7 @@ async def test_run_real(monkeypatch):
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rr, "BreakoutATR", lambda: DummyStrat())
     monkeypatch.setattr(rr, "RiskManager", lambda max_pos: DummyRisk())
-    monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
+    monkeypatch.setattr(rr, "PortfolioGuard", lambda config, equity_provider=None: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
     monkeypatch.setitem(
@@ -164,8 +164,8 @@ async def test_run_real(monkeypatch):
         cfg,
         leverage=1,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_usdt=100.0,
@@ -201,7 +201,7 @@ async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
     monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
-    monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
+    monkeypatch.setattr(rt, "PortfolioGuard", lambda config, equity_provider=None: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
 
@@ -218,8 +218,8 @@ async def test_okx_futures_order(monkeypatch):
         cfg,
         leverage=7,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
         daily_max_loss_usdt=100.0,

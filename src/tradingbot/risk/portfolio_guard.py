@@ -1,7 +1,7 @@
 # src/tradingbot/risk/portfolio_guard.py
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Callable
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict, deque
 
@@ -9,8 +9,8 @@ import numpy as np
 
 @dataclass
 class GuardConfig:
-    total_cap_usdt: float = 1000.0
-    per_symbol_cap_usdt: float = 500.0
+    total_cap_pct: float = 1.0
+    per_symbol_cap_pct: float = 0.5
     venue: str = "binance_spot_testnet"
     # --- Soft caps ---
     soft_cap_pct: float = 0.10            # hasta +10% sobre el cap
@@ -34,9 +34,10 @@ class GuardState:
     venue_pnl: Dict[str, float] = field(default_factory=dict)
 
 class PortfolioGuard:
-    def __init__(self, cfg: GuardConfig):
+    def __init__(self, cfg: GuardConfig, equity_provider: Callable[[], float] | None = None):
         self.cfg = cfg
         self.st = GuardState()
+        self._equity_provider = equity_provider or (lambda: float("inf"))
 
     # ---- utilidades base ----
     def mark_price(self, symbol: str, price: float):
@@ -94,6 +95,13 @@ class PortfolioGuard:
         return float(np.std(rets) * np.sqrt(365))
 
     # ---- hard caps (como antes) ----
+    def _caps_usdt(self) -> Tuple[float, float]:
+        eq = float(self._equity_provider())
+        return (
+            eq * self.cfg.per_symbol_cap_pct,
+            eq * self.cfg.total_cap_pct,
+        )
+
     def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:
         cur_pos = self.st.positions.get(symbol, 0.0)
         new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
@@ -111,10 +119,11 @@ class PortfolioGuard:
         if symbol not in seen:
             total += abs(new_pos) * price
 
-        if sym_exp > self.cfg.per_symbol_cap_usdt:
-            return True, f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.cfg.per_symbol_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
-        if total > self.cfg.total_cap_usdt:
-            return True, f"total_cap_usdt excedido ({total:.2f} > {self.cfg.total_cap_usdt:.2f})", {"sym_exp": sym_exp, "total": total}
+        per_cap, total_cap = self._caps_usdt()
+        if sym_exp > per_cap:
+            return True, f"per_symbol_cap_exceeded ({sym_exp:.2f} > {per_cap:.2f})", {"sym_exp": sym_exp, "total": total}
+        if total > total_cap:
+            return True, f"total_cap_exceeded ({total:.2f} > {total_cap:.2f})", {"sym_exp": sym_exp, "total": total}
         return False, "", {"sym_exp": sym_exp, "total": total}
 
     # ---- soft caps ----
@@ -122,9 +131,10 @@ class PortfolioGuard:
         return datetime.now(timezone.utc)
 
     def _soft_bounds(self) -> Tuple[float, float]:
+        per_cap, total_cap = self._caps_usdt()
         return (
-            self.cfg.per_symbol_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
-            self.cfg.total_cap_usdt * (1.0 + self.cfg.soft_cap_pct),
+            per_cap * (1.0 + self.cfg.soft_cap_pct),
+            total_cap * (1.0 + self.cfg.soft_cap_pct),
         )
 
     def soft_cap_decision(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[str, str, dict]:
@@ -156,13 +166,14 @@ class PortfolioGuard:
         if symbol not in seen:
             total += abs(new_pos) * price
 
+        per_cap, total_cap = self._caps_usdt()
         per_soft, total_soft = self._soft_bounds()
         # casos
         # 1) dentro de hard caps
-        if sym_exp <= self.cfg.per_symbol_cap_usdt and total <= self.cfg.total_cap_usdt:
+        if sym_exp <= per_cap and total <= total_cap:
             # si había ventanas, se cierran
             self.st.sym_soft_started.pop(symbol, None)
-            if self.st.total_soft_started and total <= self.cfg.total_cap_usdt:
+            if self.st.total_soft_started and total <= total_cap:
                 self.st.total_soft_started = None
             return "allow", "dentro de hard caps", {"sym_exp": sym_exp, "total": total}
 
@@ -177,7 +188,7 @@ class PortfolioGuard:
             self.st.sym_soft_started[symbol] = now
             sym_start = now
         # ventana global
-        if self.st.total_soft_started is None and total > self.cfg.total_cap_usdt:
+        if self.st.total_soft_started is None and total > total_cap:
             self.st.total_soft_started = now
 
         # tiempo restante por las ventanas activas
@@ -203,16 +214,17 @@ class PortfolioGuard:
             return 0.0, "sin posición o precio inválido", {"pos": pos, "price": price}
 
         cur_sym_exp = abs(pos) * price
-        target_sym_exp = min(cur_sym_exp, self.cfg.per_symbol_cap_usdt)
-        if cur_sym_exp > self.cfg.per_symbol_cap_usdt:
+        per_cap, total_cap = self._caps_usdt()
+        target_sym_exp = min(cur_sym_exp, per_cap)
+        if cur_sym_exp > per_cap:
             need_exp_cut = cur_sym_exp - target_sym_exp
             need_qty_cut = need_exp_cut / price
         else:
             need_qty_cut = 0.0
 
         total = self.exposure_total()
-        if total > self.cfg.total_cap_usdt:
-            extra = total - self.cfg.total_cap_usdt
+        if total > total_cap:
+            extra = total - total_cap
             need_qty_cut += extra / price
 
         need_qty_cut = max(0.0, min(abs(pos), need_qty_cut))

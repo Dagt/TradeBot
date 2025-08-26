@@ -89,8 +89,8 @@ async def _run_symbol(
     cfg: _SymbolConfig,
     leverage: int,
     dry_run: bool,
-    total_cap_usdt: float,
-    per_symbol_cap_usdt: float,
+    total_cap_pct: float,
+    per_symbol_cap_pct: float,
     soft_cap_pct: float,
     soft_cap_grace_sec: int,
     daily_max_loss_usdt: float,
@@ -109,14 +109,16 @@ async def _run_symbol(
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
     risk_core = RiskManager(max_pos=1.0)
+    broker = PaperAdapter(fee_bps=1.5)
     guard = PortfolioGuard(
         GuardConfig(
-            total_cap_usdt=total_cap_usdt,
-            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
             venue=venue,
             soft_cap_pct=soft_cap_pct,
             soft_cap_grace_sec=soft_cap_grace_sec,
-        )
+        ),
+        equity_provider=lambda: broker.equity(),
     )
     dguard = DailyGuard(
         GuardLimits(
@@ -129,7 +131,6 @@ async def _run_symbol(
     )
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, dguard, corr_service=corr)
-    broker = PaperAdapter(fee_bps=1.5)
     engine = get_engine() if _CAN_PG else None
     oco_book = OcoBook()
     if engine is not None:
@@ -193,8 +194,8 @@ async def run_live_real(
     dry_run: bool = False,
     *,
     i_know_what_im_doing: bool,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
     daily_max_loss_usdt: float = 100.0,
@@ -224,8 +225,8 @@ async def run_live_real(
             c,
             leverage,
             dry_run,
-            total_cap_usdt,
-            per_symbol_cap_usdt,
+            total_cap_pct,
+            per_symbol_cap_pct,
             soft_cap_pct,
             soft_cap_grace_sec,
             daily_max_loss_usdt,
