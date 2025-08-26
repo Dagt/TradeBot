@@ -13,13 +13,11 @@ from ..storage import timescale
 class Signal:
     """Simple trading signal.
 
-    ``strength`` scales position sizing as a fraction of account equity.
-    A value of ``1.0`` requests the full allocation defined by the risk
-    manager's ``equity_pct`` while ``1.5`` would pyramid exposure to
-    ``150%`` of that base size. Values between ``0`` and ``1`` reduce the
-    position proportionally and ``0`` or negative values close it. The
-    risk manager also interprets ``risk_pct`` as a stop‑loss expressed as a
-    percentage of equity.
+    ``strength`` indica la fracción de equity a utilizar y determina el notional
+    mediante ``notional = equity * strength``. Valores mayores a ``1`` permiten
+    piramidar posiciones; valores entre ``0`` y ``1`` desescalan la exposición.
+    ``0`` o negativos cierran la posición. El gestor de riesgo aplica
+    ``risk_pct`` como un stop‑loss local sobre ese notional.
     """
 
     side: str  # 'buy' | 'sell' | 'flat'

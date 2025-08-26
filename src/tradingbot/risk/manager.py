@@ -43,7 +43,8 @@ class RiskManager:
     Añade límites de pérdida y drawdown y un *kill switch* mediante ``enabled``.
     ``check_limits`` debe invocarse con el precio de mercado actual antes de
     enviar cualquier orden.  Si los límites se violan, ``enabled`` se vuelve
-    ``False`` y no se deben continuar enviando órdenes.
+    ``False`` y no se deben continuar enviando órdenes.  El stop‑loss local se
+    define con ``risk_pct`` aplicado sobre ``notional = equity * strength``.
     """
 
     def __init__(

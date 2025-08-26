@@ -3,6 +3,12 @@
 Las estrategias definen cómo se toman decisiones de compra o venta. A
 continuación se presenta un resumen en lenguaje sencillo.
 
+Todas las estrategias emiten señales con un campo `strength` que especifica la
+fracción de equity a utilizar (`notional = equity * strength`). Valores mayores
+a `1` permiten piramidar posiciones; valores entre `0` y `1` desescalan la
+exposición. El stop‑loss local se controla con `risk_pct`, aplicado sobre ese
+notional.
+
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador
 ATR y vende cuando cae por debajo del canal inferior.

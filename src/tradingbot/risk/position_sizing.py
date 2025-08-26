@@ -1,8 +1,8 @@
 """Helpers for position sizing based on volatility targets.
 
-This module now also provides utilities to translate signal strength into
-actual position deltas, ensuring consistent pyramiding and reduction across
-strategies.
+Incluye utilidades para traducir ``strength`` en cambios de posición usando
+``notional = equity * strength``. Esto permite piramidación, desescalado y
+compatibilidad entre estrategias.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ def vol_target(atr: float, equity_pct: float, equity: float) -> float:
     atr:
         Average true range or volatility estimate of the asset.
     equity_pct:
-        Fraction of current equity to allocate.
+        Fracción base de equity reservada para el activo; la asignación final
+        la determina ``notional = equity * strength``.
     equity:
         Current account equity.
 
@@ -45,11 +46,11 @@ def delta_from_strength(
     Parameters
     ----------
     strength:
-        Target exposure as a fraction of ``equity_pct``. Positive values denote
-        long positions, negative values short. Values are clipped to
-        ``[-1, 1]``.
+        Fracción de equity deseada para la posición. ``notional = equity *
+        strength``. Valores positivos denotan largos; negativos, cortos. Se
+        limita a ``[-1, 1]``.
     equity_pct:
-        Fraction of current equity allocated to the asset.
+        Límite máximo de equity permitido para el activo.
     equity:
         Current account equity.
     price:

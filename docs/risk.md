@@ -1,15 +1,17 @@
 # Gestión de riesgo
 
-## Cálculo de `equity_pct` y `risk_pct`
+## Cálculo del notional y `risk_pct`
 
-El capital asignado a cada operación se determina multiplicando la equity
-actual por `equity_pct`:
+La exposición de cada operación se determina a partir de la equity actual:
 
 ```
-notional = equity_total * equity_pct
+notional = equity * strength
 ```
 
-El stop‑loss se define como un porcentaje de esa asignación usando `risk_pct`:
+`strength` es la fracción del capital que se desea asignar. Valores mayores a
+`1` piramidan la posición; valores entre `0` y `1` desescalan y `0` cierra la
+exposición. El stop‑loss local se define como porcentaje de ese notional usando
+`risk_pct`:
 
 ```
 max_loss = notional * risk_pct
@@ -17,14 +19,6 @@ max_loss = notional * risk_pct
 
 A partir del notional se calcula la cantidad a comprar o vender en función del
 precio del activo.
-
-## Uso de `strength`
-
-Las estrategias pueden emitir señales con un atributo `strength` que escala el
-cambio propuesto en la posición. Un valor mayor a `1.0` permite piramidar
-agregando tamaño; valores entre `0` y `1` reducen exposición y `0` cierra la
-posición. Por ejemplo, con `equity_pct = 0.05` una señal con `strength = 1.5`
-usará el `7.5 %` del equity mientras que `strength = 0.5` solo el `2.5 %`.
 
 ## DailyGuard y drawdown global
 
@@ -45,6 +39,8 @@ backtest:
   initial_equity: 100
 
 risk:
-  equity_pct: 0.05
-  risk_pct: 0.02
+    risk_pct: 0.02
 ```
+
+Las señales deben indicar `strength` para asignar capital; por ejemplo,
+`strength = 0.05` utiliza el 5 % del equity disponible.
