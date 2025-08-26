@@ -301,7 +301,7 @@ class RiskManager:
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
 
-        target_abs = vol_target(symbol_vol, self.vol_target, equity)
+        target_abs = vol_target(symbol_vol, equity, self.vol_target)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
         if equity <= 0 or self.vol_target <= 0 or price <= 0:
