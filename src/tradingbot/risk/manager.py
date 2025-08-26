@@ -37,6 +37,15 @@ class Position:
     qty: float = 0.0
 
 
+class StopLossExceeded(Exception):
+    """Signal that the per-position stop loss was breached.
+
+    Unlike the kill switch this only requests closing the affected
+    position while keeping the manager enabled.
+    """
+    pass
+
+
 class RiskManager:
     """Gestor de riesgo mínimo.
 
@@ -205,7 +214,11 @@ class RiskManager:
         price = evt.get("price")
         if price is None:
             return
-        if not self.check_limits(price) and self.bus is not None:
+        try:
+            ok = self.check_limits(price)
+        except StopLossExceeded:
+            return
+        if not ok and self.bus is not None:
             await self.bus.publish("risk:halted", {"reason": self.last_kill_reason})
 
     async def _on_pnl_event(self, evt: dict) -> None:
@@ -285,7 +298,11 @@ class RiskManager:
         )
         if abs(delta) <= 0:
             return False, "zero_size", 0.0
-        if not self.check_limits(price):
+        try:
+            limits_ok = self.check_limits(price)
+        except StopLossExceeded:
+            return True, "stop_loss", -self.pos.qty
+        if not limits_ok:
             return False, "kill_switch", 0.0
         return True, "", delta
 
@@ -503,8 +520,8 @@ class RiskManager:
         notional = abs(qty) * self._entry_price
         pnl = (px - self._entry_price) * qty
         if self.risk_pct > 0 and pnl < 0 and abs(pnl) >= notional * self.risk_pct:
-            self.kill_switch("stop_loss")
-            return False
+            # Do not disable the whole manager; signal caller to close position
+            raise StopLossExceeded("stop loss exceeded")
 
         return self._check_daily_limits()
 

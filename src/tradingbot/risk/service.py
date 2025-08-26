@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
-from .manager import RiskManager
+from .manager import RiskManager, StopLossExceeded
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
@@ -97,7 +97,15 @@ class RiskService:
         if qty <= 0:
             return False, "zero_size", 0.0
 
-        if not self.rm.check_limits(price):
+        try:
+            limits_ok = self.rm.check_limits(price)
+        except StopLossExceeded:
+            self._persist("VIOLATION", symbol, "stop_loss", {})
+            # size to fully exit current position
+            exit_delta = -self.rm.pos.qty
+            return True, "stop_loss", exit_delta
+
+        if not limits_ok:
             self._persist("VIOLATION", symbol, "kill_switch", {})
             return False, "kill_switch", 0.0
 
