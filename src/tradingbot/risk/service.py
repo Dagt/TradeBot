@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
-from .manager import RiskManager, StopLossExceeded
+from .manager import RiskManager
+from .exceptions import StopLossExceeded
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService

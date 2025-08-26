@@ -21,6 +21,7 @@ def test_size_scales_with_equity_and_strength():
 
 def test_stop_loss_risk_pct():
     from tradingbot.risk.manager import RiskManager
+    from tradingbot.risk.exceptions import StopLossExceeded
 
     equity = 10_000.0
     risk_pct = 0.02
@@ -32,8 +33,10 @@ def test_stop_loss_risk_pct():
     rm.set_position(qty)
 
     assert rm.check_limits(price)
-    assert not rm.check_limits(price * (1 - risk_pct))
-    assert rm.enabled is False
+    with pytest.raises(StopLossExceeded):
+        rm.check_limits(price * (1 - risk_pct - 0.01))
+    assert rm.enabled is True
+    assert rm.last_kill_reason == "stop_loss"
 
 
 def test_pyramiding_and_scaling(risk_manager):

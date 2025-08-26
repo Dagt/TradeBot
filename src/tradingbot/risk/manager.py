@@ -27,6 +27,7 @@ from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
 from .position_sizing import vol_target, delta_from_strength
+from .exceptions import StopLossExceeded
 from sqlalchemy import text
 
 
@@ -35,10 +36,6 @@ class Position:
     """Simple container for current position size."""
 
     qty: float = 0.0
-
-
-class StopLossExceeded(Exception):
-    """Raised when unrealized losses breach the configured ``risk_pct``."""
 
 
 class RiskManager:
