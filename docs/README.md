@@ -10,3 +10,4 @@ Si es la primera vez que lo utiliza, comience por revisar el
 - [Comandos de la CLI](commands.md)
 - [Estrategias disponibles](strategies.md)
 - [Dashboards de monitoreo](dashboards.md)
+- [Gestión de riesgo](risk.md)
