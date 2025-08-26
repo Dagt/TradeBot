@@ -420,8 +420,11 @@ class EventDrivenBacktestEngine:
             }
             for o in orders
         ]
+        initial_capital = getattr(self, "initial_capital", 0.0)
+        pnl = equity - initial_capital
         result = {
             "equity": equity,
+            "pnl": pnl,
             "fills": fills,
             "orders": orders_summary,
             "slippage": slippage_total,
@@ -431,8 +434,9 @@ class EventDrivenBacktestEngine:
             "equity_curve": equity_curve,
         }
         log.info(
-            "Backtest finalizado: equity %.2f, fills %d, drawdown %.2f%%",
+            "Backtest finalizado: equity %.2f, pnl %.2f, fills %d, drawdown %.2f%%",
             result["equity"],
+            result["pnl"],
             len(result["fills"]),
             result["max_drawdown"] * 100,
         )
