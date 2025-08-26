@@ -669,8 +669,6 @@ class BotConfig(BaseModel):
     venue: str | None = None
     equity_pct: float | None = None
     leverage: int | None = None
-    stop_loss: float | None = None
-    take_profit: float | None = None
     risk_pct: float | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
@@ -722,10 +720,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--equity-pct", str(cfg.equity_pct)])
     if cfg.leverage is not None:
         args.extend(["--leverage", str(cfg.leverage)])
-    if cfg.stop_loss is not None:
-        args.extend(["--stop-loss", str(cfg.stop_loss)])
-    if cfg.take_profit is not None:
-        args.extend(["--take-profit", str(cfg.take_profit)])
     if cfg.risk_pct is not None:
         args.extend(["--risk-pct", str(cfg.risk_pct)])
     if cfg.testnet is not None:
