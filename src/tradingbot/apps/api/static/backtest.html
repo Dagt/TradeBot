@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/styles.css"/>
   <style>
   @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
-  .loading{animation:blink 1s linear infinite;margin-left:8px;width:16px;height:16px;border-radius:50%;background:var(--primary);}
+  #bt-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
   </style>
 </head>
 <body>
@@ -76,8 +76,9 @@
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
+    <button id="bt-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
     <button id="bt-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
-    <div id="bt-progress" class="loading" hidden></div>
+    <span id="bt-working">Procesando<span id="bt-dots"></span></span>
     <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
@@ -97,9 +98,22 @@ function normalizeSymbol(sym) {
 }
 
 function appendOutput(out,text){
-  out.textContent+=text;
+  out.textContent+=text+"\n";
   requestAnimationFrame(()=>out.scrollTop=out.scrollHeight);
 }
+
+function showWorking(){
+  const span=document.getElementById('bt-working');
+  if(span) span.style.display='inline';
+}
+
+function hideWorking(){
+  const span=document.getElementById('bt-working');
+  if(span) span.style.display='none';
+}
+
+let currentJob=null;
+let evt=null;
 
 const strategies = {
   breakout_atr: {
@@ -173,6 +187,29 @@ const dataInfo = {
 
 let strategyInfo = strategies;
 
+function appendSummary(text){
+  try{
+    const eq=text.match(/'equity':\s*([0-9\.e+-]+)/);
+    const slip=text.match(/'slippage':\s*([0-9\.e+-]+)/);
+    const dd=text.match(/'max_drawdown':\s*([0-9\.e+-]+)/);
+    const fillsMatch=text.match(/'fills':\s*\[(.*)\]/s);
+    let fills=0;
+    if(fillsMatch){
+      fills=(fillsMatch[1].match(/\(/g)||[]).length;
+    }
+    const lines=[
+      '',
+      `equity final ≈ ${eq?parseFloat(eq[1]).toFixed(2):'N/A'}`,
+      `${fills} fills (operaciones ejecutadas)`,
+      `slippage total ≈ ${slip?parseFloat(slip[1]).toFixed(2):'N/A'}`,
+      `drawdown máximo ≈ ${dd?parseFloat(dd[1]).toFixed(2):'N/A'}`,
+      ''
+    ];
+    const out=document.getElementById('bt-output');
+    lines.forEach(l=>appendOutput(out,l));
+  }catch(e){/* ignore parsing errors */}
+}
+
 async function loadExchanges(){
   try{
     const r = await fetch(api('/ccxt/exchanges'));
@@ -236,8 +273,15 @@ function updateStrategyInfo(){
 }
 
 async function runBacktest(){
-  const mode=document.getElementById('bt-mode').value;
+  if(evt){evt.close();evt=null;}
+  const runBtn=document.getElementById('bt-run');
+  runBtn.disabled=true;
+  runBtn.textContent='Ejecutando...';
+  const stopBtn=document.getElementById('bt-stop');
+  const outEl=document.getElementById('bt-output');
+  outEl.textContent='Iniciando...\n';
   let cmd='';
+  const mode=document.getElementById('bt-mode').value;
   if(mode==='csv'){
     const data=document.getElementById('bt-data').value.trim();
     const sym=normalizeSymbol(document.getElementById('bt-symbol').value.trim());
@@ -257,28 +301,49 @@ async function runBacktest(){
     const end=document.getElementById('bt-end').value;
     cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
   }
-  const prog=document.getElementById('bt-progress');
-  const outEl=document.getElementById('bt-output');
-  prog.hidden=false;
-  outEl.textContent='';
   try{
-    const r=await fetch(api('/cli/run'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
-    if(r.body){
-      const reader=r.body.getReader();
-      const decoder=new TextDecoder();
-      while(true){
-        const {value,done}=await reader.read();
-        if(done) break;
-        appendOutput(outEl,decoder.decode(value,{stream:true}));
-      }
-    }else{
-      appendOutput(outEl,await r.text());
-    }
+    const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+    const j=await r.json();
+    currentJob=j.id;
+    stopBtn.disabled=false;
+    showWorking();
+    evt=new EventSource(api(`/cli/stream/${j.id}`));
+    evt.onmessage=(e)=>appendOutput(outEl,e.data);
+    evt.addEventListener('end',(e)=>{
+      stopBtn.disabled=true;
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
+      currentJob=null;
+      evt.close();
+      hideWorking();
+      appendSummary(outEl.textContent);
+      appendOutput(outEl,`Proceso finalizado (código ${e.data}).`);
+    });
+    evt.onerror=()=>{
+      appendOutput(outEl,'[error de conexión]');
+      stopBtn.disabled=true;
+      runBtn.disabled=false;
+      runBtn.textContent='Ejecutar';
+      hideWorking();
+    };
   }catch(e){
     appendOutput(outEl,String(e));
-  }finally{
-    prog.hidden=true;
+    runBtn.disabled=false;
+    runBtn.textContent='Ejecutar';
+    hideWorking();
   }
+}
+
+async function stopBacktest(){
+  if(!currentJob) return;
+  try{await fetch(api(`/cli/stop/${currentJob}`),{method:'POST'});}catch(e){}
+  if(evt) evt.close();
+  document.getElementById('bt-stop').disabled=true;
+  const runBtn=document.getElementById('bt-run');
+  runBtn.disabled=false;
+  runBtn.textContent='Ejecutar';
+  currentJob=null;
+  hideWorking();
 }
 
 async function runCli(){
@@ -296,9 +361,10 @@ async function runCli(){
 
 document.getElementById('bt-mode').addEventListener('change',updateBtFields);
 document.getElementById('bt-run').addEventListener('click',runBacktest);
+document.getElementById('bt-stop').addEventListener('click',stopBacktest);
 document.getElementById('bt-clear').addEventListener('click',()=>{
   document.getElementById('bt-output').textContent='';
-  document.getElementById('bt-progress').hidden=true;
+  hideWorking();
 });
 document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
