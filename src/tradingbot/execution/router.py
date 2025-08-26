@@ -17,6 +17,7 @@ from ..utils.metrics import (
     FILL_COUNT,
     QUEUE_POSITION,
 )
+from ..risk.manager import StopLossExceeded
 from ..storage import timescale
 from ..utils.logging import get_logger
 
@@ -168,6 +169,34 @@ class ExecutionRouter:
 
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
+        if self.risk_manager is not None:
+            px = order.price
+            if px is None:
+                px = getattr(getattr(adapter, "state", None), "last_px", {}).get(order.symbol)
+            try:
+                if px is not None:
+                    self.risk_manager.check_limits(px)
+            except StopLossExceeded:
+                qty = abs(getattr(self.risk_manager.pos, "qty", 0.0))
+                exit_res: dict
+                if qty > 0:
+                    side = "sell" if self.risk_manager.pos.qty > 0 else "buy"
+                    exit_kwargs = dict(
+                        symbol=order.symbol,
+                        side=side,
+                        type_="market",
+                        qty=qty,
+                        reduce_only=True,
+                    )
+                    try:
+                        exit_res = await adapter.place_order(**exit_kwargs)
+                    except Exception as exc:  # pragma: no cover - logging only
+                        log.exception("Exit order placement failed on %s", venue)
+                        exit_res = {"status": "error", "reason": str(exc)}
+                else:
+                    exit_res = {}
+                self.risk_manager.close_all_positions()
+                return {"status": "stop_loss", "exit": exit_res, "venue": venue}
         log.info("Routing order %s via %s", order, venue)
 
         maker = getattr(self, "_last_maker", self._is_maker(order))
