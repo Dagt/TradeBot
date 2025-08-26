@@ -136,18 +136,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=cfg.notional_quote,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=cfg.notional_quote,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=cfg.notional_quote,
                             ),
                         ]
                         if not all(c[0] for c in checks):
@@ -182,18 +185,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=cfg.notional_quote,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=cfg.notional_quote,
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=cfg.notional_quote,
                             ),
                         ]
                         if not all(c[0] for c in checks):

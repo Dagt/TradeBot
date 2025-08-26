@@ -103,7 +103,7 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager()
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
@@ -179,6 +179,7 @@ async def run_live_binance(
             strength=signal.strength,
             symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
             corr_threshold=0.8,
+            equity=broker.equity(mark_prices={symbol: closed.c}),
         )
         if not allowed or abs(delta) <= 1e-9:
             if not allowed:

@@ -63,6 +63,7 @@ class RiskService:
         price: float,
         strength: float = 1.0,
         *,
+        equity: float,
         symbol_vol: float | None = None,
         corr_threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
@@ -82,6 +83,8 @@ class RiskService:
         delta = self.rm.size(
             side,
             strength,
+            price=price,
+            equity=equity,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,
             correlations=correlations,

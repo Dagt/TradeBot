@@ -26,7 +26,6 @@ import numpy as np
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
-from .position_sizing import vol_target
 from sqlalchemy import text
 
 
@@ -48,11 +47,11 @@ class RiskManager:
 
     def __init__(
         self,
-        max_pos: float = 1.0,
         stop_loss_pct: float = 0.0,
         max_drawdown_pct: float = 0.0,
-        vol_target: float = 0.0,
         *,
+        equity_pct: float = 1.0,
+        risk_pct: float = 0.0,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
         limits: RiskLimits | None = None,
@@ -67,13 +66,11 @@ class RiskManager:
         events when a limit is breached.
         """
 
-        self.max_pos = max_pos
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
-        self.vol_target = abs(vol_target)
-        self._base_max_pos = self.max_pos
-        self._base_vol_target = self.vol_target
-        self._de_risk_stage = 0
+        self.equity_pct = abs(equity_pct)
+        self.risk_pct = abs(risk_pct)
+        self._invested_capital: float = 0.0
 
         self.daily_loss_limit = abs(daily_loss_limit)
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
@@ -108,6 +105,7 @@ class RiskManager:
         self._entry_price = None
         self._peak_price = None
         self._trough_price = None
+        self._invested_capital = 0.0
 
     def set_position(self, qty: float) -> None:
         """Sincroniza la posición mantenida por el RiskManager con el qty real."""
@@ -199,9 +197,17 @@ class RiskManager:
     async def _on_fill_event(self, evt: dict) -> None:
         side = evt.get("side", "")
         qty = evt.get("qty", 0.0)
+        price = evt.get("price")
         venue = evt.get("venue")
         symbol = evt.get("symbol")
+        prev = self.pos.qty
         self.add_fill(side, qty)
+        if price is not None:
+            self._invested_capital = abs(self.pos.qty) * float(price)
+            if prev == 0 or prev * self.pos.qty <= 0:
+                self._entry_price = float(price)
+                self._peak_price = float(price)
+                self._trough_price = float(price)
         if venue and symbol:
             book = self.positions_multi.setdefault(venue, {})
             signed = float(qty) if side == "buy" else -float(qty)
@@ -232,36 +238,28 @@ class RiskManager:
         signal_side: str,
         strength: float = 1.0,
         *,
+        price: float = 0.0,
+        equity: float = 0.0,
         symbol: str | None = None,
         symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
         threshold: float = 0.0,
     ) -> float:
-        """Compute desired position delta with optional volatility and correlation adjustments.
+        """Calcular la variación deseada de posición.
 
-        Parameters
-        ----------
-        signal_side:
-            "buy" para posición larga, "sell" para corta.
-        strength:
-            Factor para escalar la posición objetivo.
-        symbol:
-            Símbolo del activo (necesario si se aplican correlaciones).
-        symbol_vol:
-            Volatilidad actual del símbolo para ajustar al objetivo ``vol_target``.
-        correlations:
-            Mapa de correlaciones {(sym_a, sym_b): rho} para limitar tamaño.
-        threshold:
-            Umbral de correlación sobre el cual se reduce la posición.
+        El tamaño objetivo en notional se calcula como
+        ``equity * equity_pct * strength`` y se convierte a cantidad usando
+        ``price``.  El delta resultante se ajusta por correlaciones si se
+        suministran.
         """
 
-        target = self.max_pos * (
-            1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
-        )
-        delta = (target - self.pos.qty) * strength
+        if price <= 0 or equity <= 0:
+            return 0.0
 
-        if symbol_vol > 0:
-            delta += self.size_with_volatility(symbol_vol)
+        notional = equity * self.equity_pct * strength
+        qty_target = notional / price
+        qty_target = qty_target if signal_side == "buy" else -qty_target if signal_side == "sell" else 0.0
+        delta = qty_target - self.pos.qty
 
         if correlations:
             if symbol is None:
@@ -270,41 +268,18 @@ class RiskManager:
 
         return delta
 
-    def size_with_volatility(self, symbol_vol: float) -> float:
-        """Dimensiona la posición basada en un objetivo de volatilidad.
-
-        Si ``vol_target`` o ``symbol_vol`` no son positivos, no se ajusta tamaño.
-        Devuelve el delta necesario para alcanzar el objetivo.
-        """
-        if self.vol_target <= 0 or symbol_vol <= 0:
-            return 0.0
-        budget = self.max_pos * self.vol_target
-        target_abs = vol_target(symbol_vol, budget, self.max_pos)
-        sign = 1 if self.pos.qty >= 0 else -1
-        target = sign * target_abs
-        RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return target - self.pos.qty
-
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
+        """Identifica pares de símbolos con correlación elevada.
 
-        Los símbolos con correlaciones que exceden ``threshold`` se agrupan
-        mediante :mod:`correlation_guard` y ``max_pos`` se reduce en proporción
-        al tamaño del grupo más grande.  Se devuelve la lista de pares que
-        superaron el umbral.
+        Los símbolos con correlaciones que exceden ``threshold`` se devuelven
+        como una lista de pares. Si se proporciona un bus de eventos se emite
+        un mensaje ``risk:paused``.
         """
-
-        from .correlation_guard import group_correlated, global_cap
-
         exceeded: list[tuple[str, str]] = [
             pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
         ]
-
-        groups = group_correlated(symbol_pairs, threshold)
-        self.max_pos = global_cap(groups, self._base_max_pos)
-
         if exceeded:
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
@@ -321,8 +296,8 @@ class RiskManager:
         r"""Aplica un límite de correlación a partir de una matriz de covarianzas.
 
         Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
-        para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
-        recorta ``max_pos`` a la mitad y se retornan los pares involucrados.
+        para cada par ``(i, j)``. Si el valor absoluto excede ``threshold`` se
+        devuelve la lista de pares involucrados y se emite un evento opcional.
         """
 
         exceeded: list[tuple[str, str]] = []
@@ -340,7 +315,6 @@ class RiskManager:
                 if abs(corr) >= threshold:
                     exceeded.append((a, b))
         if exceeded:
-            self.max_pos *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -403,9 +377,6 @@ class RiskManager:
         self.pnl_multi.clear()
         self.daily_pnl = 0.0
         self._daily_peak = 0.0
-        self.max_pos = self._base_max_pos
-        self.vol_target = self._base_vol_target
-        self._de_risk_stage = 0
         self._reset_price_trackers()
         KILL_SWITCH_ACTIVE.set(0)
         if self.limits is not None:
@@ -413,22 +384,6 @@ class RiskManager:
 
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
-    def de_risk(self) -> None:
-        """Reduce ``max_pos`` y ``vol_target`` ante drawdowns significativos."""
-        if self._daily_peak <= 0:
-            return
-        drawdown = (self._daily_peak - self.daily_pnl) / self._daily_peak
-        if drawdown >= 0.5 and self._de_risk_stage < 2:
-            self.max_pos = self._base_max_pos * 0.25
-            if self._base_vol_target > 0:
-                self.vol_target = self._base_vol_target * 0.25
-            self._de_risk_stage = 2
-        elif drawdown >= 0.25 and self._de_risk_stage < 1:
-            self.max_pos = self._base_max_pos * 0.5
-            if self._base_vol_target > 0:
-                self.vol_target = self._base_vol_target * 0.5
-            self._de_risk_stage = 1
-
     def update_pnl(self, delta: float, *, venue: str | None = None) -> None:
         """Actualizar PnL diario y por venue."""
         self.daily_pnl += float(delta)
@@ -436,12 +391,10 @@ class RiskManager:
             self.pnl_multi[venue] = self.pnl_multi.get(venue, 0.0) + float(delta)
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
-        self.de_risk()
         if self.limits is not None:
             self.limits.update_pnl(delta)
 
     def _check_daily_limits(self) -> bool:
-        self.de_risk()
         if self.daily_loss_limit > 0 and self.daily_pnl <= -self.daily_loss_limit:
             self.kill_switch("daily_loss")
             return False
@@ -479,6 +432,7 @@ class RiskManager:
             self._entry_price = px
             self._peak_price = px
             self._trough_price = px
+            self._invested_capital = abs(qty) * px
             return True
 
         if qty > 0:  # posición larga
@@ -500,7 +454,16 @@ class RiskManager:
                 (px - self._trough_price) / self._trough_price if self.max_drawdown_pct > 0 and self._trough_price else 0.0
             )
 
+        pnl = (px - self._entry_price) * qty
+        unrealized_loss = -pnl if pnl < 0 else 0.0
         if self.stop_loss_pct > 0 and loss_pct >= self.stop_loss_pct:
+            self.kill_switch("stop_loss")
+            return False
+        if (
+            self.risk_pct > 0
+            and self._invested_capital > 0
+            and unrealized_loss >= self.risk_pct * self._invested_capital
+        ):
             self.kill_switch("stop_loss")
             return False
         if self.max_drawdown_pct > 0 and drawdown >= self.max_drawdown_pct:
