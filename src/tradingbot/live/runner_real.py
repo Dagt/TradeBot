@@ -108,7 +108,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(max_equity_pct=1.0)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_usdt=total_cap_usdt,

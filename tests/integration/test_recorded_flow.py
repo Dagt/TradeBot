@@ -27,7 +27,7 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         slippage=SlippageModel(volume_impact=0.0),
     )
     risk = engine.risk[("alwaysbuy", sym)]
-    risk.max_pos = 1.0
+    risk.max_equity_pct = 1.0
     result = engine.run()
     assert len(result["fills"]) == 1
     avg_price = result["orders"][0]["avg_price"]

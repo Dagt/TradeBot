@@ -48,7 +48,7 @@ class RiskManager:
 
     def __init__(
         self,
-        max_pos: float = 1.0,
+        max_equity_pct: float = 1.0,
         stop_loss_pct: float = 0.0,
         max_drawdown_pct: float = 0.0,
         vol_target: float = 0.0,
@@ -67,11 +67,11 @@ class RiskManager:
         events when a limit is breached.
         """
 
-        self.max_pos = max_pos
+        self.max_equity_pct = max_equity_pct
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
         self.vol_target = abs(vol_target)
-        self._base_max_pos = self.max_pos
+        self._base_max_equity_pct = self.max_equity_pct
         self._base_vol_target = self.vol_target
         self._de_risk_stage = 0
 
@@ -255,7 +255,7 @@ class RiskManager:
             Umbral de correlación sobre el cual se reduce la posición.
         """
 
-        target = self.max_pos * (
+        target = self.max_equity_pct * (
             1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
         )
         delta = (target - self.pos.qty) * strength
@@ -278,8 +278,8 @@ class RiskManager:
         """
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
-        budget = self.max_pos * self.vol_target
-        target_abs = vol_target(symbol_vol, budget, self.max_pos)
+        budget = self.max_equity_pct * self.vol_target
+        target_abs = vol_target(symbol_vol, budget, self.max_equity_pct)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
@@ -288,10 +288,10 @@ class RiskManager:
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Limita exposición conjunta reduciendo ``max_pos`` si se supera el umbral.
+        """Limita exposición conjunta reduciendo ``max_equity_pct`` si se supera el umbral.
 
         Los símbolos con correlaciones que exceden ``threshold`` se agrupan
-        mediante :mod:`correlation_guard` y ``max_pos`` se reduce en proporción
+        mediante :mod:`correlation_guard` y ``max_equity_pct`` se reduce en proporción
         al tamaño del grupo más grande.  Se devuelve la lista de pares que
         superaron el umbral.
         """
@@ -303,7 +303,7 @@ class RiskManager:
         ]
 
         groups = group_correlated(symbol_pairs, threshold)
-        self.max_pos = global_cap(groups, self._base_max_pos)
+        self.max_equity_pct = global_cap(groups, self._base_max_equity_pct)
 
         if exceeded:
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
@@ -322,7 +322,7 @@ class RiskManager:
 
         Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
         para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
-        recorta ``max_pos`` a la mitad y se retornan los pares involucrados.
+        recorta ``max_equity_pct`` a la mitad y se retornan los pares involucrados.
         """
 
         exceeded: list[tuple[str, str]] = []
@@ -340,7 +340,7 @@ class RiskManager:
                 if abs(corr) >= threshold:
                     exceeded.append((a, b))
         if exceeded:
-            self.max_pos *= 0.5
+            self.max_equity_pct *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -403,7 +403,7 @@ class RiskManager:
         self.pnl_multi.clear()
         self.daily_pnl = 0.0
         self._daily_peak = 0.0
-        self.max_pos = self._base_max_pos
+        self.max_equity_pct = self._base_max_equity_pct
         self.vol_target = self._base_vol_target
         self._de_risk_stage = 0
         self._reset_price_trackers()
@@ -414,17 +414,17 @@ class RiskManager:
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
     def de_risk(self) -> None:
-        """Reduce ``max_pos`` y ``vol_target`` ante drawdowns significativos."""
+        """Reduce ``max_equity_pct`` y ``vol_target`` ante drawdowns significativos."""
         if self._daily_peak <= 0:
             return
         drawdown = (self._daily_peak - self.daily_pnl) / self._daily_peak
         if drawdown >= 0.5 and self._de_risk_stage < 2:
-            self.max_pos = self._base_max_pos * 0.25
+            self.max_equity_pct = self._base_max_equity_pct * 0.25
             if self._base_vol_target > 0:
                 self.vol_target = self._base_vol_target * 0.25
             self._de_risk_stage = 2
         elif drawdown >= 0.25 and self._de_risk_stage < 1:
-            self.max_pos = self._base_max_pos * 0.5
+            self.max_equity_pct = self._base_max_equity_pct * 0.5
             if self._base_vol_target > 0:
                 self.vol_target = self._base_vol_target * 0.5
             self._de_risk_stage = 1

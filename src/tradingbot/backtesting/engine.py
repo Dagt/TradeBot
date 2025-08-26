@@ -146,7 +146,7 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 0.0,
         trade_qty: float = 1.0,
-        max_pos: float = 1.0,
+        max_equity_pct: float = 1.0,
         max_drawdown_pct: float = 0.0,
         stop_loss_pct: float = 0.0,
         max_notional: float = 0.0,
@@ -172,7 +172,7 @@ class EventDrivenBacktestEngine:
 
         self.initial_equity = float(initial_equity)
         self.trade_qty = float(trade_qty)
-        self._max_pos = float(max_pos)
+        self._max_equity_pct = float(max_equity_pct)
         self._max_drawdown_pct = float(max_drawdown_pct)
         self._stop_loss_pct = float(stop_loss_pct)
         self._max_notional = float(max_notional)
@@ -209,7 +209,7 @@ class EventDrivenBacktestEngine:
                 else None
             )
             self.risk[key] = RiskManager(
-                max_pos=self._max_pos,
+                max_equity_pct=self._max_equity_pct,
                 stop_loss_pct=self._stop_loss_pct,
                 max_drawdown_pct=self._max_drawdown_pct,
                 limits=limits,
@@ -490,7 +490,7 @@ def run_backtest_csv(
     stress: StressConfig | None = None,
     seed: int | None = None,
     trade_qty: float = 1.0,
-    max_pos: float = 1.0,
+    max_equity_pct: float = 1.0,
     max_drawdown_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
     max_notional: float = 0.0,
@@ -511,7 +511,7 @@ def run_backtest_csv(
         stress=stress,
         seed=seed,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        max_equity_pct=max_equity_pct,
         max_drawdown_pct=max_drawdown_pct,
         stop_loss_pct=stop_loss_pct,
         max_notional=max_notional,
@@ -538,7 +538,7 @@ def run_backtest_mlflow(
     seed: int | None = None,
     experiment: str = "backtest",
     trade_qty: float = 1.0,
-    max_pos: float = 1.0,
+    max_equity_pct: float = 1.0,
     max_drawdown_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
     max_notional: float = 0.0,
@@ -572,7 +572,7 @@ def run_backtest_mlflow(
             stress=stress,
             seed=seed,
             trade_qty=trade_qty,
-            max_pos=max_pos,
+            max_equity_pct=max_equity_pct,
             max_drawdown_pct=max_drawdown_pct,
             stop_loss_pct=stop_loss_pct,
             max_notional=max_notional,

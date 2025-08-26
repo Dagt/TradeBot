@@ -106,4 +106,4 @@ def breakout_df_sell():
 def risk_manager():
     from tradingbot.risk.manager import RiskManager
 
-    return RiskManager(max_pos=5)
+    return RiskManager(max_equity_pct=5)

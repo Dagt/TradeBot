@@ -50,7 +50,7 @@ def test_correlation_service_window_rolls():
 
 def test_risk_service_uses_correlation_service():
     guard = PortfolioGuard(GuardConfig(per_symbol_cap_usdt=10000, total_cap_usdt=20000))
-    rm = RiskManager(max_pos=10, vol_target=0.02)
+    rm = RiskManager(max_equity_pct=10, vol_target=0.02)
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
     now = datetime.now(timezone.utc)
@@ -89,7 +89,7 @@ def test_correlation_guard_groups_and_cap():
 
 
 def test_update_correlation_uses_guard_for_global_cap():
-    rm = RiskManager(max_pos=12)
+    rm = RiskManager(max_equity_pct=12)
     pairs = {
         ("BTC", "ETH"): 0.9,
         ("ETH", "SOL"): 0.85,
@@ -97,4 +97,4 @@ def test_update_correlation_uses_guard_for_global_cap():
     }
     exceeded = rm.update_correlation(pairs, 0.8)
     assert set(exceeded) == {("BTC", "ETH"), ("ETH", "SOL")}
-    assert rm.max_pos == pytest.approx(4.0)
+    assert rm.max_equity_pct == pytest.approx(4.0)

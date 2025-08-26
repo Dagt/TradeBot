@@ -881,7 +881,9 @@ def backtest(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    max_equity_pct: float = typer.Option(
+        1.0, "--max-equity-pct", help="Max equity percentage"
+    ),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -902,7 +904,7 @@ def backtest(
         [(strategy, symbol)],
         initial_equity=capital,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        max_equity_pct=max_equity_pct,
         stop_loss_pct=stop_loss_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
@@ -917,7 +919,9 @@ def backtest_cfg(
     config: str,
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    max_equity_pct: float = typer.Option(
+        1.0, "--max-equity-pct", help="Max equity percentage"
+    ),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -958,7 +962,7 @@ def backtest_cfg(
             [(strategy, symbol)],
             initial_equity=capital,
             trade_qty=trade_qty,
-            max_pos=max_pos,
+            max_equity_pct=max_equity_pct,
             stop_loss_pct=stop_loss_pct,
             max_drawdown_pct=max_drawdown_pct,
             max_notional=max_notional,
@@ -990,7 +994,9 @@ def backtest_db(
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
-    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    max_equity_pct: float = typer.Option(
+        1.0, "--max-equity-pct", help="Max equity percentage"
+    ),
     stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
@@ -1039,7 +1045,7 @@ def backtest_db(
         [(strategy, symbol)],
         initial_equity=capital,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        max_equity_pct=max_equity_pct,
         stop_loss_pct=stop_loss_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,

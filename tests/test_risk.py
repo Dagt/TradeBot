@@ -13,7 +13,7 @@ def test_risk_manager_position(risk_manager):
 def test_stop_loss_triggers_disable():
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(max_pos=1, stop_loss_pct=0.05)
+    rm = RiskManager(max_equity_pct=1, stop_loss_pct=0.05)
     rm.set_position(1)
     assert rm.check_limits(100)
     # caída del 6% -> excede stop_loss_pct
@@ -24,7 +24,7 @@ def test_stop_loss_triggers_disable():
 def test_drawdown_triggers_disable():
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(max_pos=1, max_drawdown_pct=0.05)
+    rm = RiskManager(max_equity_pct=1, max_drawdown_pct=0.05)
     rm.set_position(1)
     assert rm.check_limits(100)
     assert rm.check_limits(110)  # peak
@@ -37,11 +37,11 @@ def test_drawdown_triggers_disable():
 def test_risk_manager_size_property(signal, pos):
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(max_pos=5)
+    rm = RiskManager(max_equity_pct=5)
     rm.set_position(pos)
     size = rm.size(signal)
     final = pos + size
-    assert abs(final) <= rm.max_pos + 1e-12
+    assert abs(final) <= rm.max_equity_pct + 1e-12
     if signal == "buy":
         assert size >= 0
     elif signal == "sell":
@@ -52,7 +52,7 @@ def test_size_with_volatility_event():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(max_pos=10, vol_target=0.02)
+    rm = RiskManager(max_equity_pct=10, vol_target=0.02)
     before = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
     delta = rm.size_with_volatility(0.04)
     after = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
@@ -64,13 +64,13 @@ def test_update_correlation_limits_exposure():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(max_pos=8)
+    rm = RiskManager(max_equity_pct=8)
     pairs = {("BTC", "ETH"): 0.9}
     before = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
     exceeded = rm.update_correlation(pairs, 0.8)
     after = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
     assert exceeded == [("BTC", "ETH")]
-    assert rm.max_pos == 4
+    assert rm.max_equity_pct == 4
     assert after == before + 1
 
 
@@ -78,7 +78,7 @@ def test_kill_switch_disables():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(max_pos=1)
+    rm = RiskManager(max_equity_pct=1)
     before = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
     rm.kill_switch("manual")
     after = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
@@ -95,7 +95,7 @@ async def test_daily_loss_limit_via_bus():
     bus = EventBus()
     events = []
     bus.subscribe("risk:halted", lambda e: events.append(e))
-    rm = RiskManager(max_pos=1, daily_loss_limit=50, bus=bus)
+    rm = RiskManager(max_equity_pct=1, daily_loss_limit=50, bus=bus)
     await bus.publish("pnl", {"delta": -60})
     await asyncio.sleep(0)
     assert rm.enabled is False
@@ -128,7 +128,7 @@ async def test_daily_guard_halts_on_loss():
 def test_covariance_limit_triggers_kill():
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(max_pos=1)
+    rm = RiskManager(max_equity_pct=1)
     positions = {"BTC": 1.0, "ETH": 1.0}
     cov = {
         ("BTC", "BTC"): 0.04,
