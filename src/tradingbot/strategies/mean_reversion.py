@@ -3,7 +3,14 @@ from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
 
 class MeanReversion(Strategy):
-    """RSI based mean reversion strategy.
+    """RSI based mean reversion strategy with adaptive strength.
+
+    Besides generating ``buy``/``sell``/``flat`` signals based on RSI levels,
+    the strategy adjusts the ``strength`` of those signals according to the
+    performance of the current position: if price has moved in favour of the
+    open trade the strength is increased (pyramiding), while adverse moves
+    reduce it and can even flip it negative to suggest position reduction or
+    reversal.
 
     Parameters are accepted through ``**kwargs`` for easy configuration.
 
@@ -25,6 +32,33 @@ class MeanReversion(Strategy):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.upper = kwargs.get("upper", 70.0)
         self.lower = kwargs.get("lower", 30.0)
+        # Track current position to adapt strength
+        self._pos_side: str | None = None
+        self._entry_price: float | None = None
+
+    def _calc_strength(self, side: str, price: float) -> float:
+        """Return adaptive strength based on open position performance."""
+        if side == "flat":
+            self._pos_side = None
+            self._entry_price = None
+            return 0.0
+        strength = 1.0
+        if self._pos_side and self._entry_price:
+            # positive when current position is in profit
+            pnl = (price - self._entry_price) / self._entry_price
+            if self._pos_side == "sell":
+                pnl = -pnl
+            if side == self._pos_side:
+                strength += pnl
+            else:
+                strength = -pnl
+        if strength > 0:
+            self._pos_side = side
+            self._entry_price = price
+        else:
+            self._pos_side = None
+            self._entry_price = None
+        return strength
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -36,11 +70,16 @@ class MeanReversion(Strategy):
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
+        price_col = "close" if "close" in df.columns else "price"
+        price = float(df[price_col].iloc[-1])
         if last_rsi > self.upper and ofi_val <= 0:
-            return Signal("sell", 1.0)
+            strength = self._calc_strength("sell", price)
+            return Signal("sell", strength)
         if last_rsi < self.lower and ofi_val >= 0:
-            return Signal("buy", 1.0)
-        return Signal("flat", 0.0)
+            strength = self._calc_strength("buy", price)
+            return Signal("buy", strength)
+        strength = self._calc_strength("flat", price)
+        return Signal("flat", strength)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
