@@ -4,7 +4,3 @@ backtest:
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100
-
-risk:
-  equity_pct: 0.05
-  risk_pct: 0.02

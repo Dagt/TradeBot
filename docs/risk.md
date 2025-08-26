@@ -1,37 +1,16 @@
 # Gestión de riesgo
 
-## Cálculo de `equity_pct` y `risk_pct`
+## Asignación por señal
 
-El capital asignado a cada operación se determina multiplicando la equity
-actual por `equity_pct`:
+La cantidad operada por cada señal se determina únicamente por su atributo `strength`. Un valor de `1.0` utiliza todo el capital disponible; valores mayores piramidan la posición y menores reducen la exposición. Por ejemplo, una señal con `strength = 1.5` incrementa la posición un 50 %, mientras que `strength = 0.5` la reduce a la mitad.
 
-```
-notional = equity_total * equity_pct
-```
+## PortfolioGuard
 
-El stop‑loss se define como un porcentaje de esa asignación usando `risk_pct`:
-
-```
-max_loss = notional * risk_pct
-```
-
-A partir del notional se calcula la cantidad a comprar o vender en función del
-precio del activo.
-
-## Uso de `strength`
-
-Las estrategias pueden emitir señales con un atributo `strength` que escala el
-cambio propuesto en la posición. Un valor mayor a `1.0` permite piramidar
-agregando tamaño; valores entre `0` y `1` reducen exposición y `0` cierra la
-posición. Por ejemplo, con `equity_pct = 0.05` una señal con `strength = 1.5`
-usará el `7.5 %` del equity mientras que `strength = 0.5` solo el `2.5 %`.
+Para limitar el uso de capital se puede emplear `PortfolioGuard`, que permite fijar límites globales (`total_cap_pct`) o por símbolo (`per_symbol_cap_pct`).
 
 ## DailyGuard y drawdown global
 
-`DailyGuard` monitorea la equity intradía y la racha de pérdidas. Si se
-supera la pérdida diaria permitida o el drawdown intradía, el bot se detiene o
-cierra posiciones según la configuración. Esto complementa el seguimiento del
-drawdown global que realiza el gestor de riesgo.
+`DailyGuard` monitorea la equity intradía y la racha de pérdidas. Si se supera la pérdida diaria permitida o el drawdown intradía, el bot se detiene o cierra posiciones según la configuración. Esto complementa el seguimiento del drawdown global que realiza el gestor de riesgo.
 
 ## Ejemplos
 
@@ -43,8 +22,4 @@ backtest:
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100
-
-risk:
-  equity_pct: 0.05
-  risk_pct: 0.02
 ```
