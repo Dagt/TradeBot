@@ -878,6 +878,11 @@ def backtest(
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
+    trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
+    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
+    max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
     """Run a simple vectorised backtest from a CSV file."""
     from pathlib import Path
@@ -890,14 +895,31 @@ def backtest(
     log.info("Iniciando backtest CSV: %s %s", symbol, data)
     df = pd.read_csv(Path(data))
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
+    eng = EventDrivenBacktestEngine(
+        {symbol: df},
+        [(strategy, symbol)],
+        initial_equity=capital,
+        trade_qty=trade_qty,
+        max_pos=max_pos,
+        stop_loss_pct=stop_loss_pct,
+        max_drawdown_pct=max_drawdown_pct,
+        max_notional=max_notional,
+    )
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))
 
 
 @app.command("backtest-cfg")
-def backtest_cfg(config: str, capital: float = typer.Option(0.0, help="Capital inicial")) -> None:
+def backtest_cfg(
+    config: str,
+    capital: float = typer.Option(0.0, help="Capital inicial"),
+    trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
+    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
+    max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
+) -> None:
     """Run a backtest using a Hydra YAML configuration."""
 
     from pathlib import Path
@@ -929,7 +951,16 @@ def backtest_cfg(config: str, capital: float = typer.Option(0.0, help="Capital i
         log.info("Iniciando backtest CSV: %s %s", symbol, data)
         df = pd.read_csv(data)
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-        eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
+        eng = EventDrivenBacktestEngine(
+            {symbol: df},
+            [(strategy, symbol)],
+            initial_equity=capital,
+            trade_qty=trade_qty,
+            max_pos=max_pos,
+            stop_loss_pct=stop_loss_pct,
+            max_drawdown_pct=max_drawdown_pct,
+            max_notional=max_notional,
+        )
         result = eng.run()
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
@@ -956,6 +987,11 @@ def backtest_db(
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
+    trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
+    max_pos: float = typer.Option(1.0, "--max-pos", help="Max position size"),
+    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
+    max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
     """Run a backtest using data stored in the database."""
 
@@ -996,7 +1032,16 @@ def backtest_db(
         .set_index("ts")
     )
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
+    eng = EventDrivenBacktestEngine(
+        {symbol: df},
+        [(strategy, symbol)],
+        initial_equity=capital,
+        trade_qty=trade_qty,
+        max_pos=max_pos,
+        stop_loss_pct=stop_loss_pct,
+        max_drawdown_pct=max_drawdown_pct,
+        max_notional=max_notional,
+    )
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))

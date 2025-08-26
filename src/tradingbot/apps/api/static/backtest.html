@@ -77,6 +77,26 @@
         <label for="bt-end">Fin</label>
         <input id="bt-end" type="date"/>
       </div>
+      <div id="field-trade-qty">
+        <label for="bt-trade-qty">Tamaño orden</label>
+        <input id="bt-trade-qty" type="number" step="any"/>
+      </div>
+      <div id="field-max-pos">
+        <label for="bt-max-pos">Posición máxima</label>
+        <input id="bt-max-pos" type="number" step="any"/>
+      </div>
+      <div id="field-stop-loss-pct">
+        <label for="bt-stop-loss-pct">Stop loss %</label>
+        <input id="bt-stop-loss-pct" type="number" step="any"/>
+      </div>
+      <div id="field-max-dd-pct">
+        <label for="bt-max-drawdown-pct">Drawdown máx %</label>
+        <input id="bt-max-drawdown-pct" type="number" step="any"/>
+      </div>
+      <div id="field-max-notional">
+        <label for="bt-max-notional">Notional máximo</label>
+        <input id="bt-max-notional" type="number" step="any"/>
+      </div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
@@ -261,6 +281,10 @@ function updateBtFields(){
   document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
+  const showRisk = mode!=='walk';
+  ['field-trade-qty','field-max-pos','field-stop-loss-pct','field-max-dd-pct','field-max-notional'].forEach(id=>{
+    document.getElementById(id).style.display=showRisk?'':'none';
+  });
 }
 
 function updateStrategyInfo(){
@@ -312,6 +336,18 @@ async function runBacktest(){
   }
   if(capital && mode!=='walk'){
     cmd+=` --capital ${capital}`;
+  }
+  if(mode!=='walk'){
+    const tq=document.getElementById('bt-trade-qty').value.trim();
+    const mp=document.getElementById('bt-max-pos').value.trim();
+    const sl=document.getElementById('bt-stop-loss-pct').value.trim();
+    const dd=document.getElementById('bt-max-drawdown-pct').value.trim();
+    const mn=document.getElementById('bt-max-notional').value.trim();
+    if(tq) cmd+=` --trade-qty ${tq}`;
+    if(mp) cmd+=` --max-pos ${mp}`;
+    if(sl) cmd+=` --stop-loss-pct ${sl}`;
+    if(dd) cmd+=` --max-drawdown-pct ${dd}`;
+    if(mn) cmd+=` --max-notional ${mn}`;
   }
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
