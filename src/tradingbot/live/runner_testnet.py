@@ -52,7 +52,7 @@ class _SymbolConfig:
 async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: int,
                       dry_run: bool, total_cap_usdt: float, per_symbol_cap_usdt: float,
                       soft_cap_pct: float, soft_cap_grace_sec: int,
-                      daily_max_loss_usdt: float, daily_max_drawdown_pct: float,
+                      daily_max_loss_pct: float, daily_max_drawdown_pct: float,
                       max_consecutive_losses: int, corr_threshold: float,
                       config_path: str | None = None) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
@@ -83,7 +83,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
         soft_cap_grace_sec=soft_cap_grace_sec,
     ))
     dguard = DailyGuard(GuardLimits(
-        daily_max_loss_usdt=daily_max_loss_usdt,
+        daily_max_loss_pct=daily_max_loss_pct,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
         max_consecutive_losses=max_consecutive_losses,
         halt_action="close_all",
@@ -155,7 +155,7 @@ async def run_live_testnet(
     per_symbol_cap_usdt: float = 500.0,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
-    daily_max_loss_usdt: float = 100.0,
+    daily_max_loss_pct: float = 0.05,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
     corr_threshold: float = 0.8,
@@ -178,7 +178,7 @@ async def run_live_testnet(
             per_symbol_cap_usdt,
             soft_cap_pct,
             soft_cap_grace_sec,
-            daily_max_loss_usdt,
+            daily_max_loss_pct,
             daily_max_drawdown_pct,
             max_consecutive_losses,
             corr_threshold,

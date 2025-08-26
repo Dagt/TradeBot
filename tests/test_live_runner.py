@@ -109,7 +109,7 @@ async def test_bybit_futures_order(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.1,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
     )
@@ -168,7 +168,7 @@ async def test_run_real(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.1,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
     )
@@ -222,7 +222,7 @@ async def test_okx_futures_order(monkeypatch):
         per_symbol_cap_usdt=500.0,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
-        daily_max_loss_usdt=100.0,
+        daily_max_loss_pct=0.1,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
     )

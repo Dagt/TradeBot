@@ -91,7 +91,7 @@ async def run_live_binance(
     per_symbol_cap_usdt: float = 500.0,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
-    daily_max_loss_usdt: float = 100.0,
+    daily_max_loss_pct: float = 0.05,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
     *,
@@ -113,7 +113,7 @@ async def run_live_binance(
         soft_cap_grace_sec=soft_cap_grace_sec,
     ))
     dguard = DailyGuard(GuardLimits(
-        daily_max_loss_usdt=daily_max_loss_usdt,
+        daily_max_loss_pct=daily_max_loss_pct,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
         max_consecutive_losses=max_consecutive_losses,
         halt_action="close_all",

@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class GuardLimits:
-    daily_max_loss_usdt: float = 100.0           # pérdida neta diaria permitida
+    daily_max_loss_pct: float = 0.05            # pérdida diaria permitida (% equity_open)
     daily_max_drawdown_pct: float = 0.05         # dd% relativo a equity pico intradía (0.05 = 5%)
     max_consecutive_losses: int = 3              # SLs o pérdidas consecutivas
     halt_action: str = "close_all"               # "close_all" | "pause_only"
@@ -54,6 +54,12 @@ class DailyGuard:
         if self._cur_day is None or now.date() != self._cur_day:
             self.reset_for_new_day(now, equity_now)
             return
+        # Recalibrar límites si cambia el equity sin PnL realizado
+        if self._realized_today == 0 and abs(equity_now - self._equity_open) > 1e-9:
+            self._equity_open = equity_now
+            self._equity_peak = equity_now
+            self._consec_losses = 0
+            self._realized_today = 0.0
         self._equity_last = equity_now
         if equity_now > self._equity_peak:
             self._equity_peak = equity_now
@@ -92,7 +98,8 @@ class DailyGuard:
             return True, "already_halted"
 
         # Regla 1: pérdida neta diaria
-        if self._realized_today <= -abs(self.lim.daily_max_loss_usdt):
+        allowed = abs(self._equity_open * self.lim.daily_max_loss_pct)
+        if allowed > 0 and self._realized_today <= -allowed:
             self._halted = True
             self.apply_halt_action(broker)
             RISK_EVENTS.labels(event_type="daily_max_loss").inc()
@@ -103,7 +110,7 @@ class DailyGuard:
                         venue=self.venue,
                         symbol="",
                         kind="daily_max_loss",
-                        message="",
+                        message=f"limit_pct={self.lim.daily_max_loss_pct}",
                     )
                 except Exception:
                     pass

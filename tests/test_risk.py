@@ -109,8 +109,9 @@ async def test_daily_guard_halts_on_loss():
     from tradingbot.execution.paper import PaperAdapter
 
     broker = PaperAdapter()
+    broker.state.cash = 1000.0
     symbol = "BTC/USDT"
-    guard = DailyGuard(GuardLimits(daily_max_loss_usdt=5.0), venue="paper")
+    guard = DailyGuard(GuardLimits(daily_max_loss_pct=0.01), venue="paper")
 
     broker.update_last_price(symbol, 100.0)
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 100.0}))
