@@ -40,6 +40,22 @@ class RiskService:
 
     # ------------------------------------------------------------------
     # Position helpers
+    def update_equity(self, equity: float) -> None:
+        """Propaga ``equity`` a los componentes de riesgo basados en porcentaje."""
+        if hasattr(self.rm, "update_equity"):
+            self.rm.update_equity(equity)
+        cfg = getattr(self.guard, "cfg", None)
+        if cfg is not None:
+            if getattr(cfg, "per_symbol_cap_pct", None) is not None:
+                cfg.per_symbol_cap_usdt = equity * float(cfg.per_symbol_cap_pct)
+            if getattr(cfg, "total_cap_pct", None) is not None:
+                cfg.total_cap_usdt = equity * float(cfg.total_cap_pct)
+        if self.daily is not None:
+            lim = self.daily.lim
+            if getattr(lim, "daily_max_loss_pct", None) is not None:
+                lim.daily_max_loss_usdt = equity * float(lim.daily_max_loss_pct)
+
+    # ------------------------------------------------------------------
     def update_position(self, exchange: str, symbol: str, qty: float) -> None:
         """Synchronise position for ``exchange``/``symbol`` across components."""
         self.rm.update_position(exchange, symbol, qty)
@@ -65,12 +81,16 @@ class RiskService:
         *,
         symbol_vol: float | None = None,
         corr_threshold: float = 0.0,
+        equity: float | None = None,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
         Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
         proposed after volatility and correlation adjustments.
         """
+
+        if equity is not None:
+            self.update_equity(equity)
 
         if symbol_vol is None or symbol_vol <= 0:
             symbol_vol = self.guard.volatility(symbol)

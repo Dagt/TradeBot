@@ -12,7 +12,7 @@ import pandas as pd
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import EquityRiskManager as RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
@@ -87,10 +87,11 @@ async def run_live_binance(
     symbol: str = "BTC/USDT",
     fee_bps: float = 1.5,
     persist_pg: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
+    risk_pct: float = 0.01,
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
@@ -103,17 +104,18 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(risk_pct=risk_pct, equity=broker.equity())
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
-        total_cap_usdt=total_cap_usdt,
-        per_symbol_cap_usdt=per_symbol_cap_usdt,
+        total_cap_pct=total_cap_pct,
+        per_symbol_cap_pct=per_symbol_cap_pct,
         venue="binance",
         soft_cap_pct=soft_cap_pct,
         soft_cap_grace_sec=soft_cap_grace_sec,
     ))
     dguard = DailyGuard(GuardLimits(
         daily_max_loss_usdt=daily_max_loss_usdt,
+        daily_max_loss_pct=risk_pct,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
         max_consecutive_losses=max_consecutive_losses,
         halt_action="close_all",
@@ -179,6 +181,7 @@ async def run_live_binance(
             strength=signal.strength,
             symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
             corr_threshold=0.8,
+            equity=broker.equity(mark_prices={symbol: closed.c}),
         )
         if not allowed or abs(delta) <= 1e-9:
             if not allowed:

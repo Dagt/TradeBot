@@ -82,8 +82,8 @@
         <input id="bt-trade-qty" type="number" step="any"/>
       </div>
       <div id="field-max-pos">
-        <label for="bt-max-pos">Posición máxima</label>
-        <input id="bt-max-pos" type="number" step="any"/>
+        <label for="bt-risk-pct">Riesgo %</label>
+        <input id="bt-risk-pct" type="number" step="any"/>
       </div>
       <div id="field-stop-loss-pct">
         <label for="bt-stop-loss-pct">Stop loss %</label>
@@ -345,12 +345,12 @@ async function runBacktest(){
   }
   if(mode!=='walk'){
     const tq=document.getElementById('bt-trade-qty').value.trim();
-    const mp=document.getElementById('bt-max-pos').value.trim();
+    const mp=document.getElementById('bt-risk-pct').value.trim();
     const sl=document.getElementById('bt-stop-loss-pct').value.trim();
     const dd=document.getElementById('bt-max-drawdown-pct').value.trim();
     const mn=document.getElementById('bt-max-notional').value.trim();
     if(tq) cmd+=` --trade-qty ${tq}`;
-    if(mp) cmd+=` --max-pos ${mp}`;
+    if(mp) cmd+=` --risk-pct ${mp}`;
     if(sl) cmd+=` --stop-loss-pct ${sl}`;
     if(dd) cmd+=` --max-drawdown-pct ${dd}`;
     if(mn) cmd+=` --max-notional ${mn}`;

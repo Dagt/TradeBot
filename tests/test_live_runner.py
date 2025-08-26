@@ -87,7 +87,7 @@ class DummyExec:
 async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
@@ -105,13 +105,15 @@ async def test_bybit_futures_order(monkeypatch):
         cfg,
         leverage=5,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
+        risk_pct=0.01,
         daily_max_loss_usdt=100.0,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExec.last_instance
@@ -147,7 +149,7 @@ async def test_run_real(monkeypatch):
     rr = importlib.reload(rr)
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rr, "BreakoutATR", lambda: DummyStrat())
-    monkeypatch.setattr(rr, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rr, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
@@ -164,13 +166,15 @@ async def test_run_real(monkeypatch):
         cfg,
         leverage=1,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
+        risk_pct=0.01,
         daily_max_loss_usdt=100.0,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExecReal.last_instance
@@ -200,7 +204,7 @@ class DummyExec2(DummyExec):
 async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda max_pos: DummyRisk())
+    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
@@ -218,13 +222,15 @@ async def test_okx_futures_order(monkeypatch):
         cfg,
         leverage=7,
         dry_run=False,
-        total_cap_usdt=1000.0,
-        per_symbol_cap_usdt=500.0,
+        total_cap_pct=1.0,
+        per_symbol_cap_pct=0.5,
         soft_cap_pct=0.1,
         soft_cap_grace_sec=30,
+        risk_pct=0.01,
         daily_max_loss_usdt=100.0,
         daily_max_drawdown_pct=0.05,
         max_consecutive_losses=3,
+        corr_threshold=0.8,
     )
 
     inst = DummyExec2.last_instance

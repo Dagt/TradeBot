@@ -10,7 +10,7 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import EquityRiskManager as RiskManager, load_positions
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
 from ..risk.correlation_service import CorrelationService
@@ -42,6 +42,9 @@ async def run_paper(
     config_path: str | None = None,
     metrics_port: int = 8000,
     corr_threshold: float = 0.8,
+    risk_pct: float = 0.01,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
 
@@ -49,8 +52,8 @@ async def run_paper(
     broker = PaperAdapter()
     router = ExecutionRouter([broker])
 
-    risk_core = RiskManager(max_pos=1.0)
-    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
+    risk_core = RiskManager(risk_pct=risk_pct, equity=broker.equity())
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=total_cap_pct, per_symbol_cap_pct=per_symbol_cap_pct, venue="paper"))
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, corr_service=corr)
     engine = get_engine() if _CAN_PG else None
@@ -93,6 +96,7 @@ async def run_paper(
                 closed.c,
                 strength=signal.strength,
                 corr_threshold=corr_threshold,
+                equity=broker.equity(mark_prices={symbol: closed.c}),
             )
             if not allowed or abs(delta) <= 0:
                 continue

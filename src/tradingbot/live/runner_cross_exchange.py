@@ -13,7 +13,7 @@ from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import EquityRiskManager as RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..risk.oco import OcoBook, load_active_oco
@@ -40,7 +40,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     bus = EventBus()
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(risk_pct=0.01, equity=0.0),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )
@@ -65,17 +65,24 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         qty = cfg.notional / last["spot"]
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
+        eq = 0.0
+        if hasattr(cfg.spot, "equity"):
+            eq += cfg.spot.equity({cfg.symbol: last["spot"]})
+        if hasattr(cfg.perp, "equity"):
+            eq += cfg.perp.equity({cfg.symbol: last["perp"]})
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
             last["spot"],
             strength=qty,
+            equity=eq,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             last["perp"],
             strength=qty,
+            equity=eq,
         )
         if not (ok1 and ok2):
             return

@@ -24,7 +24,7 @@ import pandas as pd
 from .runner import BarAggregator
 from ..config import settings
 from ..strategies.breakout_atr import BreakoutATR
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import EquityRiskManager as RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
@@ -89,10 +89,11 @@ async def _run_symbol(
     cfg: _SymbolConfig,
     leverage: int,
     dry_run: bool,
-    total_cap_usdt: float,
-    per_symbol_cap_usdt: float,
+    total_cap_pct: float,
+    per_symbol_cap_pct: float,
     soft_cap_pct: float,
     soft_cap_grace_sec: int,
+    risk_pct: float,
     daily_max_loss_usdt: float,
     daily_max_drawdown_pct: float,
     max_consecutive_losses: int,
@@ -108,11 +109,11 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(risk_pct=risk_pct, equity=0.0)
     guard = PortfolioGuard(
         GuardConfig(
-            total_cap_usdt=total_cap_usdt,
-            per_symbol_cap_usdt=per_symbol_cap_usdt,
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
             venue=venue,
             soft_cap_pct=soft_cap_pct,
             soft_cap_grace_sec=soft_cap_grace_sec,
@@ -121,6 +122,7 @@ async def _run_symbol(
     dguard = DailyGuard(
         GuardLimits(
             daily_max_loss_usdt=daily_max_loss_usdt,
+            daily_max_loss_pct=risk_pct,
             daily_max_drawdown_pct=daily_max_drawdown_pct,
             max_consecutive_losses=max_consecutive_losses,
             halt_action="close_all",
@@ -167,6 +169,7 @@ async def _run_symbol(
             closed.c,
             strength=sig.strength,
             corr_threshold=corr_threshold,
+            equity=broker.equity(mark_prices={cfg.symbol: closed.c}),
         )
         if not allowed or abs(delta) <= 0:
             if reason:
@@ -193,10 +196,11 @@ async def run_live_real(
     dry_run: bool = False,
     *,
     i_know_what_im_doing: bool,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
+    risk_pct: float = 0.01,
     daily_max_loss_usdt: float = 100.0,
     daily_max_drawdown_pct: float = 0.05,
     max_consecutive_losses: int = 3,
@@ -224,10 +228,11 @@ async def run_live_real(
             c,
             leverage,
             dry_run,
-            total_cap_usdt,
-            per_symbol_cap_usdt,
+            total_cap_pct,
+            per_symbol_cap_pct,
             soft_cap_pct,
             soft_cap_grace_sec,
+            risk_pct,
             daily_max_loss_usdt,
             daily_max_drawdown_pct,
             max_consecutive_losses,

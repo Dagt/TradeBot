@@ -511,6 +511,29 @@ class RiskManager:
 
 
 # ---------------------------------------------------------------------------
+# Equity based manager -------------------------------------------------------
+
+
+class EquityRiskManager(RiskManager):
+    """Risk manager that scales ``max_pos`` with account equity.
+
+    ``risk_pct`` represents the fraction of equity that can be allocated to a
+    single position.  ``update_equity`` must be called whenever the current
+    equity changes to recompute the internal ``max_pos`` limit.
+    """
+
+    def __init__(self, risk_pct: float, *, equity: float = 0.0, **kwargs) -> None:
+        max_pos = float(equity) * abs(risk_pct)
+        super().__init__(max_pos=max_pos, **kwargs)
+        self.risk_pct = abs(risk_pct)
+
+    def update_equity(self, equity: float) -> None:
+        """Actualizar ``max_pos`` basado en ``equity`` actual."""
+        self.max_pos = float(equity) * self.risk_pct
+        self._base_max_pos = self.max_pos
+
+
+# ---------------------------------------------------------------------------
 # Rehidratación desde base de datos
 def load_positions(engine, venue: str) -> dict:
     """Cargar posiciones persistidas para ``venue``.

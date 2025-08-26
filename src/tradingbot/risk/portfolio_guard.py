@@ -11,6 +11,8 @@ import numpy as np
 class GuardConfig:
     total_cap_usdt: float = 1000.0
     per_symbol_cap_usdt: float = 500.0
+    total_cap_pct: float | None = None
+    per_symbol_cap_pct: float | None = None
     venue: str = "binance_spot_testnet"
     # --- Soft caps ---
     soft_cap_pct: float = 0.10            # hasta +10% sobre el cap

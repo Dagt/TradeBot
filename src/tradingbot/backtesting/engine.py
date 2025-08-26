@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import random
 
-from ..risk.manager import RiskManager
+from ..risk.manager import RiskManager, EquityRiskManager
 from ..risk.limits import RiskLimits
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
@@ -146,7 +146,7 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 0.0,
         trade_qty: float = 1.0,
-        max_pos: float = 1.0,
+        risk_pct: float = 1.0,
         max_drawdown_pct: float = 0.0,
         stop_loss_pct: float = 0.0,
         max_notional: float = 0.0,
@@ -172,7 +172,8 @@ class EventDrivenBacktestEngine:
 
         self.initial_equity = float(initial_equity)
         self.trade_qty = float(trade_qty)
-        self._max_pos = float(max_pos)
+        self.risk_pct = float(risk_pct)
+        self._max_pos = self.initial_equity * self.risk_pct
         self._max_drawdown_pct = float(max_drawdown_pct)
         self._stop_loss_pct = float(stop_loss_pct)
         self._max_notional = float(max_notional)
@@ -208,8 +209,9 @@ class EventDrivenBacktestEngine:
                 if self._max_notional > 0
                 else None
             )
-            self.risk[key] = RiskManager(
-                max_pos=self._max_pos,
+            self.risk[key] = EquityRiskManager(
+                risk_pct=self.risk_pct,
+                equity=self.initial_equity,
                 stop_loss_pct=self._stop_loss_pct,
                 max_drawdown_pct=self._max_drawdown_pct,
                 limits=limits,
@@ -237,6 +239,9 @@ class EventDrivenBacktestEngine:
         for i in range(max_len):
             if i and i % 1000 == 0:
                 log.info("Progreso: %d/%d barras", i, max_len)
+            for rm in self.risk.values():
+                if hasattr(rm, "update_equity"):
+                    rm.update_equity(equity)
             # Actualiza límites por correlación/covarianza con retornos recientes
             if i >= self.window:
                 returns_dict: Dict[str, List[float]] = {}
@@ -490,7 +495,7 @@ def run_backtest_csv(
     stress: StressConfig | None = None,
     seed: int | None = None,
     trade_qty: float = 1.0,
-    max_pos: float = 1.0,
+    risk_pct: float = 1.0,
     max_drawdown_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
     max_notional: float = 0.0,
@@ -511,7 +516,7 @@ def run_backtest_csv(
         stress=stress,
         seed=seed,
         trade_qty=trade_qty,
-        max_pos=max_pos,
+        risk_pct=risk_pct,
         max_drawdown_pct=max_drawdown_pct,
         stop_loss_pct=stop_loss_pct,
         max_notional=max_notional,
@@ -538,7 +543,7 @@ def run_backtest_mlflow(
     seed: int | None = None,
     experiment: str = "backtest",
     trade_qty: float = 1.0,
-    max_pos: float = 1.0,
+    risk_pct: float = 1.0,
     max_drawdown_pct: float = 0.0,
     stop_loss_pct: float = 0.0,
     max_notional: float = 0.0,
@@ -572,7 +577,7 @@ def run_backtest_mlflow(
             stress=stress,
             seed=seed,
             trade_qty=trade_qty,
-            max_pos=max_pos,
+            risk_pct=risk_pct,
             max_drawdown_pct=max_drawdown_pct,
             stop_loss_pct=stop_loss_pct,
             max_notional=max_notional,

@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class GuardLimits:
     daily_max_loss_usdt: float = 100.0           # pérdida neta diaria permitida
+    daily_max_loss_pct: float | None = None      # límite basado en equity (% del equity)
     daily_max_drawdown_pct: float = 0.05         # dd% relativo a equity pico intradía (0.05 = 5%)
     max_consecutive_losses: int = 3              # SLs o pérdidas consecutivas
     halt_action: str = "close_all"               # "close_all" | "pause_only"

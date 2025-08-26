@@ -13,7 +13,7 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge, compute_qtys_for_route
 )
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import EquityRiskManager as RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..risk.oco import OcoBook, load_active_oco
@@ -51,7 +51,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     fills = 0
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(risk_pct=0.01, equity=0.0),
             PortfolioGuard(GuardConfig(venue="binance")),
         )
 
@@ -136,18 +136,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                         ]
                         if not all(c[0] for c in checks):
@@ -182,18 +185,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=broker.equity(mark_prices=last),
                             ),
                         ]
                         if not all(c[0] for c in checks):
