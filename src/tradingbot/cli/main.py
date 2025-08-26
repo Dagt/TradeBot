@@ -627,6 +627,12 @@ def run_bot(
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
+    daily_max_loss_pct: float = typer.Option(
+        0.05, "--daily-max-loss-pct", help="Daily loss limit as fraction of equity"
+    ),
+    daily_max_drawdown_pct: float = typer.Option(
+        0.05, "--daily-max-drawdown-pct", help="Intraday max drawdown limit"
+    ),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
@@ -644,6 +650,8 @@ def run_bot(
                 risk_pct=risk_pct,
                 leverage=leverage,
                 dry_run=dry_run,
+                daily_max_loss_pct=daily_max_loss_pct,
+                daily_max_drawdown_pct=daily_max_drawdown_pct,
             )
         )
     else:
@@ -654,6 +662,8 @@ def run_bot(
                 symbol=symbols[0],
                 equity_pct=equity_pct,
                 risk_pct=risk_pct,
+                daily_max_loss_pct=daily_max_loss_pct,
+                daily_max_drawdown_pct=daily_max_drawdown_pct,
             )
         )
 
@@ -697,6 +707,12 @@ def real_run(
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Simulate orders without sending"),
+    daily_max_loss_pct: float = typer.Option(
+        0.05, "--daily-max-loss-pct", help="Daily loss limit as fraction of equity"
+    ),
+    daily_max_drawdown_pct: float = typer.Option(
+        0.05, "--daily-max-drawdown-pct", help="Intraday max drawdown limit"
+    ),
     i_know_what_im_doing: bool = typer.Option(
         False,
         "--i-know-what-im-doing",
@@ -722,6 +738,8 @@ def real_run(
             risk_pct=risk_pct,
             leverage=leverage,
             dry_run=dry_run,
+            daily_max_loss_pct=daily_max_loss_pct,
+            daily_max_drawdown_pct=daily_max_drawdown_pct,
             i_know_what_im_doing=i_know_what_im_doing,
         )
     )
