@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict, deque
 
 import numpy as np
+from .profile import RiskProfile
 
 @dataclass
 class GuardConfig:
@@ -34,7 +35,9 @@ class GuardState:
     venue_pnl: Dict[str, float] = field(default_factory=dict)
 
 class PortfolioGuard:
-    def __init__(self, cfg: GuardConfig):
+    def __init__(self, cfg: GuardConfig, profile: RiskProfile | None = None):
+        if profile is not None:
+            cfg.soft_cap_pct = profile.scale_pct
         self.cfg = cfg
         self.st = GuardState()
 

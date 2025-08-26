@@ -8,6 +8,7 @@ import asyncio
 
 from ..utils.metrics import RISK_EVENTS
 from ..storage import timescale
+from .profile import RiskProfile
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,15 @@ class DailyGuard:
     Controla pérdidas diarias, drawdown y racha de pérdidas.
     Mantiene equity intradía, pérdidas consecutivas y fecha de corte (UTC).
     """
-    def __init__(self, limits: GuardLimits, venue: str, storage_engine=None):
+    def __init__(
+        self,
+        limits: GuardLimits,
+        venue: str,
+        storage_engine=None,
+        profile: RiskProfile | None = None,
+    ):
+        if profile is not None:
+            limits.daily_max_drawdown_pct = profile.max_drawdown_pct
         self.lim = limits
         self.venue = venue
         self._cur_day: date | None = None
