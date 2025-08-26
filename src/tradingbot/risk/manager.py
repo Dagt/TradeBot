@@ -242,8 +242,7 @@ class RiskManager:
 
         signed_strength = strength if signal_side == "buy" else -strength
         delta = delta_from_strength(
-            signed_strength,
-            self.equity_pct,
+            self.equity_pct * signed_strength,
             equity,
             price,
             self.pos.qty,
@@ -298,16 +297,17 @@ class RiskManager:
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
 
-        target_abs = vol_target(symbol_vol, self.equity_pct, equity)
+        target_abs = vol_target(symbol_vol, equity, self.vol_target)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
-        if equity <= 0 or self.equity_pct <= 0 or price <= 0:
+        if equity <= 0 or price <= 0:
             strength = 0.0
         else:
-            strength = target * price / (equity * self.equity_pct)
-        strength = max(-1.0, min(1.0, strength))
+            strength = target * price / equity
+        if self.equity_pct > 0:
+            strength = max(-self.equity_pct, min(self.equity_pct, strength))
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return delta_from_strength(strength, self.equity_pct, equity, price, self.pos.qty)
+        return delta_from_strength(strength, equity, price, self.pos.qty)
 
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float

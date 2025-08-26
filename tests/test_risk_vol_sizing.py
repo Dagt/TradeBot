@@ -22,11 +22,11 @@ def test_risk_vol_sizing(synthetic_volatility):
 
 
 def test_vol_target_basic():
-    assert vol_target(atr=2.0, equity_pct=1.0, equity=10.0) == pytest.approx(5.0)
+    assert vol_target(atr=2.0, equity=10.0, vol_target=1.0) == pytest.approx(5.0)
 
 
 def test_vol_target_scales_linearly():
-    assert vol_target(atr=1.0, equity_pct=0.5, equity=20.0) == pytest.approx(10.0)
+    assert vol_target(atr=1.0, equity=20.0, vol_target=0.5) == pytest.approx(10.0)
 
 
 def test_risk_vol_sizing_with_correlation(synthetic_volatility):
@@ -55,8 +55,9 @@ def test_risk_service_uses_guard_volatility():
     guard.refresh_usd_caps(rm_guard_equity)
     svc = RiskService(rm, guard)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
+    vol = guard.volatility("BTC")
     allowed, _, delta = svc.check_order("BTC", "buy", 1.0, 1.0)
     budget = rm_guard_equity * rm.equity_pct
-    expected = 2 * budget
+    expected = (budget / 1.0) + vol_target(vol, rm_guard_equity, rm.vol_target)
     assert allowed
     assert delta == pytest.approx(expected)
