@@ -143,6 +143,7 @@ class EventDrivenBacktestEngine:
         cancel_unfilled: bool = False,
         stress: StressConfig | None = None,
         seed: int | None = None,
+        initial_equity: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -162,6 +163,8 @@ class EventDrivenBacktestEngine:
         # Apply spread multiplier to slippage model if provided
         if self.slippage and hasattr(self.slippage, "spread_mult"):
             self.slippage.spread_mult *= self.stress.spread
+
+        self.initial_equity = float(initial_equity)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -202,7 +205,7 @@ class EventDrivenBacktestEngine:
             max_len,
         )
 
-        equity = 0.0
+        equity = self.initial_equity
         fills: List[tuple] = []
         order_queue: List[Order] = []
         orders: List[Order] = []
@@ -406,6 +409,8 @@ class EventDrivenBacktestEngine:
         drawdown = (equity_series - running_max) / running_max
         max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
 
+        pnl = equity - self.initial_equity
+
         orders_summary = [
             {
                 "strategy": o.strategy,
@@ -426,6 +431,7 @@ class EventDrivenBacktestEngine:
             "orders": orders_summary,
             "slippage": slippage_total,
             "funding": funding_total,
+            "pnl": pnl,
             "sharpe": sharpe,
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
