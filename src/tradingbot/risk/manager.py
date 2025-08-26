@@ -37,6 +37,10 @@ class Position:
     qty: float = 0.0
 
 
+class StopLossExceeded(Exception):
+    """Raised when unrealized losses breach the configured ``risk_pct``."""
+
+
 class RiskManager:
     """Gestor de riesgo mínimo.
 
@@ -48,7 +52,6 @@ class RiskManager:
 
     def __init__(
         self,
-        equity_pct: float = 0.0,
         risk_pct: float = 0.0,
         vol_target: float = 0.0,
         *,
@@ -59,19 +62,15 @@ class RiskManager:
     ):
         """Create a :class:`RiskManager`.
 
-        Parameters mirror the previous version.  ``daily_loss_limit`` and
-        ``daily_drawdown_pct`` enable intraday halt rules.  When ``bus`` is
-        provided, the manager subscribes to a few topics in order to keep its
-        state in sync with fills and price marks and to emit ``risk:halted``
-        events when a limit is breached.
+        ``daily_loss_limit`` and ``daily_drawdown_pct`` enable intraday halt
+        rules.  When ``bus`` is provided, the manager subscribes to a few topics
+        in order to keep its state in sync with fills and price marks and to
+        emit ``risk:halted`` events when a limit is breached.
         """
 
-        self.equity_pct = abs(equity_pct)
         self.risk_pct = abs(risk_pct)
         self.vol_target = abs(vol_target)
-        self._base_equity_pct = self.equity_pct
         self._base_vol_target = self.vol_target
-        self._de_risk_stage = 0
 
         self.daily_loss_limit = abs(daily_loss_limit)
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
@@ -236,18 +235,12 @@ class RiskManager:
         """Compute position delta for a strength-based signal.
 
         ``equity`` es el equity actual de la cuenta utilizado para dimensionar
-        la posición. ``price`` es el precio del activo. ``strength`` controla la
-        fracción de ``equity_pct`` deseada.
+        la posición. ``price`` es el precio del activo. ``strength`` representa
+        la fracción de equity deseada.
         """
 
         signed_strength = strength if signal_side == "buy" else -strength
-        delta = delta_from_strength(
-            signed_strength,
-            self.equity_pct,
-            equity,
-            price,
-            self.pos.qty,
-        )
+        delta = delta_from_strength(signed_strength, equity, price, self.pos.qty)
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol, price, equity)
@@ -283,10 +276,15 @@ class RiskManager:
             correlations=correlations,
             threshold=threshold,
         )
+
         if abs(delta) <= 0:
             return False, "zero_size", 0.0
-        if not self.check_limits(price):
-            return False, "kill_switch", 0.0
+
+        try:
+            if not self.check_limits(price):
+                return False, "kill_switch", 0.0
+        except StopLossExceeded:
+            return False, "stop_loss", 0.0
         return True, "", delta
 
     def size_with_volatility(self, symbol_vol: float, price: float, equity: float) -> float:
@@ -298,24 +296,24 @@ class RiskManager:
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
 
-        target_abs = vol_target(symbol_vol, self.equity_pct, equity)
+        target_abs = vol_target(symbol_vol, self.vol_target, equity)
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
-        if equity <= 0 or self.equity_pct <= 0 or price <= 0:
+        if equity <= 0 or self.vol_target <= 0 or price <= 0:
             strength = 0.0
         else:
-            strength = target * price / (equity * self.equity_pct)
+            strength = target * price / equity
         strength = max(-1.0, min(1.0, strength))
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return delta_from_strength(strength, self.equity_pct, equity, price, self.pos.qty)
+        return delta_from_strength(strength, equity, price, self.pos.qty)
 
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Limita exposición conjunta reduciendo ``equity_pct`` si se supera el umbral.
+        """Limita exposición conjunta reduciendo ``vol_target`` si se supera el umbral.
 
         Los símbolos con correlaciones que exceden ``threshold`` se agrupan
-        mediante :mod:`correlation_guard` y ``equity_pct`` se reduce en proporción
+        mediante :mod:`correlation_guard` y ``vol_target`` se reduce en proporción
         al tamaño del grupo más grande.  Se devuelve la lista de pares que
         superaron el umbral.
         """
@@ -327,7 +325,7 @@ class RiskManager:
         ]
 
         groups = group_correlated(symbol_pairs, threshold)
-        self.equity_pct = global_cap(groups, self._base_equity_pct)
+        self.vol_target = global_cap(groups, self._base_vol_target)
 
         if exceeded:
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
@@ -346,7 +344,7 @@ class RiskManager:
 
         Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
         para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
-        recorta ``equity_pct`` a la mitad y se retornan los pares involucrados.
+        recorta ``vol_target`` a la mitad y se retornan los pares involucrados.
         """
 
         exceeded: list[tuple[str, str]] = []
@@ -364,7 +362,7 @@ class RiskManager:
                 if abs(corr) >= threshold:
                     exceeded.append((a, b))
         if exceeded:
-            self.equity_pct *= 0.5
+            self.vol_target *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -383,8 +381,8 @@ class RiskManager:
         """Evalúa el riesgo total mediante una matriz de covarianzas.
 
         ``positions`` contiene cantidades por símbolo (mismas unidades que la
-        covarianza).  Si la varianza total del portafolio excede ``max_variance``
-        se dispara el *kill switch* y la función retorna ``False``.
+        covarianza).  Si la varianza total del portafolio excede
+        ``max_variance`` la función retorna ``False``.
         """
 
         if not positions:
@@ -402,7 +400,7 @@ class RiskManager:
             for j in range(n):
                 var += positions[syms[i]] * mat[i][j] * positions[syms[j]]
         if var > max_variance:
-            self.kill_switch("covariance_limit")
+            self.last_kill_reason = "covariance_limit"
             return False
         return True
 
@@ -418,41 +416,8 @@ class RiskManager:
             # dispatch asynchronously without awaiting
             asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
 
-    def reset(self) -> None:
-        """Reinicia el gestor tras una activación del *kill switch*."""
-        self.enabled = True
-        self.last_kill_reason = None
-        self.close_all_positions()
-        self.positions_multi.clear()
-        self.pnl_multi.clear()
-        self.daily_pnl = 0.0
-        self._daily_peak = 0.0
-        self.equity_pct = self._base_equity_pct
-        self.vol_target = self._base_vol_target
-        self._de_risk_stage = 0
-        self._reset_price_trackers()
-        KILL_SWITCH_ACTIVE.set(0)
-        if self.limits is not None:
-            self.limits.reset()
-
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
-    def de_risk(self) -> None:
-        """Reduce ``equity_pct`` y ``vol_target`` ante drawdowns significativos."""
-        if self._daily_peak <= 0:
-            return
-        drawdown = (self._daily_peak - self.daily_pnl) / self._daily_peak
-        if drawdown >= 0.5 and self._de_risk_stage < 2:
-            self.equity_pct = self._base_equity_pct * 0.25
-            if self._base_vol_target > 0:
-                self.vol_target = self._base_vol_target * 0.25
-            self._de_risk_stage = 2
-        elif drawdown >= 0.25 and self._de_risk_stage < 1:
-            self.equity_pct = self._base_equity_pct * 0.5
-            if self._base_vol_target > 0:
-                self.vol_target = self._base_vol_target * 0.5
-            self._de_risk_stage = 1
-
     def update_pnl(self, delta: float, *, venue: str | None = None) -> None:
         """Actualizar PnL diario y por venue."""
         self.daily_pnl += float(delta)
@@ -460,12 +425,10 @@ class RiskManager:
             self.pnl_multi[venue] = self.pnl_multi.get(venue, 0.0) + float(delta)
         if self.daily_pnl > self._daily_peak:
             self._daily_peak = self.daily_pnl
-        self.de_risk()
         if self.limits is not None:
             self.limits.update_pnl(delta)
 
     def _check_daily_limits(self) -> bool:
-        self.de_risk()
         if self.daily_loss_limit > 0 and self.daily_pnl <= -self.daily_loss_limit:
             self.kill_switch("daily_loss")
             return False
@@ -481,8 +444,8 @@ class RiskManager:
     def check_limits(self, price: float) -> bool:
         """Verifica stop loss basado en ``risk_pct``.
 
-        Si la pérdida latente excede ``notional * risk_pct`` se activa el
-        *kill switch*.
+        Cuando la pérdida latente excede ``notional * risk_pct`` se
+        lanza :class:`StopLossExceeded`.
         """
 
         if not self.enabled:
@@ -502,9 +465,9 @@ class RiskManager:
 
         notional = abs(qty) * self._entry_price
         pnl = (px - self._entry_price) * qty
-        if self.risk_pct > 0 and pnl < 0 and abs(pnl) >= notional * self.risk_pct:
-            self.kill_switch("stop_loss")
-            return False
+        if self.risk_pct > 0 and pnl < -notional * self.risk_pct:
+            self.last_kill_reason = "stop_loss"
+            raise StopLossExceeded("stop_loss")
 
         return self._check_daily_limits()
 
