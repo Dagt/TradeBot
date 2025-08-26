@@ -661,11 +661,14 @@ async def cli_stop(job_id: str):
 
 
 class BotConfig(BaseModel):
-    """Configuration for launching a trading bot."""
+    """Configuration for launching a trading bot.
+
+    Strategies size their orders through a ``strength`` value, so explicit
+    ``notional`` budgets are no longer required.
+    """
 
     strategy: str
     pairs: list[str] | None = None
-    notional: float | None = None
     venue: str | None = None
     leverage: int | None = None
     risk_pct: float | None = None
@@ -699,8 +702,7 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         ]
         if cfg.threshold is not None:
             args.extend(["--threshold", str(cfg.threshold)])
-        if cfg.notional is not None:
-            args.extend(["--notional", str(cfg.notional)])
+        # sizing is derived from strength in strategy signals
         return args
 
     args = [
@@ -713,8 +715,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
     ]
     for pair in cfg.pairs or []:
         args.extend(["--symbol", normalize_symbol(pair)])
-    if cfg.notional is not None:
-        args.extend(["--notional", str(cfg.notional)])
     if cfg.venue:
         args.extend(["--venue", cfg.venue])
     if cfg.leverage is not None:

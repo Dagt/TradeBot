@@ -86,7 +86,6 @@ def test_cross_arbitrage_start(monkeypatch):
         "pairs": ["BTC/USDT"],
         "spot": "binance_spot",
         "perp": "binance_futures",
-        "notional": 25.0,
         "threshold": 0.001,
     }
 
@@ -96,4 +95,5 @@ def test_cross_arbitrage_start(monkeypatch):
     argv = list(calls["args"])
     assert "run-cross-arb" in argv
     assert "binance_spot" in argv and "binance_futures" in argv
+    assert "--notional" not in argv
 
