@@ -9,8 +9,8 @@ import numpy as np
 
 @dataclass
 class GuardConfig:
-    total_cap_pct: Optional[float] = 1.0
-    per_symbol_cap_pct: Optional[float] = 1.0
+    total_cap_pct: Optional[float] = None
+    per_symbol_cap_pct: Optional[float] = None
     venue: str = "binance_spot_testnet"
     # --- Soft caps ---
     soft_cap_pct: float = 0.10            # hasta +10% sobre el cap
@@ -43,16 +43,14 @@ class PortfolioGuard:
 
     def refresh_usd_caps(self, equity: float) -> None:
         self.equity = float(equity)
-        self.st.per_symbol_cap_usdt = (
-            self.equity * self.cfg.per_symbol_cap_pct
-            if self.cfg.per_symbol_cap_pct is not None
-            else None
-        )
-        self.st.total_cap_usdt = (
-            self.equity * self.cfg.total_cap_pct
-            if self.cfg.total_cap_pct is not None
-            else None
-        )
+        if self.cfg.per_symbol_cap_pct is None:
+            self.st.per_symbol_cap_usdt = None
+        else:
+            self.st.per_symbol_cap_usdt = self.equity * self.cfg.per_symbol_cap_pct
+        if self.cfg.total_cap_pct is None:
+            self.st.total_cap_usdt = None
+        else:
+            self.st.total_cap_usdt = self.equity * self.cfg.total_cap_pct
 
     # ---- utilidades base ----
     def mark_price(self, symbol: str, price: float):
@@ -134,13 +132,24 @@ class PortfolioGuard:
         if symbol not in seen:
             total += abs(new_pos) * px
 
-        if self.st.per_symbol_cap_usdt is not None and sym_exp > self.st.per_symbol_cap_usdt:
+        if self.cfg.per_symbol_cap_pct is None and self.cfg.total_cap_pct is None:
+            return False, "", {"sym_exp": sym_exp, "total": total}
+
+        if (
+            self.cfg.per_symbol_cap_pct is not None
+            and self.st.per_symbol_cap_usdt is not None
+            and sym_exp > self.st.per_symbol_cap_usdt
+        ):
             return (
                 True,
                 f"per_symbol_cap_usdt excedido ({sym_exp:.2f} > {self.st.per_symbol_cap_usdt:.2f})",
                 {"sym_exp": sym_exp, "total": total},
             )
-        if self.st.total_cap_usdt is not None and total > self.st.total_cap_usdt:
+        if (
+            self.cfg.total_cap_pct is not None
+            and self.st.total_cap_usdt is not None
+            and total > self.st.total_cap_usdt
+        ):
             return (
                 True,
                 f"total_cap_usdt excedido ({total:.2f} > {self.st.total_cap_usdt:.2f})",
@@ -189,6 +198,10 @@ class PortfolioGuard:
         if symbol not in seen:
             total += abs(new_pos) * price
 
+        if self.cfg.per_symbol_cap_pct is None and self.cfg.total_cap_pct is None:
+            self.st.sym_soft_started.pop(symbol, None)
+            self.st.total_soft_started = None
+            return "allow", "caps desactivados", {"sym_exp": sym_exp, "total": total}
         per_soft, total_soft = self._soft_bounds()
         # casos
         # 1) dentro de hard caps
@@ -245,12 +258,24 @@ class PortfolioGuard:
 
         cur_sym_exp = abs(pos) * price
         need_qty_cut = 0.0
-        if self.st.per_symbol_cap_usdt is not None and cur_sym_exp > self.st.per_symbol_cap_usdt:
+
+        total = self.exposure_total()
+        if self.cfg.per_symbol_cap_pct is None and self.cfg.total_cap_pct is None:
+            return 0.0, "caps desactivados", {"pos": pos, "price": price, "total": total}
+
+        if (
+            self.cfg.per_symbol_cap_pct is not None
+            and self.st.per_symbol_cap_usdt is not None
+            and cur_sym_exp > self.st.per_symbol_cap_usdt
+        ):
             need_exp_cut = cur_sym_exp - self.st.per_symbol_cap_usdt
             need_qty_cut = need_exp_cut / price
 
-        total = self.exposure_total()
-        if self.st.total_cap_usdt is not None and total > self.st.total_cap_usdt:
+        if (
+            self.cfg.total_cap_pct is not None
+            and self.st.total_cap_usdt is not None
+            and total > self.st.total_cap_usdt
+        ):
             extra = total - self.st.total_cap_usdt
             need_qty_cut += extra / price
 
