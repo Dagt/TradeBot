@@ -69,12 +69,14 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             cfg.symbol,
             spot_side,
             last["spot"],
+            float("inf"),
             strength=qty,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             last["perp"],
+            float("inf"),
             strength=qty,
         )
         if not (ok1 and ok2):

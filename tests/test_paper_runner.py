@@ -29,7 +29,7 @@ class DummyAgg:
 
 class DummyStrat:
     def on_bar(self, ctx):
-        return SimpleNamespace(side="buy", strength=1.0)
+        return SimpleNamespace(side="buy", strength=1.0, reduce_only=False)
 
 
 class DummyRisk:
@@ -39,8 +39,11 @@ class DummyRisk:
     def mark_price(self, symbol, price):
         pass
 
-    def check_order(self, symbol, side, price, strength=1.0, **_):
+    def check_order(self, symbol, side, price, equity, strength=1.0, **_):
         return True, "", 1.0
+
+    def update_correlation(self, threshold):
+        return []
 
     def on_fill(self, symbol, side, qty, venue=None):
         pass
@@ -60,6 +63,9 @@ class DummyRouter:
 class DummyBroker:
     def update_last_price(self, symbol, px):
         pass
+
+    def equity(self, mark_prices=None):
+        return 1000.0
 
 
 class DummyServer:
@@ -81,6 +87,7 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 

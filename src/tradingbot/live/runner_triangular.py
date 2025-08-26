@@ -135,18 +135,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "buy",
                                 last["bq"],
+                                broker.equity(),
                                 strength=q["base_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
+                                broker.equity(),
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
+                                broker.equity(),
                                 strength=q["mid_qty"],
                             ),
                         ]
@@ -181,18 +184,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "buy",
                                 last["mq"],
+                                broker.equity(),
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
+                                broker.equity(),
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
+                                broker.equity(),
                                 strength=q["base_qty"],
                             ),
                         ]

@@ -61,6 +61,7 @@ class RiskService:
         symbol: str,
         side: str,
         price: float,
+        equity: float,
         strength: float = 1.0,
         *,
         symbol_vol: float | None = None,
@@ -68,6 +69,7 @@ class RiskService:
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
+        ``equity`` es el equity actual usado para calcular límites dinámicos.
         Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
         proposed after volatility and correlation adjustments.
         """
@@ -96,7 +98,7 @@ class RiskService:
             self._persist("VIOLATION", symbol, "kill_switch", {})
             return False, "kill_switch", 0.0
 
-        action, reason, metrics = self.guard.soft_cap_decision(symbol, side, qty, price)
+        action, reason, metrics = self.guard.soft_cap_decision(symbol, side, qty, price, equity)
         if action == "block":
             self._persist("VIOLATION", symbol, reason, metrics)
             return False, reason, delta

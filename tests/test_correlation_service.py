@@ -49,7 +49,7 @@ def test_correlation_service_window_rolls():
 
 
 def test_risk_service_uses_correlation_service():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_usdt=10000, total_cap_usdt=20000))
+    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=0.5, total_cap_pct=1.0))
     rm = RiskManager(max_pos=10, vol_target=0.02)
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
@@ -69,7 +69,7 @@ def test_risk_service_uses_correlation_service():
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     symbol_vol = guard.volatility("BTC")
     base = rm.size("buy", symbol="BTC", symbol_vol=symbol_vol)
-    allowed, _, delta = svc.check_order("BTC", "buy", price=price_btc, corr_threshold=0.8)
+    allowed, _, delta = svc.check_order("BTC", "buy", price=price_btc, equity=20000, corr_threshold=0.8)
     assert allowed
     assert delta == pytest.approx(base * 0.5)
 

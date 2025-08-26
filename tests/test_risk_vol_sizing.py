@@ -42,11 +42,11 @@ def test_risk_vol_sizing_with_correlation(synthetic_volatility):
 
 
 def test_risk_service_uses_guard_volatility():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_usdt=10000, total_cap_usdt=20000))
+    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=0.5, total_cap_pct=1.0))
     rm = RiskManager(max_pos=10, vol_target=0.02)
     svc = RiskService(rm, guard)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
-    allowed, _, delta = svc.check_order("BTC", "buy", price=100.0)
+    allowed, _, delta = svc.check_order("BTC", "buy", price=100.0, equity=20000)
     vol = np.std([0.01, -0.02, 0.03]) * np.sqrt(365)
     expected = rm.max_pos + min(rm.max_pos, rm.max_pos * rm.vol_target / vol)
     assert allowed
