@@ -15,12 +15,12 @@ def test_size_scales_with_equity_and_strength():
 
     expected_small = equity_small * pos_pct * 0.5 / price
     expected_big = equity_big * pos_pct * 0.5 / price
-    assert rm_small.size("buy", price, equity_small, strength=0.5) == pytest.approx(expected_small)
-    assert rm_big.size("buy", price, equity_big, strength=0.5) == pytest.approx(expected_big)
+    assert rm_small.size("buy", equity=equity_small, price=price, strength=0.5) == pytest.approx(expected_small)
+    assert rm_big.size("buy", equity=equity_big, price=price, strength=0.5) == pytest.approx(expected_big)
 
 
 def test_stop_loss_risk_pct():
-    from tradingbot.risk.manager import RiskManager
+    from tradingbot.risk.manager import RiskManager, RiskPctViolation
 
     equity = 10_000.0
     pos_pct = 0.10
@@ -32,27 +32,28 @@ def test_stop_loss_risk_pct():
     rm.set_position(qty)
 
     assert rm.check_limits(price)
-    assert not rm.check_limits(price * (1 - risk_pct))
-    assert rm.enabled is False
+    with pytest.raises(RiskPctViolation):
+        rm.check_limits(price * (1 - risk_pct))
+    assert rm.enabled is True
 
 
 def test_pyramiding_and_scaling(risk_manager):
     rm = risk_manager
     max_qty = rm.equity * rm.equity_pct / rm.price
 
-    delta = rm.size("buy", rm.price, rm.equity, strength=0.5)
+    delta = rm.size("buy", equity=rm.equity, price=rm.price, strength=0.5)
     rm.add_fill("buy", delta)
     assert rm.pos.qty == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("buy", rm.price, rm.equity, strength=1.0)
+    delta = rm.size("buy", equity=rm.equity, price=rm.price, strength=1.0)
     rm.add_fill("buy", delta)
     assert rm.pos.qty == pytest.approx(max_qty)
 
-    delta = rm.size("buy", rm.price, rm.equity, strength=0.5)
+    delta = rm.size("buy", equity=rm.equity, price=rm.price, strength=0.5)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("buy", rm.price, rm.equity, strength=0.0)
+    delta = rm.size("buy", equity=rm.equity, price=rm.price, strength=0.0)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(0.0)
 

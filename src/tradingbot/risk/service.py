@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
-from .manager import RiskManager
+from .manager import RiskManager, RiskPctViolation
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
@@ -84,9 +84,9 @@ class RiskService:
 
         delta = self.rm.size(
             side,
-            price,
-            equity,
-            strength,
+            equity=equity,
+            price=price,
+            strength=strength,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,
             correlations=correlations,
@@ -97,7 +97,12 @@ class RiskService:
         if qty <= 0:
             return False, "zero_size", 0.0
 
-        if not self.rm.check_limits(price):
+        try:
+            limits_ok = self.rm.check_limits(price)
+        except RiskPctViolation:
+            self._persist("VIOLATION", symbol, "risk_pct", {})
+            return False, "risk_pct", -self.rm.pos.qty
+        if not limits_ok:
             self._persist("VIOLATION", symbol, "kill_switch", {})
             return False, "kill_switch", 0.0
 

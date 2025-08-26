@@ -15,7 +15,7 @@ def test_risk_vol_sizing(synthetic_volatility):
     equity = 1.0
     rm = RiskManager(equity_pct=0.1, vol_target=0.02)
     price = 1.0
-    delta = rm.size("buy", price, equity, symbol="BTC", symbol_vol=synthetic_volatility)
+    delta = rm.size("buy", equity=equity, price=price, symbol="BTC", symbol_vol=synthetic_volatility)
     budget = equity * rm.equity_pct
     expected = 2 * (budget / price)
     assert delta == pytest.approx(expected)
@@ -36,8 +36,8 @@ def test_risk_vol_sizing_with_correlation(synthetic_volatility):
     price = 1.0
     delta = rm.size(
         "buy",
-        price,
-        equity,
+        equity=equity,
+        price=price,
         symbol="BTC",
         symbol_vol=synthetic_volatility,
         correlations=corr,

@@ -30,6 +30,12 @@ from .position_sizing import vol_target, delta_from_strength
 from sqlalchemy import text
 
 
+class RiskPctViolation(Exception):
+    """Raised when unrealised loss exceeds ``risk_pct``."""
+
+    pass
+
+
 @dataclass
 class Position:
     """Simple container for current position size."""
@@ -224,10 +230,10 @@ class RiskManager:
     def size(
         self,
         signal_side: str,
-        price: float,
-        equity: float,
-        strength: float = 1.0,
         *,
+        equity: float,
+        price: float,
+        strength: float = 1.0,
         symbol: str | None = None,
         symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
@@ -275,9 +281,9 @@ class RiskManager:
 
         delta = self.size(
             side,
-            price,
-            equity,
-            strength,
+            equity=equity,
+            price=price,
+            strength=strength,
             symbol=symbol,
             symbol_vol=symbol_vol,
             correlations=correlations,
@@ -503,8 +509,7 @@ class RiskManager:
         notional = abs(qty) * self._entry_price
         pnl = (px - self._entry_price) * qty
         if self.risk_pct > 0 and pnl < 0 and abs(pnl) >= notional * self.risk_pct:
-            self.kill_switch("stop_loss")
-            return False
+            raise RiskPctViolation("risk_pct")
 
         return self._check_daily_limits()
 

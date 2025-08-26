@@ -2,7 +2,7 @@ import asyncio
 import pytest
 
 from tradingbot.bus import EventBus
-from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.manager import RiskManager, RiskPctViolation
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
 from tradingbot.risk.service import RiskService
@@ -19,14 +19,15 @@ from tradingbot.utils.metrics import KILL_SWITCH_ACTIVE
 from tradingbot.risk.limits import RiskLimits
 
 
-def test_stop_loss_sets_reason():
+def test_stop_loss_triggers_exception():
     rm = RiskManager(equity_pct=1.0, risk_pct=0.05)
     rm.set_position(1)
     assert rm.check_limits(100)
-    assert not rm.check_limits(94)
-    assert rm.enabled is False
-    assert rm.last_kill_reason == "stop_loss"
-    assert rm.pos.qty == 0
+    with pytest.raises(RiskPctViolation):
+        rm.check_limits(94)
+    assert rm.enabled is True
+    assert rm.last_kill_reason is None
+    assert rm.pos.qty == 1
 
 
 def test_manual_kill_switch_records_reason():
@@ -76,6 +77,20 @@ def test_risk_service_updates_and_persists(monkeypatch):
     allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, 1.0, strength=1.0)
     assert not allowed
     assert events and events[0]["kind"] == "VIOLATION"
+
+
+def test_risk_service_close_signal_on_risk_pct():
+    rm = RiskManager(equity_pct=1.0, risk_pct=0.05)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(rm, guard)
+    rm.set_position(1)
+    rm.check_limits(100)
+    allowed, reason, delta = svc.check_order("BTC", "buy", 1.0, 94.0)
+    assert not allowed
+    assert reason == "risk_pct"
+    assert delta == pytest.approx(-1.0)
 
 
 @pytest.mark.asyncio

@@ -102,9 +102,12 @@ class PortfolioGuard:
         return float(np.std(rets) * np.sqrt(365))
 
     # ---- hard caps (como antes) ----
-    def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:
+    def would_exceed_caps(
+        self, symbol: str, side: str, add_qty: float = 0.0, price: float | None = None
+    ) -> Tuple[bool, str, dict]:
+        price = self.st.prices.get(symbol, 0.0) if price is None else float(price)
         cur_pos = self.st.positions.get(symbol, 0.0)
-        new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
+        new_pos = cur_pos + (add_qty if side.lower() == "buy" else -add_qty)
         sym_exp = abs(new_pos) * price
 
         total = 0.0
