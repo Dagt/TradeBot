@@ -26,7 +26,6 @@ import numpy as np
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
-from .position_sizing import vol_target
 from sqlalchemy import text
 
 
@@ -279,7 +278,7 @@ class RiskManager:
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
         budget = self.max_pos * self.vol_target
-        target_abs = vol_target(symbol_vol, budget, self.max_pos)
+        target_abs = budget / symbol_vol
         sign = 1 if self.pos.qty >= 0 else -1
         target = sign * target_abs
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
