@@ -52,8 +52,8 @@ def test_correlation_service_window_rolls():
 
 
 def test_risk_service_uses_correlation_service():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_usdt=10000, total_cap_usdt=20000))
-    guard.equity = 1.0
+    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
+    guard.refresh_usd_caps(1.0)
     rm = RiskManager(equity_pct=0.1, vol_target=0.02)
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)

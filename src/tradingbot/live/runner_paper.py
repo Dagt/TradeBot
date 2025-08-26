@@ -50,7 +50,8 @@ async def run_paper(
     router = ExecutionRouter([broker])
 
     risk_core = RiskManager(equity_pct=1.0)
-    guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
+    guard.refresh_usd_caps(1000.0)
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, corr_service=corr)
     engine = get_engine() if _CAN_PG else None

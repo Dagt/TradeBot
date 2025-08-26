@@ -87,8 +87,8 @@ async def run_live_binance(
     symbol: str = "BTC/USDT",
     fee_bps: float = 1.5,
     persist_pg: bool = False,
-    total_cap_usdt: float = 1000.0,
-    per_symbol_cap_usdt: float = 500.0,
+    total_cap_pct: float = 1.0,
+    per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
     daily_max_loss_pct: float = 0.05,
@@ -105,8 +105,8 @@ async def run_live_binance(
     risk_core = RiskManager(equity_pct=1.0)
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
-        total_cap_usdt=total_cap_usdt,
-        per_symbol_cap_usdt=per_symbol_cap_usdt,
+        total_cap_pct=total_cap_pct,
+        per_symbol_cap_pct=per_symbol_cap_pct,
         venue="binance",
         soft_cap_pct=soft_cap_pct,
         soft_cap_grace_sec=soft_cap_grace_sec,
@@ -118,6 +118,7 @@ async def run_live_binance(
     ), venue="binance")
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
     risk = RiskService(risk_core, guard, dguard, engine=pg_engine)
+    guard.refresh_usd_caps(broker.equity({}))
     oco_book = OcoBook()
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)
