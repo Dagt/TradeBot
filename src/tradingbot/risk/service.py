@@ -82,6 +82,7 @@ class RiskService:
         delta = self.rm.size(
             side,
             price,
+            self.guard.equity,
             strength,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,

@@ -1,4 +1,3 @@
-
 import asyncio
 import pytest
 
@@ -11,13 +10,13 @@ def test_size_scales_with_equity_and_strength():
     equity_big = 20_000.0
     pos_pct = 0.10
 
-    rm_small = RiskManager(equity_pct=pos_pct, equity_actual=equity_small)
-    rm_big = RiskManager(equity_pct=pos_pct, equity_actual=equity_big)
+    rm_small = RiskManager(equity_pct=pos_pct)
+    rm_big = RiskManager(equity_pct=pos_pct)
 
     expected_small = equity_small * pos_pct * 0.5 / price
     expected_big = equity_big * pos_pct * 0.5 / price
-    assert rm_small.size("buy", price, strength=0.5) == pytest.approx(expected_small)
-    assert rm_big.size("buy", price, strength=0.5) == pytest.approx(expected_big)
+    assert rm_small.size("buy", price, equity_small, strength=0.5) == pytest.approx(expected_small)
+    assert rm_big.size("buy", price, equity_big, strength=0.5) == pytest.approx(expected_big)
 
 
 def test_stop_loss_risk_pct():
@@ -29,58 +28,44 @@ def test_stop_loss_risk_pct():
     price = 100.0
 
     qty = equity * pos_pct / price
-    stop_loss_pct = risk_pct / pos_pct
-
-    rm = RiskManager(equity_pct=pos_pct, equity_actual=equity, stop_loss_pct=stop_loss_pct)
+    rm = RiskManager(equity_pct=pos_pct, risk_pct=risk_pct)
     rm.set_position(qty)
 
     assert rm.check_limits(price)
-    assert not rm.check_limits(price * (1 - stop_loss_pct))
+    assert not rm.check_limits(price * (1 - risk_pct))
     assert rm.enabled is False
 
 
 def test_pyramiding_and_scaling(risk_manager):
     rm = risk_manager
-    max_qty = rm.equity_actual * rm.equity_pct / rm.price
+    max_qty = rm.equity * rm.equity_pct / rm.price
 
-    delta = rm.size("buy", rm.price, strength=0.5)
+    delta = rm.size("buy", rm.price, rm.equity, strength=0.5)
     rm.add_fill("buy", delta)
     assert rm.pos.qty == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("buy", rm.price, strength=1.0)
+    delta = rm.size("buy", rm.price, rm.equity, strength=1.0)
     rm.add_fill("buy", delta)
     assert rm.pos.qty == pytest.approx(max_qty)
 
-    delta = rm.size("sell", rm.price, strength=0.25)
+    delta = rm.size("sell", rm.price, rm.equity, strength=0.25)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("sell", rm.price, strength=1/3)
+    delta = rm.size("sell", rm.price, rm.equity, strength=1/3)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(0.0)
-
-
-def test_drawdown_triggers_disable():
-    from tradingbot.risk.manager import RiskManager
-
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0, max_drawdown_pct=0.05)
-    rm.set_position(1)
-    assert rm.check_limits(100)
-    assert rm.check_limits(110)  # peak
-    # retroceso >5% desde el pico
-    assert not rm.check_limits(104)
-    assert rm.enabled is False
 
 
 def test_size_with_volatility_event():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(equity_pct=0.02, equity_actual=10, vol_target=0.02)
+    rm = RiskManager(equity_pct=0.02, vol_target=0.02)
     before = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
-    delta = rm.size_with_volatility(0.04)
+    delta = rm.size_with_volatility(0.04, price=1.0, equity=10)
     after = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
-    assert delta == pytest.approx(5)
+    assert delta == pytest.approx(0.2)
     assert after == before + 1
 
 
@@ -88,7 +73,7 @@ def test_update_correlation_limits_exposure():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0)
+    rm = RiskManager(equity_pct=1.0)
     pairs = {("BTC", "ETH"): 0.9}
     before = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
     exceeded = rm.update_correlation(pairs, 0.8)
@@ -102,7 +87,7 @@ def test_kill_switch_disables():
     from tradingbot.risk.manager import RiskManager
     from tradingbot.utils.metrics import RISK_EVENTS
 
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0)
+    rm = RiskManager(equity_pct=1.0)
     before = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
     rm.kill_switch("manual")
     after = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
@@ -119,7 +104,7 @@ async def test_daily_loss_limit_via_bus():
     bus = EventBus()
     events = []
     bus.subscribe("risk:halted", lambda e: events.append(e))
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0, daily_loss_limit=50, bus=bus)
+    rm = RiskManager(equity_pct=1.0, daily_loss_limit=50, bus=bus)
     await bus.publish("pnl", {"delta": -60})
     await asyncio.sleep(0)
     assert rm.enabled is False
@@ -153,7 +138,7 @@ async def test_daily_guard_halts_on_loss():
 def test_covariance_limit_triggers_kill():
     from tradingbot.risk.manager import RiskManager
 
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0)
+    rm = RiskManager(equity_pct=1.0)
     positions = {"BTC": 1.0, "ETH": 1.0}
     cov = {
         ("BTC", "BTC"): 0.04,

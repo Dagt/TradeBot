@@ -1,4 +1,5 @@
 import numpy as np
+import numpy as np
 import pytest
 
 from tradingbot.risk.manager import RiskManager
@@ -18,7 +19,7 @@ def test_covariance_and_aggregation():
 
 
 def test_adjust_size_and_portfolio_risk():
-    rm = RiskManager(equity_pct=1.0, equity_actual=1.0)
+    rm = RiskManager(equity_pct=1.0)
     corr = {("A", "B"): 0.9}
     size = rm.adjust_size_for_correlation("A", 2.0, corr, 0.8)
     assert size == pytest.approx(1.0)
@@ -33,7 +34,7 @@ def test_adjust_size_and_portfolio_risk():
 
 
 def test_de_risk_reduces_exposure():
-    rm = RiskManager(equity_pct=1.0, equity_actual=100.0, vol_target=1.0)
+    rm = RiskManager(equity_pct=1.0, vol_target=1.0)
     rm.update_pnl(100)
     assert rm.equity_pct == pytest.approx(1.0)
     rm.update_pnl(-30)  # drawdown 30%
