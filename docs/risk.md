@@ -9,7 +9,7 @@ actual por `equity_pct`:
 notional = equity_total * equity_pct
 ```
 
-El riesgo máximo permitido sobre esa operación se controla con `risk_pct`:
+El stop‑loss se define como un porcentaje de esa asignación usando `risk_pct`:
 
 ```
 max_loss = notional * risk_pct
@@ -23,7 +23,8 @@ precio del activo.
 Las estrategias pueden emitir señales con un atributo `strength` que escala el
 cambio propuesto en la posición. Un valor mayor a `1.0` permite piramidar
 agregando tamaño; valores entre `0` y `1` reducen exposición y `0` cierra la
-posición.
+posición. Por ejemplo, con `equity_pct = 0.05` una señal con `strength = 1.5`
+usará el `7.5 %` del equity mientras que `strength = 0.5` solo el `2.5 %`.
 
 ## DailyGuard y drawdown global
 

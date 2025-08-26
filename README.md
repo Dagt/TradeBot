@@ -64,16 +64,18 @@ entorno real de Binance Futures.
 
 ## Gestión de riesgo
 
-El tamaño de cada operación se calcula a partir del capital disponible:
+Tanto la asignación como el stop‑loss se expresan como porcentajes del equity
+disponible:
 
 - `equity_pct` indica la fracción de equity utilizada como notional por
   señal: `notional = equity_total * equity_pct`.
-- `risk_pct` define la pérdida máxima aceptada sobre ese notional:
+- `risk_pct` determina la pérdida máxima aceptada sobre esa asignación:
   `max_loss = notional * risk_pct`.
 
 El parámetro `strength` de las señales escala el cambio propuesto en la
-posición. Valores mayores a `1.0` permiten piramidar entradas mientras que
-valores menores reducen exposición.
+posición. Por ejemplo, una señal con `strength = 1.5` piramida la entrada en un
+50 % adicional (`7.5 %` del equity si `equity_pct = 0.05`), mientras que
+`strength = 0.5` reduce la exposición a la mitad.
 
 `DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
 superan los límites configurados, detiene el bot o cierra las posiciones

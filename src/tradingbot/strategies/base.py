@@ -13,14 +13,17 @@ from ..storage import timescale
 class Signal:
     """Simple trading signal.
 
-    ``strength`` expresses the desired exposure as a fraction of the
-    maximum position size allowed by the risk manager.  ``1.0`` requests the
-    full allocation while ``0`` or a negative value signals that any existing
-    position should be closed.
+    ``strength`` scales position sizing as a fraction of account equity.
+    A value of ``1.0`` requests the full allocation defined by the risk
+    manager's ``equity_pct`` while ``1.5`` would pyramid exposure to
+    ``150%`` of that base size. Values between ``0`` and ``1`` reduce the
+    position proportionally and ``0`` or negative values close it. The
+    risk manager also interprets ``risk_pct`` as a stop‑loss expressed as a
+    percentage of equity.
     """
 
     side: str  # 'buy' | 'sell' | 'flat'
-    strength: float = 1.0  # fraction of the max permitted allocation
+    strength: float = 1.0  # fraction of the base equity allocation
     reduce_only: bool = False
 
 class Strategy(ABC):

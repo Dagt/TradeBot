@@ -80,10 +80,11 @@ Ejecuta el bot en modo en vivo (testnet o real).
 - `--venue`: nombre del venue (ej. `binance_spot`, `okx_futures`).
 - `--symbol`: puede repetirse; símbolo a operar.
 - `--testnet`: usa endpoints de prueba.
-- `--trade-qty`: tamaño de la orden.
+- `--equity-pct`: fracción del equity a asignar por señal.
+- `--risk-pct`: stop‑loss como porcentaje del equity asignado.
 - `--leverage`: apalancamiento para futuros.
 - `--dry-run`: simula órdenes en testnet.
-- `--stop-loss` y `--take-profit`: porcentajes de la estrategia.
+- `--take-profit`: porcentaje de toma de ganancias.
 
 ## `paper-run`
 Corre una estrategia en modo paper (sin dinero real) y expone métricas.
@@ -96,7 +97,8 @@ Corre una estrategia en modo paper (sin dinero real) y expone métricas.
 Ejecuta el bot contra un exchange real.
 - `--venue`: nombre del venue.
 - `--symbol`: puede repetirse.
-- `--trade-qty`: tamaño de la orden.
+- `--equity-pct`: fracción del equity a asignar por señal.
+- `--risk-pct`: stop‑loss como porcentaje del equity asignado.
 - `--leverage`: apalancamiento.
 - `--dry-run`: simula órdenes sin enviarlas.
 - `--i-know-what-im-doing`: confirmación necesaria para operar con dinero real.
