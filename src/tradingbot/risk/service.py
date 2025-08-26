@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
-from .manager import RiskManager
+from .manager import RiskManager, StopLossExceeded
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
@@ -84,9 +84,9 @@ class RiskService:
 
         delta = self.rm.size(
             side,
-            price,
-            equity,
-            strength,
+            strength=strength,
+            equity=equity,
+            price=price,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,
             correlations=correlations,
@@ -97,9 +97,19 @@ class RiskService:
         if qty <= 0:
             return False, "zero_size", 0.0
 
-        if not self.rm.check_limits(price):
-            self._persist("VIOLATION", symbol, "kill_switch", {})
-            return False, "kill_switch", 0.0
+        try:
+            limits_ok = self.rm.check_limits(price)
+        except StopLossExceeded:
+            self._persist("VIOLATION", symbol, "stop_loss", {})
+            cur = self.guard.st.positions.get(symbol, 0.0)
+            if abs(cur) > 0:
+                return True, "stop_loss", -cur
+            return False, "stop_loss", 0.0
+
+        if not limits_ok:
+            reason = self.rm.last_kill_reason or "kill_switch"
+            self._persist("VIOLATION", symbol, reason, {})
+            return False, reason, 0.0
 
         action, reason, metrics = self.guard.soft_cap_decision(symbol, side, qty, price)
         if action == "block":

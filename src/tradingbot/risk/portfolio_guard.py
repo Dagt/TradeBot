@@ -110,22 +110,29 @@ class PortfolioGuard:
         return float(np.std(rets) * np.sqrt(365))
 
     # ---- hard caps (como antes) ----
-    def would_exceed_caps(self, symbol: str, side: str, add_qty: float, price: float) -> Tuple[bool, str, dict]:
+    def would_exceed_caps(
+        self,
+        symbol: str,
+        side: str,
+        add_qty: float = 0.0,
+        price: float | None = None,
+    ) -> Tuple[bool, str, dict]:
         cur_pos = self.st.positions.get(symbol, 0.0)
+        px = price if price is not None else self.st.prices.get(symbol, 0.0)
         new_pos = cur_pos + (add_qty if side.lower()=="buy" else -add_qty)
-        sym_exp = abs(new_pos) * price
+        sym_exp = abs(new_pos) * px
 
         total = 0.0
         seen = set()
         for s, pos in self.st.positions.items():
             seen.add(s)
-            px = self.st.prices.get(s, 0.0)
+            px_s = self.st.prices.get(s, 0.0)
             if s == symbol:
-                total += abs(new_pos) * price
+                total += abs(new_pos) * px
             else:
-                total += abs(pos) * px
+                total += abs(pos) * px_s
         if symbol not in seen:
-            total += abs(new_pos) * price
+            total += abs(new_pos) * px
 
         if self.st.per_symbol_cap_usdt is not None and sym_exp > self.st.per_symbol_cap_usdt:
             return (

@@ -268,9 +268,9 @@ class RiskManager:
 
         delta = self.size(
             side,
-            price,
-            equity,
-            strength,
+            strength=strength,
+            equity=equity,
+            price=price,
             symbol=symbol,
             symbol_vol=symbol_vol,
             correlations=correlations,
@@ -282,8 +282,12 @@ class RiskManager:
 
         try:
             if not self.check_limits(price):
-                return False, "kill_switch", 0.0
+                reason = self.last_kill_reason or "kill_switch"
+                return False, reason, 0.0
         except StopLossExceeded:
+            close_qty = -self.pos.qty
+            if abs(close_qty) > 0:
+                return True, "stop_loss", close_qty
             return False, "stop_loss", 0.0
         return True, "", delta
 
