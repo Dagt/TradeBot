@@ -47,7 +47,8 @@ ADAPTERS: Dict[Tuple[str, str], AdapterTuple] = {
 @dataclass
 class _SymbolConfig:
     symbol: str
-    trade_qty: float
+    equity_pct: float
+    risk_pct: float
 
 async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: int,
                       dry_run: bool, total_cap_pct: float, per_symbol_cap_pct: float,
@@ -74,7 +75,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
             exec_adapter = exec_cls()
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(equity_pct=1.0)
+    risk_core = RiskManager(equity_pct=cfg.equity_pct, risk_pct=cfg.risk_pct)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,
@@ -153,7 +154,8 @@ async def run_live_testnet(
     exchange: str = "binance",
     market: str = "spot",
     symbols: List[str] | None = None,
-    trade_qty: float = 0.001,
+    equity_pct: float = 1.0,
+    risk_pct: float = 0.0,
     leverage: int = 1,
     dry_run: bool = False,
     total_cap_pct: float = 1.0,
@@ -170,7 +172,10 @@ async def run_live_testnet(
     if (exchange, market) not in ADAPTERS:
         raise ValueError(f"Unsupported combination {exchange} {market}")
     symbols = symbols or ["BTC/USDT"]
-    cfgs = [_SymbolConfig(symbol=s.upper().replace("-", "/"), trade_qty=trade_qty) for s in symbols]
+    cfgs = [
+        _SymbolConfig(symbol=s.upper().replace("-", "/"), equity_pct=equity_pct, risk_pct=risk_pct)
+        for s in symbols
+    ]
     tasks = [
         _run_symbol(
             exchange,

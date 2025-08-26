@@ -667,12 +667,11 @@ class BotConfig(BaseModel):
     pairs: list[str] | None = None
     notional: float | None = None
     venue: str | None = None
-    trade_qty: float | None = None
+    equity_pct: float | None = None
     leverage: int | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
     risk_pct: float | None = None
-    max_drawdown_pct: float | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
     spot: str | None = None
@@ -719,8 +718,8 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--notional", str(cfg.notional)])
     if cfg.venue:
         args.extend(["--venue", cfg.venue])
-    if cfg.trade_qty is not None:
-        args.extend(["--trade-qty", str(cfg.trade_qty)])
+    if cfg.equity_pct is not None:
+        args.extend(["--equity-pct", str(cfg.equity_pct)])
     if cfg.leverage is not None:
         args.extend(["--leverage", str(cfg.leverage)])
     if cfg.stop_loss is not None:
@@ -729,8 +728,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.extend(["--take-profit", str(cfg.take_profit)])
     if cfg.risk_pct is not None:
         args.extend(["--risk-pct", str(cfg.risk_pct)])
-    if cfg.max_drawdown_pct is not None:
-        args.extend(["--max-drawdown-pct", str(cfg.max_drawdown_pct)])
     if cfg.testnet is not None:
         args.append("--testnet" if cfg.testnet else "--no-testnet")
     if cfg.dry_run is not None:

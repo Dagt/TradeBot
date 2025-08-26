@@ -127,7 +127,8 @@ _config: dict[str, object] = {
     "notional": None,
     "params": {},
     "venue": "binance_spot",
-    "trade_qty": 0.001,
+    "equity_pct": 0.0,
+    "risk_pct": 0.0,
     "leverage": 1,
     "testnet": True,
     "dry_run": False,
@@ -257,7 +258,8 @@ class BotConfig(BaseModel):
     notional: float | None = None
     params: dict | None = None
     venue: str | None = None
-    trade_qty: float | None = None
+    equity_pct: float | None = None
+    risk_pct: float | None = None
     leverage: int | None = None
     testnet: bool | None = None
     dry_run: bool | None = None
@@ -285,8 +287,8 @@ def update_config(cfg: BotConfig) -> dict:
             continue
         if key == "notional" and value <= 0:
             raise HTTPException(status_code=400, detail="notional must be positive")
-        if key == "trade_qty" and value <= 0:
-            raise HTTPException(status_code=400, detail="trade_qty must be positive")
+        if key in {"equity_pct", "risk_pct"} and value < 0:
+            raise HTTPException(status_code=400, detail=f"{key} must be non-negative")
         if key == "leverage" and value <= 0:
             raise HTTPException(status_code=400, detail="leverage must be positive")
         if key == "pairs":
@@ -345,8 +347,10 @@ async def bot_start() -> dict:
         args.extend(["--notional", str(_config["notional"])])
     if _config.get("venue"):
         args.extend(["--venue", str(_config["venue"])])
-    if _config.get("trade_qty") is not None:
-        args.extend(["--trade-qty", str(_config["trade_qty"])])
+    if _config.get("equity_pct") is not None:
+        args.extend(["--equity-pct", str(_config["equity_pct"])])
+    if _config.get("risk_pct") is not None:
+        args.extend(["--risk-pct", str(_config["risk_pct"])])
     if _config.get("leverage") is not None:
         args.extend(["--leverage", str(_config["leverage"])])
     testnet = _config.get("testnet")

@@ -14,6 +14,8 @@ import random
 
 from ..risk.manager import RiskManager
 from ..risk.limits import RiskLimits
+from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.service import RiskService
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
 
@@ -145,7 +147,6 @@ class EventDrivenBacktestEngine:
         stress: StressConfig | None = None,
         seed: int | None = None,
         initial_equity: float = 0.0,
-        trade_qty: float = 1.0,
         risk_pct: float = 0.0,
         max_notional: float = 0.0,
         equity_pct: float = 0.0,
@@ -170,7 +171,6 @@ class EventDrivenBacktestEngine:
             self.slippage.spread_mult *= self.stress.spread
 
         self.initial_equity = float(initial_equity)
-        self.trade_qty = float(trade_qty)
         self._equity_pct = float(equity_pct)
         self._risk_pct = float(risk_pct)
         self._max_notional = float(max_notional)
@@ -188,7 +188,7 @@ class EventDrivenBacktestEngine:
         self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}
-        self.risk: Dict[Tuple[str, str], RiskManager] = {}
+        self.risk: Dict[Tuple[str, str], RiskService] = {}
         self.strategy_exchange: Dict[Tuple[str, str], str] = {}
         for strat_info in strategies:
             if len(strat_info) == 2:
@@ -206,11 +206,15 @@ class EventDrivenBacktestEngine:
                 if self._max_notional > 0
                 else None
             )
-            self.risk[key] = RiskManager(
+            rm = RiskManager(
                 equity_pct=self._equity_pct,
                 risk_pct=self._risk_pct,
                 limits=limits,
             )
+            guard = PortfolioGuard(
+                GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue=exchange)
+            )
+            self.risk[key] = RiskService(rm, guard)
             self.strategy_exchange[key] = exchange
 
     # ------------------------------------------------------------------
@@ -255,11 +259,11 @@ class EventDrivenBacktestEngine:
                                 if not pd.isna(corr):
                                     corr_pairs[(a, b)] = float(corr)
                     any_rm = next(iter(self.risk.values()))
-                    cov_matrix = any_rm.covariance_matrix(returns_dict)
-                    for rm in self.risk.values():
+                    cov_matrix = any_rm.rm.covariance_matrix(returns_dict)
+                    for svc in self.risk.values():
                         if corr_pairs:
-                            rm.update_correlation(corr_pairs, 0.8)
-                        rm.update_covariance(cov_matrix, 0.8)
+                            svc.rm.update_correlation(corr_pairs, 0.8)
+                        svc.rm.update_covariance(cov_matrix, 0.8)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
@@ -324,16 +328,15 @@ class EventDrivenBacktestEngine:
                     equity -= cash + fee
                 else:
                     equity += cash - fee
-                self.risk[(order.strategy, order.symbol)].add_fill(
-                    order.side, fill_qty
-                )
+                svc = self.risk[(order.strategy, order.symbol)]
+                svc.on_fill(order.symbol, order.side, fill_qty)
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty
                 if order.remaining_qty <= 1e-9:
                     if order.latency is None:
                         order.latency = i - order.place_index
-                    self.risk[(order.strategy, order.symbol)].complete_order()
+                    svc.rm.complete_order()
                 fills.append(
                     (
                         bar.get("timestamp", i),
@@ -357,28 +360,26 @@ class EventDrivenBacktestEngine:
                 sig = strat.on_bar({"window": window_df})
                 if sig is None or sig.side == "flat":
                     continue
-                risk = self.risk[(strat_name, symbol)]
+                svc = self.risk[(strat_name, symbol)]
                 place_price = float(df["close"].iloc[i])
-                if not risk.check_limits(place_price):
-                    continue
+                svc.mark_price(symbol, place_price)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
-                delta = risk.size(
+                allowed, _reason, delta = svc.check_order(
+                    symbol,
                     sig.side,
-                    place_price,
                     equity,
-                    sig.strength,
-                    symbol=symbol,
+                    place_price,
+                    strength=sig.strength,
                     symbol_vol=symbol_vol,
+                    corr_threshold=0.8,
                 )
-                if abs(delta) < 1e-9:
+                if not allowed or abs(delta) < 1e-9:
                     continue
                 side = "buy" if delta > 0 else "sell"
-                qty = min(abs(delta), self.trade_qty)
-                if qty < 1e-9:
-                    continue
+                qty = abs(delta)
                 notional = qty * place_price
-                if not risk.register_order(notional):
+                if not svc.rm.register_order(notional):
                     continue
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 base_latency = self.exchange_latency.get(exchange, self.latency)
@@ -407,7 +408,7 @@ class EventDrivenBacktestEngine:
 
             # ------------------------------------------------------------------
             # Apply funding payments after processing the bar
-            for (strat_name, symbol), risk in self.risk.items():
+            for (strat_name, symbol), svc in self.risk.items():
                 df = self.data[symbol]
                 if i >= len(df):
                     continue
@@ -415,7 +416,7 @@ class EventDrivenBacktestEngine:
                 rate = float(bar.get("funding_rate", 0.0))
                 if rate:
                     price = float(bar.get("close", 0.0))
-                    pos = risk.pos.qty
+                    pos = svc.rm.pos.qty
                     cash = pos * price * rate
                     equity -= cash
                     funding_total += cash
@@ -424,8 +425,8 @@ class EventDrivenBacktestEngine:
         equity_curve.append(equity)
 
         # Liquidate remaining positions
-        for (strat_name, symbol), risk in self.risk.items():
-            pos = risk.pos.qty
+        for (strat_name, symbol), svc in self.risk.items():
+            pos = svc.rm.pos.qty
             if abs(pos) > 1e-9:
                 last_price = float(self.data[symbol]["close"].iloc[-1])
                 equity += pos * last_price
@@ -492,7 +493,6 @@ def run_backtest_csv(
     cancel_unfilled: bool = False,
     stress: StressConfig | None = None,
     seed: int | None = None,
-    trade_qty: float = 1.0,
     risk_pct: float = 0.0,
     max_notional: float = 0.0,
     equity_pct: float = 0.0,
@@ -513,7 +513,6 @@ def run_backtest_csv(
         cancel_unfilled=cancel_unfilled,
         stress=stress,
         seed=seed,
-        trade_qty=trade_qty,
         risk_pct=risk_pct,
         max_notional=max_notional,
         equity_pct=equity_pct,
@@ -540,7 +539,6 @@ def run_backtest_mlflow(
     stress: StressConfig | None = None,
     seed: int | None = None,
     experiment: str = "backtest",
-    trade_qty: float = 1.0,
     risk_pct: float = 0.0,
     max_notional: float = 0.0,
     equity_pct: float = 0.0,
@@ -574,7 +572,6 @@ def run_backtest_mlflow(
             cancel_unfilled=cancel_unfilled,
             stress=stress,
             seed=seed,
-            trade_qty=trade_qty,
             risk_pct=risk_pct,
             max_notional=max_notional,
             equity_pct=equity_pct,

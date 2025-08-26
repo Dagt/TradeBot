@@ -80,7 +80,8 @@ def _get_keys(exchange: str) -> Tuple[str | None, str | None]:
 @dataclass
 class _SymbolConfig:
     symbol: str
-    trade_qty: float
+    equity_pct: float
+    risk_pct: float
 
 
 async def _run_symbol(
@@ -107,7 +108,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(equity_pct=1.0)
+    risk_core = RiskManager(equity_pct=cfg.equity_pct, risk_pct=cfg.risk_pct)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -192,7 +193,8 @@ async def run_live_real(
     exchange: str = "binance",
     market: str = "spot",
     symbols: List[str] | None = None,
-    trade_qty: float = 0.001,
+    equity_pct: float = 1.0,
+    risk_pct: float = 0.0,
     leverage: int = 1,
     dry_run: bool = False,
     *,
@@ -217,7 +219,7 @@ async def run_live_real(
         raise ValueError(f"Unsupported combination {exchange} {market}")
     symbols = symbols or ["BTC/USDT"]
     cfgs = [
-        _SymbolConfig(symbol=s.upper().replace("-", "/"), trade_qty=trade_qty)
+        _SymbolConfig(symbol=s.upper().replace("-", "/"), equity_pct=equity_pct, risk_pct=risk_pct)
         for s in symbols
     ]
     tasks = [
