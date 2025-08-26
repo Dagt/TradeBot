@@ -425,8 +425,7 @@ class EventDrivenBacktestEngine:
             }
             for o in orders
         ]
-        initial_capital = getattr(self, "initial_capital", 0.0)
-        pnl = equity - initial_capital
+
         result = {
             "equity": equity,
             "pnl": pnl,
@@ -434,7 +433,6 @@ class EventDrivenBacktestEngine:
             "orders": orders_summary,
             "slippage": slippage_total,
             "funding": funding_total,
-            "pnl": pnl,
             "sharpe": sharpe,
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
