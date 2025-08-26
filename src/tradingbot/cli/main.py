@@ -877,6 +877,7 @@ def backtest(
     data: str,
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    capital: float = typer.Option(0.0, help="Capital inicial"),
 ) -> None:
     """Run a simple vectorised backtest from a CSV file."""
     from pathlib import Path
@@ -889,14 +890,14 @@ def backtest(
     log.info("Iniciando backtest CSV: %s %s", symbol, data)
     df = pd.read_csv(Path(data))
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))
 
 
 @app.command("backtest-cfg")
-def backtest_cfg(config: str) -> None:
+def backtest_cfg(config: str, capital: float = typer.Option(0.0, help="Capital inicial")) -> None:
     """Run a backtest using a Hydra YAML configuration."""
 
     from pathlib import Path
@@ -928,7 +929,7 @@ def backtest_cfg(config: str) -> None:
         log.info("Iniciando backtest CSV: %s %s", symbol, data)
         df = pd.read_csv(data)
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-        eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+        eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
         result = eng.run()
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
@@ -954,6 +955,7 @@ def backtest_db(
     start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
+    capital: float = typer.Option(0.0, help="Capital inicial"),
 ) -> None:
     """Run a backtest using data stored in the database."""
 
@@ -994,7 +996,7 @@ def backtest_db(
         .set_index("ts")
     )
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)])
+    eng = EventDrivenBacktestEngine({symbol: df}, [(strategy, symbol)], initial_equity=capital)
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))

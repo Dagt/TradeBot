@@ -57,6 +57,10 @@
         <label for="bt-strategy">Estrategia</label>
         <select id="bt-strategy"></select>
       </div>
+      <div id="field-capital">
+        <label for="bt-capital">Capital inicial</label>
+        <input id="bt-capital" type="number" step="any" placeholder=""/>
+      </div>
       <div id="field-config">
         <label for="bt-config">Archivo config</label>
         <input id="bt-config" placeholder="config.yaml"/>
@@ -286,6 +290,7 @@ async function runBacktest(){
   outEl.textContent='Iniciando...\n';
   let cmd='';
   const mode=document.getElementById('bt-mode').value;
+  const capital=document.getElementById('bt-capital').value.trim();
   if(mode==='csv'){
     const data=document.getElementById('bt-data').value.trim();
     const sym=normalizeSymbol(document.getElementById('bt-symbol').value.trim());
@@ -304,6 +309,9 @@ async function runBacktest(){
     const start=document.getElementById('bt-start').value;
     const end=document.getElementById('bt-end').value;
     cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
+  }
+  if(capital && mode!=='walk'){
+    cmd+=` --capital ${capital}`;
   }
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
