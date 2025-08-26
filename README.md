@@ -64,11 +64,13 @@ entorno real de Binance Futures.
 
 ## Gestión de riesgo
 
-La asignación de capital depende únicamente del parámetro `strength` de las
-señales: `strength = 1.0` usa todo el capital disponible, valores mayores
-piramidan la exposición y menores la reducen. Para limitar la exposición se
-puede emplear `PortfolioGuard`, configurando `total_cap_pct` para la exposición
-global y `per_symbol_cap_pct` para cada símbolo.
+Las señales incluyen un parámetro `strength` que dimensiona la orden según
+`notional = equity * strength`. Un `strength = 1.0` usa todo el capital
+disponible, valores mayores piramidan la posición y menores la reducen. El
+gestor de riesgo aplica un stop‑loss local con `risk_pct`, cerrando la posición
+si la pérdida latente supera `notional * risk_pct`. Para limitar la exposición
+global puede emplearse `PortfolioGuard`, configurando `total_cap_pct` y
+`per_symbol_cap_pct`.
 
 `DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
 superan los límites configurados, detiene el bot o cierra las posiciones

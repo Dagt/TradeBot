@@ -1,8 +1,9 @@
 """Helpers for position sizing based on volatility targets.
 
-This module now also provides utilities to translate signal strength into
-actual position deltas, ensuring consistent pyramiding and reduction across
-strategies.
+This module also provides utilities to translate signal strength into actual
+position deltas via ``notional = equity * strength``, ensuring consistent
+pyramiding and reduction across strategies. Local stop‑losses use ``risk_pct``
+as ``notional * risk_pct``.
 """
 
 from __future__ import annotations
@@ -41,6 +42,11 @@ def delta_from_strength(
     current_qty: float,
 ) -> float:
     """Translate a signal ``strength`` into a position delta.
+
+    ``strength`` controls notional through ``notional = equity * strength``.
+    Values above ``1.0`` pyramid exposure, values between ``0`` and ``1`` scale
+    it down and negatives close or flip the position. A separate ``risk_pct``
+    can later apply a local stop‑loss as ``notional * risk_pct``.
 
     Parameters
     ----------

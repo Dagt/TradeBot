@@ -2,7 +2,12 @@
 
 ## Asignación por señal
 
-La cantidad operada por cada señal se determina únicamente por su atributo `strength`. Un valor de `1.0` utiliza todo el capital disponible; valores mayores piramidan la posición y menores reducen la exposición. Por ejemplo, una señal con `strength = 1.5` incrementa la posición un 50 %, mientras que `strength = 0.5` la reduce a la mitad.
+Cada señal trae un `strength` que define el tamaño según la fórmula
+`notional = equity * strength`. Un valor de `1.0` utiliza todo el capital
+disponible, valores mayores piramidan la posición y menores la reducen.
+Por ejemplo, `strength = 1.5` incrementa la exposición un 50 %, mientras que
+`strength = 0.5` la reduce a la mitad. El campo `risk_pct` actúa como
+stop‑loss local: la posición se cierra si la pérdida supera `notional * risk_pct`.
 
 ## PortfolioGuard
 
