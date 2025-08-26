@@ -51,7 +51,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     fills = 0
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=1.0, equity_actual=1.0),
             PortfolioGuard(GuardConfig(venue="binance")),
         )
 

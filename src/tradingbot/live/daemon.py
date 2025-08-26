@@ -505,7 +505,7 @@ class TradeBotDaemon:
             self.risk.update_correlation(corr_pairs, self.corr_threshold)
             self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
-        delta = self.risk.size(side, strength)
+        delta = self.risk.size(side, price, strength)
         delta += self.risk.size_with_volatility(symbol_vol)
         delta = self.risk.adjust_size_for_correlation(
             symbol, delta, corr_pairs, self.corr_threshold

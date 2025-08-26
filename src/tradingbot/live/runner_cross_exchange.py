@@ -40,7 +40,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     bus = EventBus()
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=1.0, equity_actual=1.0),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )

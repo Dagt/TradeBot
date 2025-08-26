@@ -24,7 +24,7 @@ async def test_risk_service_correlation_limits_and_sizing():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(max_pos=2.0, bus=bus)
+    rm = RiskManager(equity_pct=1.0, equity_actual=200.0, bus=bus)
     guard = PortfolioGuard(
         GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="test")
     )
@@ -35,7 +35,7 @@ async def test_risk_service_correlation_limits_and_sizing():
     exceeded = svc.update_correlation(0.8)
     await asyncio.sleep(0)
     assert exceeded == [("AAA", "BBB")]
-    assert rm.max_pos == pytest.approx(1.0)
+    assert rm.equity_pct == pytest.approx(0.5)
     assert events and events[0]["reason"] == "correlation"
 
     allowed, _, delta = svc.check_order(
