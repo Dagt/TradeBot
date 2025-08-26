@@ -26,7 +26,7 @@ import numpy as np
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
-from .position_sizing import vol_target
+from .position_sizing import vol_target, delta_from_strength
 from sqlalchemy import text
 
 
@@ -237,28 +237,28 @@ class RiskManager:
         correlations: Dict[Tuple[str, str], float] | None = None,
         threshold: float = 0.0,
     ) -> float:
-        """Compute desired position delta with optional volatility and correlation adjustments.
+        """Compute position delta for a strength-based signal.
 
         Parameters
         ----------
         signal_side:
-            "buy" para posición larga, "sell" para corta.
+            ``"buy"`` para posición larga, ``"sell"`` para corta.
         strength:
-            Factor para escalar la posición objetivo.
+            Fracción de ``max_pos`` que se desea alcanzar. Valores fuera de
+            ``[0, 1]`` se recortan. ``0`` cierra la posición.
         symbol:
             Símbolo del activo (necesario si se aplican correlaciones).
         symbol_vol:
-            Volatilidad actual del símbolo para ajustar al objetivo ``vol_target``.
+            Volatilidad actual del símbolo para ajustar al objetivo
+            ``vol_target``.
         correlations:
-            Mapa de correlaciones {(sym_a, sym_b): rho} para limitar tamaño.
+            Mapa de correlaciones ``{(sym_a, sym_b): rho}`` para limitar
+            tamaño.
         threshold:
             Umbral de correlación sobre el cual se reduce la posición.
         """
 
-        target = self.max_pos * (
-            1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
-        )
-        delta = (target - self.pos.qty) * strength
+        delta = delta_from_strength(signal_side, strength, self.max_pos, self.pos.qty)
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol)

@@ -66,11 +66,13 @@ class CashAndCarry(Strategy):
             return None
         basis = (perp - spot) / spot
         if funding > 0 and basis > self.cfg.threshold:
+            strength = min(1.0, basis)
             self._persist_signal(basis, spot, perp)
-            return Signal("buy", basis)
+            return Signal("buy", strength)
         if funding < 0 and basis < -self.cfg.threshold:
+            strength = min(1.0, -basis)
             self._persist_signal(basis, spot, perp)
-            return Signal("sell", -basis)
+            return Signal("sell", strength)
         return Signal("flat", 0.0)
 
     def _persist_signal(self, basis: float, spot_px: float, perp_px: float) -> None:
