@@ -507,20 +507,19 @@ class TradeBotDaemon:
             self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
         equity = self.guard.equity if self.guard else self.equity
-        delta = self.risk.size(
+        allowed, reason, delta = self.risk.check_order(
+            symbol,
             side,
-            price,
             equity,
-            strength,
-            symbol=symbol,
+            price or 0.0,
+            strength=strength,
             symbol_vol=symbol_vol,
             correlations=corr_pairs,
             threshold=self.corr_threshold,
         )
-        if abs(delta) <= 0:
-            return
-        if price is not None and not self.risk.check_limits(price):
-            log.warning("risk_halt", extra={"price": price})
+        if not allowed or abs(delta) <= 0:
+            if not allowed:
+                log.warning("risk_block", extra={"symbol": symbol, "reason": reason})
             return
         order = Order(
             symbol=symbol,

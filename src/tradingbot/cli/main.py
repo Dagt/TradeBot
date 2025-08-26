@@ -751,7 +751,7 @@ def run_daemon(config: str = "config/config.yaml") -> None:
 
         adapter = BinanceSpotWSAdapter()
         bus = EventBus()
-        risk = RiskManager(bus=bus)
+        risk = RiskManager(equity_pct=1.0, risk_pct=0.0, bus=bus)
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 
