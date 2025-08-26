@@ -6,7 +6,11 @@ Todos los comandos se ejecutan como:
 python -m tradingbot.cli <comando> [opciones]
 ```
 
-A continuación se describen los comandos disponibles.
+A continuación se describen los comandos disponibles. Todas las estrategias
+emiten señales con un campo `strength` que se traduce en `notional = equity * strength`.
+Valores mayores a `1.0` piramidan la exposición, menores la desescalan. El
+parámetro `risk_pct` define un stop‑loss local: la posición se cierra si la
+pérdida supera `notional * risk_pct`.
 
 ## `ingest`
 Recibe datos de mercado en vivo y opcionalmente los almacena.

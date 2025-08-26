@@ -234,9 +234,10 @@ class RiskManager:
     ) -> float:
         """Compute position delta for a strength-based signal.
 
-        ``equity`` es el equity actual de la cuenta utilizado para dimensionar
-        la posición. ``price`` es el precio del activo. ``strength`` representa
-        la fracción de equity deseada.
+        El tamaño se obtiene con ``notional = equity * strength``. ``price`` es
+        el precio del activo y ``equity`` el capital actual. Valores de
+        ``strength`` mayores a ``1`` piramidan la posición y menores la
+        reducen. El stop‑loss local se calcula aparte como ``notional * risk_pct``.
         """
 
         signed_strength = strength if signal_side == "buy" else -strength
