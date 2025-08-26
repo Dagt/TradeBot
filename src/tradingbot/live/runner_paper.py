@@ -42,7 +42,6 @@ async def run_paper(
     config_path: str | None = None,
     metrics_port: int = 8000,
     corr_threshold: float = 0.8,
-    equity_pct: float = 1.0,
     risk_pct: float = 0.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
@@ -51,7 +50,7 @@ async def run_paper(
     broker = PaperAdapter()
     router = ExecutionRouter([broker])
 
-    risk_core = RiskManager(equity_pct=equity_pct, risk_pct=risk_pct)
+    risk_core = RiskManager(risk_pct=risk_pct)
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
     guard.refresh_usd_caps(1000.0)
     corr = CorrelationService()

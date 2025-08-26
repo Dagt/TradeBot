@@ -623,7 +623,6 @@ def run_bot(
     ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
-    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Fraction of equity to use"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
@@ -640,7 +639,6 @@ def run_bot(
                 exchange=exchange,
                 market=market,
                 symbols=symbols,
-                equity_pct=equity_pct,
                 risk_pct=risk_pct,
                 leverage=leverage,
                 dry_run=dry_run,
@@ -652,7 +650,6 @@ def run_bot(
         asyncio.run(
             run_live_binance(
                 symbol=symbols[0],
-                equity_pct=equity_pct,
                 risk_pct=risk_pct,
             )
         )
@@ -664,7 +661,6 @@ def paper_run(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
-    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
@@ -678,7 +674,6 @@ def paper_run(
             strategy_name=strategy,
             config_path=config,
             metrics_port=metrics_port,
-            equity_pct=equity_pct,
             risk_pct=risk_pct,
         )
     )
@@ -693,7 +688,6 @@ def real_run(
         help=f"Trading venue ({_VENUE_CHOICES})",
     ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
-    equity_pct: float = typer.Option(1.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Simulate orders without sending"),
@@ -718,7 +712,6 @@ def real_run(
             exchange=exchange,
             market=market,
             symbols=symbols,
-            equity_pct=equity_pct,
             risk_pct=risk_pct,
             leverage=leverage,
             dry_run=dry_run,
@@ -755,7 +748,7 @@ def run_daemon(config: str = "config/config.yaml") -> None:
 
         adapter = BinanceSpotWSAdapter()
         bus = EventBus()
-        risk = RiskManager(equity_pct=1.0, risk_pct=0.0, bus=bus)
+        risk = RiskManager(risk_pct=0.0, bus=bus)
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 
@@ -890,7 +883,6 @@ def backtest(
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -909,7 +901,6 @@ def backtest(
         {symbol: df},
         [(strategy, symbol)],
         initial_equity=capital,
-        equity_pct=equity_pct,
         risk_pct=risk_pct,
         max_notional=max_notional,
     )
@@ -922,7 +913,6 @@ def backtest(
 def backtest_cfg(
     config: str,
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -961,7 +951,6 @@ def backtest_cfg(
             {symbol: df},
             [(strategy, symbol)],
             initial_equity=capital,
-            equity_pct=equity_pct,
             risk_pct=risk_pct,
             max_notional=max_notional,
         )
@@ -991,7 +980,6 @@ def backtest_db(
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -1038,7 +1026,6 @@ def backtest_db(
         {symbol: df},
         [(strategy, symbol)],
         initial_equity=capital,
-        equity_pct=equity_pct,
         risk_pct=risk_pct,
         max_notional=max_notional,
     )

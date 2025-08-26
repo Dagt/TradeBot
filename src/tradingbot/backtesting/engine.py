@@ -149,7 +149,6 @@ class EventDrivenBacktestEngine:
         initial_equity: float = 0.0,
         risk_pct: float = 0.0,
         max_notional: float = 0.0,
-        equity_pct: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -171,7 +170,6 @@ class EventDrivenBacktestEngine:
             self.slippage.spread_mult *= self.stress.spread
 
         self.initial_equity = float(initial_equity)
-        self._equity_pct = float(equity_pct)
         self._risk_pct = float(risk_pct)
         self._max_notional = float(max_notional)
 
@@ -207,7 +205,6 @@ class EventDrivenBacktestEngine:
                 else None
             )
             rm = RiskManager(
-                equity_pct=self._equity_pct,
                 risk_pct=self._risk_pct,
                 limits=limits,
             )
@@ -495,7 +492,6 @@ def run_backtest_csv(
     seed: int | None = None,
     risk_pct: float = 0.0,
     max_notional: float = 0.0,
-    equity_pct: float = 0.0,
     initial_equity: float = 0.0,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
@@ -515,7 +511,6 @@ def run_backtest_csv(
         seed=seed,
         risk_pct=risk_pct,
         max_notional=max_notional,
-        equity_pct=equity_pct,
         initial_equity=initial_equity,
     )
     return engine.run()
@@ -541,7 +536,6 @@ def run_backtest_mlflow(
     experiment: str = "backtest",
     risk_pct: float = 0.0,
     max_notional: float = 0.0,
-    equity_pct: float = 0.0,
     initial_equity: float = 0.0,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
@@ -574,7 +568,6 @@ def run_backtest_mlflow(
             seed=seed,
             risk_pct=risk_pct,
             max_notional=max_notional,
-            equity_pct=equity_pct,
             initial_equity=initial_equity,
         )
         log_backtest_metrics(result)
