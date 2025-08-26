@@ -38,7 +38,7 @@ class BreakoutVol(Strategy):
         upper = mean + self.mult * std
         lower = mean - self.mult * std
         if last > upper:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if last < lower:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

@@ -28,7 +28,7 @@ class BreakoutATR(Strategy):
         upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
         last_close = df["close"].iloc[-1]
         if last_close > upper.iloc[-1]:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if last_close < lower.iloc[-1]:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

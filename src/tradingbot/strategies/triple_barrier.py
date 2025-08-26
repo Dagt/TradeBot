@@ -144,13 +144,13 @@ class TripleBarrier(Strategy):
         x_last = features.iloc[[-1]]
         pred = self.model.predict(x_last)[0]
         if pred == 0:
-            return Signal("flat", 0.0)
+            return Signal("flat", 0.0, target_pct=0.0)
         if self.meta_fitted:
             meta_pred = self.meta_model.predict(x_last)[0]
             if meta_pred == 0:
-                return Signal("flat", 0.0)
+                return Signal("flat", 0.0, target_pct=0.0)
         if pred == 1:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if pred == -1:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

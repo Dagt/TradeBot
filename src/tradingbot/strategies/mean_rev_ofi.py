@@ -57,10 +57,10 @@ class MeanRevOFI(Strategy):
         vol = returns(df).rolling(self.vol_window).std().iloc[-1]
 
         if pd.isna(zscore) or pd.isna(vol) or vol >= self.vol_threshold:
-            return Signal("flat", 0.0)
+            return Signal("flat", 0.0, target_pct=0.0)
 
         if zscore > self.zscore_threshold:
-            return Signal("sell", 1.0)
+            return Signal("sell", 1.0, target_pct=1.0)
         if zscore < -self.zscore_threshold:
-            return Signal("buy", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("buy", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

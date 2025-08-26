@@ -28,7 +28,7 @@ class DepthImbalance(Strategy):
         di_series = depth_imbalance(df[list(needed)])
         di_mean = di_series.iloc[-self.window :].mean()
         if di_mean > self.threshold:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if di_mean < -self.threshold:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

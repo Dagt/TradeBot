@@ -29,7 +29,7 @@ class AlwaysBuy:
     name = "always_buy"
 
     def on_trade(self, trade):
-        return Signal("buy", 1.0)
+        return Signal("buy", 1.0, target_pct=1.0)
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_daemon_adjusts_size_for_correlation():
     daemon.price_history["BBB"] = deque([2, 4, 6, 8], maxlen=10)
 
     trade = type("T", (), {"symbol": "AAA", "price": 4.0})
-    sig = Signal("buy", 1.0)
+    sig = Signal("buy", 1.0, target_pct=1.0)
 
     await daemon._on_signal({"signal": sig, "trade": trade})
 
@@ -92,7 +92,7 @@ async def test_daemon_emits_event_on_high_correlation():
     daemon.price_history["AAA"] = deque([1, 2, 3], maxlen=5)
     daemon.price_history["BBB"] = deque([2, 4, 6], maxlen=5)
     trade = type("T", (), {"symbol": "AAA", "price": 4.0})
-    sig = Signal("buy", 1.0)
+    sig = Signal("buy", 1.0, target_pct=1.0)
     await daemon._on_signal({"signal": sig, "trade": trade})
     await asyncio.sleep(0)
     assert risk.max_pos == pytest.approx(0.5)

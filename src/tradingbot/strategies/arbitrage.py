@@ -32,7 +32,7 @@ class Arbitrage(Strategy):
         replace this with a real implementation later on.
         """
 
-        return Signal("flat", 0.0)
+        return Signal("flat", 0.0, target_pct=0.0)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:

@@ -81,10 +81,10 @@ class MLStrategy(Strategy):
         except NotFittedError:
             return None
         if proba >= self.threshold:
-            return Signal("buy", proba)
+            return Signal("buy", proba, target_pct=proba)
         if proba <= 1 - self.threshold:
-            return Signal("sell", 1 - proba)
-        return Signal("flat", 1.0 - abs(0.5 - proba) * 2)
+            return Signal("sell", 1 - proba, target_pct=1 - proba)
+        return Signal("flat", 1.0 - abs(0.5 - proba) * 2, target_pct=1.0 - abs(0.5 - proba) * 2)
 
 
 __all__ = ["MLStrategy"]

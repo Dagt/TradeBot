@@ -9,11 +9,31 @@ import yaml
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
 
+
 @dataclass
 class Signal:
+    """Simple representation of a trading signal.
+
+    Attributes
+    ----------
+    side:
+        ``"buy"``, ``"sell"`` or ``"flat"``.
+    strength:
+        Relative magnitude of the signal.  This value is left unchanged for
+        compatibility with existing risk sizing logic.
+    reduce_only:
+        When ``True`` the signal should only reduce an existing position.
+    target_pct:
+        Desired fraction (0–1) of account equity the strategy wants to hold
+        after acting on this signal.  A target above the current exposure
+        implies scaling the position up while a lower value means scaling
+        down.
+    """
+
     side: str  # 'buy' | 'sell' | 'flat'
     strength: float = 1.0
     reduce_only: bool = False
+    target_pct: float = 1.0
 
 class Strategy(ABC):
     name: str

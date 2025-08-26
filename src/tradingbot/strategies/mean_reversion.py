@@ -37,10 +37,10 @@ class MeanReversion(Strategy):
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
         if last_rsi > self.upper and ofi_val <= 0:
-            return Signal("sell", 1.0)
+            return Signal("sell", 1.0, target_pct=1.0)
         if last_rsi < self.lower and ofi_val >= 0:
-            return Signal("buy", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("buy", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:

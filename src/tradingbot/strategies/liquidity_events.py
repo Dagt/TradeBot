@@ -30,13 +30,13 @@ class LiquidityEvents(Strategy):
 
         vac = book_vacuum(df[list({"bid_qty", "ask_qty"})], self.vacuum_threshold).iloc[-1]
         if vac > 0:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if vac < 0:
-            return Signal("sell", 1.0)
+            return Signal("sell", 1.0, target_pct=1.0)
 
         gap = liquidity_gap(df[list({"bid_px", "ask_px"})], self.gap_threshold).iloc[-1]
         if gap > 0:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if gap < 0:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)

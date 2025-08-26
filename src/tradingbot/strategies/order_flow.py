@@ -26,7 +26,7 @@ class OrderFlow(Strategy):
         ofi_series = calc_ofi(df[list(needed)])
         ofi_mean = ofi_series.iloc[-self.window:].mean()
         if ofi_mean > self.buy_threshold:
-            return Signal("buy", 1.0)
+            return Signal("buy", 1.0, target_pct=1.0)
         if ofi_mean < -self.sell_threshold:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+            return Signal("sell", 1.0, target_pct=1.0)
+        return Signal("flat", 0.0, target_pct=0.0)
