@@ -31,7 +31,6 @@ def test_engine_resilient_under_stress(monkeypatch):
         latency=1,
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
-        equity_pct=1.0,
         risk_pct=0.0,
         initial_equity=1000.0,
     )
@@ -43,7 +42,6 @@ def test_engine_resilient_under_stress(monkeypatch):
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
         stress=StressConfig(latency=2.0, spread=2.0),
-        equity_pct=1.0,
         risk_pct=0.0,
         initial_equity=1000.0,
     )

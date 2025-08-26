@@ -9,9 +9,7 @@ def test_size_scales_with_equity_and_strength():
     equity_small = 10_000.0
     equity_big = 20_000.0
     rm_small = RiskManager()
-    rm_small.equity_pct = 1.0
     rm_big = RiskManager()
-    rm_big.equity_pct = 1.0
 
     expected_small = equity_small * 0.5 / price
     expected_big = equity_big * 0.5 / price
@@ -29,7 +27,6 @@ def test_stop_loss_risk_pct():
 
     qty = equity * 0.10 / price
     rm = RiskManager(risk_pct=risk_pct)
-    rm.equity_pct = 1.0
     rm.set_position(qty)
 
     assert rm.check_limits(price)
@@ -65,7 +62,6 @@ def test_size_with_volatility_event():
     from tradingbot.utils.metrics import RISK_EVENTS
 
     rm = RiskManager(vol_target=0.02)
-    rm.equity_pct = 1.0
     before = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
     delta = rm.size_with_volatility(0.04, price=1.0, equity=10)
     after = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
@@ -78,7 +74,6 @@ def test_update_correlation_limits_exposure():
     from tradingbot.utils.metrics import RISK_EVENTS
 
     rm = RiskManager()
-    rm.equity_pct = 1.0
     pairs = {("BTC", "ETH"): 0.9}
     before = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
     exceeded = rm.update_correlation(pairs, 0.8)
@@ -92,7 +87,6 @@ def test_kill_switch_disables():
     from tradingbot.utils.metrics import RISK_EVENTS
 
     rm = RiskManager()
-    rm.equity_pct = 1.0
     before = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
     rm.kill_switch("manual")
     after = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
@@ -110,7 +104,6 @@ async def test_daily_loss_limit_via_bus():
     events = []
     bus.subscribe("risk:halted", lambda e: events.append(e))
     rm = RiskManager(daily_loss_limit=50, bus=bus)
-    rm.equity_pct = 1.0
     await bus.publish("pnl", {"delta": -60})
     await asyncio.sleep(0)
     assert rm.enabled is False
@@ -145,7 +138,6 @@ def test_covariance_limit_triggers_kill():
     from tradingbot.risk.manager import RiskManager
 
     rm = RiskManager()
-    rm.equity_pct = 1.0
     positions = {"BTC": 1.0, "ETH": 1.0}
     cov = {
         ("BTC", "BTC"): 0.04,

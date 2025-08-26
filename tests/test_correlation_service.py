@@ -55,7 +55,6 @@ def test_risk_service_uses_correlation_service():
     guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
     guard.refresh_usd_caps(1.0)
     rm = RiskManager(vol_target=0.02)
-    rm.equity_pct = 1.0
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
     now = datetime.now(timezone.utc)
@@ -95,7 +94,6 @@ def test_correlation_guard_groups_and_cap():
 
 def test_update_correlation_uses_guard_for_global_cap():
     rm = RiskManager()
-    rm.equity_pct = 1.0
     pairs = {
         ("BTC", "ETH"): 0.9,
         ("ETH", "SOL"): 0.85,

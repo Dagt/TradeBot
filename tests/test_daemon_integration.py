@@ -52,7 +52,6 @@ async def test_daemon_processes_trades():
     router = DummyRouter()
     bus = EventBus()
     risk = RiskManager(bus=bus)
-    risk.equity_pct = 1.0
     daemon = TradeBotDaemon({"feed": adapter}, [AlwaysBuy()], risk, router, ["BTCUSDT"])
     daemon.equity = 5.0
     task = asyncio.create_task(daemon.run())
@@ -80,7 +79,6 @@ async def test_daemon_adjusts_size_for_correlation():
             return {"status": "filled"}
 
     risk = DummyRisk()
-    risk.equity_pct = 1.0
     router = DummyRouter()
     daemon = TradeBotDaemon({}, [], risk, router, ["AAA"], returns_window=10)
     daemon.equity = 4.0
@@ -101,7 +99,6 @@ async def test_daemon_emits_event_on_high_correlation():
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
     risk = RiskManager(bus=bus)
-    risk.equity_pct = 1.0
     router = ExecutionRouter(PaperAdapter())
     daemon = TradeBotDaemon({}, [], risk, router, ["AAA", "BBB"], returns_window=5)
     daemon.equity = 2.0

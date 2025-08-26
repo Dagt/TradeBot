@@ -116,7 +116,7 @@ async def test_bybit_futures_order(monkeypatch):
         rt,
         "_SymbolConfig",
         lambda symbol, risk_pct: types.SimpleNamespace(
-            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+            symbol=symbol, risk_pct=risk_pct
         ),
     )
     monkeypatch.setitem(
@@ -183,7 +183,7 @@ async def test_run_real(monkeypatch):
         rr,
         "_SymbolConfig",
         lambda symbol, risk_pct: types.SimpleNamespace(
-            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+            symbol=symbol, risk_pct=risk_pct
         ),
     )
     monkeypatch.setitem(
@@ -245,7 +245,7 @@ async def test_okx_futures_order(monkeypatch):
         rt,
         "_SymbolConfig",
         lambda symbol, risk_pct: types.SimpleNamespace(
-            symbol=symbol, risk_pct=risk_pct, equity_pct=1.0
+            symbol=symbol, risk_pct=risk_pct
         ),
     )
     monkeypatch.setitem(

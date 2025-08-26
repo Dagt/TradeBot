@@ -25,7 +25,6 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         latency=1,
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
-        equity_pct=1.0,
         initial_equity=df["close"].iloc[0],
     )
     risk = engine.risk[("alwaysbuy", sym)]

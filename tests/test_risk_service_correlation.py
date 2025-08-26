@@ -26,7 +26,6 @@ async def test_risk_service_correlation_limits_and_sizing():
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
     rm = RiskManager(bus=bus)
-    rm.equity_pct = 1.0
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=50.0, per_symbol_cap_pct=50.0, venue="test")
     )
