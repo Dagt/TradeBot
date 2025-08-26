@@ -106,4 +106,39 @@ def breakout_df_sell():
 def risk_manager():
     from tradingbot.risk.manager import RiskManager
 
-    return RiskManager(max_pos=5)
+    equity = 10_000.0
+    position_pct = 0.10  # 10% del equity
+    risk_pct = 0.02      # arriesgar 2% del equity invertido
+    price = 100.0
+
+    max_pos = equity * position_pct / price
+    stop_loss_pct = risk_pct / position_pct
+
+    rm = RiskManager(max_pos=max_pos, stop_loss_pct=stop_loss_pct)
+    # Atributos auxiliares para las pruebas
+    rm.equity = equity
+    rm.price = price
+    rm.position_pct = position_pct
+    rm.risk_pct = risk_pct
+    return rm
+
+
+@pytest.fixture
+def portfolio_guard():
+    from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+
+    equity = 10_000.0
+    total_pct = 0.50       # 50% del equity total
+    per_symbol_pct = 0.20  # 20% por símbolo
+
+    cfg = GuardConfig(
+        total_cap_usdt=equity * total_pct,
+        per_symbol_cap_usdt=equity * per_symbol_pct,
+        venue="test",
+    )
+
+    guard = PortfolioGuard(cfg)
+    guard.equity = equity
+    guard.total_pct = total_pct
+    guard.per_symbol_pct = per_symbol_pct
+    return guard
