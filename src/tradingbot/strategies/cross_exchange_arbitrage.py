@@ -87,7 +87,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
-    risk = RiskManager()
+    risk = RiskManager(equity_pct=1.0, risk_pct=0.0)
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:

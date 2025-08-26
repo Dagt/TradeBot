@@ -259,6 +259,36 @@ class RiskManager:
 
         return delta
 
+    def check_order(
+        self,
+        symbol: str,
+        side: str,
+        equity: float,
+        price: float,
+        *,
+        strength: float = 1.0,
+        symbol_vol: float = 0.0,
+        correlations: Dict[Tuple[str, str], float] | None = None,
+        threshold: float = 0.0,
+    ) -> tuple[bool, str, float]:
+        """Calcular tamaño y validar límites para una orden."""
+
+        delta = self.size(
+            side,
+            price,
+            equity,
+            strength,
+            symbol=symbol,
+            symbol_vol=symbol_vol,
+            correlations=correlations,
+            threshold=threshold,
+        )
+        if abs(delta) <= 0:
+            return False, "zero_size", 0.0
+        if not self.check_limits(price):
+            return False, "kill_switch", 0.0
+        return True, "", delta
+
     def size_with_volatility(self, symbol_vol: float, price: float, equity: float) -> float:
         """Dimensiona la posición basada en un objetivo de volatilidad.
 

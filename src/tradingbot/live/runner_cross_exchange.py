@@ -40,7 +40,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     bus = EventBus()
     if risk is None:
         risk = RiskService(
-            RiskManager(equity_pct=1.0),
+            RiskManager(equity_pct=1.0, risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )
@@ -62,10 +62,15 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         edge = (last["perp"] - last["spot"]) / last["spot"]
         if abs(edge) < cfg.threshold:
             return
-        qty = cfg.notional / last["spot"]
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
-        equity = cfg.notional
+        equity = 0.0
+        if last["spot"] is not None:
+            equity += abs(balances.get(cfg.spot.name, 0.0)) * last["spot"]
+        if last["perp"] is not None:
+            equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
+        if equity <= 0:
+            equity = cfg.notional
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
@@ -82,20 +87,25 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         )
         if not (ok1 and ok2):
             return
-        order_spot = Order(cfg.symbol, spot_side, "market", abs(delta1))
-        order_perp = Order(cfg.symbol, perp_side, "market", abs(delta2))
+        size = min(abs(delta1), abs(delta2))
+        if size <= 0:
+            return
+        order_spot = Order(cfg.symbol, spot_side, "market", size)
+        order_perp = Order(cfg.symbol, perp_side, "market", size)
         await asyncio.gather(
             router.execute(order_spot),
             router.execute(order_perp),
         )
-        risk.on_fill(cfg.symbol, spot_side, qty, venue=getattr(cfg.spot, "name", "spot"))
-        risk.on_fill(cfg.symbol, perp_side, qty, venue=getattr(cfg.perp, "name", "perp"))
+        balances[cfg.spot.name] += size if spot_side == "buy" else -size
+        balances[cfg.perp.name] += size if perp_side == "buy" else -size
+        risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
+        risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
         log.info(
             "CROSS edge=%.4f%% spot=%.2f perp=%.2f qty=%.6f",
             edge * 100,
             last["spot"],
             last["perp"],
-            qty,
+            size,
         )
 
     async def listen_spot() -> None:
