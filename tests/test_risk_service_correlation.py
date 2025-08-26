@@ -41,7 +41,7 @@ async def test_risk_service_correlation_limits_and_sizing():
     assert events and events[0]["reason"] == "correlation"
 
     allowed, _, delta = svc.check_order(
-        "AAA", "buy", 100.0, corr_threshold=0.8
+        "AAA", "buy", 200.0, 100.0, corr_threshold=0.8
     )
     assert allowed
     assert delta == pytest.approx(0.5)

@@ -73,7 +73,7 @@ def test_risk_service_uses_correlation_service():
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     symbol_vol = guard.volatility("BTC")
     base = rm.size("buy", price_btc, guard.equity, symbol="BTC", symbol_vol=symbol_vol)
-    allowed, _, delta = svc.check_order("BTC", "buy", price=price_btc, corr_threshold=0.8)
+    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, price_btc, corr_threshold=0.8)
     assert allowed
     assert delta == pytest.approx(base * 0.5)
 
