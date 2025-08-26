@@ -48,11 +48,11 @@ def test_pyramiding_and_scaling(risk_manager):
     rm.add_fill("buy", delta)
     assert rm.pos.qty == pytest.approx(max_qty)
 
-    delta = rm.size("sell", rm.price, rm.equity, strength=0.25)
+    delta = rm.size("buy", rm.price, rm.equity, strength=0.5)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("sell", rm.price, rm.equity, strength=1/3)
+    delta = rm.size("buy", rm.price, rm.equity, strength=0.0)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(0.0)
 

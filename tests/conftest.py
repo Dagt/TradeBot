@@ -103,10 +103,17 @@ def breakout_df_sell():
 
 
 @pytest.fixture
-def risk_manager():
+def equity_data():
+    """Serie de equity simulada para pruebas."""
+    import pandas as pd
+
+    return pd.Series([10_000.0, 10_500.0, 9_800.0], name="equity")
+
+
+@pytest.fixture
+def risk_manager(equity_data):
     from tradingbot.risk.manager import RiskManager
 
-    equity = 10_000.0
     position_pct = 0.10  # 10% del equity
     risk_pct = 0.02      # arriesgar 2% del notional
     price = 100.0
@@ -118,8 +125,9 @@ def risk_manager():
     # Atributos auxiliares para las pruebas
     rm.price = price
     rm.position_pct = position_pct
-    rm.equity = equity
+    rm.equity = float(equity_data.iloc[-1])
     rm.risk_pct = risk_pct
+    rm.equity_history = equity_data
     return rm
 
 
