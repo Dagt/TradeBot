@@ -20,14 +20,17 @@ from tradingbot.risk.limits import RiskLimits
 
 
 def test_stop_loss_sets_reason():
+    from tradingbot.risk.exceptions import StopLossExceeded
+
     rm = RiskManager(risk_pct=0.05)
     rm.equity_pct = 1.0
     rm.set_position(1)
     assert rm.check_limits(100)
-    assert not rm.check_limits(94)
-    assert rm.enabled is False
+    with pytest.raises(StopLossExceeded):
+        rm.check_limits(94)
+    assert rm.enabled is True
     assert rm.last_kill_reason == "stop_loss"
-    assert rm.pos.qty == 0
+    assert rm.pos.qty == pytest.approx(1.0)
 
 
 def test_manual_kill_switch_records_reason():
