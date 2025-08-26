@@ -620,6 +620,9 @@ async def _stream_process(proc: asyncio.subprocess.Process):
         for t in tasks:
             t.cancel()
 
+    returncode = await proc.wait()
+    yield f"event: end\ndata: {returncode}\n\n"
+
 
 @app.get("/cli/stream/{job_id}")
 async def cli_stream(job_id: str):
@@ -632,8 +635,6 @@ async def cli_stream(job_id: str):
     async def event_gen():
         async for chunk in _stream_process(proc):
             yield chunk
-        returncode = await proc.wait()
-        yield f"event: end\ndata: {returncode}\n\n"
         _CLI_PROCS.pop(job_id, None)
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
