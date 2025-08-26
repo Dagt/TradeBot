@@ -12,7 +12,7 @@ from tradingbot.risk.limits import RiskLimits
 
 
 def test_stop_loss_sets_reason():
-    rm = RiskManager(max_pos=1, stop_loss_pct=0.05)
+    rm = RiskManager(stop_loss_pct=0.05)
     rm.set_position(1)
     assert rm.check_limits(100)
     assert not rm.check_limits(94)
@@ -22,7 +22,7 @@ def test_stop_loss_sets_reason():
 
 
 def test_drawdown_sets_reason():
-    rm = RiskManager(max_pos=1, max_drawdown_pct=0.05)
+    rm = RiskManager(max_drawdown_pct=0.05)
     rm.set_position(1)
     assert rm.check_limits(100)
     assert rm.check_limits(110)
@@ -33,7 +33,7 @@ def test_drawdown_sets_reason():
 
 
 def test_manual_kill_switch_records_reason():
-    rm = RiskManager(max_pos=1)
+    rm = RiskManager()
     rm.kill_switch("manual")
     assert rm.enabled is False
     assert rm.last_kill_reason == "manual"
@@ -41,7 +41,7 @@ def test_manual_kill_switch_records_reason():
 
 
 def test_reset_clears_kill_switch():
-    rm = RiskManager(max_pos=1)
+    rm = RiskManager()
     rm.kill_switch("manual")
     assert rm.enabled is False
     assert KILL_SWITCH_ACTIVE._value.get() == 1.0
@@ -53,7 +53,7 @@ def test_reset_clears_kill_switch():
 
 
 def test_daily_loss_limit_triggers_kill_switch():
-    rm = RiskManager(max_pos=1, daily_loss_limit=50)
+    rm = RiskManager(daily_loss_limit=50)
     rm.set_position(1)
     rm.check_limits(100)
     rm.update_pnl(-60)
@@ -85,7 +85,7 @@ async def test_update_correlation_emits_pause():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(max_pos=8, bus=bus)
+    rm = RiskManager(bus=bus)
     pairs = {("BTC", "ETH"): 0.9}
     exceeded = rm.update_correlation(pairs, 0.8)
     await asyncio.sleep(0)
@@ -98,7 +98,7 @@ async def test_update_covariance_emits_pause():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(max_pos=8, bus=bus)
+    rm = RiskManager(bus=bus)
     cov = {
         ("BTC", "BTC"): 0.04,
         ("ETH", "ETH"): 0.04,

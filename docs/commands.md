@@ -85,6 +85,8 @@ Ejecuta el bot en modo en vivo (testnet o real).
 - `--dry-run`: simula órdenes en testnet.
 - `--stop-loss` y `--take-profit`: porcentajes de la estrategia.
 - `--stop-loss-pct` y `--max-drawdown-pct`: límites del gestor de riesgo.
+- todos los valores se expresan como proporciones (por ejemplo, `0.02` equivale
+  al 2 %).
 
 ## `paper-run`
 Corre una estrategia en modo paper (sin dinero real) y expone métricas.

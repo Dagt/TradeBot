@@ -27,8 +27,8 @@ def main() -> None:
     mlflow.set_tracking_uri(args.mlflow_uri)
 
     param_grid = [
-        {"rsi_n": 10, "rsi_threshold": 55},
-        {"rsi_n": 14, "rsi_threshold": 60},
+        {"rsi_n": 10, "rsi_threshold": 55, "stop_loss_pct": 0.02},
+        {"rsi_n": 14, "rsi_threshold": 60, "stop_loss_pct": 0.02},
     ]
     res = run_walk_forward_experiment(
         args.data,

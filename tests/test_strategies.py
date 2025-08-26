@@ -3,6 +3,7 @@ import yaml
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
+from tradingbot.strategies import triple_barrier
 from hypothesis import given, strategies as st
 
 
@@ -63,6 +64,13 @@ vol_threshold: 1.0
 
     sig_buy = strat.on_bar({"window": df_buy})
     assert sig_buy.side == "buy"
+
+
+def test_triple_barrier_percentage_labels():
+    prices = pd.Series([100, 106, 90])
+    labels = triple_barrier.triple_barrier_labels(prices, horizon=2, upper_pct=0.05, lower_pct=0.05)
+    assert labels.iloc[0] == 1
+    assert labels.iloc[1] == -1
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))

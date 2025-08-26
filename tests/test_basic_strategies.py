@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from tradingbot.strategies import momentum, mean_reversion
 import tradingbot.strategies.arbitrage as arbitrage
@@ -18,11 +19,9 @@ def test_momentum_backtest():
         "stop_loss": 0.05,
         "take_profit": 0.1,
     }
-    pnl_no_fee = backtest(
-        data,
-        momentum.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0}),
-        "price",
-    )
+    signals = momentum.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0})
+    pnl_no_fee = backtest(data, signals, "price")
+    assert signals["stop_loss"].iloc[0] == pytest.approx(data["price"].iloc[0] * (1 - base_params["stop_loss"]))
     pnl_fee = backtest(
         data,
         momentum.generate_signals(data, {**base_params, "fee": 0.01, "slippage": 0.01}),
@@ -40,11 +39,9 @@ def test_mean_reversion_backtest():
         "stop_loss": 0.05,
         "take_profit": 0.1,
     }
-    pnl_no_fee = backtest(
-        data,
-        mean_reversion.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0}),
-        "price",
-    )
+    signals = mean_reversion.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0})
+    pnl_no_fee = backtest(data, signals, "price")
+    assert signals["stop_loss"].iloc[0] == pytest.approx(data["price"].iloc[0] * (1 - base_params["stop_loss"]))
     pnl_fee = backtest(
         data,
         mean_reversion.generate_signals(data, {**base_params, "fee": 0.01, "slippage": 0.01}),
@@ -63,11 +60,9 @@ def test_arbitrage_backtest():
         "stop_loss": 0.05,
         "take_profit": 0.1,
     }
-    pnl_no_fee = backtest(
-        data,
-        arbitrage.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0}),
-        "asset_a",
-    )
+    signals = arbitrage.generate_signals(data, {**base_params, "fee": 0.0, "slippage": 0.0})
+    pnl_no_fee = backtest(data, signals, "asset_a")
+    assert signals["stop_loss"].iloc[0] == pytest.approx(data["asset_a"].iloc[0] * (1 - base_params["stop_loss"]))
     pnl_fee = backtest(
         data,
         arbitrage.generate_signals(data, {**base_params, "fee": 0.01, "slippage": 0.01}),

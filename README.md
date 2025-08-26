@@ -62,6 +62,19 @@ export BINANCE_FUTURES_TESTNET=true
 Si esta variable no está definida o se establece en `false`, el bot usará el
 entorno real de Binance Futures.
 
+## Gestión de riesgo con porcentajes
+
+Los parámetros de riesgo se definen en términos porcentuales. Por ejemplo,
+para aplicar un stop loss del 2 % y un trailing stop que se active con un
+drawdown del 5 %:
+
+```bash
+python -m tradingbot.cli run --stop-loss-pct 0.02 --max-drawdown-pct 0.05
+```
+
+El gestor de riesgo escalará las posiciones en función de estos porcentajes y
+ajustará automáticamente los precios de stop siguiendo la tendencia.
+
 ## Solución de problemas
 
 Si se muestra el mensaje `System clock offset`, indica que el reloj del

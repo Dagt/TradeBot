@@ -74,7 +74,7 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
             exec_adapter = exec_cls()
     agg = BarAggregator()
     strat = BreakoutATR(config_path=config_path)
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager()
     guard = PortfolioGuard(GuardConfig(
         total_cap_usdt=total_cap_usdt,
         per_symbol_cap_usdt=per_symbol_cap_usdt,
