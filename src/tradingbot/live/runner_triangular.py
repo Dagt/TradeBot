@@ -129,23 +129,33 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                     )
 
                     # Ejecutar 3 patas en PAPER
+                    eq = broker.equity(
+                        mark_prices={
+                            f"{cfg.route.base}/{cfg.route.quote}": last["bq"],
+                            f"{cfg.route.mid}/{cfg.route.base}": last["mb"],
+                            f"{cfg.route.mid}/{cfg.route.quote}": last["mq"],
+                        }
+                    )
                     if edge.direction == "b->m":
                         checks = [
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "buy",
+                                eq,
                                 last["bq"],
                                 strength=q["base_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
+                                eq,
                                 last["mb"],
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
+                                eq,
                                 last["mq"],
                                 strength=q["mid_qty"],
                             ),
@@ -180,18 +190,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "buy",
+                                eq,
                                 last["mq"],
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
+                                eq,
                                 last["mb"],
                                 strength=q["mid_qty"],
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
+                                eq,
                                 last["bq"],
                                 strength=q["base_qty"],
                             ),

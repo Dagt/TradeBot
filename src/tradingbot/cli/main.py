@@ -628,7 +628,7 @@ def run_bot(
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
     stop_loss: float = typer.Option(0.0, "--stop-loss", help="Strategy stop loss percentage"),
     take_profit: float = typer.Option(0.0, "--take-profit", help="Strategy take profit percentage"),
-    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk manager stop loss percentage"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk manager max drawdown percentage"),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
@@ -883,7 +883,7 @@ def backtest(
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     equity_actual: float = typer.Option(0.0, "--equity-actual", help="Account equity"),
-    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -905,7 +905,7 @@ def backtest(
         trade_qty=trade_qty,
         equity_pct=equity_pct,
         equity_actual=equity_actual,
-        stop_loss_pct=stop_loss_pct,
+        risk_pct=risk_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
     )
@@ -921,7 +921,7 @@ def backtest_cfg(
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     equity_actual: float = typer.Option(0.0, "--equity-actual", help="Account equity"),
-    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -963,7 +963,7 @@ def backtest_cfg(
             trade_qty=trade_qty,
             equity_pct=equity_pct,
             equity_actual=equity_actual,
-            stop_loss_pct=stop_loss_pct,
+            risk_pct=risk_pct,
             max_drawdown_pct=max_drawdown_pct,
             max_notional=max_notional,
         )
@@ -996,7 +996,7 @@ def backtest_db(
     trade_qty: float = typer.Option(1.0, "--trade-qty", help="Order size"),
     equity_pct: float = typer.Option(0.0, "--equity-pct", help="Fraction of equity to use"),
     equity_actual: float = typer.Option(0.0, "--equity-actual", help="Account equity"),
-    stop_loss_pct: float = typer.Option(0.0, "--stop-loss-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     max_drawdown_pct: float = typer.Option(0.0, "--max-drawdown-pct", help="Risk max drawdown %"),
     max_notional: float = typer.Option(0.0, "--max-notional", help="Max order notional"),
 ) -> None:
@@ -1046,7 +1046,7 @@ def backtest_db(
         trade_qty=trade_qty,
         equity_pct=equity_pct,
         equity_actual=equity_actual,
-        stop_loss_pct=stop_loss_pct,
+        risk_pct=risk_pct,
         max_drawdown_pct=max_drawdown_pct,
         max_notional=max_notional,
     )

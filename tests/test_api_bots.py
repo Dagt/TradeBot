@@ -40,7 +40,7 @@ def test_bot_endpoints(monkeypatch):
         "leverage": 1,
         "stop_loss": 0.02,
         "take_profit": 0.05,
-        "stop_loss_pct": 0.03,
+        "risk_pct": 0.03,
         "max_drawdown_pct": 0.1,
         "testnet": True,
         "dry_run": False,
@@ -53,7 +53,7 @@ def test_bot_endpoints(monkeypatch):
     assert "--venue" in argv and "binance_spot" in argv
     assert "--stop-loss" in argv and "0.02" in argv
     assert "--take-profit" in argv and "0.05" in argv
-    assert "--stop-loss-pct" in argv and "0.03" in argv
+    assert "--risk-pct" in argv and "0.03" in argv
     assert "--max-drawdown-pct" in argv and "0.1" in argv
 
     lst = client.get("/bots", auth=("admin", "admin"))
@@ -97,7 +97,7 @@ def test_cross_arbitrage_start(monkeypatch):
         "threshold": 0.001,
         "stop_loss": 0.02,
         "take_profit": 0.05,
-        "stop_loss_pct": 0.03,
+        "risk_pct": 0.03,
         "max_drawdown_pct": 0.1,
     }
 

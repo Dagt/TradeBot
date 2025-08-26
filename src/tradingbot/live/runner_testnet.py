@@ -125,9 +125,11 @@ async def _run_symbol(exchange: str, market: str, cfg: _SymbolConfig, leverage: 
         sig = strat.on_bar({"window": df})
         if sig is None:
             continue
+        eq = broker.equity(mark_prices={cfg.symbol: px})
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
+            eq,
             closed.c,
             strength=sig.strength,
             corr_threshold=corr_threshold,

@@ -171,9 +171,11 @@ async def run_live_binance(
         if signal is None:
             continue
 
+        eq = broker.equity(mark_prices={symbol: px})
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
+            eq,
             closed.c,
             strength=signal.strength,
             symbol_vol=float(bar.get("volatility", 0.0) or 0.0),

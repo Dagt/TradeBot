@@ -60,6 +60,7 @@ class RiskService:
         self,
         symbol: str,
         side: str,
+        equity: float,
         price: float,
         strength: float = 1.0,
         *,
@@ -72,6 +73,8 @@ class RiskService:
         proposed after volatility and correlation adjustments.
         """
 
+        self.guard.refresh_usd_caps(equity)
+
         if symbol_vol is None or symbol_vol <= 0:
             symbol_vol = self.guard.volatility(symbol)
 
@@ -82,7 +85,7 @@ class RiskService:
         delta = self.rm.size(
             side,
             price,
-            self.guard.equity,
+            equity,
             strength,
             symbol=symbol,
             symbol_vol=symbol_vol or 0.0,

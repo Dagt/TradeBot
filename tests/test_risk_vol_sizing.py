@@ -55,7 +55,7 @@ def test_risk_service_uses_guard_volatility():
     guard.refresh_usd_caps(rm_guard_equity)
     svc = RiskService(rm, guard)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
-    allowed, _, delta = svc.check_order("BTC", "buy", price=1.0)
+    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, 1.0)
     vol = np.std([0.01, -0.02, 0.03]) * np.sqrt(365)
     budget = rm_guard_equity * rm.equity_pct
     expected = budget / 1.0 + budget / vol
