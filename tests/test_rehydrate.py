@@ -20,7 +20,8 @@ def test_rehydrate_state():
         conn.execute(text('INSERT INTO "market.positions" (venue, symbol, qty, avg_price, realized_pnl, fees_paid) VALUES ("paper", "BTCUSDT", 1.5, 10000, 0, 0);'))
         conn.execute(text('INSERT INTO "market.oco_orders" (venue, symbol, side, qty, entry_price, sl_price, tp_price, status) VALUES ("paper", "BTCUSDT", "long", 1.5, 10000, 9500, 10500, "active");'))
 
-    rm = RiskManager(equity_pct=1.0)
+    rm = RiskManager()
+    rm.equity_pct = 1.0
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="paper"))
     guard.refresh_usd_caps(1e6)
     risk = RiskService(rm, guard)

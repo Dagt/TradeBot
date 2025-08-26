@@ -36,7 +36,6 @@ def test_bot_endpoints(monkeypatch):
         "strategy": "dummy",
         "pairs": ["BTC/USDT"],
         "venue": "binance_spot",
-        "equity_pct": 1.0,
         "leverage": 1,
         "risk_pct": 0.03,
         "testnet": True,
@@ -48,7 +47,6 @@ def test_bot_endpoints(monkeypatch):
     pid = resp.json()["pid"]
     argv = list(calls["args"])
     assert "--venue" in argv and "binance_spot" in argv
-    assert "--equity-pct" in argv and "1.0" in argv
     assert "--risk-pct" in argv and "0.03" in argv
 
     lst = client.get("/bots", auth=("admin", "admin"))

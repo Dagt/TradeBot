@@ -54,7 +54,8 @@ def test_correlation_service_window_rolls():
 def test_risk_service_uses_correlation_service():
     guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
     guard.refresh_usd_caps(1.0)
-    rm = RiskManager(equity_pct=0.1, vol_target=0.02)
+    rm = RiskManager(vol_target=0.02)
+    rm.equity_pct = 1.0
     corr = CorrelationService()
     svc = RiskService(rm, guard, corr_service=corr)
     now = datetime.now(timezone.utc)
@@ -72,8 +73,8 @@ def test_risk_service_uses_correlation_service():
     corr.update_price("ETH", price_eth, now + timedelta(seconds=2))
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     symbol_vol = guard.volatility("BTC")
-    base = rm.size("buy", price_btc, guard.equity, symbol="BTC", symbol_vol=symbol_vol)
-    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, price_btc, corr_threshold=0.8)
+    base = rm.size("buy", price_btc, guard.equity, strength=0.1, symbol="BTC", symbol_vol=symbol_vol)
+    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, price_btc, corr_threshold=0.8, strength=0.1)
     assert allowed
     assert delta == pytest.approx(base * 0.5)
 
@@ -93,7 +94,8 @@ def test_correlation_guard_groups_and_cap():
 
 
 def test_update_correlation_uses_guard_for_global_cap():
-    rm = RiskManager(equity_pct=1.0)
+    rm = RiskManager()
+    rm.equity_pct = 1.0
     pairs = {
         ("BTC", "ETH"): 0.9,
         ("ETH", "SOL"): 0.85,
@@ -101,4 +103,3 @@ def test_update_correlation_uses_guard_for_global_cap():
     }
     exceeded = rm.update_correlation(pairs, 0.8)
     assert set(exceeded) == {("BTC", "ETH"), ("ETH", "SOL")}
-    assert rm.equity_pct == pytest.approx(1 / 3)

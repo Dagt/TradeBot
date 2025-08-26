@@ -20,7 +20,8 @@ from tradingbot.risk.limits import RiskLimits
 
 
 def test_stop_loss_sets_reason():
-    rm = RiskManager(equity_pct=1.0, risk_pct=0.05)
+    rm = RiskManager(risk_pct=0.05)
+    rm.equity_pct = 1.0
     rm.set_position(1)
     assert rm.check_limits(100)
     assert not rm.check_limits(94)
@@ -30,7 +31,8 @@ def test_stop_loss_sets_reason():
 
 
 def test_manual_kill_switch_records_reason():
-    rm = RiskManager(equity_pct=1.0)
+    rm = RiskManager()
+    rm.equity_pct = 1.0
     rm.kill_switch("manual")
     assert rm.enabled is False
     assert rm.last_kill_reason == "manual"
@@ -38,7 +40,8 @@ def test_manual_kill_switch_records_reason():
 
 
 def test_reset_clears_kill_switch():
-    rm = RiskManager(equity_pct=1.0)
+    rm = RiskManager()
+    rm.equity_pct = 1.0
     rm.kill_switch("manual")
     assert rm.enabled is False
     assert KILL_SWITCH_ACTIVE._value.get() == 1.0
@@ -50,7 +53,8 @@ def test_reset_clears_kill_switch():
 
 
 def test_daily_loss_limit_triggers_kill_switch():
-    rm = RiskManager(equity_pct=1.0, daily_loss_limit=50)
+    rm = RiskManager(daily_loss_limit=50)
+    rm.equity_pct = 1.0
     rm.set_position(1)
     rm.check_limits(100)
     rm.update_pnl(-60)
@@ -62,7 +66,8 @@ def test_daily_loss_limit_triggers_kill_switch():
 
 
 def test_risk_service_updates_and_persists(monkeypatch):
-    rm = RiskManager(equity_pct=1.0)
+    rm = RiskManager()
+    rm.equity_pct = 1.0
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=0.5, per_symbol_cap_pct=0.5, venue="X")
     )
@@ -83,7 +88,8 @@ async def test_update_correlation_emits_pause():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(equity_pct=1.0, bus=bus)
+    rm = RiskManager(bus=bus)
+    rm.equity_pct = 1.0
     pairs = {("BTC", "ETH"): 0.9}
     exceeded = rm.update_correlation(pairs, 0.8)
     await asyncio.sleep(0)
@@ -96,7 +102,8 @@ async def test_update_covariance_emits_pause():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(equity_pct=1.0, bus=bus)
+    rm = RiskManager(bus=bus)
+    rm.equity_pct = 1.0
     cov = {
         ("BTC", "BTC"): 0.04,
         ("ETH", "ETH"): 0.04,
@@ -110,12 +117,14 @@ async def test_update_covariance_emits_pause():
 
 def test_register_order_notional_limit():
     rm = RiskManager(limits=RiskLimits(max_notional=100))
+    rm.equity_pct = 1.0
     assert rm.register_order(50)
     assert not rm.register_order(150)
 
 
 def test_concurrent_order_limit():
     rm = RiskManager(limits=RiskLimits(max_concurrent_orders=1))
+    rm.equity_pct = 1.0
     assert rm.register_order(10)
     assert not rm.register_order(10)
     rm.complete_order()
@@ -128,6 +137,7 @@ async def test_daily_dd_limit_blocks_and_emits_event():
     events: list = []
     bus.subscribe("risk:blocked", lambda e: events.append(e))
     rm = RiskManager(bus=bus, limits=RiskLimits(daily_dd_limit=50))
+    rm.equity_pct = 1.0
     rm.update_pnl(100)
     rm.update_pnl(-160)
     await asyncio.sleep(0)
@@ -141,6 +151,7 @@ async def test_hard_pnl_stop_blocks():
     events: list = []
     bus.subscribe("risk:blocked", lambda e: events.append(e))
     rm = RiskManager(bus=bus, limits=RiskLimits(hard_pnl_stop=100))
+    rm.equity_pct = 1.0
     rm.update_pnl(-120)
     await asyncio.sleep(0)
     assert events and events[0]["reason"] == "hard_pnl_stop"
