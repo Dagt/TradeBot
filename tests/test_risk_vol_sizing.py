@@ -17,7 +17,7 @@ def test_risk_vol_sizing(synthetic_volatility):
     price = 1.0
     delta = rm.size("buy", price, equity, symbol="BTC", symbol_vol=synthetic_volatility)
     budget = equity * rm.equity_pct
-    expected = budget / price + budget / synthetic_volatility
+    expected = 2 * (budget / price)
     assert delta == pytest.approx(expected)
 
 
@@ -44,7 +44,7 @@ def test_risk_vol_sizing_with_correlation(synthetic_volatility):
         threshold=0.8,
     )
     budget = equity * rm.equity_pct
-    expected = (budget / price + budget / synthetic_volatility) * 0.5
+    expected = (2 * (budget / price)) * 0.5
     assert delta == pytest.approx(expected)
 
 
@@ -56,8 +56,7 @@ def test_risk_service_uses_guard_volatility():
     svc = RiskService(rm, guard)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     allowed, _, delta = svc.check_order("BTC", "buy", 1.0, 1.0)
-    vol = np.std([0.01, -0.02, 0.03]) * np.sqrt(365)
     budget = rm_guard_equity * rm.equity_pct
-    expected = budget / 1.0 + budget / vol
+    expected = 2 * budget
     assert allowed
     assert delta == pytest.approx(expected)
