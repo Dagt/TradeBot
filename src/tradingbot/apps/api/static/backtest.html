@@ -276,7 +276,7 @@ function updateBtFields(){
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
   const showRisk = mode!=='walk';
-  ['field-equity-pct','field-risk-pct','field-max-notional'].forEach(id=>{
+  ['field-risk-pct','field-max-notional'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
   });
 }
