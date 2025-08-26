@@ -158,7 +158,6 @@ Entrena un modelo basado en `MLStrategy` y lo guarda en disco.
 ## `tri-arb`
 Ejecuta un arbitraje triangular simple en Binance.
 - `route`: cadena `BASE-MID-QUOTE` que define los tres pares.
-- `--notional`: monto a utilizar en la divisa de salida.
 
 ## `cross-arb`
 Arbitraje entre un mercado spot y uno de futuros.
@@ -166,7 +165,6 @@ Arbitraje entre un mercado spot y uno de futuros.
 - `spot`: nombre del adaptador spot.
 - `perp`: nombre del adaptador de futuros.
 - `--threshold`: diferencia mínima de precio para actuar.
-- `--notional`: monto por pata.
 
 ## `run-cross-arb`
 Versión que utiliza el `ExecutionRouter` para arbitraje spot/perp.

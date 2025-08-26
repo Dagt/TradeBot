@@ -45,7 +45,12 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             daily=None,
         )
 
-    engine = get_engine() if _CAN_PG else None
+    engine = None
+    if _CAN_PG:
+        try:
+            engine = get_engine()
+        except Exception:  # pragma: no cover - optional persistence
+            engine = None
     oco_book = OcoBook()
     if engine is not None:
         venue = risk.guard.cfg.venue if getattr(risk, "guard", None) else "cross"
@@ -54,6 +59,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             risk.update_position(venue, sym, data.get("qty", 0.0))
         oco_book.preload(load_active_oco(engine, venue=venue, symbols=[cfg.symbol]))
 
+    balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
 
     async def maybe_trade() -> None:
@@ -70,7 +76,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         if last["perp"] is not None:
             equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
         if equity <= 0:
-            equity = cfg.notional
+            equity = max(last["spot"], last["perp"])
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,

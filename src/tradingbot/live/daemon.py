@@ -332,11 +332,20 @@ class TradeBotDaemon:
                 edge = (last["perp"] - last["spot"]) / last["spot"]
                 if abs(edge) < cfg.threshold:
                     return
-                qty = cfg.notional / last["spot"]
+                strength = min(abs(edge), 1.0)
                 if edge > 0:
                     spot_side, perp_side = "buy", "sell"
                 else:
                     spot_side, perp_side = "sell", "buy"
+                ok1, _, d1 = self.risk.check_order(
+                    cfg.symbol, spot_side, 1.0, last["spot"], strength=strength
+                )
+                ok2, _, d2 = self.risk.check_order(
+                    cfg.symbol, perp_side, 1.0, last["perp"], strength=strength
+                )
+                if not (ok1 and ok2):
+                    return
+                qty = min(abs(d1), abs(d2))
                 resp_spot, resp_perp = await asyncio.gather(
                     cfg.spot.place_order(cfg.symbol, spot_side, "market", qty),
                     cfg.perp.place_order(cfg.symbol, perp_side, "market", qty),

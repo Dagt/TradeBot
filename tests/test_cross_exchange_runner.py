@@ -42,7 +42,6 @@ async def test_cross_exchange_runner_persists_and_executes(
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
     )
 
     await run_cross_exchange(cfg)

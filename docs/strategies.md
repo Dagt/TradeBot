@@ -53,8 +53,12 @@ mercados.
 
 ### Arbitraje Triangular (`arbitrage_triangular`)
 Opera tres pares de divisas al mismo tiempo para explotar desequilibrios en
-las tasas de cambio.
+las tasas de cambio. La señal emitida utiliza ``strength = edge`` (limitado a
+``[0, 1]``) y ``RiskService.check_order`` dimensiona cada pata según el equity
+actual.
 
 ### Arbitraje entre Exchanges (`cross_exchange_arbitrage`)
 Compara el precio entre un mercado spot y uno de futuros (perpetuo) y opera
-cuando la diferencia supera un umbral.
+cuando la diferencia supera un umbral. La fuerza de la señal se basa en el
+``edge`` detectado (``strength = |edge|``) y el tamaño final de la operación lo
+calcula ``RiskService.check_order`` sin necesidad de un notional fijo.

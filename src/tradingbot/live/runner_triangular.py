@@ -11,7 +11,7 @@ from ..utils.metrics import WS_FAILURES
 
 from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
-    TriRoute, make_symbols, compute_edge, compute_qtys_for_route
+    TriRoute, make_symbols, compute_edge
 )
 from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -37,7 +37,6 @@ class TriConfig:
     route: TriRoute
     taker_fee_bps: float = 7.5
     buffer_bps: float = 3.0
-    notional_quote: float = 100.0
     edge_threshold: float = 0.001
     persist_pg: bool = False  # <-- nuevo flag
 
@@ -104,6 +103,18 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         continue
 
                     # Persistir señal
+                    strength = min(edge.net, 1.0)
+                    if strength <= 0:
+                        continue
+
+                    # Ejecutar 3 patas en PAPER
+                    eq = broker.equity(
+                        mark_prices={
+                            f"{cfg.route.base}/{cfg.route.quote}": last["bq"],
+                            f"{cfg.route.mid}/{cfg.route.base}": last["mb"],
+                            f"{cfg.route.mid}/{cfg.route.quote}": last["mq"],
+                        }
+                    )
                     if engine is not None:
                         try:
                             insert_tri_signal(
@@ -114,125 +125,116 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 quote=cfg.route.quote,
                                 direction=edge.direction,
                                 edge=edge.net,
-                                notional_quote=cfg.notional_quote,
+                                notional_quote=eq * strength,
                                 taker_fee_bps=cfg.taker_fee_bps,
                                 buffer_bps=cfg.buffer_bps,
                                 bq=last["bq"], mq=last["mq"], mb=last["mb"]
                             )
                         except Exception as e:
                             log.debug("No se pudo insertar tri_signal: %s", e)
-
-                    # Calcular cantidades aproximadas
-                    q = compute_qtys_for_route(
-                        edge.direction, cfg.notional_quote, last,
-                        cfg.taker_fee_bps, cfg.buffer_bps
-                    )
-
-                    # Ejecutar 3 patas en PAPER
-                    eq = broker.equity(
-                        mark_prices={
-                            f"{cfg.route.base}/{cfg.route.quote}": last["bq"],
-                            f"{cfg.route.mid}/{cfg.route.base}": last["mb"],
-                            f"{cfg.route.mid}/{cfg.route.quote}": last["mq"],
-                        }
-                    )
                     if edge.direction == "b->m":
-                        checks = [
-                            risk.check_order(
-                                f"{cfg.route.base}/{cfg.route.quote}",
-                                "buy",
-                                eq,
-                                last["bq"],
-                                strength=q["base_qty"],
-                            ),
-                            risk.check_order(
-                                f"{cfg.route.mid}/{cfg.route.base}",
-                                "buy",
-                                eq,
-                                last["mb"],
-                                strength=q["mid_qty"],
-                            ),
-                            risk.check_order(
-                                f"{cfg.route.mid}/{cfg.route.quote}",
-                                "sell",
-                                eq,
-                                last["mq"],
-                                strength=q["mid_qty"],
-                            ),
-                        ]
-                        if not all(c[0] for c in checks):
+                        s1 = strength
+                        ok1, _, d1 = risk.check_order(
+                            f"{cfg.route.base}/{cfg.route.quote}",
+                            "buy",
+                            eq,
+                            last["bq"],
+                            strength=s1,
+                        )
+                        s2 = strength / last["bq"]
+                        ok2, _, d2 = risk.check_order(
+                            f"{cfg.route.mid}/{cfg.route.base}",
+                            "buy",
+                            eq,
+                            last["mb"],
+                            strength=s2,
+                        )
+                        s3 = strength * last["mq"] / (last["bq"] * last["mb"])
+                        ok3, _, d3 = risk.check_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}",
+                            "sell",
+                            eq,
+                            last["mq"],
+                            strength=s3,
+                        )
+                        if not (ok1 and ok2 and ok3):
                             continue
+                        base_qty = abs(d1)
+                        mid_qty = abs(d2)
                         resp1 = await broker.place_order(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "buy",
                             "market",
-                            abs(checks[0][2]),
+                            base_qty,
                         )
                         resp2 = await broker.place_order(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "buy",
                             "market",
-                            abs(checks[1][2]),
+                            mid_qty,
                         )
                         resp3 = await broker.place_order(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "sell",
                             "market",
-                            abs(checks[2][2]),
+                            abs(d3),
                         )
                         legs = [
-                            ("buy", f"{cfg.route.base}/{cfg.route.quote}", abs(checks[0][2]), resp1),
-                            ("buy", f"{cfg.route.mid}/{cfg.route.base}", abs(checks[1][2]), resp2),
-                            ("sell", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[2][2]), resp3),
+                            ("buy", f"{cfg.route.base}/{cfg.route.quote}", base_qty, resp1),
+                            ("buy", f"{cfg.route.mid}/{cfg.route.base}", mid_qty, resp2),
+                            ("sell", f"{cfg.route.mid}/{cfg.route.quote}", abs(d3), resp3),
                         ]
                     else:
-                        checks = [
-                            risk.check_order(
-                                f"{cfg.route.mid}/{cfg.route.quote}",
-                                "buy",
-                                eq,
-                                last["mq"],
-                                strength=q["mid_qty"],
-                            ),
-                            risk.check_order(
-                                f"{cfg.route.mid}/{cfg.route.base}",
-                                "sell",
-                                eq,
-                                last["mb"],
-                                strength=q["mid_qty"],
-                            ),
-                            risk.check_order(
-                                f"{cfg.route.base}/{cfg.route.quote}",
-                                "sell",
-                                eq,
-                                last["bq"],
-                                strength=q["base_qty"],
-                            ),
-                        ]
-                        if not all(c[0] for c in checks):
+                        s1 = strength
+                        ok1, _, d1 = risk.check_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}",
+                            "buy",
+                            eq,
+                            last["mq"],
+                            strength=s1,
+                        )
+                        s2 = strength * last["mb"] / last["mq"]
+                        ok2, _, d2 = risk.check_order(
+                            f"{cfg.route.mid}/{cfg.route.base}",
+                            "sell",
+                            eq,
+                            last["mb"],
+                            strength=s2,
+                        )
+                        s3 = strength * last["bq"] / (last["mq"] * last["mb"])
+                        ok3, _, d3 = risk.check_order(
+                            f"{cfg.route.base}/{cfg.route.quote}",
+                            "sell",
+                            eq,
+                            last["bq"],
+                            strength=s3,
+                        )
+                        if not (ok1 and ok2 and ok3):
                             continue
+                        mid_qty = abs(d1)
+                        base_qty = abs(d3)
                         resp1 = await broker.place_order(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "buy",
                             "market",
-                            abs(checks[0][2]),
+                            mid_qty,
                         )
                         resp2 = await broker.place_order(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "sell",
                             "market",
-                            abs(checks[1][2]),
+                            abs(d2),
                         )
                         resp3 = await broker.place_order(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "sell",
                             "market",
-                            abs(checks[2][2]),
+                            base_qty,
                         )
                         legs = [
-                            ("buy", f"{cfg.route.mid}/{cfg.route.quote}", abs(checks[0][2]), resp1),
-                            ("sell", f"{cfg.route.mid}/{cfg.route.base}", abs(checks[1][2]), resp2),
-                            ("sell", f"{cfg.route.base}/{cfg.route.quote}", abs(checks[2][2]), resp3),
+                            ("buy", f"{cfg.route.mid}/{cfg.route.quote}", mid_qty, resp1),
+                            ("sell", f"{cfg.route.mid}/{cfg.route.base}", abs(d2), resp2),
+                            ("sell", f"{cfg.route.base}/{cfg.route.quote}", base_qty, resp3),
                         ]
 
                     fills += 3
@@ -264,8 +266,8 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         f"{cfg.route.mid}/{cfg.route.base}": last["mb"],
                     })
                     log.info(
-                        "ARBITRAJE %s edge=%.4f%% notional=%.2f %s | fills=%d | equity=%.4f",
-                        edge.direction, edge.net*100, cfg.notional_quote, last, fills, eq
+                        "ARBITRAJE %s edge=%.4f%% strength=%.4f %s | fills=%d | equity=%.4f",
+                        edge.direction, edge.net*100, strength, last, fills, eq
                     )
         except Exception as e:
             WS_FAILURES.labels(adapter="tri_runner").inc()

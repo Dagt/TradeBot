@@ -699,8 +699,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         ]
         if cfg.threshold is not None:
             args.extend(["--threshold", str(cfg.threshold)])
-        if cfg.notional is not None:
-            args.extend(["--notional", str(cfg.notional)])
         return args
 
     args = [
@@ -713,8 +711,6 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
     ]
     for pair in cfg.pairs or []:
         args.extend(["--symbol", normalize_symbol(pair)])
-    if cfg.notional is not None:
-        args.extend(["--notional", str(cfg.notional)])
     if cfg.venue:
         args.extend(["--venue", cfg.venue])
     if cfg.leverage is not None:

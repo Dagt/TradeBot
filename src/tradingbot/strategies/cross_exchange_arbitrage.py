@@ -9,6 +9,9 @@ from typing import Dict, Optional
 from ..adapters.base import ExchangeAdapter
 from ..execution.balance import rebalance_between_exchanges
 from ..risk.manager import RiskManager
+from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+from ..risk.service import RiskService
+from ..strategies.base import Signal
 
 try:
     from ..storage.timescale import (
@@ -38,8 +41,6 @@ class CrossArbConfig:
         Perpetual market connector implementing :class:`ExchangeAdapter`.
     threshold:
         Premium threshold as decimal (``0.001`` = 0.1%).
-    notional:
-        Quote currency notional per leg.
     persist_pg:
         If ``True`` persist signals/fills in TimescaleDB.
     rebalance_assets:
@@ -48,8 +49,6 @@ class CrossArbConfig:
         Minimum imbalance required to trigger a rebalance.
     latency:
         Simulated latency in seconds before sending orders.
-    max_notional:
-        Maximum quote notional allowed per trade. ``None`` disables the cap.
     max_qty:
         Maximum base quantity allowed per trade. ``None`` disables the cap.
     """
@@ -58,12 +57,10 @@ class CrossArbConfig:
     spot: ExchangeAdapter
     perp: ExchangeAdapter
     threshold: float = 0.001  # premium threshold as decimal (0.001 = 0.1%)
-    notional: float = 100.0  # quote currency notional per leg
     persist_pg: bool = False
     rebalance_assets: tuple[str, ...] = ()
     rebalance_threshold: float = 0.0
     latency: float = 0.0
-    max_notional: Optional[float] = None
     max_qty: Optional[float] = None
 
 
@@ -75,9 +72,10 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     offsetting market orders on each venue and optionally persists the
     opportunity and resulting fills into TimescaleDB.
 
-    The trade size can be capped via ``cfg.max_notional`` or ``cfg.max_qty``
-    and a simulated network latency can be injected via ``cfg.latency``. Prior
-    to submitting orders the required balances on both venues are verified.
+    The trade size is derived from a ``Signal`` strength and can be capped via
+    ``cfg.max_qty``.  A simulated network latency can be injected via
+    ``cfg.latency``. Prior to submitting orders the required balances on both
+    venues are verified.
     """
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
@@ -87,7 +85,10 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
-    risk = RiskManager(risk_pct=0.0)
+    risk = RiskService(
+        RiskManager(risk_pct=0.0),
+        PortfolioGuard(GuardConfig(venue="cross_arbitrage")),
+    )
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:
@@ -102,11 +103,14 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             if abs(edge) < cfg.threshold:
                 return
 
-            qty = cfg.notional / last["spot"]
-            if cfg.max_notional is not None:
-                qty = min(qty, cfg.max_notional / last["spot"])
-            if cfg.max_qty is not None:
-                qty = min(qty, cfg.max_qty)
+            # determine sides
+            if edge > 0:
+                spot_side, perp_side = "buy", "sell"
+            else:
+                spot_side, perp_side = "sell", "buy"
+
+            strength = min(abs(edge), 1.0)
+            sig = Signal(spot_side, strength)
             ts = datetime.now(timezone.utc)
 
             # persist opportunity
@@ -124,12 +128,6 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 except Exception as e:  # pragma: no cover - logging only
                     log.debug("No se pudo insertar cross_signal: %s", e)
 
-            # determine sides
-            if edge > 0:
-                spot_side, perp_side = "buy", "sell"
-            else:
-                spot_side, perp_side = "sell", "buy"
-
             base, quote = cfg.symbol.split("/")
             fetch_spot = getattr(cfg.spot, "fetch_balance", None)
             fetch_perp = getattr(cfg.perp, "fetch_balance", None)
@@ -142,17 +140,45 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 bal_spot = bal_spot or {}
                 bal_perp = bal_perp or {}
 
-            def _has(bal: dict, asset: str, needed: float) -> bool:
-                return float(bal.get(asset, 0.0)) >= needed
+            equity = 0.0
+            equity += float(bal_spot.get(quote, 0.0))
+            equity += float(bal_perp.get(quote, 0.0))
+            equity += float(bal_spot.get(base, 0.0)) * last["spot"]
+            equity += float(bal_perp.get(base, 0.0)) * last["perp"]
+            if equity <= 0:
+                equity = max(last["spot"], last["perp"])
 
-            need_spot = qty * last["spot"] if spot_side == "buy" else qty
-            asset_spot = quote if spot_side == "buy" else base
-            need_perp = qty * last["perp"] if perp_side == "buy" else qty
-            asset_perp = quote if perp_side == "buy" else base
-
-            if not (_has(bal_spot, asset_spot, need_spot) and _has(bal_perp, asset_perp, need_perp)):
-                log.debug("Trade skipped due to insufficient balance")
+            ok1, _r1, delta1 = risk.check_order(
+                cfg.symbol,
+                sig.side,
+                equity,
+                last["spot"],
+                strength=sig.strength,
+            )
+            hedge = Signal(perp_side, strength)
+            ok2, _r2, delta2 = risk.check_order(
+                cfg.symbol,
+                hedge.side,
+                equity,
+                last["perp"],
+                strength=hedge.strength,
+            )
+            if not (ok1 and ok2):
                 return
+            qty = min(abs(delta1), abs(delta2))
+            if cfg.max_qty is not None:
+                qty = min(qty, cfg.max_qty)
+
+            if fetch_spot or fetch_perp:
+                def _has(bal: dict, asset: str, needed: float) -> bool:
+                    return float(bal.get(asset, 0.0)) >= needed
+                need_spot = qty * last["spot"] if spot_side == "buy" else qty
+                asset_spot = quote if spot_side == "buy" else base
+                need_perp = qty * last["perp"] if perp_side == "buy" else qty
+                asset_perp = quote if perp_side == "buy" else base
+                if not (_has(bal_spot, asset_spot, need_spot) and _has(bal_perp, asset_perp, need_perp)):
+                    log.debug("Trade skipped due to insufficient balance")
+                    return
 
             if cfg.latency:
                 await asyncio.sleep(cfg.latency)
