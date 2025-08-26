@@ -118,7 +118,6 @@ def risk_manager(equity_data):
     price = 100.0
 
     rm = RiskManager(risk_pct=risk_pct)
-    rm.equity_pct = 1.0
     # Atributos auxiliares para las pruebas
     rm.price = price
     rm.equity = float(equity_data.iloc[-1])

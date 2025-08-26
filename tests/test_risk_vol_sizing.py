@@ -14,7 +14,6 @@ from tradingbot.risk.position_sizing import vol_target
 def test_risk_vol_sizing(synthetic_volatility):
     equity = 1.0
     rm = RiskManager(vol_target=0.02)
-    rm.equity_pct = 1.0
     price = 1.0
     base = rm.size("buy", price, equity, strength=0.1)
     delta = rm.size(
@@ -40,7 +39,6 @@ def test_vol_target_scales_linearly():
 def test_risk_vol_sizing_with_correlation(synthetic_volatility):
     equity = 1.0
     rm = RiskManager(vol_target=0.02)
-    rm.equity_pct = 1.0
     corr = {("BTC", "ETH"): 0.9}
     price = 1.0
     base = rm.size(
@@ -67,7 +65,6 @@ def test_risk_vol_sizing_with_correlation(synthetic_volatility):
 def test_risk_service_uses_guard_volatility():
     guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
     rm = RiskManager(vol_target=0.02)
-    rm.equity_pct = 1.0
     rm_guard_equity = 1.0
     guard.refresh_usd_caps(rm_guard_equity)
     svc = RiskService(rm, guard)
