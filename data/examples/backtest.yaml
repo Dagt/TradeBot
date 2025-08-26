@@ -4,5 +4,8 @@ strategies:
   - [breakout_atr, BTC/USDT]
 latency: 1
 window: 120
+risk:
+  equity_pct: 0.05
+  risk_pct: 0.02
 mlflow:
   run_name: example_backtest
