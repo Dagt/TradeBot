@@ -53,6 +53,8 @@ class RiskManager:
         max_drawdown_pct: float = 0.0,
         vol_target: float = 0.0,
         *,
+        equity_pct: float | None = None,
+        risk_pct: float = 1.0,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
         limits: RiskLimits | None = None,
@@ -71,6 +73,8 @@ class RiskManager:
         self.stop_loss_pct = abs(stop_loss_pct)
         self.max_drawdown_pct = abs(max_drawdown_pct)
         self.vol_target = abs(vol_target)
+        self.equity_pct = equity_pct
+        self.risk_pct = abs(risk_pct)
         self._base_max_pos = self.max_pos
         self._base_vol_target = self.vol_target
         self._de_risk_stage = 0
@@ -157,6 +161,17 @@ class RiskManager:
         for exch in list(self.positions_multi.keys()):
             for sym in list(self.positions_multi[exch].keys()):
                 self.positions_multi[exch][sym] = 0.0
+
+    def update_equity(self, equity: float | None, price: float) -> None:
+        """Actualiza ``max_pos`` basado en el ``equity`` actual."""
+        if (
+            equity is None
+            or self.equity_pct is None
+            or price <= 0
+        ):
+            return
+        self.max_pos = (equity * self.equity_pct) / price
+        self._base_max_pos = self.max_pos
 
     def covariance_matrix(self, returns: Dict[str, List[float]]) -> Dict[Tuple[str, str], float]:
         """Calcula matriz de covarianza a partir de retornos por símbolo."""
@@ -258,7 +273,7 @@ class RiskManager:
         target = self.max_pos * (
             1 if signal_side == "buy" else -1 if signal_side == "sell" else 0
         )
-        delta = (target - self.pos.qty) * strength
+        delta = (target - self.pos.qty) * strength * self.risk_pct
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol)

@@ -40,7 +40,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     bus = EventBus()
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=1.0, risk_pct=0.1),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
         )
@@ -70,12 +70,14 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             spot_side,
             last["spot"],
             strength=qty,
+            equity=cfg.spot.equity(mark_prices={cfg.symbol: last["spot"]}),
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             last["perp"],
             strength=qty,
+            equity=cfg.perp.equity(mark_prices={cfg.symbol: last["perp"]}),
         )
         if not (ok1 and ok2):
             return

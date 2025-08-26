@@ -51,7 +51,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     fills = 0
     if risk is None:
         risk = RiskService(
-            RiskManager(),
+            RiskManager(equity_pct=1.0, risk_pct=0.1),
             PortfolioGuard(GuardConfig(venue="binance")),
         )
 
@@ -127,6 +127,12 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         edge.direction, cfg.notional_quote, last,
                         cfg.taker_fee_bps, cfg.buffer_bps
                     )
+                    marks = {
+                        f"{cfg.route.base}/{cfg.route.quote}": last["bq"],
+                        f"{cfg.route.mid}/{cfg.route.quote}": last["mq"],
+                        f"{cfg.route.mid}/{cfg.route.base}": last["mb"],
+                    }
+                    eq = broker.equity(mark_prices=marks)
 
                     # Ejecutar 3 patas en PAPER
                     if edge.direction == "b->m":
@@ -136,18 +142,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=eq,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "buy",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=eq,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.quote}",
                                 "sell",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=eq,
                             ),
                         ]
                         if not all(c[0] for c in checks):
@@ -182,18 +191,21 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 "buy",
                                 last["mq"],
                                 strength=q["mid_qty"],
+                                equity=eq,
                             ),
                             risk.check_order(
                                 f"{cfg.route.mid}/{cfg.route.base}",
                                 "sell",
                                 last["mb"],
                                 strength=q["mid_qty"],
+                                equity=eq,
                             ),
                             risk.check_order(
                                 f"{cfg.route.base}/{cfg.route.quote}",
                                 "sell",
                                 last["bq"],
                                 strength=q["base_qty"],
+                                equity=eq,
                             ),
                         ]
                         if not all(c[0] for c in checks):

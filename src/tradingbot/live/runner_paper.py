@@ -49,7 +49,7 @@ async def run_paper(
     broker = PaperAdapter()
     router = ExecutionRouter([broker])
 
-    risk_core = RiskManager(max_pos=1.0)
+    risk_core = RiskManager(equity_pct=1.0, risk_pct=0.1)
     guard = PortfolioGuard(GuardConfig(total_cap_usdt=1000.0, per_symbol_cap_usdt=500.0, venue="paper"))
     corr = CorrelationService()
     risk = RiskService(risk_core, guard, corr_service=corr)
@@ -92,6 +92,7 @@ async def run_paper(
                 signal.side,
                 closed.c,
                 strength=signal.strength,
+                equity=broker.equity(mark_prices={symbol: closed.c}),
                 corr_threshold=corr_threshold,
             )
             if not allowed or abs(delta) <= 0:

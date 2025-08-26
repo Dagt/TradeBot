@@ -63,6 +63,7 @@ class RiskService:
         price: float,
         strength: float = 1.0,
         *,
+        equity: float | None = None,
         symbol_vol: float | None = None,
         corr_threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
@@ -71,6 +72,9 @@ class RiskService:
         Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
         proposed after volatility and correlation adjustments.
         """
+
+        if equity is not None:
+            self.rm.update_equity(equity, price)
 
         if symbol_vol is None or symbol_vol <= 0:
             symbol_vol = self.guard.volatility(symbol)
