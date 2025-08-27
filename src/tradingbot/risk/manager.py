@@ -419,6 +419,13 @@ class RiskManager:
             # dispatch asynchronously without awaiting
             asyncio.create_task(self.bus.publish("risk:halted", {"reason": reason}))
 
+    def reset(self) -> None:
+        """Reinicia el gestor habilitando límites nuevamente."""
+        self.enabled = True
+        self.last_kill_reason = None
+        self.close_all_positions()
+        KILL_SWITCH_ACTIVE.set(0)
+
     # ------------------------------------------------------------------
     # Daily PnL / Drawdown tracking
     def update_pnl(self, delta: float, *, venue: str | None = None) -> None:

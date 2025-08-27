@@ -79,7 +79,7 @@ async def run_paper(
             qty = float(t.get("qty", 0.0))
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
-            risk.update_correlation(corr_threshold)
+            risk.update_correlation(corr._returns.corr(), corr_threshold)
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
                 continue

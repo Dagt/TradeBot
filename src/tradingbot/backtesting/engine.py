@@ -290,22 +290,9 @@ class EventDrivenBacktestEngine:
             ):
                 corr_df = rolling_corr.loc[i]
                 cov_df = rolling_cov.loc[i]
-                corr_pairs: Dict[tuple[str, str], float] = {}
-                syms = list(corr_df.columns)
-                for a_idx, a in enumerate(syms):
-                    for b in syms[a_idx + 1 :]:
-                        val = corr_df.at[a, b]
-                        if not pd.isna(val):
-                            corr_pairs[(a, b)] = float(val)
-                cov_matrix = {
-                    (a, b): float(val)
-                    for (a, b), val in cov_df.stack().dropna().items()
-                }
                 for svc in self.risk.values():
-                    if corr_pairs:
-                        svc.rm.update_correlation(corr_pairs, 0.8)
-                    if cov_matrix:
-                        svc.rm.update_covariance(cov_matrix, 0.8)
+                    svc.update_correlation(corr_df, 0.8)
+                    svc.update_covariance(cov_df, 0.8)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)

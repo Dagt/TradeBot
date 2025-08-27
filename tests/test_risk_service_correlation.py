@@ -8,6 +8,7 @@ from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.correlation_service import CorrelationService
 from tradingbot.risk.service import RiskService
 from tradingbot.bus import EventBus
+import pandas as pd
 
 
 def _feed_correlated_prices(cs: CorrelationService) -> None:
@@ -34,7 +35,8 @@ async def test_risk_service_correlation_limits_and_sizing():
     svc = RiskService(rm, guard, corr_service=corr)
 
     _feed_correlated_prices(corr)
-    exceeded = svc.update_correlation(0.8)
+    corr_df = corr._returns.corr()
+    exceeded = svc.update_correlation(corr_df, 0.8)
     await asyncio.sleep(0)
     assert exceeded == [("AAA", "BBB")]
     assert events and events[0]["reason"] == "correlation"
@@ -44,4 +46,23 @@ async def test_risk_service_correlation_limits_and_sizing():
     )
     assert allowed
     assert delta == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_risk_service_covariance_limit():
+    bus = EventBus()
+    events: list = []
+    bus.subscribe("risk:paused", lambda e: events.append(e))
+    rm = RiskManager(bus=bus)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=50.0, per_symbol_cap_pct=50.0, venue="test")
+    )
+    svc = RiskService(rm, guard)
+    cov_df = pd.DataFrame(
+        [[0.04, 0.039], [0.039, 0.04]], index=["AAA", "BBB"], columns=["AAA", "BBB"]
+    )
+    exceeded = svc.update_covariance(cov_df, 0.8)
+    await asyncio.sleep(0)
+    assert exceeded == [("AAA", "BBB")]
+    assert events and events[0]["reason"] == "covariance"
 

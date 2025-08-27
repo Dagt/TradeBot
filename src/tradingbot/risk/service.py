@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
+import pandas as pd
+import numpy as np
+
 from .manager import RiskManager
 from .exceptions import StopLossExceeded
 from .portfolio_guard import PortfolioGuard
@@ -121,12 +124,78 @@ class RiskService:
         return True, reason, delta
 
     # ------------------------------------------------------------------
-    def update_correlation(self, threshold: float) -> list[tuple[str, str]]:
-        """Fetch correlations and delegate limit enforcement to ``RiskManager``."""
-        if self.corr is None:
+    def update_correlation(
+        self, corr_df: pd.DataFrame | np.ndarray, threshold: float
+    ) -> list[tuple[str, str]]:
+        """Apply correlation limits from a matrix of correlations.
+
+        ``corr_df`` may be a :class:`pandas.DataFrame` or a 2D array-like
+        object.  Only pairs whose absolute correlation exceeds ``threshold``
+        are forwarded to :class:`RiskManager`.
+        """
+
+        if isinstance(corr_df, np.ndarray):
+            corr_df = pd.DataFrame(corr_df)
+
+        if not isinstance(corr_df, pd.DataFrame):
             return []
-        pairs = self.corr.get_correlations()
+
+        syms = list(corr_df.columns)
+        pairs: Dict[tuple[str, str], float] = {}
+        for idx, a in enumerate(syms):
+            for b in syms[idx + 1 :]:
+                val = corr_df.at[a, b]
+                if pd.isna(val):
+                    continue
+                if abs(float(val)) >= threshold:
+                    pairs[(a, b)] = float(val)
+
+        if not pairs:
+            return []
         return self.rm.update_correlation(pairs, threshold)
+
+    def update_covariance(
+        self, cov_df: pd.DataFrame | np.ndarray, threshold: float
+    ) -> list[tuple[str, str]]:
+        """Apply covariance-based correlation limits.
+
+        ``cov_df`` may be a covariance matrix provided as DataFrame or array.
+        Off-diagonal pairs are kept only if their implied correlation exceeds
+        ``threshold``.  Diagonal elements are always forwarded so that
+        :class:`RiskManager` can compute the correlations.
+        """
+
+        if isinstance(cov_df, np.ndarray):
+            cov_df = pd.DataFrame(cov_df)
+
+        if not isinstance(cov_df, pd.DataFrame):
+            return []
+
+        syms = list(cov_df.columns)
+        cov_matrix: Dict[tuple[str, str], float] = {}
+        vars: Dict[str, float] = {}
+
+        for s in syms:
+            val = cov_df.at[s, s]
+            if not pd.isna(val):
+                vars[s] = float(abs(val))
+                cov_matrix[(s, s)] = float(val)
+
+        for i, a in enumerate(syms):
+            for b in syms[i + 1 :]:
+                val = cov_df.at[a, b]
+                if pd.isna(val):
+                    continue
+                va = vars.get(a)
+                vb = vars.get(b)
+                if va and vb and va > 0 and vb > 0:
+                    corr = float(val) / ((va ** 0.5) * (vb ** 0.5))
+                    if abs(corr) >= threshold:
+                        cov_matrix[(a, b)] = float(val)
+
+        if not cov_matrix:
+            return []
+        return self.rm.update_covariance(cov_matrix, threshold)
 
     # ------------------------------------------------------------------
     # Fill / PnL updates
