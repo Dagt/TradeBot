@@ -255,6 +255,10 @@ class EventDrivenBacktestEngine:
             for sym, df in self.data.items()
         }
         data_lengths = {sym: len(df) for sym, df in self.data.items()}
+        sym_vols = {
+            sym: returns(df).rolling(self.window).std().to_numpy()
+            for sym, df in self.data.items()
+        }
 
         mtm = sum(
             svc.rm.pos.qty * data_arrays[sym]["close"][0]
@@ -444,15 +448,21 @@ class EventDrivenBacktestEngine:
                 sym_len = data_lengths[symbol]
                 if i < self.window or i >= sym_len:
                     continue
-                window_df = df.iloc[i - self.window : i]
-                sig = strat.on_bar({"window": window_df})
+                start_idx = i - self.window
+                if getattr(strat, "needs_window_df", True):
+                    window_df = df.iloc[start_idx:i]
+                    sig = strat.on_bar({"window": window_df})
+                else:
+                    bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
+                    sig = strat.on_bar(bar_arrays)
                 if sig is None or sig.side == "flat":
                     continue
                 svc = self.risk[(strat_name, symbol)]
                 place_price = float(arrs["close"][i])
                 svc.mark_price(symbol, place_price)
-                rets = returns(window_df).dropna()
-                symbol_vol = float(rets.std()) if not rets.empty else 0.0
+                symbol_vol = float(sym_vols[symbol][i])
+                if np.isnan(symbol_vol):
+                    symbol_vol = 0.0
                 if equity < 0:
                     continue
                 equity_for_order = max(equity, 1.0)
