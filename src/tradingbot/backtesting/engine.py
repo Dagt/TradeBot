@@ -474,13 +474,8 @@ class EventDrivenBacktestEngine:
                 equity += pos * last_price
                 svc.rm.set_position(0.0)
 
-        # Final equity value
-        mtm = sum(
-            svc.rm.pos.qty * self.data[sym]["close"].iloc[-1]
-            for (strat, sym), svc in self.risk.items()
-            if not self.data[sym].empty
-        )
-        equity_curve.append(equity + mtm)
+        # Update final equity in the curve without duplicating the last value
+        equity_curve[-1] = equity
 
         equity_series = pd.Series(equity_curve)
         # Compute simple Sharpe ratio from equity changes
