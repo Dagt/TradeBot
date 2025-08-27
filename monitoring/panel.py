@@ -30,6 +30,8 @@ from .metrics import (
     PROCESS_MEMORY,
     PROCESS_UPTIME,
     update_process_metrics,
+    CLI_PROCESS_COMPLETED,
+    CLI_PROCESS_TIMEOUT,
 )
 from .strategies import (
     strategies_status,
@@ -530,6 +532,10 @@ async def run_cli(cmd: CLICommand) -> dict:
         stderr=asyncio.subprocess.PIPE,
     )
     out, err = await proc.communicate()
+    if proc.returncode == 0:
+        CLI_PROCESS_COMPLETED.inc()
+    else:
+        CLI_PROCESS_TIMEOUT.inc()
     return {
         "command": cmd.command,
         "stdout": out.decode(),

@@ -98,6 +98,19 @@
       "datasource": "Prometheus",
       "id": 7,
       "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "CLI timeouts",
+      "targets": [
+        {
+          "expr": "increase(cli_process_timeout_total[5m])",
+          "legendFormat": "timeouts"
+        }
+      ],
+      "datasource": "Prometheus",
+      "id": 8,
+      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8}
     }
   ],
   "templating": {
