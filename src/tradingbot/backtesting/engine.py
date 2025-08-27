@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
@@ -65,14 +66,20 @@ class SlippageModel:
         self.spread_mult = float(spread_mult)
         self.ofi_impact = float(ofi_impact)
 
-    def adjust(self, side: str, qty: float, price: float, bar: pd.Series) -> float:
-        spread = float(bar["high"] - bar["low"]) * self.spread_mult
+    def adjust(
+        self,
+        side: str,
+        qty: float,
+        price: float,
+        bar: Mapping[str, float] | pd.Series,
+    ) -> float:
+        spread = float(bar.get("high", 0.0) - bar.get("low", 0.0)) * self.spread_mult
         vol = float(bar.get("volume", 0.0))
         impact = self.volume_impact * qty / max(vol, 1e-9)
         ofi_val = 0.0
         if "order_flow_imbalance" in bar:
             ofi_val = float(bar["order_flow_imbalance"])
-        elif {"bid_qty", "ask_qty"}.issubset(bar.index):
+        elif {"bid_qty", "ask_qty"}.issubset(getattr(bar, "keys", lambda: [])()):
             ofi_val = float(
                 calc_ofi(
                     pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
@@ -87,7 +94,7 @@ class SlippageModel:
         side: str,
         qty: float,
         price: float,
-        bar: pd.Series,
+        bar: Mapping[str, float] | pd.Series,
         queue_pos: float = 0.0,
         partial: bool = True,
     ) -> tuple[float, float, float]:
@@ -242,10 +249,16 @@ class EventDrivenBacktestEngine:
         slippage_total = 0.0
         funding_total = 0.0
         equity_curve: List[float] = []
+        data_arrays = {
+            sym: {col: df[col].to_numpy() for col in df.columns}
+            for sym, df in self.data.items()
+        }
+        data_lengths = {sym: len(df) for sym, df in self.data.items()}
+
         mtm = sum(
-            svc.rm.pos.qty * self.data[sym]["close"].iloc[0]
+            svc.rm.pos.qty * data_arrays[sym]["close"][0]
             for (strat, sym), svc in self.risk.items()
-            if not self.data[sym].empty
+            if data_lengths[sym] > 0
         )
         equity = cash + mtm
         equity_curve.append(equity)
@@ -291,22 +304,34 @@ class EventDrivenBacktestEngine:
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
-                df = self.data[order.symbol]
-                if i >= len(df):
+                arrs = data_arrays[order.symbol]
+                sym_len = data_lengths[order.symbol]
+                if i >= sym_len:
                     continue
-                bar = df.iloc[i]
                 vol_key = "ask_size" if order.side == "buy" else "bid_size"
+                vol_arr = arrs.get(vol_key)
+                avail = float(vol_arr[i]) if vol_arr is not None else order.remaining_qty
                 if self.use_l2:
                     depth = self.exchange_depth.get(order.exchange, self.default_depth)
-                    order.queue_pos = min(
-                        order.queue_pos + float(bar.get(vol_key, 0.0)), depth
-                    )
-                if "bid" in bar and "ask" in bar:
-                    price = float(bar["ask"] if order.side == "buy" else bar["bid"])
+                    order.queue_pos = min(order.queue_pos + avail, depth)
+                if "bid" in arrs and "ask" in arrs:
+                    price = float(arrs["ask"][i] if order.side == "buy" else arrs["bid"][i])
                 else:
-                    price = float(bar["close"])
+                    price = float(arrs["close"][i])
 
                 if self.slippage:
+                    bar = {vol_key: avail}
+                    for k in (
+                        "high",
+                        "low",
+                        "volume",
+                        "order_flow_imbalance",
+                        "bid_qty",
+                        "ask_qty",
+                    ):
+                        arr_k = arrs.get(k)
+                        if arr_k is not None:
+                            bar[k] = float(arr_k[i])
                     price, fill_qty, order.queue_pos = self.slippage.fill(
                         order.side,
                         order.remaining_qty,
@@ -316,7 +341,6 @@ class EventDrivenBacktestEngine:
                         self.partial_fills,
                     )
                 else:
-                    avail = float(bar.get(vol_key, order.remaining_qty))
                     if self.use_l2:
                         eff_avail = max(0.0, avail - order.queue_pos)
                         order.queue_pos = max(0.0, order.queue_pos - avail)
@@ -369,10 +393,11 @@ class EventDrivenBacktestEngine:
                     if order.latency is None:
                         order.latency = i - order.place_index
                     svc.rm.complete_order()
+                timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
                 if collect_fills:
                     fills.append(
                         (
-                            bar.get("timestamp", i),
+                            timestamp,
                             order.side,
                             price,
                             fill_qty,
@@ -397,9 +422,9 @@ class EventDrivenBacktestEngine:
                     heapq.heappush(order_queue, order)
 
             mtm = sum(
-                svc.rm.pos.qty * self.data[sym]["close"].iloc[i]
+                svc.rm.pos.qty * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
-                if i < len(self.data[sym])
+                if i < data_lengths[sym]
             )
             equity = cash + mtm
             if equity < 0:
@@ -413,14 +438,16 @@ class EventDrivenBacktestEngine:
             # Generate new orders from strategies
             for (strat_name, symbol), strat in self.strategies.items():
                 df = self.data[symbol]
-                if i < self.window or i >= len(df):
+                arrs = data_arrays[symbol]
+                sym_len = data_lengths[symbol]
+                if i < self.window or i >= sym_len:
                     continue
                 window_df = df.iloc[i - self.window : i]
                 sig = strat.on_bar({"window": window_df})
                 if sig is None or sig.side == "flat":
                     continue
                 svc = self.risk[(strat_name, symbol)]
-                place_price = float(df["close"].iloc[i])
+                place_price = float(arrs["close"][i])
                 svc.mark_price(symbol, place_price)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
@@ -450,7 +477,9 @@ class EventDrivenBacktestEngine:
                 if self.use_l2:
                     vol_key = "ask_size" if side == "buy" else "bid_size"
                     depth = self.exchange_depth.get(exchange, self.default_depth)
-                    queue_pos = min(float(df.iloc[i].get(vol_key, 0.0)), depth)
+                    vol_arr = arrs.get(vol_key)
+                    avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                    queue_pos = min(avail, depth)
                 order = Order(
                     exec_index,
                     i,
@@ -471,13 +500,14 @@ class EventDrivenBacktestEngine:
             # ------------------------------------------------------------------
             # Apply funding payments after processing the bar
             for (strat_name, symbol), svc in self.risk.items():
-                df = self.data[symbol]
-                if i >= len(df):
+                arrs = data_arrays[symbol]
+                sym_len = data_lengths[symbol]
+                if i >= sym_len:
                     continue
-                bar = df.iloc[i]
-                rate = float(bar.get("funding_rate", 0.0))
+                rate_arr = arrs.get("funding_rate")
+                rate = float(rate_arr[i]) if rate_arr is not None else 0.0
                 if rate:
-                    price = float(bar.get("close", 0.0))
+                    price = float(arrs["close"][i])
                     pos = svc.rm.pos.qty
                     funding_cash = pos * price * rate
                     cash -= funding_cash
@@ -485,10 +515,11 @@ class EventDrivenBacktestEngine:
 
             # Re-check risk limits after funding adjustments
             for (strat_name, symbol), svc in self.risk.items():
-                df = self.data[symbol]
-                if i >= len(df):
+                arrs = data_arrays[symbol]
+                sym_len = data_lengths[symbol]
+                if i >= sym_len:
                     continue
-                current_price = float(df["close"].iloc[i])
+                current_price = float(arrs["close"][i])
                 svc.mark_price(symbol, current_price)
                 try:
                     svc.rm.check_limits(current_price)
@@ -498,9 +529,7 @@ class EventDrivenBacktestEngine:
                         side = "buy" if delta > 0 else "sell"
                         qty = abs(delta)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
-                        base_latency = self.exchange_latency.get(
-                            exchange, self.latency
-                        )
+                        base_latency = self.exchange_latency.get(exchange, self.latency)
                         exec_index = i + int(base_latency * self.stress.latency)
                         order = Order(
                             exec_index,
@@ -521,9 +550,9 @@ class EventDrivenBacktestEngine:
 
             # Track equity after processing each bar
             mtm = sum(
-                svc.rm.pos.qty * self.data[sym]["close"].iloc[i]
+                svc.rm.pos.qty * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
-                if i < len(self.data[sym])
+                if i < data_lengths[sym]
             )
             equity = cash + mtm
             equity_curve.append(equity)
@@ -543,9 +572,9 @@ class EventDrivenBacktestEngine:
         for (strat_name, symbol), svc in self.risk.items():
             pos = svc.rm.pos.qty
             if abs(pos) > 1e-9:
-                df = self.data[symbol]
-                price_idx = min(last_index, len(df) - 1)
-                last_price = float(df["close"].iloc[price_idx])
+                arrs = data_arrays[symbol]
+                price_idx = min(last_index, data_lengths[symbol] - 1)
+                last_price = float(arrs["close"][price_idx])
                 cash += pos * last_price
                 svc.rm.set_position(0.0)
 
