@@ -909,7 +909,7 @@ def backtest(
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
-) -> None:
+) -> dict:
     """Run a simple vectorised backtest from a CSV file."""
     from pathlib import Path
 
@@ -931,7 +931,7 @@ def backtest(
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))
-    sys.exit(0)
+    return result
 
 
 @app.command("backtest-cfg")
@@ -942,7 +942,7 @@ def backtest_cfg(
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
-) -> None:
+) -> dict:
     """Run a backtest using a Hydra YAML configuration."""
 
     from pathlib import Path
@@ -962,7 +962,7 @@ def backtest_cfg(
         config_name=cfg_path.stem,
         version_base=None,
     )
-    def _run(cfg) -> None:  # type: ignore[override]
+    def _run(cfg) -> dict:  # type: ignore[override]
         import pandas as pd
 
         from ..backtest.event_engine import EventDrivenBacktestEngine
@@ -985,13 +985,14 @@ def backtest_cfg(
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
         typer.echo(generate_report(result))
+        return result
     old_argv = sys.argv
     sys.argv = [sys.argv[0]]
     try:
-        _run()
+        result = _run()
     finally:
         sys.argv = old_argv
-    sys.exit(0)
+    return result
 
 
 @app.command("backtest-db")
@@ -1290,12 +1291,15 @@ def run_cross_arb(
     asyncio.run(run_cross_exchange(cfg))
 
 
-def main() -> None:
+def main() -> int:
     """Entry point used by ``python -m tradingbot.cli``."""
-
-    app()
+    try:
+        app(standalone_mode=False)
+        return 0
+    except typer.Exit as exc:
+        return exc.exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    sys.exit(main())
 
