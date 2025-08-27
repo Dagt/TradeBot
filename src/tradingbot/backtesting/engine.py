@@ -21,6 +21,9 @@ from ..data.features import returns, calc_ofi
 
 log = logging.getLogger(__name__)
 
+# Minimum quantity to record a fill. Fills below this threshold are ignored.
+MIN_FILL_QTY = 1e-6
+
 
 @dataclass(order=True)
 class Order:
@@ -131,7 +134,10 @@ class StressConfig:
 
 
 class EventDrivenBacktestEngine:
-    """Backtest engine supporting multiple symbols/strategies and order latency."""
+    """Backtest engine supporting multiple symbols/strategies and order latency.
+
+    Fills with quantity below ``min_fill_qty`` (default ``1e-6``) are ignored.
+    """
 
     def __init__(
         self,
@@ -149,6 +155,7 @@ class EventDrivenBacktestEngine:
         initial_equity: float = 1000.0,
         risk_pct: float = 0.0,
         verbose_fills: bool = False,
+        min_fill_qty: float = MIN_FILL_QTY,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -159,6 +166,7 @@ class EventDrivenBacktestEngine:
         self.cancel_unfilled = bool(cancel_unfilled)
         self.stress = stress or StressConfig()
         self.verbose_fills = bool(verbose_fills)
+        self.min_fill_qty = float(min_fill_qty)
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -319,6 +327,14 @@ class EventDrivenBacktestEngine:
                         heapq.heappush(order_queue, order)
                     continue
 
+                if fill_qty < self.min_fill_qty:
+                    if not self.cancel_unfilled:
+                        order.execute_index = i + 1
+                        heapq.heappush(order_queue, order)
+                    continue
+
+                fill_qty = round(fill_qty, 8)
+
                 slip = (
                     price - order.place_price
                     if order.side == "buy"
@@ -354,7 +370,7 @@ class EventDrivenBacktestEngine:
                 )
                 if self.verbose_fills:
                     log.info(
-                        "Fill %s %s qty=%s price=%s",
+                        "Fill %s %s qty=%.8f price=%s",
                         order.strategy,
                         order.symbol,
                         fill_qty,

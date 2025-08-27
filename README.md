@@ -93,6 +93,10 @@ risk:
 
 ```
 
+El motor de backtesting ignora ejecuciones cuya cantidad sea menor a
+`min_fill_qty` (por defecto `1e-6`) para evitar registrar residuos irrelevantes.
+Este parámetro puede ajustarse al crear `EventDrivenBacktestEngine`.
+
 ## Solución de problemas
 
 Si se muestra el mensaje `System clock offset`, indica que el reloj del
