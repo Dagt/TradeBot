@@ -221,7 +221,7 @@ class EventDrivenBacktestEngine:
             max_len,
         )
 
-        equity = self.initial_equity
+        cash = self.initial_equity
         fills: List[tuple] = []
         order_queue: List[Order] = []
         orders: List[Order] = []
@@ -322,13 +322,13 @@ class EventDrivenBacktestEngine:
                 )
                 slippage_total += slip * fill_qty
 
-                cash = fill_qty * price
+                trade_value = fill_qty * price
                 fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
-                fee = fee_model.calculate(cash)
+                fee = fee_model.calculate(trade_value)
                 if order.side == "buy":
-                    equity -= cash + fee
+                    cash -= trade_value + fee
                 else:
-                    equity += cash - fee
+                    cash += trade_value - fee
                 svc = self.risk[(order.strategy, order.symbol)]
                 svc.on_fill(order.symbol, order.side, fill_qty)
                 order.filled_qty += fill_qty
@@ -352,6 +352,12 @@ class EventDrivenBacktestEngine:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
 
+            mtm = sum(
+                svc.rm.pos.qty * self.data[sym]["close"].iloc[i]
+                for (strat, sym), svc in self.risk.items()
+                if i < len(self.data[sym])
+            )
+            equity = cash + mtm
             if equity <= 0 and fills:
                 log.warning(
                     "Equity depleted at bar %d; stopping backtest", i
@@ -427,9 +433,9 @@ class EventDrivenBacktestEngine:
                 if rate:
                     price = float(bar.get("close", 0.0))
                     pos = svc.rm.pos.qty
-                    cash = pos * price * rate
-                    equity -= cash
-                    funding_total += cash
+                    funding_cash = pos * price * rate
+                    cash -= funding_cash
+                    funding_total += funding_cash
 
             # Re-check risk limits after funding adjustments
             for (strat_name, symbol), svc in self.risk.items():
@@ -473,7 +479,8 @@ class EventDrivenBacktestEngine:
                 for (strat, sym), svc in self.risk.items()
                 if i < len(self.data[sym])
             )
-            equity_curve.append(equity + mtm)
+            equity = cash + mtm
+            equity_curve.append(equity)
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
@@ -482,9 +489,10 @@ class EventDrivenBacktestEngine:
                 df = self.data[symbol]
                 price_idx = min(last_index, len(df) - 1)
                 last_price = float(df["close"].iloc[price_idx])
-                equity += pos * last_price
+                cash += pos * last_price
                 svc.rm.set_position(0.0)
 
+        equity = cash
         # Update final equity in the curve without duplicating the last value
         equity_curve[-1] = equity
 

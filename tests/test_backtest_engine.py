@@ -219,12 +219,39 @@ def test_stop_on_equity_depletion(tmp_path, monkeypatch, caplog):
 
     caplog.set_level(logging.WARNING)
     res = run_backtest_csv(
-        data, strategies, latency=1, window=1, initial_equity=1.0
+        data, strategies, latency=1, window=1, initial_equity=0.0
     )
 
     assert len(res["fills"]) == 1
-    assert res["max_drawdown"] <= 1.0
     assert any("Equity depleted" in m for m in caplog.messages)
+
+
+def test_continue_with_positive_mtm(tmp_path, monkeypatch, caplog):
+    rng = pd.date_range("2021-01-01", periods=5, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "close": 1.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "deplete.csv"
+    df.to_csv(path, index=False)
+
+    monkeypatch.setitem(STRATEGIES, "always", AlwaysBuyStrategy)
+    strategies = [("always", "SYM")]
+    data = {"SYM": str(path)}
+
+    caplog.set_level(logging.WARNING)
+    res = run_backtest_csv(
+        data, strategies, latency=1, window=1, initial_equity=1.0
+    )
+
+    assert len(res["equity_curve"]) == len(df) + 1
+    assert not any("Equity depleted" in m for m in caplog.messages)
 
 
 def test_seed_reproducibility(tmp_path, monkeypatch):
