@@ -205,22 +205,31 @@ let strategyInfo = strategies;
 
 function appendSummary(text){
   try{
-    const eq=text.match(/'equity':\s*([0-9\.e+-]+)/);
-    const pnl=text.match(/'pnl':\s*([0-9\.e+-]+)/);
-    const slip=text.match(/'slippage':\s*([0-9\.e+-]+)/);
-    const dd=text.match(/'max_drawdown':\s*([0-9\.e+-]+)/);
-    const fillsMatch=text.match(/'fills':\s*\[(.*)\]/s);
-    let fills=0;
-    if(fillsMatch){
-      fills=(fillsMatch[1].match(/\(/g)||[]).length;
+    let eq=null,pnl=null,fills=null,dd=null;
+    const m=text.match(/Backtest finalizado:\s*equity\s*([0-9\.e+-]+),\s*pnl\s*([0-9\.e+-]+),\s*fills\s*(\d+),\s*drawdown\s*([0-9\.e+-]+)%/);
+    if(m){
+      eq=parseFloat(m[1]);
+      pnl=parseFloat(m[2]);
+      fills=parseInt(m[3],10);
+      dd=parseFloat(m[4]);
+    }else{
+      const eqMatch=text.match(/'equity':\s*([0-9\.e+-]+)/);
+      const pnlMatch=text.match(/'pnl':\s*([0-9\.e+-]+)/);
+      const ddMatch=text.match(/'max_drawdown':\s*([0-9\.e+-]+)/);
+      const fillsMatch=text.match(/'fills':\s*\[(.*)\]/s);
+      eq=eqMatch?parseFloat(eqMatch[1]):null;
+      pnl=pnlMatch?parseFloat(pnlMatch[1]):null;
+      dd=ddMatch?parseFloat(ddMatch[1])*100:null;
+      if(fillsMatch){
+        fills=(fillsMatch[1].match(/\(/g)||[]).length;
+      }
     }
     const lines=[
       '',
-      `equity final ≈ ${eq?parseFloat(eq[1]).toFixed(2):'N/A'}`,
-      `pnl total ≈ ${pnl?parseFloat(pnl[1]).toFixed(2):'N/A'}`,
-      `${fills} fills (operaciones ejecutadas)`,
-      `slippage total ≈ ${slip?parseFloat(slip[1]).toFixed(2):'N/A'}`,
-      `drawdown máximo ≈ ${dd?parseFloat(dd[1]).toFixed(2):'N/A'}`,
+      `equity final ≈ ${eq!=null?eq.toFixed(2):'N/A'}`,
+      `pnl total ≈ ${pnl!=null?pnl.toFixed(2):'N/A'}`,
+      `${fills!=null?fills:'N/A'} fills (operaciones ejecutadas)`,
+      `drawdown máximo ≈ ${dd!=null?dd.toFixed(2):'N/A'}%`,
       ''
     ];
     const out=document.getElementById('bt-output');
