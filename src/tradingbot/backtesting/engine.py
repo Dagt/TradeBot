@@ -472,7 +472,7 @@ class EventDrivenBacktestEngine:
         sharpe = float(rets.mean() / rets.std()) if not rets.empty and rets.std() else 0.0
         # Maximum drawdown from the equity curve
         running_max = equity_series.cummax()
-        drawdown = (equity_series - running_max) / running_max
+        drawdown = (equity_series - running_max) / running_max.clip(lower=1e-9)
         max_drawdown = -float(drawdown.min()) if not drawdown.empty else 0.0
         max_drawdown = min(max_drawdown, 1.0)
 

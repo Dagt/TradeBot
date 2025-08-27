@@ -1,4 +1,6 @@
+import math
 import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -240,4 +242,23 @@ def test_seed_reproducibility(tmp_path, monkeypatch):
     base = equities[0]
     for eq in equities[1:]:
         assert abs(eq - base) <= abs(base) * 0.005
+
+
+def test_max_drawdown_zero_initial_equity(tmp_path, monkeypatch):
+    csv_path = _make_csv(tmp_path)
+
+    class NoTradeStrategy:
+        name = "no_trade"
+
+        def on_bar(self, bar):
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "no_trade", NoTradeStrategy)
+    strategies = [("no_trade", "SYM")]
+    data = {"SYM": str(csv_path)}
+
+    res = run_backtest_csv(data, strategies, latency=1, window=1, initial_equity=0.0)
+
+    assert res["max_drawdown"] == 0.0
+    assert not math.isnan(res["max_drawdown"])
 
