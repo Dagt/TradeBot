@@ -32,6 +32,7 @@ def test_event_engine_runs(tmp_path, monkeypatch):
     res = engine.run()
     assert "equity" in res
     assert len(res["fills"]) > 0
+    assert len(res["fills"][0]) == 8
 
 
 def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
@@ -53,6 +54,7 @@ def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
     res = engine.run()
     assert "equity" in res
     assert len(res["fills"]) > 0
+    assert len(res["fills"][0]) == 8
 
 
 class OneShotStrategy:
@@ -112,6 +114,7 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
     exit_price = res["fills"][1][2]
     assert exit_price <= entry_price * (1 - 0.1)
     assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
+    assert len(res["fills"][0]) == 8
 
 
 def test_equity_loss_capped_by_risk_pct(tmp_path, monkeypatch):

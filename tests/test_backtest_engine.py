@@ -56,6 +56,7 @@ def test_pnl_with_and_without_slippage(tmp_path, monkeypatch):
     )
 
     assert len(no_slip["fills"]) > 0
+    assert len(no_slip["fills"][0]) == 8
     assert no_slip["equity"] >= with_slip["equity"]
 
 
