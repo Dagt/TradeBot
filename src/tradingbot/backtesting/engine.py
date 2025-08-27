@@ -251,34 +251,42 @@ class EventDrivenBacktestEngine:
         equity_curve.append(equity)
         last_index = max_len - 1
 
+        returns_df = pd.DataFrame(index=range(max_len)) if len(self.risk) > 1 else None
+        rolling_corr = None
+        rolling_cov = None
+        if returns_df is not None:
+            for sym, df_sym in self.data.items():
+                returns_df[sym] = returns(df_sym).reset_index(drop=True)
+            rolling_corr = returns_df.rolling(self.window).corr()
+            rolling_cov = returns_df.rolling(self.window).cov()
+
         for i in range(max_len):
             if i and i % 500 == 0:
                 log.info("Progreso: %d/%d barras", i, max_len)
             # Actualiza límites por correlación/covarianza con retornos recientes
-            if i >= self.window and len(self.risk) > 1:
-                returns_dict: Dict[str, List[float]] = {}
-                for sym, df_sym in self.data.items():
-                    window_df_sym = df_sym.iloc[i - self.window : i]
-                    rets = returns(window_df_sym).dropna().tolist()
-                    if rets:
-                        returns_dict[sym] = rets
-                if returns_dict:
-                    corr_pairs: Dict[tuple[str, str], float] = {}
-                    if len(returns_dict) > 1:
-                        rets_df = pd.DataFrame(returns_dict)
-                        cols = list(rets_df.columns)
-                        for a_idx in range(len(cols)):
-                            for b_idx in range(a_idx + 1, len(cols)):
-                                a = cols[a_idx]
-                                b = cols[b_idx]
-                                corr = rets_df[a].corr(rets_df[b])
-                                if not pd.isna(corr):
-                                    corr_pairs[(a, b)] = float(corr)
-                    any_rm = next(iter(self.risk.values()))
-                    cov_matrix = any_rm.rm.covariance_matrix(returns_dict)
-                    for svc in self.risk.values():
-                        if corr_pairs:
-                            svc.rm.update_correlation(corr_pairs, 0.8)
+            if (
+                returns_df is not None
+                and rolling_corr is not None
+                and rolling_cov is not None
+                and i >= self.window
+            ):
+                corr_df = rolling_corr.loc[i]
+                cov_df = rolling_cov.loc[i]
+                corr_pairs: Dict[tuple[str, str], float] = {}
+                syms = list(corr_df.columns)
+                for a_idx, a in enumerate(syms):
+                    for b in syms[a_idx + 1 :]:
+                        val = corr_df.at[a, b]
+                        if not pd.isna(val):
+                            corr_pairs[(a, b)] = float(val)
+                cov_matrix = {
+                    (a, b): float(val)
+                    for (a, b), val in cov_df.stack().dropna().items()
+                }
+                for svc in self.risk.values():
+                    if corr_pairs:
+                        svc.rm.update_correlation(corr_pairs, 0.8)
+                    if cov_matrix:
                         svc.rm.update_covariance(cov_matrix, 0.8)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
