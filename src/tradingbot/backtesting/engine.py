@@ -361,6 +361,7 @@ class EventDrivenBacktestEngine:
                 fills.append(
                     (
                         bar.get("timestamp", i),
+                        order.side,
                         price,
                         fill_qty,
                         order.strategy,
@@ -370,11 +371,13 @@ class EventDrivenBacktestEngine:
                 )
                 if self.verbose_fills:
                     log.info(
-                        "Fill %s %s qty=%.8f price=%s",
+                        "Fill %s %s side=%s qty=%.8f price=%.2f rpnl=%.2f",
                         order.strategy,
                         order.symbol,
+                        order.side,
                         fill_qty,
                         price,
+                        getattr(svc.rm.pos, "realized_pnl", 0.0),
                     )
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
