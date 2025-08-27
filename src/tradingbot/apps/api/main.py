@@ -15,7 +15,7 @@ import asyncio
 import signal
 import uuid
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:  # pragma: no cover - ccxt is optional
     import ccxt  # type: ignore
@@ -535,11 +535,27 @@ def update_strategy_params(name: str, params: dict):
 
 # --- CLI runner ------------------------------------------------------------------
 
+DEFAULT_CLI_TIMEOUT = 300  # seconds
 
 class CLIRequest(BaseModel):
-    """Payload for running a command via the CLI."""
+    """Payload for running a command via the CLI.
+
+    Parameters
+    ----------
+    command:
+        CLI arguments to pass to ``python -m tradingbot.cli``.
+    timeout:
+        Optional limit in seconds for command execution. Defaults to
+        ``DEFAULT_CLI_TIMEOUT`` (300s). Clients may override this value to
+        suit their needs.
+    """
 
     command: str
+    timeout: int | None = Field(
+        default=None,
+        description="Maximum seconds to allow the command to run. Defaults to 300 if omitted.",
+        ge=1,
+    )
 
 
 @app.post("/cli/run")
@@ -549,6 +565,10 @@ def run_cli(req: CLIRequest):
     The endpoint runs ``python -m tradingbot.cli`` with the arguments supplied
     in ``command``.  Output from ``stdout`` and ``stderr`` is captured and
     returned to the caller so it can be displayed in the dashboard.
+
+    Clients may set ``timeout`` in the request body to adjust the maximum
+    execution time.  If omitted, a default of ``DEFAULT_CLI_TIMEOUT`` seconds is
+    used.
     """
 
     args = shlex.split(req.command)
@@ -556,8 +576,15 @@ def run_cli(req: CLIRequest):
     env = os.environ.copy()
     repo_root = Path(__file__).resolve().parents[3]
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
+    timeout = req.timeout if req.timeout is not None else DEFAULT_CLI_TIMEOUT
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
         return {
             "command": req.command,
             "returncode": res.returncode,
