@@ -7,10 +7,11 @@ from tradingbot.strategies.cross_exchange_arbitrage import (
 
 
 class MockAdapter:
-    def __init__(self, name, trades):
+    def __init__(self, name, trades, balances):
         self.name = name
         self._trades = trades
         self.orders = []
+        self._balances = balances
 
     async def stream_trades(self, symbol):
         for t in self._trades:
@@ -21,11 +22,14 @@ class MockAdapter:
         price = self._trades[0]["price"]
         return {"status": "filled", "price": price}
 
+    async def fetch_balance(self):
+        return self._balances
+
 
 @pytest.mark.asyncio
 async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
-    spot = MockAdapter("spot", [{"price": 100.0}])
-    perp = MockAdapter("perp", [{"price": 101.0}])
+    spot = MockAdapter("spot", [{"price": 100.0}], {"USDT": 200.0})
+    perp = MockAdapter("perp", [{"price": 101.0}], {"BTC": 1.0})
 
     rebalance_calls = []
     async def fake_rebalance(asset, price, venues, risk, engine, threshold=0.0):
@@ -61,7 +65,8 @@ async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
+        strength=1.0,
+        equity=100.0,
         persist_pg=True,
         rebalance_assets=("USDT",),
         rebalance_threshold=1.0,

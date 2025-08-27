@@ -55,6 +55,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         oco_book.preload(load_active_oco(engine, venue=venue, symbols=[cfg.symbol]))
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
+    balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:
@@ -64,26 +65,20 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             return
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
-        equity = 0.0
-        if last["spot"] is not None:
-            equity += abs(balances.get(cfg.spot.name, 0.0)) * last["spot"]
-        if last["perp"] is not None:
-            equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
-        if equity <= 0:
-            equity = cfg.notional
+        equity = cfg.equity
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
             equity,
             last["spot"],
-            strength=1.0,
+            strength=cfg.strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             equity,
             last["perp"],
-            strength=1.0,
+            strength=cfg.strength,
         )
         if not (ok1 and ok2):
             return

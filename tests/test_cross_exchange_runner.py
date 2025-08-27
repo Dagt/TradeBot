@@ -37,20 +37,26 @@ async def test_cross_exchange_runner_persists_and_executes(
         fake_insert_order,
     )
 
+    monkeypatch.setattr(
+        "tradingbot.live.runner_cross_exchange._CAN_PG", False
+    )
+
     cfg = CrossArbConfig(
         symbol="BTC/USDT",
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
+        strength=1.0,
+        equity=100.0,
     )
 
     await run_cross_exchange(cfg)
 
+    expected = 100.0 / 101.0
     assert spot.orders == [
-        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(1.0)}
+        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(expected)}
     ]
     assert perp.orders == [
-        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(1.0)}
+        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(expected)}
     ]
     assert len(inserted) == 2

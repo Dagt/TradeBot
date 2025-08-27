@@ -37,7 +37,8 @@ class TriConfig:
     route: TriRoute
     taker_fee_bps: float = 7.5
     buffer_bps: float = 3.0
-    notional_quote: float = 100.0
+    strength: float = 1.0
+    equity: float = 100.0
     edge_threshold: float = 0.001
     persist_pg: bool = False  # <-- nuevo flag
 
@@ -104,6 +105,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         continue
 
                     # Persistir señal
+                    notional_quote = cfg.equity * cfg.strength
                     if engine is not None:
                         try:
                             insert_tri_signal(
@@ -114,7 +116,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                 quote=cfg.route.quote,
                                 direction=edge.direction,
                                 edge=edge.net,
-                                notional_quote=cfg.notional_quote,
+                                notional_quote=notional_quote,
                                 taker_fee_bps=cfg.taker_fee_bps,
                                 buffer_bps=cfg.buffer_bps,
                                 bq=last["bq"], mq=last["mq"], mb=last["mb"]
@@ -124,7 +126,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
 
                     # Calcular cantidades aproximadas
                     q = compute_qtys_for_route(
-                        edge.direction, cfg.notional_quote, last,
+                        edge.direction, notional_quote, last,
                         cfg.taker_fee_bps, cfg.buffer_bps
                     )
 
@@ -265,7 +267,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                     })
                     log.info(
                         "ARBITRAJE %s edge=%.4f%% notional=%.2f %s | fills=%d | equity=%.4f",
-                        edge.direction, edge.net*100, cfg.notional_quote, last, fills, eq
+                        edge.direction, edge.net*100, notional_quote, last, fills, eq
                     )
         except Exception as e:
             WS_FAILURES.labels(adapter="tri_runner").inc()

@@ -38,8 +38,10 @@ class CrossArbConfig:
         Perpetual market connector implementing :class:`ExchangeAdapter`.
     threshold:
         Premium threshold as decimal (``0.001`` = 0.1%).
-    notional:
-        Quote currency notional per leg.
+    strength:
+        Fraction of account equity to deploy per leg.
+    equity:
+        Simulated account equity in quote currency.
     persist_pg:
         If ``True`` persist signals/fills in TimescaleDB.
     rebalance_assets:
@@ -58,7 +60,8 @@ class CrossArbConfig:
     spot: ExchangeAdapter
     perp: ExchangeAdapter
     threshold: float = 0.001  # premium threshold as decimal (0.001 = 0.1%)
-    notional: float = 100.0  # quote currency notional per leg
+    strength: float = 1.0  # fraction of equity to deploy
+    equity: float = 100.0  # simulated account equity in quote currency
     persist_pg: bool = False
     rebalance_assets: tuple[str, ...] = ()
     rebalance_threshold: float = 0.0
@@ -77,11 +80,12 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
 
     The trade size can be capped via ``cfg.max_notional`` or ``cfg.max_qty``
     and a simulated network latency can be injected via ``cfg.latency``. Prior
-    to submitting orders the required balances on both venues are verified.  In
-    addition, the notional of each trade is scaled by a ``strength`` factor
-    derived from how the spot/perp premium has evolved since the current
-    position was opened. A widening premium increases ``strength`` while a
-    contraction reduces it and can even flip the trade direction.
+    to submitting orders the required balances on both venues are verified. The
+    base notional is ``cfg.equity * cfg.strength`` and it is further scaled by a
+    dynamic ``strength`` factor derived from how the spot/perp premium has
+    evolved since the current position was opened. A widening premium increases
+    ``strength`` while a contraction reduces it and can even flip the trade
+    direction.
     """
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
@@ -115,7 +119,8 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             if position_sign != 0:
                 pnl_edge = (edge - entry_edge) * position_sign
                 strength += pnl_edge
-            qty = abs(cfg.notional * strength) / last["spot"]
+            base_notional = cfg.equity * cfg.strength
+            qty = abs(base_notional * strength) / last["spot"]
             if cfg.max_notional is not None:
                 qty = min(qty, cfg.max_notional / last["spot"])
             if cfg.max_qty is not None:

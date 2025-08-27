@@ -332,7 +332,7 @@ class TradeBotDaemon:
                 edge = (last["perp"] - last["spot"]) / last["spot"]
                 if abs(edge) < cfg.threshold:
                     return
-                qty = cfg.notional / last["spot"]
+                qty = (cfg.equity * cfg.strength) / last["spot"]
                 if edge > 0:
                     spot_side, perp_side = "buy", "sell"
                 else:

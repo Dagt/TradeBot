@@ -1151,7 +1151,8 @@ def train_ml(
 @app.command("tri-arb")
 def tri_arb(
     route: str = typer.Argument(..., help="Ruta BASE-MID-QUOTE, ej. BTC-ETH-USDT"),
-    notional: float = typer.Option(100.0, help="Notional en la divisa quote"),
+    strength: float = typer.Option(1.0, help="Fracción del equity a utilizar"),
+    equity: float = typer.Option(100.0, help="Equity simulado en la divisa quote"),
 ) -> None:
     """Ejecutar arbitrage triangular simple en Binance."""
 
@@ -1164,7 +1165,7 @@ def tri_arb(
     except ValueError as exc:  # pragma: no cover - validated por typer
         raise typer.BadParameter("Formato de ruta inválido, usa BASE-MID-QUOTE") from exc
 
-    cfg = TriConfig(route=TriRoute(base, mid, quote), notional_quote=notional)
+    cfg = TriConfig(route=TriRoute(base, mid, quote), strength=strength, equity=equity)
     asyncio.run(run_triangular_binance(cfg))
 
 
@@ -1174,7 +1175,8 @@ def cross_arb(
     spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
-    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
+    strength: float = typer.Option(1.0, help="Fracción del equity a utilizar"),
+    equity: float = typer.Option(100.0, help="Equity simulado en la divisa quote"),
 ) -> None:
     """Arbitraje entre spot y perp usando dos adapters."""
 
@@ -1210,7 +1212,8 @@ def cross_arb(
         spot=adapters[spot](),
         perp=adapters[perp](),
         threshold=threshold,
-        notional=notional,
+        strength=strength,
+        equity=equity,
     )
     asyncio.run(run_cross_exchange_arbitrage(cfg))
 
@@ -1221,7 +1224,8 @@ def run_cross_arb(
     spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
-    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
+    strength: float = typer.Option(1.0, help="Fracción del equity a utilizar"),
+    equity: float = typer.Option(100.0, help="Equity simulado en la divisa quote"),
 ) -> None:
     """Ejecuta el runner de arbitraje spot/perp con ``ExecutionRouter``."""
 
@@ -1255,7 +1259,8 @@ def run_cross_arb(
         spot=adapters[spot](),
         perp=adapters[perp](),
         threshold=threshold,
-        notional=notional,
+        strength=strength,
+        equity=equity,
     )
     asyncio.run(run_cross_exchange(cfg))
 

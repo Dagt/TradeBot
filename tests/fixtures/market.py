@@ -56,6 +56,7 @@ class DummyMarketAdapter:
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        **_: any,
     ) -> dict:
         self.orders.append({"symbol": symbol, "side": side, "qty": qty})
         return {"status": "filled", "price": self.state.last_px[symbol]}
