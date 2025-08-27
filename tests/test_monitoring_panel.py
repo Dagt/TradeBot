@@ -13,7 +13,6 @@ def test_config_roundtrip():
     payload = {
         "strategy": "mean_reversion",
         "pairs": ["BTC/USDT"],
-        "notional": 50,
         "venue": "binance_futures",
         "risk_pct": 0.005,
         "leverage": 3,
@@ -25,6 +24,7 @@ def test_config_roundtrip():
     post_cfg = post_resp.json()["config"]
     for key, value in payload.items():
         assert post_cfg[key] == value
+    assert "notional" not in post_cfg
 
     # Roundtrip: ensure the configuration persists
     get_resp = client.get("/config")
@@ -32,6 +32,7 @@ def test_config_roundtrip():
     get_cfg = get_resp.json()["config"]
     for key, value in payload.items():
         assert get_cfg[key] == value
+    assert "notional" not in get_cfg
 
 
 def test_start_stop(monkeypatch):
