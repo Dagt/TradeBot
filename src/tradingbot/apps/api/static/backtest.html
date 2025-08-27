@@ -395,16 +395,22 @@ async function runBacktest(){
     resetEndFallback();
     evt=new EventSource(api(`/cli/stream/${j.id}`));
     evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
-    evt.addEventListener('end',(e)=>{
-      if(endTimer){clearTimeout(endTimer);endTimer=null;} // clear fallback timer
+    const finish=(msg)=>{
+      if(endTimer){clearTimeout(endTimer);endTimer=null;}
       stopBtn.disabled=true;
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
       currentJob=null;
-      evt.close();
+      if(evt){evt.close();}
       hideWorking();
       appendSummary(outEl.textContent);
-      appendOutput(outEl,`Proceso finalizado (código ${e.data}).`);
+      appendOutput(outEl,msg);
+    };
+    evt.addEventListener('status',(e)=>{
+      finish(`Proceso finalizado (${e.data}).`);
+    });
+    evt.addEventListener('end',(e)=>{
+      finish(`Proceso finalizado (código ${e.data}).`);
     });
     evt.onerror=()=>{
       if(endTimer){clearTimeout(endTimer);endTimer=null;}
