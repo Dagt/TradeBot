@@ -68,6 +68,19 @@ class OneShotStrategy:
         return SimpleNamespace(side="buy", strength=1.0)
 
 
+class HalfShotStrategy:
+    name = "halfshot"
+
+    def __init__(self) -> None:
+        self.sent = False
+
+    def on_bar(self, bar):
+        if self.sent:
+            return None
+        self.sent = True
+        return SimpleNamespace(side="buy", strength=0.5)
+
+
 def test_stop_loss_triggers_close(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=5, freq="min")
     price = [100.0, 100.0, 100.0, 80.0, 80.0]
@@ -82,10 +95,10 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
         }
     )
     data = {"SYM": df}
-    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
+    monkeypatch.setitem(STRATEGIES, "halfshot", HalfShotStrategy)
     engine = EventDrivenBacktestEngine(
         data,
-        [("oneshot", "SYM")],
+        [("halfshot", "SYM")],
         latency=1,
         window=1,
         risk_pct=0.1,

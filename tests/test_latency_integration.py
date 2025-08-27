@@ -1,6 +1,5 @@
-import pandas as pd
-import pandas as pd
 from types import SimpleNamespace
+import pandas as pd
 import pytest
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, SlippageModel
@@ -8,8 +7,8 @@ from tradingbot.strategies import STRATEGIES
 from tradingbot.analysis.backtest_report import generate_report
 
 
-class OneShotStrategy:
-    name = "oneshot"
+class HalfShotStrategy:
+    name = "halfshot"
 
     def __init__(self) -> None:
         self.sent = False
@@ -18,7 +17,7 @@ class OneShotStrategy:
         if self.sent:
             return None
         self.sent = True
-        return SimpleNamespace(side="buy", strength=1.0)
+        return SimpleNamespace(side="buy", strength=0.5)
 
 
 @pytest.mark.integration
@@ -39,8 +38,8 @@ def test_heterogeneous_latency(monkeypatch):
         }
     )
     data = {"SYM1": df.copy(), "SYM2": df.copy()}
-    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
-    strategies = [("oneshot", "SYM1", "fast"), ("oneshot", "SYM2", "slow")]
+    monkeypatch.setitem(STRATEGIES, "halfshot", HalfShotStrategy)
+    strategies = [("halfshot", "SYM1", "fast"), ("halfshot", "SYM2", "slow")]
     exchange_configs = {
         "fast": {"latency": 1, "depth": 5.0},
         "slow": {"latency": 3, "depth": 5.0},
@@ -53,6 +52,7 @@ def test_heterogeneous_latency(monkeypatch):
         slippage=SlippageModel(),
         exchange_configs=exchange_configs,
         use_l2=True,
+        initial_equity=100.0,
     )
     res = engine.run()
     orders = {o["exchange"]: o for o in res["orders"]}
