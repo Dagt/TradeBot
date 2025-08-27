@@ -222,6 +222,7 @@ class EventDrivenBacktestEngine:
         )
 
         cash = self.initial_equity
+        equity = cash
         fills: List[tuple] = []
         order_queue: List[Order] = []
         orders: List[Order] = []
@@ -358,7 +359,7 @@ class EventDrivenBacktestEngine:
                 if i < len(self.data[sym])
             )
             equity = cash + mtm
-            if equity <= 0 and fills:
+            if equity <= 0:
                 log.warning(
                     "Equity depleted at bar %d; stopping backtest", i
                 )
@@ -380,11 +381,12 @@ class EventDrivenBacktestEngine:
                 svc.mark_price(symbol, place_price)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
-                eq_for_size = equity if equity > 0 else 100.0
+                if equity <= 0:
+                    continue
                 allowed, _reason, delta = svc.check_order(
                     symbol,
                     sig.side,
-                    eq_for_size,
+                    equity,
                     place_price,
                     strength=sig.strength,
                     symbol_vol=symbol_vol,
