@@ -222,6 +222,7 @@ class EventDrivenBacktestEngine:
         )
 
         cash = self.initial_equity
+        equity = cash
         fills: List[tuple] = []
         order_queue: List[Order] = []
         orders: List[Order] = []
@@ -233,7 +234,7 @@ class EventDrivenBacktestEngine:
             for (strat, sym), svc in self.risk.items()
             if not self.data[sym].empty
         )
-        equity_curve.append(equity + mtm)
+        equity_curve.append(cash + mtm)
         last_index = max_len - 1
 
         for i in range(max_len):
