@@ -649,9 +649,7 @@ async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None,
                 break
             if timeout is not None and time.perf_counter() - start > timeout:
                 proc.terminate()
-                await proc.wait()
-                yield f"event: end\ndata: {proc.returncode or 1}\n\n"
-                return
+                break
             try:
                 line = await asyncio.wait_for(queue.get(), 0.1)
             except asyncio.TimeoutError:
@@ -677,11 +675,8 @@ async def cli_stream(job_id: str):
     start = job.get("start", time.perf_counter())
 
     async def event_gen():
-        end_sent = False
         try:
             async for chunk in _stream_process(proc, timeout, start):
-                if chunk.startswith("event: end"):
-                    end_sent = True
                 yield chunk
         except Exception as exc:
             # Surface the error to the client before finishing the stream.
@@ -689,12 +684,14 @@ async def cli_stream(job_id: str):
         finally:
             # Remove job and always emit an ``end`` event so that the client
             # knows the stream is finished even if many lines were produced.
-            _CLI_PROCS.pop(job_id, None)
+            _CLI_JOBS.pop(job_id, None)
+            await proc.wait()
             returncode = proc.returncode if proc.returncode is not None else 0
             if returncode == 0:
                 CLI_PROCESS_COMPLETED.inc()
             else:
                 CLI_PROCESS_TIMEOUT.inc()
+            yield "event: status\ndata: finished\n\n"
             yield f"event: end\ndata: {returncode}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
