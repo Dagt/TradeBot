@@ -339,6 +339,12 @@ class EventDrivenBacktestEngine:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
 
+            if equity <= 0 and fills:
+                log.warning(
+                    "Equity depleted at bar %d; stopping backtest", i
+                )
+                equity_curve.append(equity)
+                break
 
             # Generate new orders from strategies
             for (strat_name, symbol), strat in self.strategies.items():
@@ -468,6 +474,7 @@ class EventDrivenBacktestEngine:
         running_max = equity_series.cummax()
         drawdown = (equity_series - running_max) / running_max
         max_drawdown = -float(drawdown.min()) if not drawdown.empty else 0.0
+        max_drawdown = min(max_drawdown, 1.0)
 
         pnl = equity - self.initial_equity
 
