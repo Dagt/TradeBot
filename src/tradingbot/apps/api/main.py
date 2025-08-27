@@ -595,13 +595,18 @@ def run_cli(req: CLIRequest):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-# Background CLI processes keyed by an ID
-_CLI_PROCS: dict[str, asyncio.subprocess.Process] = {}
+# Background CLI jobs keyed by an ID
+# Each job stores the process, optional timeout and start time for enforcement.
+_CLI_JOBS: dict[str, dict[str, object]] = {}
 
 
 @app.post("/cli/start")
 async def cli_start(req: CLIRequest):
-    """Start a CLI command in the background and return an ID."""
+    """Start a CLI command in the background and return an ID.
+
+    The optional ``timeout`` in the request is stored with the job so that it
+    can be enforced during streaming.
+    """
 
     args = shlex.split(req.command)
     cmd = [sys.executable, "-u", "-m", "tradingbot.cli", *args]
@@ -615,11 +620,15 @@ async def cli_start(req: CLIRequest):
         env=env,
     )
     job_id = uuid.uuid4().hex
-    _CLI_PROCS[job_id] = proc
+    _CLI_JOBS[job_id] = {
+        "proc": proc,
+        "timeout": req.timeout,
+        "start": time.perf_counter(),
+    }
     return {"id": job_id}
 
 
-async def _stream_process(proc: asyncio.subprocess.Process):
+async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None, start: float):
     queue: asyncio.Queue[str] = asyncio.Queue()
 
     async def reader(stream: asyncio.StreamReader):
@@ -638,6 +647,11 @@ async def _stream_process(proc: asyncio.subprocess.Process):
         while True:
             if proc.stdout.at_eof() and proc.stderr.at_eof() and queue.empty():
                 break
+            if timeout is not None and time.perf_counter() - start > timeout:
+                proc.terminate()
+                await proc.wait()
+                yield f"event: end\ndata: {proc.returncode or 1}\n\n"
+                return
             try:
                 line = await asyncio.wait_for(queue.get(), 0.1)
             except asyncio.TimeoutError:
@@ -655,13 +669,19 @@ async def _stream_process(proc: asyncio.subprocess.Process):
 async def cli_stream(job_id: str):
     """Stream output from a running CLI job as server-sent events."""
 
-    proc = _CLI_PROCS.get(job_id)
-    if not proc:
+    job = _CLI_JOBS.get(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail="job not found")
+    proc = job["proc"]
+    timeout = job.get("timeout")
+    start = job.get("start", time.perf_counter())
 
     async def event_gen():
+        end_sent = False
         try:
-            async for chunk in _stream_process(proc):
+            async for chunk in _stream_process(proc, timeout, start):
+                if chunk.startswith("event: end"):
+                    end_sent = True
                 yield chunk
         except Exception as exc:
             # Surface the error to the client before finishing the stream.
@@ -684,10 +704,10 @@ async def cli_stream(job_id: str):
 async def cli_stop(job_id: str):
     """Terminate a running CLI job."""
 
-    proc = _CLI_PROCS.get(job_id)
-    if not proc:
+    job = _CLI_JOBS.get(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail="job not found")
-    proc.terminate()
+    job["proc"].terminate()
     return {"status": "terminated"}
 
 
