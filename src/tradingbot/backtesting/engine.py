@@ -235,7 +235,8 @@ class EventDrivenBacktestEngine:
 
         cash = self.initial_equity
         equity = cash
-        fills: List[tuple] = []
+        collect_fills = bool(fills_csv or self.verbose_fills)
+        fills: List[tuple] = [] if collect_fills else []
         order_queue: List[Order] = []
         orders: List[Order] = []
         slippage_total = 0.0
@@ -251,10 +252,10 @@ class EventDrivenBacktestEngine:
         last_index = max_len - 1
 
         for i in range(max_len):
-            if i and i % 1000 == 0:
+            if i and i % 500 == 0:
                 log.info("Progreso: %d/%d barras", i, max_len)
             # Actualiza límites por correlación/covarianza con retornos recientes
-            if i >= self.window:
+            if i >= self.window and len(self.risk) > 1:
                 returns_dict: Dict[str, List[float]] = {}
                 for sym, df_sym in self.data.items():
                     window_df_sym = df_sym.iloc[i - self.window : i]
@@ -360,18 +361,19 @@ class EventDrivenBacktestEngine:
                     if order.latency is None:
                         order.latency = i - order.place_index
                     svc.rm.complete_order()
-                fills.append(
-                    (
-                        bar.get("timestamp", i),
-                        order.side,
-                        price,
-                        fill_qty,
-                        order.strategy,
-                        order.symbol,
-                        order.exchange,
-                        getattr(svc.rm.pos, "realized_pnl", 0.0),
+                if collect_fills:
+                    fills.append(
+                        (
+                            bar.get("timestamp", i),
+                            order.side,
+                            price,
+                            fill_qty,
+                            order.strategy,
+                            order.symbol,
+                            order.exchange,
+                            getattr(svc.rm.pos, "realized_pnl", 0.0),
+                        )
                     )
-                )
                 if self.verbose_fills and not fills_csv:
                     log.info(
                         "Fill %s %s side=%s qty=%s price=%.2f rpnl=%.2f",
