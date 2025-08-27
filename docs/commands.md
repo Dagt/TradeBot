@@ -6,6 +6,12 @@ Todos los comandos se ejecutan como:
 python -m tradingbot.cli <comando> [opciones]
 ```
 
+A través del endpoint de la API `/cli/start` es posible lanzar estos
+comandos en segundo plano. La petición acepta un parámetro opcional
+`timeout` (en segundos) que limita la duración máxima del proceso. Para
+backtests muy largos se recomienda establecer un `timeout` alto o `null`
+para deshabilitar el límite.
+
 A continuación se describen los comandos disponibles. Todas las estrategias
 emiten señales con un campo `strength`. El `RiskService` utiliza esa señal para
 dimensionar automáticamente la posición (`notional = equity * strength`).
