@@ -81,6 +81,12 @@
         <label for="bt-risk-pct">Risk %</label>
         <input id="bt-risk-pct" type="number" step="any"/>
       </div>
+      <div id="field-verbose-fills" style="display:flex;align-items:center">
+        <label for="bt-verbose-fills" style="display:flex;align-items:center;gap:4px">
+          <input id="bt-verbose-fills" type="checkbox"/>
+          Verbose fills
+        </label>
+      </div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
@@ -366,6 +372,8 @@ async function runBacktest(){
     const sl=document.getElementById('bt-risk-pct').value.trim();
     if(sl) cmd+=` --risk-pct ${sl}`;
   }
+  const verbose=document.getElementById('bt-verbose-fills').checked;
+  if(verbose) cmd+=' --verbose-fills';
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
