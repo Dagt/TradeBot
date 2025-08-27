@@ -1,3 +1,6 @@
+import math
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -148,6 +151,19 @@ def test_l2_queue_partial_and_cancel(tmp_path, monkeypatch):
     assert len(res["fills"]) == 0
 
 
+class HalfShotStrategy:
+    name = "halfshot"
+
+    def __init__(self) -> None:
+        self.sent = False
+
+    def on_bar(self, bar):
+        if self.sent:
+            return None
+        self.sent = True
+        return SimpleNamespace(side="buy", strength=0.5)
+
+
 def test_funding_payment(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=3, freq="H")
     df = pd.DataFrame(
@@ -164,13 +180,51 @@ def test_funding_payment(tmp_path, monkeypatch):
     path = tmp_path / "fund.csv"
     df.to_csv(path, index=False)
 
-    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
-    strategies = [("oneshot", "SYM")]
+    monkeypatch.setitem(STRATEGIES, "halfshot", HalfShotStrategy)
+    strategies = [("halfshot", "SYM")]
     data = {"SYM": str(path)}
 
-    res = run_backtest_csv(data, strategies, latency=1, window=1)
+    res = run_backtest_csv(
+        data, strategies, latency=1, window=1, initial_equity=200.0
+    )
     assert pytest.approx(res["funding"], rel=1e-9) == 1.0
-    assert pytest.approx(res["equity"], rel=1e-9) == -1.0
+    assert pytest.approx(res["equity"], rel=1e-9) == 199.0
+
+
+class AlwaysBuyStrategy:
+    name = "always"
+
+    def on_bar(self, bar):
+        return SimpleNamespace(side="buy", strength=1.0)
+
+
+def test_stop_on_equity_depletion(tmp_path, monkeypatch, caplog):
+    rng = pd.date_range("2021-01-01", periods=5, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "close": 1.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "deplete.csv"
+    df.to_csv(path, index=False)
+
+    monkeypatch.setitem(STRATEGIES, "always", AlwaysBuyStrategy)
+    strategies = [("always", "SYM")]
+    data = {"SYM": str(path)}
+
+    caplog.set_level(logging.WARNING)
+    res = run_backtest_csv(
+        data, strategies, latency=1, window=1, initial_equity=1.0
+    )
+
+    assert len(res["fills"]) == 1
+    assert res["max_drawdown"] <= 1.0
+    assert any("Equity depleted" in m for m in caplog.messages)
 
 
 def test_seed_reproducibility(tmp_path, monkeypatch):
@@ -188,7 +242,6 @@ def test_seed_reproducibility(tmp_path, monkeypatch):
     base = equities[0]
     for eq in equities[1:]:
         assert abs(eq - base) <= abs(base) * 0.005
-
 
 def test_sharpe_is_annualised(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=10, freq="D")
@@ -214,4 +267,23 @@ def test_sharpe_is_annualised(tmp_path, monkeypatch):
     rets = pd.Series(res["equity_curve"]).diff().dropna()
     expected = (rets.mean() / rets.std()) * np.sqrt(252)
     assert res["sharpe"] == pytest.approx(expected)
+
+def test_max_drawdown_zero_initial_equity(tmp_path, monkeypatch):
+    csv_path = _make_csv(tmp_path)
+
+    class NoTradeStrategy:
+        name = "no_trade"
+
+        def on_bar(self, bar):
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "no_trade", NoTradeStrategy)
+    strategies = [("no_trade", "SYM")]
+    data = {"SYM": str(csv_path)}
+
+    res = run_backtest_csv(data, strategies, latency=1, window=1, initial_equity=0.0)
+
+    assert res["max_drawdown"] == 0.0
+    assert not math.isnan(res["max_drawdown"])
+
 

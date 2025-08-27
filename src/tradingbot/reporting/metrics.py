@@ -47,7 +47,7 @@ def max_drawdown(equity_curve: Sequence[float]) -> float:
         return 0.0
     series = pd.Series(list(equity_curve), dtype="float64")
     running_max = series.cummax()
-    drawdown = (series - running_max) / running_max
+    drawdown = (series - running_max) / running_max.clip(lower=1e-9)
     return float(drawdown.min()) if not drawdown.empty else 0.0
 
 
