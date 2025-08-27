@@ -929,6 +929,20 @@ def backtest(
         verbose_fills=verbose_fills,
     )
     result = eng.run()
+    fills_df = pd.DataFrame(
+        result["fills"],
+        columns=[
+            "timestamp",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "rpnl",
+        ],
+    )
+    fills_df.to_csv("fills.csv", index=False)
     typer.echo(result)
     typer.echo(generate_report(result))
     return result
@@ -982,6 +996,20 @@ def backtest_cfg(
             verbose_fills=verbose_fills,
         )
         result = eng.run()
+        fills_df = pd.DataFrame(
+            result["fills"],
+            columns=[
+                "timestamp",
+                "side",
+                "price",
+                "qty",
+                "strategy",
+                "symbol",
+                "exchange",
+                "rpnl",
+            ],
+        )
+        fills_df.to_csv("fills.csv", index=False)
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
         typer.echo(generate_report(result))
@@ -1062,6 +1090,20 @@ def backtest_db(
             verbose_fills=verbose_fills,
         )
         result = eng.run()
+        fills_df = pd.DataFrame(
+            result["fills"],
+            columns=[
+                "timestamp",
+                "side",
+                "price",
+                "qty",
+                "strategy",
+                "symbol",
+                "exchange",
+                "rpnl",
+            ],
+        )
+        fills_df.to_csv("fills.csv", index=False)
         typer.echo(result)
         typer.echo(generate_report(result))
         sys.exit(0)

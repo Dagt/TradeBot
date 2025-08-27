@@ -416,10 +416,11 @@ class EventDrivenBacktestEngine:
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
                 if equity < 0:
                     continue
+                equity_for_order = max(equity, 1.0)
                 allowed, _reason, delta = svc.check_order(
                     symbol,
                     sig.side,
-                    equity,
+                    equity_for_order,
                     place_price,
                     strength=sig.strength,
                     symbol_vol=symbol_vol,
@@ -517,7 +518,7 @@ class EventDrivenBacktestEngine:
             equity = cash + mtm
             equity_curve.append(equity)
 
-            if equity <= 0:
+            if equity <= 0 and i > 0 and not order_queue:
                 log.warning(
                     "Equity depleted at bar %d; stopping backtest", i
                 )
