@@ -233,7 +233,8 @@ class EventDrivenBacktestEngine:
             for (strat, sym), svc in self.risk.items()
             if not self.data[sym].empty
         )
-        equity_curve.append(equity + mtm)
+        equity = cash + mtm
+        equity_curve.append(equity)
         last_index = max_len - 1
 
         for i in range(max_len):
@@ -481,6 +482,10 @@ class EventDrivenBacktestEngine:
             )
             equity = cash + mtm
             equity_curve.append(equity)
+
+            if i == max_len - 1:
+                last_index = i
+                break
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
