@@ -227,7 +227,19 @@ const dataInfo = {
   features: "Indicadores y estadísticas usados por un modelo de ML.",
 };
 
-let strategyInfo = strategies;
+let strategyInfo = {};
+
+async function loadStrategyInfo(){
+  try{
+    const r=await fetch(api('/strategies/info'));
+    const j=await r.json();
+    strategyInfo={...strategies,...j};
+  }catch(e){
+    console.error(e);
+    strategyInfo=strategies;
+  }
+  updateStrategyInfo();
+}
 
 function appendSummary(text){
   try{
@@ -450,6 +462,7 @@ document.getElementById('bt-strategy').addEventListener('change',updateStrategyI
 updateBtFields();
 loadStrategies();
 loadExchanges();
+loadStrategyInfo();
 </script>
 </body>
 </html>
