@@ -221,7 +221,12 @@ class EventDrivenBacktestEngine:
         slippage_total = 0.0
         funding_total = 0.0
         equity_curve: List[float] = []
-        equity_curve.append(equity)
+        mtm = sum(
+            svc.rm.pos.qty * self.data[sym]["close"].iloc[0]
+            for (strat, sym), svc in self.risk.items()
+            if not self.data[sym].empty
+        )
+        equity_curve.append(equity + mtm)
 
         for i in range(max_len):
             if i and i % 1000 == 0:
@@ -448,7 +453,12 @@ class EventDrivenBacktestEngine:
                         heapq.heappush(order_queue, order)
 
             # Track equity after processing each bar
-            equity_curve.append(equity)
+            mtm = sum(
+                svc.rm.pos.qty * self.data[sym]["close"].iloc[i]
+                for (strat, sym), svc in self.risk.items()
+                if i < len(self.data[sym])
+            )
+            equity_curve.append(equity + mtm)
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
@@ -456,9 +466,15 @@ class EventDrivenBacktestEngine:
             if abs(pos) > 1e-9:
                 last_price = float(self.data[symbol]["close"].iloc[-1])
                 equity += pos * last_price
+                svc.rm.set_position(0.0)
 
         # Final equity value
-        equity_curve.append(equity)
+        mtm = sum(
+            svc.rm.pos.qty * self.data[sym]["close"].iloc[-1]
+            for (strat, sym), svc in self.risk.items()
+            if not self.data[sym].empty
+        )
+        equity_curve.append(equity + mtm)
 
         equity_series = pd.Series(equity_curve)
         # Compute simple Sharpe ratio from equity changes
@@ -469,7 +485,7 @@ class EventDrivenBacktestEngine:
         drawdown = (equity_series - running_max) / running_max
         max_drawdown = -float(drawdown.min()) if not drawdown.empty else 0.0
 
-        pnl = equity - self.initial_equity
+        pnl = equity_curve[-1] - self.initial_equity
 
         orders_summary = [
             {
@@ -487,7 +503,7 @@ class EventDrivenBacktestEngine:
         ]
 
         result = {
-            "equity": equity,
+            "equity": equity_curve[-1],
             "pnl": pnl,
             "fills": fills,
             "orders": orders_summary,
