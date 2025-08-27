@@ -233,8 +233,8 @@ class EventDrivenBacktestEngine:
             for (strat, sym), svc in self.risk.items()
             if not self.data[sym].empty
         )
-        equity = cash + mtm
-        equity_curve.append(equity)
+        equity_curve.append(equity + mtm)
+        last_index = max_len - 1
 
         for i in range(max_len):
             if i and i % 1000 == 0:
@@ -363,6 +363,7 @@ class EventDrivenBacktestEngine:
                     "Equity depleted at bar %d; stopping backtest", i
                 )
                 equity_curve.append(equity)
+                last_index = i
                 break
 
             # Generate new orders from strategies
@@ -485,7 +486,9 @@ class EventDrivenBacktestEngine:
         for (strat_name, symbol), svc in self.risk.items():
             pos = svc.rm.pos.qty
             if abs(pos) > 1e-9:
-                last_price = float(self.data[symbol]["close"].iloc[-1])
+                df = self.data[symbol]
+                price_idx = min(last_index, len(df) - 1)
+                last_price = float(df["close"].iloc[price_idx])
                 cash += pos * last_price
                 svc.rm.set_position(0.0)
 
