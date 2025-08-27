@@ -53,3 +53,49 @@ def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
     res = engine.run()
     assert "equity" in res
     assert len(res["fills"]) > 0
+
+
+class OneShotStrategy:
+    name = "oneshot"
+
+    def __init__(self) -> None:
+        self.sent = False
+
+    def on_bar(self, bar):
+        if self.sent:
+            return None
+        self.sent = True
+        return SimpleNamespace(side="buy", strength=1.0)
+
+
+def test_stop_loss_triggers_close(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=5, freq="min")
+    price = [100.0, 100.0, 100.0, 80.0, 80.0]
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": price,
+            "high": [p + 0.5 for p in price],
+            "low": [p - 0.5 for p in price],
+            "close": price,
+            "volume": 1000,
+        }
+    )
+    data = {"SYM": df}
+    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
+    engine = EventDrivenBacktestEngine(
+        data,
+        [("oneshot", "SYM")],
+        latency=1,
+        window=1,
+        risk_pct=0.1,
+        initial_equity=1000,
+    )
+    res = engine.run()
+    assert len(res["orders"]) == 2
+    assert res["orders"][0]["side"] == "buy"
+    assert res["orders"][1]["side"] == "sell"
+    entry_price = res["fills"][0][1]
+    exit_price = res["fills"][1][1]
+    assert exit_price <= entry_price * (1 - 0.1)
+    assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
