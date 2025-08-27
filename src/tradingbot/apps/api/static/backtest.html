@@ -132,14 +132,14 @@ function startEndFallback(){
     const runBtn=document.getElementById('bt-run');
     const stopBtn=document.getElementById('bt-stop');
     const out=document.getElementById('bt-output');
-    appendOutput(out,'[timeout]');
+    appendOutput(out,'[timeout] Proceso detenido por falta de respuesta.');
+    runBtn.disabled=false;
+    stopBtn.disabled=true;
+    runBtn.textContent='Ejecutar';
+    currentJob=null;
+    hideWorking();
     appendSummary(out.textContent);
     if(evt){evt.close();}
-    currentJob=null;
-    stopBtn.disabled=true;
-    runBtn.disabled=false;
-    runBtn.textContent='Ejecutar';
-    hideWorking();
   },END_FALLBACK_MS);
 }
 
@@ -363,7 +363,7 @@ async function runBacktest(){
     evt=new EventSource(api(`/cli/stream/${j.id}`));
     evt.onmessage=(e)=>appendOutput(outEl,e.data);
     evt.addEventListener('end',(e)=>{
-      if(endTimer){clearTimeout(endTimer);endTimer=null;}
+      if(endTimer){clearTimeout(endTimer);endTimer=null;} // clear fallback timer
       stopBtn.disabled=true;
       runBtn.disabled=false;
       runBtn.textContent='Ejecutar';
