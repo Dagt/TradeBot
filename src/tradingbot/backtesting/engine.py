@@ -367,6 +367,7 @@ class EventDrivenBacktestEngine:
                         order.strategy,
                         order.symbol,
                         order.exchange,
+                        getattr(svc.rm.pos, "realized_pnl", 0.0),
                     )
                 )
                 if self.verbose_fills:
