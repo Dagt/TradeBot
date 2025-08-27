@@ -22,7 +22,11 @@ try:  # pragma: no cover - ccxt is optional
 except Exception:  # pragma: no cover - if ccxt is missing
     ccxt = None
 
-from monitoring.metrics import router as metrics_router
+from monitoring.metrics import (
+    router as metrics_router,
+    CLI_PROCESS_COMPLETED,
+    CLI_PROCESS_TIMEOUT,
+)
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
@@ -685,10 +689,13 @@ async def cli_stream(job_id: str):
         finally:
             # Remove job and always emit an ``end`` event so that the client
             # knows the stream is finished even if many lines were produced.
-            _CLI_JOBS.pop(job_id, None)
-            if not end_sent:
-                returncode = proc.returncode if proc.returncode is not None else 0
-                yield f"event: end\ndata: {returncode}\n\n"
+            _CLI_PROCS.pop(job_id, None)
+            returncode = proc.returncode if proc.returncode is not None else 0
+            if returncode == 0:
+                CLI_PROCESS_COMPLETED.inc()
+            else:
+                CLI_PROCESS_TIMEOUT.inc()
+            yield f"event: end\ndata: {returncode}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
