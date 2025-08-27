@@ -457,8 +457,8 @@ class EventDrivenBacktestEngine:
                 last_price = float(self.data[symbol]["close"].iloc[-1])
                 equity += pos * last_price
 
-        # Final equity value
-        equity_curve.append(equity)
+        # Update final equity in the curve without duplicating the last value
+        equity_curve[-1] = equity
 
         equity_series = pd.Series(equity_curve)
         # Compute simple Sharpe ratio from equity changes
