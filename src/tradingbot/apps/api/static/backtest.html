@@ -127,7 +127,20 @@ const END_FALLBACK_MS=60000;
 
 function startEndFallback(){
   if(endTimer){clearTimeout(endTimer);}
-  endTimer=setTimeout(()=>{hideWorking();},END_FALLBACK_MS);
+  endTimer=setTimeout(()=>{
+    endTimer=null;
+    const runBtn=document.getElementById('bt-run');
+    const stopBtn=document.getElementById('bt-stop');
+    const out=document.getElementById('bt-output');
+    appendOutput(out,'[timeout]');
+    appendSummary(out.textContent);
+    if(evt){evt.close();}
+    currentJob=null;
+    stopBtn.disabled=true;
+    runBtn.disabled=false;
+    runBtn.textContent='Ejecutar';
+    hideWorking();
+  },END_FALLBACK_MS);
 }
 
 const strategies = {

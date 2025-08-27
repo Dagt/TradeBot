@@ -636,6 +636,9 @@ async def cli_stream(job_id: str):
         try:
             async for chunk in _stream_process(proc):
                 yield chunk
+        except Exception as exc:
+            # Surface the error to the client before finishing the stream.
+            yield f"event: error\ndata: {exc}\n\n"
         finally:
             # Remove job and always emit an ``end`` event so that the client
             # knows the stream is finished even if many lines were produced.
