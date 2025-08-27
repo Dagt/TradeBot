@@ -41,6 +41,8 @@ services:
       - PG_USER=postgres
       - PG_PASSWORD=postgres
       - PG_DB=trading
+      - API_USER=monitor
+      - API_PASS=securepassword
     ports:
       - "8000:8000"
     depends_on:
