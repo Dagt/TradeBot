@@ -145,6 +145,23 @@ Ejecuta un backtest vectorizado desde un archivo CSV.
 - `--symbol`: par a evaluar.
 - `--strategy`: estrategia a utilizar.
 
+Tras la ejecución se genera un archivo `fills.csv` en el directorio de resultados
+con las columnas `timestamp, side, price, qty, strategy, symbol, exchange, rpnl`.
+Desde este archivo puede reconstruirse el efectivo y la posición para validar el
+PnL final:
+
+```python
+import pandas as pd
+
+fills = pd.read_csv("fills.csv")
+fills["signed_qty"] = fills["qty"].where(fills["side"] == "buy", -fills["qty"])
+fills["position"] = fills["signed_qty"].cumsum()
+fills["cash"] = (-fills["price"] * fills["signed_qty"]).cumsum() + INITIAL_EQUITY
+```
+
+La última fila de `cash` y `position` debe coincidir con los valores reportados
+por el motor, permitiendo verificar el PnL obtenido.
+
 ## `backtest-cfg`
 Ejecuta un backtest basado en un archivo de configuración Hydra.
 - `config`: archivo YAML con los parámetros.
