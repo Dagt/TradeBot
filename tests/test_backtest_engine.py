@@ -189,3 +189,29 @@ def test_seed_reproducibility(tmp_path, monkeypatch):
     for eq in equities[1:]:
         assert abs(eq - base) <= abs(base) * 0.005
 
+
+def test_sharpe_is_annualised(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=10, freq="D")
+    price = np.linspace(100, 110, num=10)
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": price,
+            "high": price + 0.5,
+            "low": price - 0.5,
+            "close": price,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "daily.csv"
+    df.to_csv(path, index=False)
+
+    monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
+    strategies = [("dummy", "SYM")]
+    data = {"SYM": str(path)}
+
+    res = run_backtest_csv(data, strategies, latency=1, window=1)
+    rets = pd.Series(res["equity_curve"]).diff().dropna()
+    expected = (rets.mean() / rets.std()) * np.sqrt(252)
+    assert res["sharpe"] == pytest.approx(expected)
+
