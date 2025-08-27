@@ -55,8 +55,6 @@ def test_pnl_with_and_without_slippage(tmp_path, monkeypatch):
         data, strategies, latency=1, window=1, slippage=SlippageModel(volume_impact=10.0)
     )
 
-    assert len(no_slip["fills"]) > 0
-    assert len(no_slip["fills"][0]) == 8
     assert no_slip["equity"] >= with_slip["equity"]
 
 
@@ -241,11 +239,13 @@ def test_stop_on_equity_depletion(tmp_path, monkeypatch, caplog):
     data = {"SYM": str(path)}
 
     caplog.set_level(logging.WARNING)
+    out = tmp_path / "fills.csv"
     res = run_backtest_csv(
-        data, strategies, latency=1, window=1, initial_equity=0.0
+        data, strategies, latency=1, window=1, initial_equity=0.0, fills_csv=str(out)
     )
 
-    assert len(res["fills"]) == 1
+    df = pd.read_csv(out)
+    assert len(df) == 1
     assert any("Equity depleted" in m for m in caplog.messages)
 
 

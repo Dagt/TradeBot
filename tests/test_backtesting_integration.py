@@ -29,10 +29,12 @@ def test_event_engine_runs(tmp_path, monkeypatch):
     data = {"SYM": df}
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
     engine = EventDrivenBacktestEngine(data, [("dummy", "SYM")], latency=1, window=1)
-    res = engine.run()
+    out = tmp_path / "fills.csv"
+    res = engine.run(fills_csv=str(out))
     assert "equity" in res
-    assert len(res["fills"]) > 0
-    assert len(res["fills"][0]) == 8
+    df = pd.read_csv(out)
+    assert not df.empty
+    assert df.shape[1] == 8
 
 
 def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
@@ -51,10 +53,12 @@ def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
     data = {"SYM": df}
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
     engine = EventDrivenBacktestEngine(data, [("dummy", "SYM")], latency=1, window=3)
-    res = engine.run()
+    out = tmp_path / "fills_cov.csv"
+    res = engine.run(fills_csv=str(out))
     assert "equity" in res
-    assert len(res["fills"]) > 0
-    assert len(res["fills"][0]) == 8
+    df = pd.read_csv(out)
+    assert not df.empty
+    assert df.shape[1] == 8
 
 
 class OneShotStrategy:
@@ -106,15 +110,17 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
         risk_pct=0.1,
         initial_equity=1000,
     )
-    res = engine.run()
+    out = tmp_path / "fills_stop.csv"
+    res = engine.run(fills_csv=str(out))
     assert len(res["orders"]) == 2
     assert res["orders"][0]["side"] == "buy"
     assert res["orders"][1]["side"] == "sell"
-    entry_price = res["fills"][0][2]
-    exit_price = res["fills"][1][2]
+    df = pd.read_csv(out)
+    entry_price = df.iloc[0]["price"]
+    exit_price = df.iloc[1]["price"]
     assert exit_price <= entry_price * (1 - 0.1)
     assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
-    assert len(res["fills"][0]) == 8
+    assert df.shape[1] == 8
 
 
 def test_equity_loss_capped_by_risk_pct(tmp_path, monkeypatch):
