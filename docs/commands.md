@@ -7,7 +7,8 @@ python -m tradingbot.cli <comando> [opciones]
 ```
 
 A continuación se describen los comandos disponibles. Todas las estrategias
-emiten señales con un campo `strength` que se traduce en `notional = equity * strength`.
+emiten señales con un campo `strength`. El `RiskService` utiliza esa señal para
+dimensionar automáticamente la posición (`notional = equity * strength`).
 Valores mayores a `1.0` piramidan la exposición, menores la desescalan. El
 parámetro `risk_pct` establece la pérdida máxima permitida y `vol_target`
 dimensiona la posición según la volatilidad.
@@ -168,7 +169,9 @@ Entrena un modelo basado en `MLStrategy` y lo guarda en disco.
 ## `tri-arb`
 Ejecuta un arbitraje triangular simple en Binance.
 - `route`: cadena `BASE-MID-QUOTE` que define los tres pares.
-- `--notional`: monto a utilizar en la divisa de salida.
+
+El tamaño de la operación se calcula automáticamente a partir de la señal
+`strength` y el `RiskService`.
 
 ## `cross-arb`
 Arbitraje entre un mercado spot y uno de futuros.
@@ -176,7 +179,9 @@ Arbitraje entre un mercado spot y uno de futuros.
 - `spot`: nombre del adaptador spot.
 - `perp`: nombre del adaptador de futuros.
 - `--threshold`: diferencia mínima de precio para actuar.
-- `--notional`: monto por pata.
+
+Cada pata dimensiona su notional de forma automática combinando `strength` y el
+`RiskService`.
 
 ## `run-cross-arb`
 Versión que utiliza el `ExecutionRouter` para arbitraje spot/perp.
