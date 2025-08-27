@@ -42,6 +42,7 @@ def walk_forward_backtest(
     latency: int = 1,
     window: int = 120,
     verbose_fills: bool = False,
+    fills_csv: str | None = None,
 ) -> pd.DataFrame:
     """Run a basic walk-forward analysis and return metrics for each split."""
 
@@ -49,6 +50,9 @@ def walk_forward_backtest(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
+
+    if fills_csv:
+        verbose_fills = False
 
     records: List[Dict[str, Any]] = []
     split_no = 0
@@ -83,7 +87,7 @@ def walk_forward_backtest(
             verbose_fills=verbose_fills,
         )
         engine.strategies[(strategy_name, symbol)] = strat
-        test_res = engine.run()
+        test_res = engine.run(fills_csv=fills_csv)
         metrics = evaluate(test_res.get("equity_curve", []))
 
         rec = {"split": split_no, "params": best_params}
