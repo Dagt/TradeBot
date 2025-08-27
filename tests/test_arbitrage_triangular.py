@@ -31,3 +31,11 @@ def test_triangular_arb_with_fees():
     sig = strat.on_bar({"prices": prices})
     assert sig.side == "buy"
     assert sig.strength == pytest.approx(0.046853, rel=1e-3)
+
+
+def test_triangular_arb_strength_over_one():
+    strat = TriangularArb()
+    prices = {"bq": 100.0, "mq": 210.0, "mb": 0.5}
+    sig = strat.on_bar({"prices": prices})
+    assert sig.side == "buy"
+    assert sig.strength == pytest.approx(3.2)

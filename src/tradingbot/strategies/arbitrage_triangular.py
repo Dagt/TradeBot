@@ -113,7 +113,7 @@ class TriangularArb(Strategy):
             return None
         edge = compute_edge(prices, self.taker_fee_bps, self.buffer_bps)
         if edge and edge.net > self.min_edge:
-            strength = max(0.0, min(edge.net, 1.0))
+            strength = max(0.0, edge.net)
             if strength > 0:
                 side = "buy" if edge.direction == "b->m" else "sell"
                 return Signal(side, strength)
