@@ -123,9 +123,12 @@ function hideWorking(){
 let currentJob=null;
 let evt=null;
 let endTimer=null;
-const END_FALLBACK_MS=60000;
+const END_FALLBACK_MS = (() => {
+  const v = parseInt(new URLSearchParams(location.search).get('endFallbackMs') || '', 10);
+  return Number.isFinite(v) ? v : (window.END_FALLBACK_MS || 60000);
+})();
 
-function startEndFallback(){
+function resetEndFallback(){
   if(endTimer){clearTimeout(endTimer);}
   endTimer=setTimeout(()=>{
     endTimer=null;
@@ -365,9 +368,9 @@ async function runBacktest(){
     currentJob=j.id;
     stopBtn.disabled=false;
     showWorking();
-    startEndFallback();
+    resetEndFallback();
     evt=new EventSource(api(`/cli/stream/${j.id}`));
-    evt.onmessage=(e)=>appendOutput(outEl,e.data);
+    evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
     evt.addEventListener('end',(e)=>{
       if(endTimer){clearTimeout(endTimer);endTimer=null;} // clear fallback timer
       stopBtn.disabled=true;
