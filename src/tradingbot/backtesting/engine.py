@@ -146,8 +146,9 @@ class EventDrivenBacktestEngine:
         cancel_unfilled: bool = False,
         stress: StressConfig | None = None,
         seed: int | None = None,
-        initial_equity: float = 0.0,
+        initial_equity: float = 1000.0,
         risk_pct: float = 0.0,
+        verbose_fills: bool = False,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -157,6 +158,7 @@ class EventDrivenBacktestEngine:
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
         self.stress = stress or StressConfig()
+        self.verbose_fills = bool(verbose_fills)
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -350,6 +352,14 @@ class EventDrivenBacktestEngine:
                         order.exchange,
                     )
                 )
+                if self.verbose_fills:
+                    log.info(
+                        "Fill %s %s qty=%s price=%s",
+                        order.strategy,
+                        order.symbol,
+                        fill_qty,
+                        price,
+                    )
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
@@ -360,7 +370,7 @@ class EventDrivenBacktestEngine:
                 if i < len(self.data[sym])
             )
             equity = cash + mtm
-            if equity <= 0:
+            if equity < 0:
                 log.warning(
                     "Equity depleted at bar %d; stopping backtest", i
                 )
@@ -382,7 +392,7 @@ class EventDrivenBacktestEngine:
                 svc.mark_price(symbol, place_price)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
-                if equity <= 0:
+                if equity < 0:
                     continue
                 allowed, _reason, delta = svc.check_order(
                     symbol,
@@ -575,7 +585,8 @@ def run_backtest_csv(
     stress: StressConfig | None = None,
     seed: int | None = None,
     risk_pct: float = 0.0,
-    initial_equity: float = 0.0,
+    initial_equity: float = 1000.0,
+    verbose_fills: bool = False,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -594,6 +605,7 @@ def run_backtest_csv(
         seed=seed,
         risk_pct=risk_pct,
         initial_equity=initial_equity,
+        verbose_fills=verbose_fills,
     )
     return engine.run()
 
@@ -617,7 +629,8 @@ def run_backtest_mlflow(
     seed: int | None = None,
     experiment: str = "backtest",
     risk_pct: float = 0.0,
-    initial_equity: float = 0.0,
+    initial_equity: float = 1000.0,
+    verbose_fills: bool = False,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -649,6 +662,7 @@ def run_backtest_mlflow(
             seed=seed,
             risk_pct=risk_pct,
             initial_equity=initial_equity,
+            verbose_fills=verbose_fills,
         )
         log_backtest_metrics(result)
         return result

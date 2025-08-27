@@ -41,6 +41,7 @@ def walk_forward_backtest(
     test_size: int,
     latency: int = 1,
     window: int = 120,
+    verbose_fills: bool = False,
 ) -> pd.DataFrame:
     """Run a basic walk-forward analysis and return metrics for each split."""
 
@@ -60,7 +61,11 @@ def walk_forward_backtest(
         for params in param_grid:
             strat = strat_cls(**params)
             engine = EventDrivenBacktestEngine(
-                {symbol: train_df}, [(strategy_name, symbol)], latency=latency, window=window
+                {symbol: train_df},
+                [(strategy_name, symbol)],
+                latency=latency,
+                window=window,
+                verbose_fills=verbose_fills,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -71,7 +76,11 @@ def walk_forward_backtest(
 
         strat = strat_cls(**(best_params or {}))
         engine = EventDrivenBacktestEngine(
-            {symbol: test_df}, [(strategy_name, symbol)], latency=latency, window=window
+            {symbol: test_df},
+            [(strategy_name, symbol)],
+            latency=latency,
+            window=window,
+            verbose_fills=verbose_fills,
         )
         engine.strategies[(strategy_name, symbol)] = strat
         test_res = engine.run()

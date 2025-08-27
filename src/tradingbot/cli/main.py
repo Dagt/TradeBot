@@ -1047,7 +1047,12 @@ def backtest_db(
 
 
 @app.command("walk-forward")
-def walk_forward_cfg(config: str) -> None:
+def walk_forward_cfg(
+    config: str,
+    verbose_fills: bool = typer.Option(
+        False, "--verbose-fills", help="Log each fill during backtests"
+    ),
+) -> None:
     """Run walk-forward optimization from a Hydra configuration."""
 
     from pathlib import Path
@@ -1075,6 +1080,7 @@ def walk_forward_cfg(config: str) -> None:
             test_size=getattr(wf_cfg, "test_size", 250),
             latency=getattr(wf_cfg, "latency", 1),
             window=getattr(wf_cfg, "window", 120),
+            verbose_fills=verbose_fills,
         )
 
         reports_dir = Path("reports")
