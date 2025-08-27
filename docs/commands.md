@@ -180,10 +180,11 @@ Arbitraje entre un mercado spot y uno de futuros.
 - `perp`: nombre del adaptador de futuros.
 - `--threshold`: diferencia mínima de precio para actuar.
 
-Cada pata dimensiona su notional de forma automática combinando `strength` y el
-`RiskService`.
+El tamaño de cada pata se calcula de forma automática a partir del diferencial
+(`edge`) y el capital disponible reportado por `broker.equity()`.
 
 ## `run-cross-arb`
 Versión que utiliza el `ExecutionRouter` para arbitraje spot/perp.
-Acepta los mismos parámetros que `cross-arb`.
+Acepta los mismos parámetros que `cross-arb` y dimensiona las órdenes de la
+misma manera.
 

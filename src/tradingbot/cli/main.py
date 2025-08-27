@@ -1174,7 +1174,11 @@ def cross_arb(
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
 ) -> None:
-    """Arbitraje entre spot y perp usando dos adapters."""
+    """Arbitraje entre spot y perp usando dos adapters.
+
+    El tamaño se calcula automáticamente a partir del diferencial (edge) y
+    del capital disponible; no requiere parámetro de notional.
+    """
 
     setup_logging()
     from ..adapters import (
@@ -1219,7 +1223,11 @@ def run_cross_arb(
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
 ) -> None:
-    """Ejecuta el runner de arbitraje spot/perp con ``ExecutionRouter``."""
+    """Ejecuta el runner de arbitraje spot/perp con ``ExecutionRouter``.
+
+    ``strength`` se deriva del diferencial spot/perp y se dimensiona con el
+    equity disponible, por lo que no se necesita especificar ``notional``.
+    """
 
     setup_logging()
     from ..adapters import (
