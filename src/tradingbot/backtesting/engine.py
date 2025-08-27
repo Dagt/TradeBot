@@ -206,7 +206,14 @@ class EventDrivenBacktestEngine:
 
     # ------------------------------------------------------------------
     def run(self) -> dict:
-        """Execute the backtest and return summary results."""
+        """Execute the backtest and return summary results.
+
+        Notes
+        -----
+        The reported Sharpe ratio is annualised assuming daily bars
+        (252 trading days per year). If using a different bar frequency,
+        adjust the square root factor accordingly.
+        """
         max_len = max(len(df) for df in self.data.values())
         log.info(
             "Ejecutando backtest con %d estrategias y %d barras",
@@ -478,9 +485,13 @@ class EventDrivenBacktestEngine:
         equity_curve[-1] = equity
 
         equity_series = pd.Series(equity_curve)
-        # Compute simple Sharpe ratio from equity changes
+        # Compute annualised Sharpe ratio from equity changes assuming daily bars
         rets = equity_series.diff().dropna()
-        sharpe = float(rets.mean() / rets.std()) if not rets.empty and rets.std() else 0.0
+        sharpe = (
+            float((rets.mean() / rets.std()) * np.sqrt(252))
+            if not rets.empty and rets.std()
+            else 0.0
+        )
         # Maximum drawdown from the equity curve
         running_max = equity_series.cummax()
         drawdown = (equity_series - running_max) / running_max.clip(lower=1e-9)
