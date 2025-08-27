@@ -124,7 +124,6 @@ def strategy_schema(name: str) -> dict:
 _config: dict[str, object] = {
     "strategy": None,
     "pairs": [],
-    "notional": None,
     "params": {},
     "venue": "binance_spot",
     "risk_pct": 0.0,
@@ -254,7 +253,6 @@ class BotConfig(BaseModel):
 
     strategy: str | None = None
     pairs: list[str] | None = None
-    notional: float | None = None
     params: dict | None = None
     venue: str | None = None
     risk_pct: float | None = None
@@ -278,13 +276,11 @@ def update_config(cfg: BotConfig) -> dict:
 
     # Remove ``None`` values so partial updates work as expected and run a few
     # basic validations.  FastAPI/Pydantic already ensures types but we enforce
-    # simple domain rules such as positive notionals.
+    # simple domain rules.
     for key, value in list(data.items()):
         if value is None:
             data.pop(key)
             continue
-        if key == "notional" and value <= 0:
-            raise HTTPException(status_code=400, detail="notional must be positive")
         if key == "risk_pct" and value < 0:
             raise HTTPException(status_code=400, detail=f"{key} must be non-negative")
         if key == "leverage" and value <= 0:
@@ -341,8 +337,6 @@ async def bot_start() -> dict:
     ]
     for pair in _config.get("pairs") or []:
         args.extend(["--symbol", pair])
-    if _config.get("notional") is not None:
-        args.extend(["--notional", str(_config["notional"])])
     if _config.get("venue"):
         args.extend(["--venue", str(_config["venue"])])
     if _config.get("risk_pct") is not None:
