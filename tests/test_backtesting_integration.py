@@ -99,3 +99,35 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
     exit_price = res["fills"][1][1]
     assert exit_price <= entry_price * (1 - 0.1)
     assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
+
+
+def test_equity_loss_capped_by_risk_pct(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=5, freq="min")
+    price = [100.0, 100.0, 100.0, 94.0, 95.0]
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": price,
+            "high": [p + 0.5 for p in price],
+            "low": [p - 0.5 for p in price],
+            "close": price,
+            "volume": 1000,
+        }
+    )
+    data = {"SYM": df}
+    monkeypatch.setitem(STRATEGIES, "oneshot", OneShotStrategy)
+    initial_equity = 1000.0
+    risk_pct = 0.05
+    engine = EventDrivenBacktestEngine(
+        data,
+        [("oneshot", "SYM")],
+        latency=1,
+        window=1,
+        risk_pct=risk_pct,
+        initial_equity=initial_equity,
+    )
+    res = engine.run()
+    orders = res["orders"]
+    notional = orders[0]["avg_price"] * orders[0]["filled"]
+    loss = initial_equity - res["equity"]
+    assert loss <= notional * risk_pct + 1e-9
