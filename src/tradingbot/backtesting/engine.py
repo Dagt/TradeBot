@@ -217,7 +217,7 @@ class EventDrivenBacktestEngine:
             self.strategy_exchange[key] = exchange
 
     # ------------------------------------------------------------------
-    def run(self) -> dict:
+    def run(self, fills_csv: str | None = None) -> dict:
         """Execute the backtest and return summary results.
 
         Notes
@@ -372,7 +372,7 @@ class EventDrivenBacktestEngine:
                         getattr(svc.rm.pos, "realized_pnl", 0.0),
                     )
                 )
-                if self.verbose_fills:
+                if self.verbose_fills and not fills_csv:
                     log.info(
                         "Fill %s %s side=%s qty=%s price=%.2f rpnl=%.2f",
                         order.strategy,
@@ -592,6 +592,21 @@ class EventDrivenBacktestEngine:
             len(result["fills"]),
             result["max_drawdown"] * 100,
         )
+        if fills_csv:
+            fills_df = pd.DataFrame(
+                result["fills"],
+                columns=[
+                    "timestamp",
+                    "side",
+                    "price",
+                    "qty",
+                    "strategy",
+                    "symbol",
+                    "exchange",
+                    "rpnl",
+                ],
+            )
+            fills_df.to_csv(fills_csv, index=False)
         return result
 
 
@@ -610,10 +625,13 @@ def run_backtest_csv(
     risk_pct: float = 0.0,
     initial_equity: float = 1000.0,
     verbose_fills: bool = False,
+    fills_csv: str | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
     data = {sym: pd.read_csv(Path(path)) for sym, path in csv_paths.items()}
+    if fills_csv:
+        verbose_fills = False
     engine = EventDrivenBacktestEngine(
         data,
         strategies,
@@ -630,7 +648,7 @@ def run_backtest_csv(
         initial_equity=initial_equity,
         verbose_fills=verbose_fills,
     )
-    return engine.run()
+    return engine.run(fills_csv=fills_csv)
 
 
 from ..experiments.mlflow_utils import log_backtest_metrics, start_run
@@ -654,6 +672,7 @@ def run_backtest_mlflow(
     risk_pct: float = 0.0,
     initial_equity: float = 1000.0,
     verbose_fills: bool = False,
+    fills_csv: str | None = None,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -686,6 +705,7 @@ def run_backtest_mlflow(
             risk_pct=risk_pct,
             initial_equity=initial_equity,
             verbose_fills=verbose_fills,
+            fills_csv=fills_csv,
         )
         log_backtest_metrics(result)
         return result

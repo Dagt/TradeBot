@@ -84,7 +84,7 @@
       <div id="field-verbose-fills" style="display:flex;align-items:center">
         <label for="bt-verbose-fills" style="display:flex;align-items:center;gap:4px">
           <input id="bt-verbose-fills" type="checkbox"/>
-          Verbose fills
+          Exportar fills (CSV)
         </label>
       </div>
     </div>
@@ -385,7 +385,7 @@ async function runBacktest(){
     if(sl) cmd+=` --risk-pct ${sl}`;
   }
   const verbose=document.getElementById('bt-verbose-fills').checked;
-  if(verbose) cmd+=' --verbose-fills';
+  if(verbose) cmd+=' --fills-csv fills.csv';
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();

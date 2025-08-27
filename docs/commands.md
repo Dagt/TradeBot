@@ -144,11 +144,11 @@ Ejecuta un backtest vectorizado desde un archivo CSV.
 - `data`: ruta al CSV.
 - `--symbol`: par a evaluar.
 - `--strategy`: estrategia a utilizar.
+- `--fills-csv PATH`: exporta los fills a un CSV.
 
-Tras la ejecución se genera un archivo `fills.csv` en el directorio de resultados
-con las columnas `timestamp, side, price, qty, strategy, symbol, exchange, rpnl`.
-Desde este archivo puede reconstruirse el efectivo y la posición para validar el
-PnL final:
+Si se especifica `--fills-csv`, se genera un archivo con las columnas
+`timestamp, side, price, qty, strategy, symbol, exchange, rpnl`. Desde este
+archivo puede reconstruirse el efectivo y la posición para validar el PnL final:
 
 ```python
 import pandas as pd
@@ -165,6 +165,7 @@ por el motor, permitiendo verificar el PnL obtenido.
 ## `backtest-cfg`
 Ejecuta un backtest basado en un archivo de configuración Hydra.
 - `config`: archivo YAML con los parámetros.
+- `--fills-csv PATH`: exporta los fills a un CSV.
 
 ## `backtest-db`
 Realiza un backtest usando datos almacenados en la base de datos.
@@ -173,11 +174,13 @@ Realiza un backtest usando datos almacenados en la base de datos.
 - `--strategy`: estrategia.
 - `--start` y `--end`: rango de fechas (YYYY-MM-DD).
 - `--timeframe`: periodo de las velas (`1m`).
+- `--fills-csv PATH`: exporta los fills a un CSV.
 
 ## `walk-forward`
 Optimiza una estrategia con técnica walk-forward usando una configuración
 Hydra.
 - `config`: archivo YAML con datos, estrategia y grilla de parámetros.
+- `--fills-csv PATH`: exporta los fills del periodo de prueba a un CSV.
 
 ## `report`
 Muestra un resumen de PnL desde TimescaleDB.

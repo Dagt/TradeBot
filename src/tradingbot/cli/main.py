@@ -909,6 +909,9 @@ def backtest(
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
+    fills_csv: str | None = typer.Option(
+        None, "--fills-csv", help="Export fills to CSV"
+    ),
 ) -> dict:
     """Run a simple vectorised backtest from a CSV file."""
     from pathlib import Path
@@ -921,6 +924,8 @@ def backtest(
     log.info("Iniciando backtest CSV: %s %s", symbol, data)
     df = pd.read_csv(Path(data))
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+    if fills_csv:
+        verbose_fills = False
     eng = EventDrivenBacktestEngine(
         {symbol: df},
         [(strategy, symbol)],
@@ -928,21 +933,7 @@ def backtest(
         risk_pct=risk_pct,
         verbose_fills=verbose_fills,
     )
-    result = eng.run()
-    fills_df = pd.DataFrame(
-        result["fills"],
-        columns=[
-            "timestamp",
-            "side",
-            "price",
-            "qty",
-            "strategy",
-            "symbol",
-            "exchange",
-            "rpnl",
-        ],
-    )
-    fills_df.to_csv("fills.csv", index=False)
+    result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
     typer.echo(generate_report(result))
     return result
@@ -955,6 +946,9 @@ def backtest_cfg(
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
+    ),
+    fills_csv: str | None = typer.Option(
+        None, "--fills-csv", help="Export fills to CSV"
     ),
 ) -> dict:
     """Run a backtest using a Hydra YAML configuration."""
@@ -970,6 +964,9 @@ def backtest_cfg(
 
     cfg_path = Path(config)
     rel_path = os.path.relpath(cfg_path.parent, Path(__file__).parent)
+
+    if fills_csv:
+        verbose_fills = False
 
     @hydra.main(
         config_path=rel_path,
@@ -995,21 +992,7 @@ def backtest_cfg(
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
         )
-        result = eng.run()
-        fills_df = pd.DataFrame(
-            result["fills"],
-            columns=[
-                "timestamp",
-                "side",
-                "price",
-                "qty",
-                "strategy",
-                "symbol",
-                "exchange",
-                "rpnl",
-            ],
-        )
-        fills_df.to_csv("fills.csv", index=False)
+        result = eng.run(fills_csv=fills_csv)
         typer.echo(OmegaConf.to_yaml(cfg))
         typer.echo(result)
         typer.echo(generate_report(result))
@@ -1040,6 +1023,9 @@ def backtest_db(
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
+    ),
+    fills_csv: str | None = typer.Option(
+        None, "--fills-csv", help="Export fills to CSV"
     ),
 ) -> None:
     """Run a backtest using data stored in the database."""
@@ -1082,6 +1068,8 @@ def backtest_db(
             .set_index("ts")
         )
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+        if fills_csv:
+            verbose_fills = False
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol)],
@@ -1089,21 +1077,7 @@ def backtest_db(
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
         )
-        result = eng.run()
-        fills_df = pd.DataFrame(
-            result["fills"],
-            columns=[
-                "timestamp",
-                "side",
-                "price",
-                "qty",
-                "strategy",
-                "symbol",
-                "exchange",
-                "rpnl",
-            ],
-        )
-        fills_df.to_csv("fills.csv", index=False)
+        result = eng.run(fills_csv=fills_csv)
         typer.echo(result)
         typer.echo(generate_report(result))
         sys.exit(0)
@@ -1116,6 +1090,9 @@ def walk_forward_cfg(
     config: str,
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
+    ),
+    fills_csv: str | None = typer.Option(
+        None, "--fills-csv", help="Export fills to CSV"
     ),
 ) -> None:
     """Run walk-forward optimization from a Hydra configuration."""
@@ -1130,6 +1107,9 @@ def walk_forward_cfg(
 
     cfg_path = Path(config)
     rel_path = os.path.relpath(cfg_path.parent, Path(__file__).parent)
+
+    if fills_csv:
+        verbose_fills = False
 
     @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
     def _run(cfg) -> None:  # type: ignore[override]
@@ -1146,6 +1126,7 @@ def walk_forward_cfg(
             latency=getattr(wf_cfg, "latency", 1),
             window=getattr(wf_cfg, "window", 120),
             verbose_fills=verbose_fills,
+            fills_csv=fills_csv,
         )
 
         reports_dir = Path("reports")

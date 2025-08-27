@@ -60,6 +60,28 @@ def test_pnl_with_and_without_slippage(tmp_path, monkeypatch):
     assert no_slip["equity"] >= with_slip["equity"]
 
 
+def test_fills_csv_export(tmp_path, monkeypatch):
+    csv_path = _make_csv(tmp_path)
+    monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
+    strategies = [("dummy", "SYM")]
+    data = {"SYM": str(csv_path)}
+    out = tmp_path / "fills.csv"
+    run_backtest_csv(data, strategies, latency=1, window=1, fills_csv=str(out))
+    assert out.exists()
+    df = pd.read_csv(out)
+    assert not df.empty
+    assert list(df.columns) == [
+        "timestamp",
+        "side",
+        "price",
+        "qty",
+        "strategy",
+        "symbol",
+        "exchange",
+        "rpnl",
+    ]
+
+
 def test_run_vectorbt_basic():
     vbt_local = pytest.importorskip("vectorbt")
     from tradingbot.backtest.vectorbt_engine import run_vectorbt
