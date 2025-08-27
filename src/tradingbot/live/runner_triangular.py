@@ -102,7 +102,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                     if edge is None or edge.net < cfg.edge_threshold:
                         continue
 
-                    strength = max(0.0, min(edge.net, 1.0))
+                    strength = max(0.0, edge.net)
 
                     eq = broker.equity(
                         mark_prices={
