@@ -293,7 +293,9 @@ class RiskManager:
         """Dimensiona la posición basada en un objetivo de volatilidad.
 
         Devuelve el delta necesario para alcanzar el objetivo usando
-        :func:`delta_from_strength` para mantener piramidado consistente.
+        :func:`delta_from_strength` para mantener piramidado consistente. El
+        delta resultante puede exceder el 100 % del equity si ``vol_target`` lo
+        requiere.
         """
         if self.vol_target <= 0 or symbol_vol <= 0:
             return 0.0
@@ -305,7 +307,6 @@ class RiskManager:
             strength = 0.0
         else:
             strength = target * price / equity
-        strength = max(-1.0, min(1.0, strength))
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
         return delta_from_strength(strength, equity, price, self.pos.qty)
 
