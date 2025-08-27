@@ -146,65 +146,6 @@ function resetEndFallback(){
   },END_FALLBACK_MS);
 }
 
-const strategies = {
-  breakout_atr: {
-    desc: "Aprovecha rupturas de un canal calculado con el Average True Range (ATR). Compra al superar la banda superior y vende al romper la inferior.",
-    requires: ["ohlcv"],
-  },
-  breakout_vol: {
-    desc: "Busca expansiones de volatilidad. Entra cuando el precio abandona su rango normal con un aumento notable del rango de la vela.",
-    requires: ["ohlcv"],
-  },
-  momentum: {
-    desc: "Sigue la tendencia usando el RSI como medidor de impulso. Opera a favor del movimiento cuando el indicador se mantiene en zonas extremas.",
-    requires: ["ohlcv"],
-  },
-  mean_reversion: {
-    desc: "Opera la vuelta a la media apoyándose en el RSI. Compra en condiciones de sobreventa y vende en sobrecompra.",
-    requires: ["ohlcv"],
-  },
-  triangular_arb: {
-    desc: "Explota ineficiencias entre tres pares realizando un ciclo de intercambios para obtener beneficio sin exposición direccional.",
-    requires: ["prices"],
-  },
-  cash_and_carry: {
-    desc: "Captura la base entre mercado spot y futuros perpetuos, manteniendo posiciones opuestas y cobrando la tasa de financiamiento.",
-    requires: ["spot", "perp", "funding"],
-  },
-  order_flow_imbalance: {
-    desc: "Evalúa el desequilibrio entre órdenes de compra y venta agresivas para anticipar movimientos de precio.",
-    requires: ["bba", "book_delta"],
-  },
-  depth_imbalance: {
-    desc: "Mide la disparidad de liquidez entre el lado comprador y vendedor del libro para detectar presión latente.",
-    requires: ["book_delta"],
-  },
-  liquidity_events: {
-    desc: "Identifica vacíos y gaps de liquidez en el libro que pueden generar movimientos bruscos.",
-    requires: ["bba", "book_delta"],
-  },
-  triple_barrier: {
-    desc: "Genera señales usando la metodología de triple barrera con objetivos y stop temporales.",
-    requires: ["ohlcv"],
-  },
-  ml: {
-    desc: "Ejecuta un modelo de machine learning entrenado con indicadores y estadísticas personalizadas.",
-    requires: ["features"],
-  },
-  mean_rev_ofi: {
-    desc: "Busca la reversión a la media basada en el Order Flow Imbalance (OFI) derivado del libro de órdenes.",
-    requires: ["book_delta"],
-  },
-  order_flow: {
-    desc: "Analiza el flujo de órdenes agresivas vs. pasivas para estimar micro‑tendencias.",
-    requires: ["trades", "book_delta"],
-  },
-  cross_arbitrage: {
-    desc: "Arbitraje del mismo par entre dos exchanges; compra donde esté barato y vende donde esté caro.",
-    requires: ["prices"],
-  },
-};
-
 const dataInfo = {
   ohlcv: "Serie de velas con Open-High-Low-Close-Volume.",
   prices: "Secuencia de precios (spot o perp) en ticks/velas, útil para spreads.",
@@ -217,7 +158,7 @@ const dataInfo = {
   features: "Indicadores y estadísticas usados por un modelo de ML.",
 };
 
-let strategyInfo = strategies;
+let strategyInfo = {};
 
 function appendSummary(text){
   try{
@@ -280,13 +221,22 @@ async function loadExchanges(){
 
 async function loadStrategies(){
   try{
-    const r=await fetch(api('/strategies/status'));
-    const j=await r.json();
+    const [statusRes, infoRes] = await Promise.all([
+      fetch(api('/strategies/status')),
+      fetch(api('/strategies/info')),
+    ]);
+    const statusJson = await statusRes.json();
+    const infoJson = await infoRes.json();
+    strategyInfo = infoJson || {};
     const sel=document.getElementById('bt-strategy');
     sel.innerHTML='';
-    Object.keys(j.strategies||{}).forEach(s=>{
+    const names=new Set([
+      ...Object.keys(statusJson.strategies||{}),
+      ...Object.keys(infoJson||{}),
+    ]);
+    names.forEach(s=>{
       const o=document.createElement('option');
-      o.value=s;o.textContent=s;sel.appendChild(o);
+      o.value=s; o.textContent=s; sel.appendChild(o);
     });
     updateStrategyInfo();
   }catch(e){console.error(e);}
