@@ -136,7 +136,9 @@ class StressConfig:
 class EventDrivenBacktestEngine:
     """Backtest engine supporting multiple symbols/strategies and order latency.
 
-    Fills with quantity below ``min_fill_qty`` (default ``1e-6``) are ignored.
+    Fills with quantity below ``min_fill_qty`` (defaults to
+    ``MIN_FILL_QTY`` = ``1e-6``) are ignored to avoid recording irrelevant
+    residuals.
     """
 
     def __init__(
@@ -371,11 +373,11 @@ class EventDrivenBacktestEngine:
                 )
                 if self.verbose_fills:
                     log.info(
-                        "Fill %s %s side=%s qty=%.8f price=%.2f rpnl=%.2f",
+                        "Fill %s %s side=%s qty=%s price=%.2f rpnl=%.2f",
                         order.strategy,
                         order.symbol,
                         order.side,
-                        fill_qty,
+                        f"{fill_qty:.8f}",
                         price,
                         getattr(svc.rm.pos, "realized_pnl", 0.0),
                     )
