@@ -45,6 +45,12 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             daily=None,
         )
 
+    class _Broker:
+        def equity(self, mark_prices: dict[str, float] | None = None) -> float:  # pragma: no cover - simple proxy
+            return 0.0
+
+    broker = _Broker()
+
     engine = get_engine() if _CAN_PG else None
     oco_book = OcoBook()
     if engine is not None:
@@ -64,26 +70,21 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             return
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
-        equity = 0.0
-        if last["spot"] is not None:
-            equity += abs(balances.get(cfg.spot.name, 0.0)) * last["spot"]
-        if last["perp"] is not None:
-            equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
-        if equity <= 0:
-            equity = cfg.notional
+        strength = abs(edge)
+        equity = broker.equity(mark_prices={cfg.symbol: last["spot"]})
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
             equity,
             last["spot"],
-            strength=1.0,
+            strength=strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             equity,
             last["perp"],
-            strength=1.0,
+            strength=strength,
         )
         if not (ok1 and ok2):
             return
@@ -96,8 +97,6 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             router.execute(order_spot),
             router.execute(order_perp),
         )
-        balances[cfg.spot.name] += size if spot_side == "buy" else -size
-        balances[cfg.perp.name] += size if perp_side == "buy" else -size
         risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
         risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
         log.info(

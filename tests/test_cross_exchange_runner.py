@@ -11,6 +11,7 @@ async def test_cross_exchange_runner_persists_and_executes(
 ):
     spot, perp = dual_testnet
     inserted: list[dict] = []
+    strengths: list[float] = []
 
     def fake_insert_order(engine, **kwargs):
         inserted.append(kwargs)
@@ -21,12 +22,15 @@ async def test_cross_exchange_runner_persists_and_executes(
             self._engine = object()
 
         async def best_venue(self, order):
-            # route buys to spot and sells to perp for deterministic tests
             return (
                 self.adapters["spot"]
                 if order.side == "buy"
                 else self.adapters["perp"]
             )
+
+    async def fake_check(self, symbol, side, equity, price, strength=1.0, **_):
+        strengths.append(strength)
+        return True, "", 1.0
 
     monkeypatch.setattr(
         "tradingbot.live.runner_cross_exchange.ExecutionRouter",
@@ -36,13 +40,18 @@ async def test_cross_exchange_runner_persists_and_executes(
         "tradingbot.execution.router.timescale.insert_order",
         fake_insert_order,
     )
+    monkeypatch.setattr(
+        "tradingbot.risk.service.RiskService.check_order", fake_check, raising=False
+    )
+    monkeypatch.setattr(
+        "tradingbot.live.runner_cross_exchange._CAN_PG", False
+    )
 
     cfg = CrossArbConfig(
         symbol="BTC/USDT",
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
     )
 
     await run_cross_exchange(cfg)
@@ -53,4 +62,5 @@ async def test_cross_exchange_runner_persists_and_executes(
     assert perp.orders == [
         {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(1.0)}
     ]
+    assert strengths == [pytest.approx(0.01), pytest.approx(0.01)]
     assert len(inserted) == 2

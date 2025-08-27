@@ -176,7 +176,6 @@ Arbitraje entre un mercado spot y uno de futuros.
 - `spot`: nombre del adaptador spot.
 - `perp`: nombre del adaptador de futuros.
 - `--threshold`: diferencia mínima de precio para actuar.
-- `--notional`: monto por pata.
 
 ## `run-cross-arb`
 Versión que utiliza el `ExecutionRouter` para arbitraje spot/perp.
