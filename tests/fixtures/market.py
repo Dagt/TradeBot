@@ -36,11 +36,12 @@ def synthetic_volatility():
 class DummyMarketAdapter:
     """Simple adapter emulating spot/perp streams and orders for tests."""
 
-    def __init__(self, name: str, trades: list[dict]):
+    def __init__(self, name: str, trades: list[dict], balances: dict | None = None):
         self.name = name
         self._trades = trades
         self.orders: list[dict] = []
         self.state = type("S", (), {"last_px": {}})
+        self._balances = balances or {}
 
     async def stream_trades(self, symbol: str):
         for t in self._trades:
@@ -56,9 +57,13 @@ class DummyMarketAdapter:
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        reduce_only: bool = False,
     ) -> dict:
         self.orders.append({"symbol": symbol, "side": side, "qty": qty})
         return {"status": "filled", "price": self.state.last_px[symbol]}
+
+    async def fetch_balance(self):
+        return self._balances
 
 
 @pytest.fixture
@@ -67,6 +72,6 @@ def dual_testnet():
 
     spot_trades = [{"ts": 0, "price": 100.0, "qty": 1.0, "side": "buy"}]
     perp_trades = [{"ts": 0, "price": 101.0, "qty": 1.0, "side": "buy"}]
-    spot = DummyMarketAdapter("spot", spot_trades)
-    perp = DummyMarketAdapter("perp", perp_trades)
+    spot = DummyMarketAdapter("spot", spot_trades, {"USDT": 200.0})
+    perp = DummyMarketAdapter("perp", perp_trades, {"BTC": 1.0})
     return spot, perp

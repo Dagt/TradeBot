@@ -7,10 +7,11 @@ from tradingbot.strategies.cross_exchange_arbitrage import (
 
 
 class MockAdapter:
-    def __init__(self, name, trades):
+    def __init__(self, name, trades, balances=None):
         self.name = name
         self._trades = trades
         self.orders = []
+        self._balances = balances or {}
 
     async def stream_trades(self, symbol):
         for t in self._trades:
@@ -21,11 +22,14 @@ class MockAdapter:
         price = self._trades[0]["price"]
         return {"status": "filled", "price": price}
 
+    async def fetch_balance(self):
+        return self._balances
+
 
 @pytest.mark.asyncio
 async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
-    spot = MockAdapter("spot", [{"price": 100.0}])
-    perp = MockAdapter("perp", [{"price": 101.0}])
+    spot = MockAdapter("spot", [{"price": 100.0}], {"USDT": 200.0})
+    perp = MockAdapter("perp", [{"price": 101.0}], {"BTC": 1.0})
 
     rebalance_calls = []
     async def fake_rebalance(asset, price, venues, risk, engine, threshold=0.0):
@@ -68,10 +72,15 @@ async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
 
     await run_cross_exchange_arbitrage(cfg)
 
+    edge = (101.0 - 100.0) / 100.0
+    equity = 200.0 + 1.0 * 101.0
+    strength = abs(edge)
+    expected_qty = min(equity * strength / 100.0, equity * strength / 101.0)
+
     assert rebalance_calls and rebalance_calls[0][0] == "USDT"
     assert rebalance_calls[0][1] == pytest.approx(1.0)
     venues = {c[0] for c in snapshots}
     assert venues == {"spot", "perp"}
     pos = {v: p for v, _, p, _, _ in snapshots}
-    assert pos["spot"] == pytest.approx(0.01)
-    assert pos["perp"] == pytest.approx(-0.01)
+    assert pos["spot"] == pytest.approx(expected_qty)
+    assert pos["perp"] == pytest.approx(-expected_qty)
