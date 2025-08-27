@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from ..bus import EventBus
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
+from ..execution.paper import PaperAdapter
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
@@ -38,6 +39,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
 
     router = ExecutionRouter([cfg.spot, cfg.perp])
     bus = EventBus()
+    broker = PaperAdapter()
     if risk is None:
         risk = RiskService(
             RiskManager(risk_pct=0.0),
@@ -65,11 +67,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
         strength = abs(edge)
-        equity = 0.0
-        if last["spot"] is not None:
-            equity += abs(balances.get(cfg.spot.name, 0.0)) * last["spot"]
-        if last["perp"] is not None:
-            equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
+        equity = broker.equity()
         if equity <= 0:
             equity = max(last["spot"], last["perp"])
         ok1, _r1, delta1 = risk.check_order(
@@ -97,8 +95,10 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             router.execute(order_spot),
             router.execute(order_perp),
         )
-        balances[cfg.spot.name] += size if spot_side == "buy" else -size
-        balances[cfg.perp.name] += size if perp_side == "buy" else -size
+        broker.update_last_price(cfg.symbol, last["spot"])
+        await broker.place_order(cfg.symbol, spot_side, "market", size)
+        broker.update_last_price(cfg.symbol, last["perp"])
+        await broker.place_order(cfg.symbol, perp_side, "market", size)
         risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
         risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
         log.info(
@@ -118,6 +118,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             if getattr(cfg.spot, "state", None) is None:
                 cfg.spot.state = type("S", (), {"last_px": {}})  # type: ignore[attr-defined]
             cfg.spot.state.last_px[cfg.symbol] = price  # type: ignore[attr-defined]
+            broker.update_last_price(cfg.symbol, price)
             last["spot"] = price
             risk.mark_price(cfg.symbol, price)
             await maybe_trade()
@@ -131,6 +132,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             if getattr(cfg.perp, "state", None) is None:
                 cfg.perp.state = type("S", (), {"last_px": {}})  # type: ignore[attr-defined]
             cfg.perp.state.last_px[cfg.symbol] = price  # type: ignore[attr-defined]
+            broker.update_last_price(cfg.symbol, price)
             last["perp"] = price
             risk.mark_price(cfg.symbol, price)
             await maybe_trade()

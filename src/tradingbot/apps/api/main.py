@@ -702,7 +702,7 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         ]
         if cfg.threshold is not None:
             args.extend(["--threshold", str(cfg.threshold)])
-        # sizing is derived from strength in strategy signals
+        # El tamaño se deriva del diferencial spot/perp; no requiere --notional
         return args
 
     args = [
