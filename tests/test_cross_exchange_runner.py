@@ -36,6 +36,14 @@ async def test_cross_exchange_runner_persists_and_executes(
         "tradingbot.execution.router.timescale.insert_order",
         fake_insert_order,
     )
+    monkeypatch.setattr("tradingbot.live.runner_cross_exchange._CAN_PG", False)
+
+    # simulate existing equity on both venues
+    monkeypatch.setattr(
+        "tradingbot.live.runner_cross_exchange.balances",
+        {spot.name: 2.0, perp.name: 1.0},
+        raising=False,
+    )
 
     cfg = CrossArbConfig(
         symbol="BTC/USDT",
@@ -46,10 +54,17 @@ async def test_cross_exchange_runner_persists_and_executes(
 
     await run_cross_exchange(cfg)
 
+    edge = (101.0 - 100.0) / 100.0
+    equity = 2.0 * 100.0 + 1.0 * 101.0
+    strength = abs(edge)
+    expected_qty = min(equity * strength / 100.0, equity * strength / 101.0)
+
     assert spot.orders == [
-        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(0.01)}
+        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(expected_qty)}
     ]
     assert perp.orders == [
-        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(0.01)}
+        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(expected_qty)}
     ]
     assert len(inserted) == 2
+    for rec in inserted:
+        assert rec["qty"] == pytest.approx(expected_qty)
