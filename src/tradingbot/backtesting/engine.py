@@ -409,7 +409,7 @@ class EventDrivenBacktestEngine:
                     funding_total += cash
 
             # Track equity after processing each bar
-        equity_curve.append(equity)
+            equity_curve.append(equity)
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
