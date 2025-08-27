@@ -64,26 +64,27 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             return
         spot_side = "buy" if edge > 0 else "sell"
         perp_side = "sell" if edge > 0 else "buy"
+        strength = abs(edge)
         equity = 0.0
         if last["spot"] is not None:
             equity += abs(balances.get(cfg.spot.name, 0.0)) * last["spot"]
         if last["perp"] is not None:
             equity += abs(balances.get(cfg.perp.name, 0.0)) * last["perp"]
         if equity <= 0:
-            equity = cfg.notional
+            equity = max(last["spot"], last["perp"])
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
             equity,
             last["spot"],
-            strength=1.0,
+            strength=strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
             equity,
             last["perp"],
-            strength=1.0,
+            strength=strength,
         )
         if not (ok1 and ok2):
             return

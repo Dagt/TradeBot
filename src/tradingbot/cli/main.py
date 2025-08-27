@@ -1174,7 +1174,6 @@ def cross_arb(
     spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
-    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
 ) -> None:
     """Arbitraje entre spot y perp usando dos adapters."""
 
@@ -1210,7 +1209,6 @@ def cross_arb(
         spot=adapters[spot](),
         perp=adapters[perp](),
         threshold=threshold,
-        notional=notional,
     )
     asyncio.run(run_cross_exchange_arbitrage(cfg))
 
@@ -1221,7 +1219,6 @@ def run_cross_arb(
     spot: str = typer.Argument(..., help="Adapter spot, ej. binance_spot"),
     perp: str = typer.Argument(..., help="Adapter perp, ej. binance_futures"),
     threshold: float = typer.Option(0.001, help="Umbral de premium (decimales)"),
-    notional: float = typer.Option(100.0, help="Notional por pata en moneda quote"),
 ) -> None:
     """Ejecuta el runner de arbitraje spot/perp con ``ExecutionRouter``."""
 
@@ -1255,7 +1252,6 @@ def run_cross_arb(
         spot=adapters[spot](),
         perp=adapters[perp](),
         threshold=threshold,
-        notional=notional,
     )
     asyncio.run(run_cross_exchange(cfg))
 

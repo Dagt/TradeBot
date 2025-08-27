@@ -9,6 +9,8 @@ from typing import Dict, Optional
 from ..adapters.base import ExchangeAdapter
 from ..execution.balance import rebalance_between_exchanges
 from ..risk.manager import RiskManager
+from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
+from ..risk.service import RiskService
 
 try:
     from ..storage.timescale import (
@@ -38,8 +40,6 @@ class CrossArbConfig:
         Perpetual market connector implementing :class:`ExchangeAdapter`.
     threshold:
         Premium threshold as decimal (``0.001`` = 0.1%).
-    notional:
-        Quote currency notional per leg.
     persist_pg:
         If ``True`` persist signals/fills in TimescaleDB.
     rebalance_assets:
@@ -48,23 +48,16 @@ class CrossArbConfig:
         Minimum imbalance required to trigger a rebalance.
     latency:
         Simulated latency in seconds before sending orders.
-    max_notional:
-        Maximum quote notional allowed per trade. ``None`` disables the cap.
-    max_qty:
-        Maximum base quantity allowed per trade. ``None`` disables the cap.
     """
 
     symbol: str
     spot: ExchangeAdapter
     perp: ExchangeAdapter
     threshold: float = 0.001  # premium threshold as decimal (0.001 = 0.1%)
-    notional: float = 100.0  # quote currency notional per leg
     persist_pg: bool = False
     rebalance_assets: tuple[str, ...] = ()
     rebalance_threshold: float = 0.0
     latency: float = 0.0
-    max_notional: Optional[float] = None
-    max_qty: Optional[float] = None
 
 
 async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
@@ -75,9 +68,8 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     offsetting market orders on each venue and optionally persists the
     opportunity and resulting fills into TimescaleDB.
 
-    The trade size can be capped via ``cfg.max_notional`` or ``cfg.max_qty``
-    and a simulated network latency can be injected via ``cfg.latency``. Prior
-    to submitting orders the required balances on both venues are verified.  In
+    A simulated network latency can be injected via ``cfg.latency``. Prior to
+    submitting orders the required balances on both venues are verified.  In
     addition, the notional of each trade is scaled by a ``strength`` factor
     derived from how the spot/perp premium has evolved since the current
     position was opened. A widening premium increases ``strength`` while a
@@ -94,7 +86,8 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
-    risk = RiskManager(risk_pct=0.0)
+    risk_mgr = RiskManager(risk_pct=0.0)
+    risk = RiskService(risk_mgr, PortfolioGuard(GuardConfig(venue="cross")))
 
     async def maybe_trade() -> None:
         nonlocal position_sign, entry_edge
@@ -111,15 +104,10 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 return
 
             # adapt strength according to edge movement relative to entry
-            strength = 1.0
+            strength = abs(edge)
             if position_sign != 0:
                 pnl_edge = (edge - entry_edge) * position_sign
                 strength += pnl_edge
-            qty = abs(cfg.notional * strength) / last["spot"]
-            if cfg.max_notional is not None:
-                qty = min(qty, cfg.max_notional / last["spot"])
-            if cfg.max_qty is not None:
-                qty = min(qty, cfg.max_qty)
             ts = datetime.now(timezone.utc)
 
             # persist opportunity
@@ -160,6 +148,35 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 bal_spot = bal_spot or {}
                 bal_perp = bal_perp or {}
 
+            equity = (
+                float(bal_spot.get(quote, 0.0))
+                + float(bal_spot.get(base, 0.0)) * last["spot"]
+                + float(bal_perp.get(quote, 0.0))
+                + float(bal_perp.get(base, 0.0)) * last["perp"]
+            )
+            if equity <= 0:
+                equity = max(last["spot"], last["perp"])
+
+            ok_s, _r1, delta_s = risk.check_order(
+                cfg.symbol,
+                spot_side,
+                equity,
+                last["spot"],
+                strength=strength,
+            )
+            ok_p, _r2, delta_p = risk.check_order(
+                cfg.symbol,
+                perp_side,
+                equity,
+                last["perp"],
+                strength=strength,
+            )
+            if not (ok_s and ok_p):
+                return
+            qty = min(abs(delta_s), abs(delta_p))
+            if qty <= 0:
+                return
+
             def _has(bal: dict, asset: str, needed: float) -> bool:
                 return float(bal.get(asset, 0.0)) >= needed
 
@@ -183,6 +200,9 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
 
             balances[cfg.spot.name] += qty if spot_side == "buy" else -qty
             balances[cfg.perp.name] += qty if perp_side == "buy" else -qty
+
+            risk.on_fill(cfg.symbol, spot_side, qty, venue=cfg.spot.name)
+            risk.on_fill(cfg.symbol, perp_side, qty, venue=cfg.perp.name)
 
             if engine is not None:
                 try:
@@ -256,7 +276,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                             asset,
                             price=float(price_ref),
                             venues=venues,
-                            risk=risk,
+                            risk=risk.rm,
                             engine=engine,
                             threshold=cfg.rebalance_threshold,
                         )

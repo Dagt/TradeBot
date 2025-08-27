@@ -61,7 +61,6 @@ async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
         persist_pg=True,
         rebalance_assets=("USDT",),
         rebalance_threshold=1.0,
@@ -74,5 +73,5 @@ async def test_rebalance_called_and_snapshots_persisted(monkeypatch):
     venues = {c[0] for c in snapshots}
     assert venues == {"spot", "perp"}
     pos = {v: p for v, _, p, _, _ in snapshots}
-    assert pos["spot"] == pytest.approx(1.0)
-    assert pos["perp"] == pytest.approx(-1.0)
+    assert pos["spot"] == pytest.approx(0.01)
+    assert pos["perp"] == pytest.approx(-0.01)

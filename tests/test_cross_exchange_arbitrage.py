@@ -43,10 +43,14 @@ async def test_cross_exchange_arbitrage_executes_hedged_orders():
     perp_ob = {"BTC/USDT": {"bids": [(101.0, 1.0)], "asks": [(102.0, 1.0)]}}
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
-    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001, notional=100.0)
+    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
     await run_cross_exchange_arbitrage(cfg)
-    assert spot.orders == [{"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(1.0)}]
-    assert perp.orders == [{"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(1.0)}]
+    edge = (101.0 - 100.0) / 100.0
+    equity = 200.0 + 1.0 * 101.0
+    strength = abs(edge)
+    expected_qty = min(equity * strength / 100.0, equity * strength / 101.0)
+    assert spot.orders == [{"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(expected_qty)}]
+    assert perp.orders == [{"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(expected_qty)}]
 
 
 @pytest.mark.asyncio
@@ -57,7 +61,7 @@ async def test_cross_exchange_arbitrage_no_trade_without_edge():
     perp_ob = {"BTC/USDT": {"bids": [(100.0, 1.0)], "asks": [(100.5, 1.0)]}}
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
-    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001, notional=100.0)
+    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
     await run_cross_exchange_arbitrage(cfg)
     assert spot.orders == []
     assert perp.orders == []
@@ -71,32 +75,11 @@ async def test_cross_exchange_updates_risk_positions():
     perp_ob = {"BTC/USDT": {"bids": [(101.0, 1.0)], "asks": [(102.0, 1.0)]}}
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
-    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001, notional=100.0)
+    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
     risk = RiskService(RiskManager(), PortfolioGuard(GuardConfig(venue="test")))
     await run_cross_exchange(cfg, risk=risk)
     agg = risk.aggregate_positions()
     assert agg["BTC/USDT"] == pytest.approx(0.0)
-
-
-@pytest.mark.asyncio
-async def test_cross_exchange_arbitrage_respects_max_qty_and_balance():
-    spot_trades = [{"ts": 0, "price": 100.0, "qty": 1.0, "side": "buy"}]
-    perp_trades = [{"ts": 0, "price": 101.0, "qty": 1.0, "side": "buy"}]
-    spot_ob = {"BTC/USDT": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)]}}
-    perp_ob = {"BTC/USDT": {"bids": [(101.0, 1.0)], "asks": [(102.0, 1.0)]}}
-    spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
-    perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
-    cfg = CrossArbConfig(
-        symbol="BTC/USDT",
-        spot=spot,
-        perp=perp,
-        threshold=0.001,
-        notional=100.0,
-        max_qty=0.5,
-    )
-    await run_cross_exchange_arbitrage(cfg)
-    assert spot.orders == [{"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(0.5)}]
-    assert perp.orders == [{"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(0.5)}]
 
 
 @pytest.mark.asyncio
@@ -107,7 +90,7 @@ async def test_cross_exchange_arbitrage_checks_balances():
     perp_ob = {"BTC/USDT": {"bids": [(101.0, 1.0)], "asks": [(102.0, 1.0)]}}
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 10.0})  # insufficient
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 0.0})
-    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001, notional=100.0)
+    cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
     await run_cross_exchange_arbitrage(cfg)
     assert spot.orders == []
     assert perp.orders == []
