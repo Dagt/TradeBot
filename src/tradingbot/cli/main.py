@@ -73,17 +73,18 @@ from ..exchanges import SUPPORTED_EXCHANGES
 log = logging.getLogger(__name__)
 
 _OFFSET_THRESHOLD = float(os.getenv("NTP_OFFSET_THRESHOLD", "1.0"))
-try:
-    _offset = check_ntp_offset()
-    if abs(_offset) > _OFFSET_THRESHOLD:
-        logging.warning(
-            "System clock offset %.3fs exceeds threshold %.2fs."
-            " Please synchronize your clock.",
-            _offset,
-            _OFFSET_THRESHOLD,
-        )
-except Exception as exc:  # pragma: no cover - network failures
-    logging.debug("Failed to check NTP offset: %s", exc)
+if not os.getenv("TRADINGBOT_SKIP_NTP_CHECK"):
+    try:
+        _offset = check_ntp_offset()
+        if abs(_offset) > _OFFSET_THRESHOLD:
+            logging.warning(
+                "System clock offset %.3fs exceeds threshold %.2fs."
+                " Please synchronize your clock.",
+                _offset,
+                _OFFSET_THRESHOLD,
+            )
+    except Exception as exc:  # pragma: no cover - network failures
+        logging.debug("Failed to check NTP offset: %s", exc)
 
 
 app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
@@ -384,6 +385,9 @@ def ingest(
         asyncio.run(_run())
     except KeyboardInterrupt:
         typer.echo("stopped")
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 @app.command()
@@ -923,6 +927,7 @@ def backtest(
     result = eng.run()
     typer.echo(result)
     typer.echo(generate_report(result))
+    sys.exit(0)
 
 
 @app.command("backtest-cfg")
@@ -978,6 +983,7 @@ def backtest_cfg(
         _run()
     finally:
         sys.argv = old_argv
+    sys.exit(0)
 
 
 @app.command("backtest-db")
@@ -1013,37 +1019,41 @@ def backtest_db(
         timeframe,
     )
     engine = get_engine()
-    start_dt = datetime.fromisoformat(start)
-    end_dt = datetime.fromisoformat(end)
-    rows = select_bars(
-        engine,
-        exchange=venue,
-        symbol=symbol,
-        start=start_dt,
-        end=end_dt,
-        timeframe=timeframe,
-    )
-    if not rows:
-        typer.echo("no data")
-        raise typer.Exit()
-    df = (
-        pd.DataFrame(rows)
-        .astype({"o": float, "h": float, "l": float, "c": float, "v": float})
-        .rename(
-            columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"}
+    try:
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        rows = select_bars(
+            engine,
+            exchange=venue,
+            symbol=symbol,
+            start=start_dt,
+            end=end_dt,
+            timeframe=timeframe,
         )
-        .set_index("ts")
-    )
-    log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
-    eng = EventDrivenBacktestEngine(
-        {symbol: df},
-        [(strategy, symbol)],
-        initial_equity=capital,
-        risk_pct=risk_pct,
-    )
-    result = eng.run()
-    typer.echo(result)
-    typer.echo(generate_report(result))
+        if not rows:
+            typer.echo("no data")
+            raise typer.Exit()
+        df = (
+            pd.DataFrame(rows)
+            .astype({"o": float, "h": float, "l": float, "c": float, "v": float})
+            .rename(
+                columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"}
+            )
+            .set_index("ts")
+        )
+        log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+        eng = EventDrivenBacktestEngine(
+            {symbol: df},
+            [(strategy, symbol)],
+            initial_equity=capital,
+            risk_pct=risk_pct,
+        )
+        result = eng.run()
+        typer.echo(result)
+        typer.echo(generate_report(result))
+        sys.exit(0)
+    finally:
+        engine.dispose()
 
 
 @app.command("walk-forward")
@@ -1100,7 +1110,7 @@ def walk_forward_cfg(
         _run()
     finally:
         sys.argv = old_argv
-
+    sys.exit(0)
 
 @app.command()
 def report(venue: str = "binance_spot_testnet") -> None:
@@ -1111,6 +1121,7 @@ def report(venue: str = "binance_spot_testnet") -> None:
     """
 
     setup_logging()
+    engine = None
     try:
         from ..storage.timescale import get_engine, select_pnl_summary
 
@@ -1118,8 +1129,12 @@ def report(venue: str = "binance_spot_testnet") -> None:
         summary = select_pnl_summary(engine, venue=venue)
     except Exception as exc:  # pragma: no cover - best effort
         summary = {"warning": str(exc)}
+    finally:
+        if engine is not None:
+            engine.dispose()
 
     typer.echo(summary)
+    sys.exit(0)
 
 
 @app.command("train-ml")
