@@ -248,6 +248,7 @@ class EventDrivenBacktestEngine:
         orders: List[Order] = []
         slippage_total = 0.0
         funding_total = 0.0
+        fill_count = 0
         equity_curve: List[float] = []
         data_arrays = {
             sym: {col: df[col].to_numpy() for col in df.columns}
@@ -376,6 +377,7 @@ class EventDrivenBacktestEngine:
                     else order.place_price - price
                 )
                 slippage_total += slip * fill_qty
+                fill_count += 1
 
                 trade_value = fill_qty * price
                 fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
@@ -616,19 +618,21 @@ class EventDrivenBacktestEngine:
         result = {
             "equity": equity_curve[-1],
             "pnl": pnl,
-            "fills": fills,
             "orders": orders_summary,
             "slippage": slippage_total,
             "funding": funding_total,
             "sharpe": sharpe,
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
+            "fill_count": fill_count,
         }
+        if collect_fills:
+            result["fills"] = fills
         log.info(
             "Backtest finalizado: equity %.2f, pnl %.2f, fills %d, drawdown %.2f%%",
             result["equity"],
             result["pnl"],
-            len(result["fills"]),
+            fill_count,
             result["max_drawdown"] * 100,
         )
         if fills_csv:

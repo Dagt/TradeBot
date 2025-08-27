@@ -28,8 +28,9 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         initial_equity=df["close"].iloc[0],
     )
     risk = engine.risk[("alwaysbuy", sym)]
+    engine.verbose_fills = True
     result = engine.run()
-    assert len(result["fills"]) > 0
+    assert result["fill_count"] > 0
     assert len(result["fills"][0]) == 8
     avg_price = result["orders"][0]["avg_price"]
     qty = risk.rm.pos.qty
