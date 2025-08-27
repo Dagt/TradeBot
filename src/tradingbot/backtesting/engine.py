@@ -221,6 +221,7 @@ class EventDrivenBacktestEngine:
         slippage_total = 0.0
         funding_total = 0.0
         equity_curve: List[float] = []
+        equity_curve.append(equity)
 
         for i in range(max_len):
             if i and i % 1000 == 0:
@@ -466,7 +467,7 @@ class EventDrivenBacktestEngine:
         # Maximum drawdown from the equity curve
         running_max = equity_series.cummax()
         drawdown = (equity_series - running_max) / running_max
-        max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
+        max_drawdown = -float(drawdown.min()) if not drawdown.empty else 0.0
 
         pnl = equity - self.initial_equity
 
