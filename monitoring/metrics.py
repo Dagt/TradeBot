@@ -34,6 +34,17 @@ SYSTEM_DISCONNECTS = Counter(
     "Total number of system disconnections",
 )
 
+# CLI process completion metrics
+CLI_PROCESS_COMPLETED = Counter(
+    "cli_process_completed_total",
+    "CLI processes completed successfully",
+)
+
+CLI_PROCESS_TIMEOUT = Counter(
+    "cli_process_timeout_total",
+    "CLI processes terminated due to timeout",
+)
+
 # Process gauges
 PROCESS_CPU = Gauge(
     "process_cpu_percent",
