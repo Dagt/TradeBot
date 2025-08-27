@@ -234,7 +234,7 @@ class EventDrivenBacktestEngine:
             for (strat, sym), svc in self.risk.items()
             if not self.data[sym].empty
         )
-        equity_curve.append(equity + mtm)
+        equity_curve.append(cash + mtm)
         last_index = max_len - 1
 
         for i in range(max_len):
