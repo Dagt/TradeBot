@@ -199,6 +199,10 @@ const strategies = {
     desc: "Analiza el flujo de órdenes agresivas vs. pasivas para estimar micro‑tendencias.",
     requires: ["trades", "book_delta"],
   },
+  trend_following: {
+    desc: "Seguimiento de tendencia con fuerza adaptativa",
+    requires: ["ohlcv"],
+  },
   cross_arbitrage: {
     desc: "Arbitraje del mismo par entre dos exchanges; compra donde esté barato y vende donde esté caro.",
     requires: ["prices"],
