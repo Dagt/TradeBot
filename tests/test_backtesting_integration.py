@@ -108,8 +108,8 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
     assert len(res["orders"]) == 2
     assert res["orders"][0]["side"] == "buy"
     assert res["orders"][1]["side"] == "sell"
-    entry_price = res["fills"][0][1]
-    exit_price = res["fills"][1][1]
+    entry_price = res["fills"][0][2]
+    exit_price = res["fills"][1][2]
     assert exit_price <= entry_price * (1 - 0.1)
     assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
 
