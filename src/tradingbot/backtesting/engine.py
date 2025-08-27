@@ -13,7 +13,6 @@ import pandas as pd
 import random
 
 from ..risk.manager import RiskManager
-from ..risk.limits import RiskLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..strategies import STRATEGIES
@@ -148,7 +147,6 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 0.0,
         risk_pct: float = 0.0,
-        max_notional: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -171,7 +169,6 @@ class EventDrivenBacktestEngine:
 
         self.initial_equity = float(initial_equity)
         self._risk_pct = float(risk_pct)
-        self._max_notional = float(max_notional)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -199,18 +196,10 @@ class EventDrivenBacktestEngine:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
-            limits = (
-                RiskLimits(max_notional=self._max_notional)
-                if self._max_notional > 0
-                else None
-            )
             rm = RiskManager(
                 risk_pct=self._risk_pct,
-                limits=limits,
             )
-            guard = PortfolioGuard(
-                GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue=exchange)
-            )
+            guard = PortfolioGuard(GuardConfig(venue=exchange))
             self.risk[key] = RiskService(rm, guard)
             self.strategy_exchange[key] = exchange
 
@@ -362,10 +351,11 @@ class EventDrivenBacktestEngine:
                 svc.mark_price(symbol, place_price)
                 rets = returns(window_df).dropna()
                 symbol_vol = float(rets.std()) if not rets.empty else 0.0
+                eq_for_size = equity if equity > 0 else 100.0
                 allowed, _reason, delta = svc.check_order(
                     symbol,
                     sig.side,
-                    equity,
+                    eq_for_size,
                     place_price,
                     strength=sig.strength,
                     symbol_vol=symbol_vol,
@@ -491,7 +481,6 @@ def run_backtest_csv(
     stress: StressConfig | None = None,
     seed: int | None = None,
     risk_pct: float = 0.0,
-    max_notional: float = 0.0,
     initial_equity: float = 0.0,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
@@ -510,7 +499,6 @@ def run_backtest_csv(
         stress=stress,
         seed=seed,
         risk_pct=risk_pct,
-        max_notional=max_notional,
         initial_equity=initial_equity,
     )
     return engine.run()
@@ -535,7 +523,6 @@ def run_backtest_mlflow(
     seed: int | None = None,
     experiment: str = "backtest",
     risk_pct: float = 0.0,
-    max_notional: float = 0.0,
     initial_equity: float = 0.0,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
@@ -567,7 +554,6 @@ def run_backtest_mlflow(
             stress=stress,
             seed=seed,
             risk_pct=risk_pct,
-            max_notional=max_notional,
             initial_equity=initial_equity,
         )
         log_backtest_metrics(result)
