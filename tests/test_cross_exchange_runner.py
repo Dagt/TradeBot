@@ -42,15 +42,14 @@ async def test_cross_exchange_runner_persists_and_executes(
         spot=spot,
         perp=perp,
         threshold=0.001,
-        notional=100.0,
     )
 
     await run_cross_exchange(cfg)
 
     assert spot.orders == [
-        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(1.0)}
+        {"symbol": "BTC/USDT", "side": "buy", "qty": pytest.approx(0.01)}
     ]
     assert perp.orders == [
-        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(1.0)}
+        {"symbol": "BTC/USDT", "side": "sell", "qty": pytest.approx(0.01)}
     ]
     assert len(inserted) == 2
