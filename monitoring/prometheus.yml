@@ -12,12 +12,14 @@ alerting:
 
 scrape_configs:
   - job_name: api
+    metrics_path: /metrics/prometheus
     basic_auth:
       username: monitor
       password: securepassword
     static_configs:
       - targets: ["api:8000"]
   - job_name: status
+    metrics_path: /metrics/prometheus
     basic_auth:
       username: monitor
       password: securepassword
