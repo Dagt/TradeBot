@@ -15,6 +15,7 @@ import random
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..risk.exceptions import StopLossExceeded
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
 
@@ -336,6 +337,42 @@ class EventDrivenBacktestEngine:
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
+
+            # Update marks and enforce risk limits for open positions
+            for (strat_name, symbol), svc in self.risk.items():
+                df = self.data[symbol]
+                if i >= len(df):
+                    continue
+                price_now = float(df["close"].iloc[i])
+                svc.mark_price(symbol, price_now)
+                try:
+                    svc.rm.check_limits(price_now)
+                except StopLossExceeded:
+                    delta = -svc.rm.pos.qty
+                    if abs(delta) > 1e-9:
+                        side = "buy" if delta > 0 else "sell"
+                        qty = abs(delta)
+                        exchange = self.strategy_exchange[(strat_name, symbol)]
+                        base_latency = self.exchange_latency.get(
+                            exchange, self.latency
+                        )
+                        exec_index = i + int(base_latency * self.stress.latency)
+                        order = Order(
+                            exec_index,
+                            i,
+                            strat_name,
+                            symbol,
+                            side,
+                            qty,
+                            exchange,
+                            price_now,
+                            qty,
+                            0.0,
+                            0.0,
+                            0.0,
+                        )
+                        orders.append(order)
+                        heapq.heappush(order_queue, order)
 
             # Generate new orders from strategies
             for (strat_name, symbol), strat in self.strategies.items():
