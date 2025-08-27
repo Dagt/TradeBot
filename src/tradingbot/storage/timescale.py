@@ -263,12 +263,12 @@ def insert_order(engine, *, strategy: str, exchange: str, symbol: str, side: str
             VALUES (:strategy, :exchange, :symbol, :side, :type, :qty, :px, :status, :ext_order_id, :notes)
         '''), dict(strategy=strategy, exchange=exchange, symbol=normalize(symbol), side=side, type=type_, qty=qty, px=px, status=status, ext_order_id=ext_order_id, notes=notes))
 
-def insert_tri_signal(engine, *, exchange: str, base: str, mid: str, quote: str, direction: str, edge: float, notional_quote: float, taker_fee_bps: float, buffer_bps: float, bq: float, mq: float, mb: float):
+def insert_tri_signal(engine, *, exchange: str, base: str, mid: str, quote: str, direction: str, edge: float, notional: float, taker_fee_bps: float, buffer_bps: float, bq: float, mq: float, mb: float):
     with engine.begin() as conn:
         conn.execute(text('''
             INSERT INTO market.tri_signals (exchange, base, mid, quote, direction, edge, notional_quote, taker_fee_bps, buffer_bps, bq, mq, mb)
-            VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional_quote, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
-        '''), dict(exchange=exchange, base=base, mid=mid, quote=quote, direction=direction, edge=edge, notional_quote=notional_quote, taker_fee_bps=taker_fee_bps, buffer_bps=buffer_bps, bq=bq, mq=mq, mb=mb))
+            VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
+        '''), dict(exchange=exchange, base=base, mid=mid, quote=quote, direction=direction, edge=edge, notional=notional, taker_fee_bps=taker_fee_bps, buffer_bps=buffer_bps, bq=bq, mq=mq, mb=mb))
 
 
 def insert_cross_signal(engine, *, symbol: str, spot_exchange: str, perp_exchange: str,

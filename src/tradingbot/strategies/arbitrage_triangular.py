@@ -2,7 +2,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Dict
-import time
 
 from .base import Strategy, Signal, record_signal_metrics
 
@@ -81,69 +80,6 @@ def compute_edge(
         return TriEdge(direction="b->m", gross=edge_bm, net=edge_bm, prices=prices)
     else:
         return TriEdge(direction="m->b", gross=edge_mb, net=edge_mb, prices=prices)
-
-def compute_qtys_for_route(
-    direction: str,
-    notional_quote: float,
-    prices: Dict[str, float],
-    taker_fee_bps: float,
-    buffer_bps: float,
-    latency_s: float = 0.0,
-    max_notional: Optional[float] = None,
-    max_leg_qty: Optional[float] = None,
-) -> Dict[str, float]:
-    """Compute approximate quantities for each leg of the route.
-
-    Parameters
-    ----------
-    direction:
-        ``"b->m"`` for QUOTE→BASE→MID→QUOTE or ``"m->b"`` for
-        QUOTE→MID→BASE→QUOTE.
-    notional_quote:
-        Initial notional in quote currency to deploy.
-    prices:
-        Mapping of prices for the legs (``bq``, ``mq``, ``mb``).
-    taker_fee_bps:
-        Taker fee in basis points per leg.
-    buffer_bps:
-        Safety buffer in basis points per leg.
-    latency_s:
-        Optional latency in seconds to simulate before computing quantities.
-    max_notional:
-        Cap the total notional deployed. ``None`` disables the cap.
-    max_leg_qty:
-        Maximum quantity allowed for each leg. ``None`` disables the cap.
-
-    Returns
-    -------
-    Dict[str, float]
-        Approximate quantities for ``base_qty``, ``mid_qty`` and
-        resulting ``quote_out``.
-    """
-    if latency_s:
-        time.sleep(latency_s)
-    if max_notional is not None:
-        notional_quote = min(notional_quote, max_notional)
-
-    f = 1 - taker_fee_bps/10000.0
-    buf = 1 - buffer_bps/10000.0
-    bq, mq, mb = prices["bq"], prices["mq"], prices["mb"]
-
-    if direction == "b->m":
-        base_qty = (notional_quote * f * buf) / bq
-        base_qty = min(base_qty, max_leg_qty) if max_leg_qty is not None else base_qty
-        mid_qty = (base_qty * f * buf) / mb
-        mid_qty = min(mid_qty, max_leg_qty) if max_leg_qty is not None else mid_qty
-        quote_out = mid_qty * mq * f * buf
-        return {"base_qty": base_qty, "mid_qty": mid_qty, "quote_out": quote_out}
-    else:
-        mid_qty = (notional_quote * f * buf) / mq
-        mid_qty = min(mid_qty, max_leg_qty) if max_leg_qty is not None else mid_qty
-        base_qty = (mid_qty * f * buf) / mb
-        base_qty = min(base_qty, max_leg_qty) if max_leg_qty is not None else base_qty
-        quote_out = base_qty * bq * f * buf
-        return {"base_qty": base_qty, "mid_qty": mid_qty, "quote_out": quote_out}
-
 
 class TriangularArb(Strategy):
     """Naive triangular arbitrage strategy based on three market prices.

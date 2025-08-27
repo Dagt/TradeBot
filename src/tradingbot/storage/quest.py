@@ -291,7 +291,7 @@ def insert_tri_signal(
     quote: str,
     direction: str,
     edge: float,
-    notional_quote: float,
+    notional: float,
     taker_fee_bps: float,
     buffer_bps: float,
     bq: float,
@@ -304,24 +304,24 @@ def insert_tri_signal(
             text(
                 """
                 INSERT INTO tri_signals (exchange, base, mid, quote, direction, edge, notional_quote, taker_fee_bps, buffer_bps, bq, mq, mb)
-                VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional_quote, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
-                """
-            ),
-            dict(
-                exchange=exchange,
-                base=base,
-                mid=mid,
-                quote=quote,
-                direction=direction,
-                edge=edge,
-                notional_quote=notional_quote,
-                taker_fee_bps=taker_fee_bps,
-                buffer_bps=buffer_bps,
-                bq=bq,
-                mq=mq,
-                mb=mb,
-            ),
-        )
+                VALUES (:exchange, :base, :mid, :quote, :direction, :edge, :notional, :taker_fee_bps, :buffer_bps, :bq, :mq, :mb)
+            """
+        ),
+        dict(
+            exchange=exchange,
+            base=base,
+            mid=mid,
+            quote=quote,
+            direction=direction,
+            edge=edge,
+            notional=notional,
+            taker_fee_bps=taker_fee_bps,
+            buffer_bps=buffer_bps,
+            bq=bq,
+            mq=mq,
+            mb=mb,
+        ),
+    )
 
 
 def insert_cross_signal(

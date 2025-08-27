@@ -1151,7 +1151,6 @@ def train_ml(
 @app.command("tri-arb")
 def tri_arb(
     route: str = typer.Argument(..., help="Ruta BASE-MID-QUOTE, ej. BTC-ETH-USDT"),
-    notional: float = typer.Option(100.0, help="Notional en la divisa quote"),
 ) -> None:
     """Ejecutar arbitrage triangular simple en Binance."""
 
@@ -1164,7 +1163,7 @@ def tri_arb(
     except ValueError as exc:  # pragma: no cover - validated por typer
         raise typer.BadParameter("Formato de ruta inválido, usa BASE-MID-QUOTE") from exc
 
-    cfg = TriConfig(route=TriRoute(base, mid, quote), notional_quote=notional)
+    cfg = TriConfig(route=TriRoute(base, mid, quote))
     asyncio.run(run_triangular_binance(cfg))
 
 
