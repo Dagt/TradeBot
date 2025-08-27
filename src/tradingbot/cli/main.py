@@ -906,6 +906,9 @@ def backtest(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    verbose_fills: bool = typer.Option(
+        False, "--verbose-fills", help="Log each fill during backtests"
+    ),
 ) -> None:
     """Run a simple vectorised backtest from a CSV file."""
     from pathlib import Path
@@ -923,6 +926,7 @@ def backtest(
         [(strategy, symbol)],
         initial_equity=capital,
         risk_pct=risk_pct,
+        verbose_fills=verbose_fills,
     )
     result = eng.run()
     typer.echo(result)
@@ -935,6 +939,9 @@ def backtest_cfg(
     config: str,
     capital: float = typer.Option(0.0, help="Capital inicial"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    verbose_fills: bool = typer.Option(
+        False, "--verbose-fills", help="Log each fill during backtests"
+    ),
 ) -> None:
     """Run a backtest using a Hydra YAML configuration."""
 
@@ -972,6 +979,7 @@ def backtest_cfg(
             [(strategy, symbol)],
             initial_equity=capital,
             risk_pct=risk_pct,
+            verbose_fills=verbose_fills,
         )
         result = eng.run()
         typer.echo(OmegaConf.to_yaml(cfg))
@@ -1001,6 +1009,9 @@ def backtest_db(
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    verbose_fills: bool = typer.Option(
+        False, "--verbose-fills", help="Log each fill during backtests"
+    ),
 ) -> None:
     """Run a backtest using data stored in the database."""
 
@@ -1047,6 +1058,7 @@ def backtest_db(
             [(strategy, symbol)],
             initial_equity=capital,
             risk_pct=risk_pct,
+            verbose_fills=verbose_fills,
         )
         result = eng.run()
         typer.echo(result)
