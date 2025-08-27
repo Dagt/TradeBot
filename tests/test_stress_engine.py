@@ -49,6 +49,7 @@ def test_latency_and_spread_stress(tmp_path, monkeypatch):
         latency=1,
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
+        initial_equity=100.0,
     )
 
     stressed = run_backtest_csv(
@@ -58,6 +59,7 @@ def test_latency_and_spread_stress(tmp_path, monkeypatch):
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
         stress=StressConfig(latency=2.0, spread=2.0),
+        initial_equity=100.0,
     )
 
     base_order = base["orders"][0]

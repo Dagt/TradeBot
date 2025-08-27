@@ -485,6 +485,13 @@ class EventDrivenBacktestEngine:
             equity = cash + mtm
             equity_curve.append(equity)
 
+            if equity <= 0:
+                log.warning(
+                    "Equity depleted at bar %d; stopping backtest", i
+                )
+                last_index = i
+                break
+
             if i == max_len - 1:
                 last_index = i
                 break
