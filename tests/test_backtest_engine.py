@@ -142,6 +142,105 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
     assert (fills.base_after >= -1e-9).all()
 
 
+def test_exchange_configs_require_market_type(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=2, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "data.csv"
+    df.to_csv(path, index=False)
+
+    class BuyOnce:
+        def on_bar(self, bar):
+            return SimpleNamespace(side="buy", strength=1.0)
+
+    monkeypatch.setitem(STRATEGIES, "buyonce", BuyOnce)
+    strategies = [("buyonce", "SYM", "badex")]
+    data = {"SYM": str(path)}
+
+    with pytest.raises(ValueError):
+        run_backtest_csv(data, strategies, latency=1, window=1, exchange_configs={"badex": {}})
+
+    strategies = [("buyonce", "SYM", "good_spot")]
+    res = run_backtest_csv(
+        data,
+        strategies,
+        latency=1,
+        window=1,
+        exchange_configs={"good_spot": {}},
+    )
+    assert "equity" in res
+
+
+def test_spot_balances_never_negative(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=5, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "data.csv"
+    df.to_csv(path, index=False)
+
+    class Greedy:
+        def __init__(self):
+            self.i = 0
+
+        def on_bar(self, bar):
+            self.i += 1
+            if self.i == 1:
+                return SimpleNamespace(side="buy", strength=5.0)
+            if self.i == 2:
+                return SimpleNamespace(side="sell", strength=5.0)
+            if self.i == 3:
+                return SimpleNamespace(side="buy", strength=5.0)
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "greedy", Greedy)
+    strategies = [("greedy", "SYM", "venue_spot")]
+    data = {"SYM": str(path)}
+    res = run_backtest_csv(
+        data,
+        strategies,
+        latency=1,
+        window=1,
+        exchange_configs={"venue_spot": {}},
+        initial_equity=1000.0,
+        verbose_fills=True,
+    )
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee",
+            "cash_after",
+            "base_after",
+            "equity_after",
+            "realized_pnl",
+        ],
+    )
+    assert (fills.cash_after >= -1e-9).all()
+    assert (fills.base_after >= -1e-9).all()
+
+
 def test_run_vectorbt_basic():
     vbt_local = pytest.importorskip("vectorbt")
     from tradingbot.backtest.vectorbt_engine import run_vectorbt

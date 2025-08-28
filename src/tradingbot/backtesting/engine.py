@@ -218,7 +218,15 @@ class EventDrivenBacktestEngine:
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
-            self.exchange_mode[exch] = str(cfg.get("market_type", "perp"))
+            market_type = cfg.get("market_type")
+            if market_type is None:
+                if exch.endswith("_spot"):
+                    market_type = "spot"
+                else:
+                    raise ValueError(
+                        f"market_type must be specified for exchange '{exch}'"
+                    )
+            self.exchange_mode[exch] = str(market_type)
         self.default_fee = FeeModel(0.0)
         self.default_depth = float("inf")
 
@@ -390,6 +398,28 @@ class EventDrivenBacktestEngine:
 
                 fill_qty = round(fill_qty, 8)
 
+                fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
+                trade_value = fill_qty * price
+                fee = fee_model.calculate(trade_value)
+
+                if mode == "spot":
+                    if order.side == "sell":
+                        while svc.rm.pos.qty - fill_qty < 0 and fill_qty > 0:
+                            fill_qty = round(fill_qty - 1e-8, 8)
+                            trade_value = fill_qty * price
+                            fee = fee_model.calculate(trade_value)
+                    else:
+                        while cash - (trade_value + fee) < 0 and fill_qty > 0:
+                            fill_qty = round(fill_qty - 1e-8, 8)
+                            trade_value = fill_qty * price
+                            fee = fee_model.calculate(trade_value)
+
+                if fill_qty <= 0 or fill_qty < self.min_fill_qty:
+                    if not self.cancel_unfilled:
+                        order.execute_index = i + 1
+                        heapq.heappush(order_queue, order)
+                    continue
+
                 slip = (
                     price - order.place_price
                     if order.side == "buy"
@@ -399,7 +429,6 @@ class EventDrivenBacktestEngine:
                 fill_count += 1
 
                 trade_value = fill_qty * price
-                fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
                 fee = fee_model.calculate(trade_value)
                 if order.side == "buy":
                     cash -= trade_value + fee
