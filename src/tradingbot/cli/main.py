@@ -1118,7 +1118,27 @@ def backtest_db(
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
         if fills_csv:
             verbose_fills = False
-        exchange_cfg = {venue: {}}
+        from ..config import settings
+
+        depth_map = {
+            "binance_spot": 10,
+            "binance_futures": 10,
+            "okx_spot": 5,
+            "okx_futures": 5,
+            "bybit_spot": 5,
+            "bybit_futures": 5,
+            "deribit_futures": 5,
+        }
+        fee_attr = f"{venue}_taker_fee_bps"
+        default_fee_bps = 10.0 if venue.endswith("_spot") else 5.0
+        fee_bps = getattr(settings, fee_attr, default_fee_bps)
+        exchange_cfg = {
+            venue: {
+                "market_type": "spot" if venue.endswith("_spot") else "perp",
+                "fee": fee_bps / 10000.0,
+                "depth": depth_map.get(venue, 5),
+            }
+        }
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol, venue)],
