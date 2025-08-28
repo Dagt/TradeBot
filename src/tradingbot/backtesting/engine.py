@@ -223,7 +223,12 @@ class EventDrivenBacktestEngine:
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
             market_type = cfg.get("market_type")
             if market_type is None:
-                market_type = "spot" if exch.endswith("_spot") else "perp"
+                if exch.endswith("_spot"):
+                    market_type = "spot"
+                elif exch.endswith("_futures") or exch.endswith("_perp"):
+                    market_type = "perp"
+                else:
+                    raise ValueError(f"exchange {exch} missing market_type")
             self.exchange_mode[exch] = str(market_type)
         # Auto-derive market type for exchanges without explicit configs
         for strat_info in strategies:
@@ -708,9 +713,8 @@ class EventDrivenBacktestEngine:
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
             "fill_count": fill_count,
+            "fills": fills if collect_fills else [],
         }
-        if collect_fills:
-            result["fills"] = fills
         log.info(
             "Backtest finalizado: equity %.2f, pnl %.2f, fills %d, drawdown %.2f%%",
             result["equity"],

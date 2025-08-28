@@ -1122,11 +1122,13 @@ def backtest_db(
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
         if fills_csv:
             verbose_fills = False
-        import yaml
-        from importlib import resources
+        from omegaconf import OmegaConf
+        from ..config.hydra_conf import load_config
 
-        cfg_path = resources.files("tradingbot.backtest").joinpath("exchange_config.yaml")
-        exchange_cfg_all = yaml.safe_load(cfg_path.read_text())
+        cfg = load_config()
+        exchange_cfg_all = OmegaConf.to_container(
+            getattr(cfg, "exchange_configs", {}), resolve=True
+        )
         venue_cfg = exchange_cfg_all.get(venue, {})
         if not venue_cfg:
             typer.echo(f"missing config for {venue}")
