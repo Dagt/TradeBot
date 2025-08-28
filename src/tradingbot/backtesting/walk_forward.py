@@ -43,6 +43,7 @@ def walk_forward_backtest(
     window: int = 120,
     verbose_fills: bool = False,
     fills_csv: str | None = None,
+    exchange_configs: Dict[str, Dict[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Run a basic walk-forward analysis and return metrics for each split."""
 
@@ -70,6 +71,7 @@ def walk_forward_backtest(
                 latency=latency,
                 window=window,
                 verbose_fills=verbose_fills,
+                exchange_configs=exchange_configs,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -85,6 +87,7 @@ def walk_forward_backtest(
             latency=latency,
             window=window,
             verbose_fills=verbose_fills,
+            exchange_configs=exchange_configs,
         )
         engine.strategies[(strategy_name, symbol)] = strat
         test_res = engine.run(fills_csv=fills_csv)

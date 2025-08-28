@@ -40,3 +40,13 @@ risk:
   vol_target: 0.01
   total_cap_pct: null
   per_symbol_cap_pct: null
+
+exchange_configs:
+  binance_spot:
+    market_type: spot
+    fee: 0.001
+    tick_size: 0.01
+  okx_spot:
+    market_type: spot
+    fee: 0.001
+    tick_size: 0.1

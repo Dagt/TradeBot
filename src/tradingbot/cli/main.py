@@ -1028,12 +1028,16 @@ def backtest_cfg(
         log.info("Iniciando backtest CSV: %s %s", symbol, data)
         df = pd.read_csv(data)
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
+        exchange_cfg = OmegaConf.to_container(
+            getattr(cfg, "exchange_configs", {}), resolve=True
+        )
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol)],
             initial_equity=capital,
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
+            exchange_configs=exchange_cfg,
         )
         result = eng.run(fills_csv=fills_csv)
         typer.echo(OmegaConf.to_yaml(cfg))
@@ -1186,6 +1190,9 @@ def walk_forward_cfg(
         from ..backtesting.walk_forward import walk_forward_backtest
 
         wf_cfg = cfg.walk_forward
+        exchange_cfg = OmegaConf.to_container(
+            getattr(cfg, "exchange_configs", {}), resolve=True
+        )
         df = walk_forward_backtest(
             wf_cfg.data,
             wf_cfg.symbol,
@@ -1197,6 +1204,7 @@ def walk_forward_cfg(
             window=getattr(wf_cfg, "window", 120),
             verbose_fills=verbose_fills,
             fills_csv=fills_csv,
+            exchange_configs=exchange_cfg,
         )
 
         reports_dir = Path("reports")

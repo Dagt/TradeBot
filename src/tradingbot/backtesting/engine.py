@@ -213,12 +213,14 @@ class EventDrivenBacktestEngine:
         self.exchange_fees: Dict[str, FeeModel] = {}
         self.exchange_depth: Dict[str, float] = {}
         self.exchange_mode: Dict[str, str] = {}
+        self.exchange_tick_size: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
         default_fee = 0.001
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             self.exchange_fees[exch] = FeeModel(cfg.get("fee", default_fee))
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
+            self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
             market_type = cfg.get("market_type")
             if market_type is None:
                 market_type = "spot" if exch.endswith("_spot") else "perp"
