@@ -44,13 +44,16 @@ risk:
 exchange_configs:
   binance_spot:
     market_type: spot
-    fee: 0.001
+    maker_fee_bps: 10.0
+    taker_fee_bps: 10.0
     tick_size: 0.01
   binance_futures:
     market_type: perp
-    fee: 0.0005
+    maker_fee_bps: 5.0
+    taker_fee_bps: 5.0
     tick_size: 0.01
   okx_spot:
     market_type: spot
-    fee: 0.001
+    maker_fee_bps: 10.0
+    taker_fee_bps: 10.0
     tick_size: 0.1

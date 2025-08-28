@@ -225,8 +225,8 @@ class EventDrivenBacktestEngine:
         default_taker_bps = 10.0
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
-            maker_bps = float(cfg.get("maker_fee_bps", cfg.get("fee", default_maker_bps)))
-            taker_bps = float(cfg.get("taker_fee_bps", cfg.get("fee", default_taker_bps)))
+            maker_bps = float(cfg.get("maker_fee_bps", default_maker_bps))
+            taker_bps = float(cfg.get("taker_fee_bps", cfg.get("maker_fee_bps", default_taker_bps)))
             self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))

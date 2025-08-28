@@ -288,7 +288,13 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
         {"SYM": df},
         [("buyonce", "SYM", "spot_venue")],
         initial_equity=1000.0,
-        exchange_configs={"spot_venue": {"market_type": "spot", "fee": 0.001}},
+        exchange_configs={
+            "spot_venue": {
+                "market_type": "spot",
+                "maker_fee_bps": 10,
+                "taker_fee_bps": 10,
+            }
+        },
         latency=1,
         window=1,
         verbose_fills=True,

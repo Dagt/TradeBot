@@ -74,7 +74,8 @@ class ExchangeVenueConfig:
     """Per-venue configuration such as fees and tick sizes."""
 
     market_type: str = "spot"
-    fee: float = 0.001
+    maker_fee_bps: float = 10.0
+    taker_fee_bps: float = 10.0
     tick_size: float = 0.0
 
 
