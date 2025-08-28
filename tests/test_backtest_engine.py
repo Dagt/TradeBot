@@ -10,7 +10,11 @@ except Exception:  # pragma: no cover
     vbt = None
 from types import SimpleNamespace
 
-from tradingbot.backtest.event_engine import SlippageModel, run_backtest_csv
+from tradingbot.backtest.event_engine import (
+    EventDrivenBacktestEngine,
+    SlippageModel,
+    run_backtest_csv,
+)
 from tradingbot.strategies import STRATEGIES
 from tradingbot.risk.manager import RiskManager
 
@@ -252,6 +256,67 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
     )
     assert (fills.cash_after >= -1e-9).all()
     assert (fills.base_after >= -1e-9).all()
+
+
+def test_spot_venue_config_applied(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=3, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000.0,
+        }
+    )
+
+    class BuyOnce:
+        sent = False
+
+        def on_bar(self, bar):
+            if not self.sent:
+                self.sent = True
+                return SimpleNamespace(side="buy", strength=1.0)
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "buyonce", BuyOnce)
+    eng = EventDrivenBacktestEngine(
+        {"SYM": df},
+        [("buyonce", "SYM", "spot_venue")],
+        initial_equity=1000.0,
+        exchange_configs={"spot_venue": {"market_type": "spot", "fee": 0.001}},
+        latency=1,
+        window=1,
+        verbose_fills=True,
+    )
+
+    risk_service = eng.risk[("buyonce", "SYM")]
+    assert risk_service.rm.allow_short is False
+
+    res = eng.run()
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee",
+            "cash_after",
+            "base_after",
+            "equity_after",
+            "realized_pnl",
+        ],
+    )
+    assert math.isclose(
+        fills.loc[0, "fee"],
+        fills.loc[0, "price"] * fills.loc[0, "qty"] * 0.001,
+        rel_tol=1e-9,
+    )
 
 
 def test_run_vectorbt_basic():
