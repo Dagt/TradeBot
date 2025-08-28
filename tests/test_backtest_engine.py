@@ -82,6 +82,8 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "equity_after",
         "realized_pnl",
     ]
+    assert (df["fee"].abs() > 0).any()
+    assert (df["realized_pnl"].abs() > 0).any()
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):

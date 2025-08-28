@@ -214,12 +214,13 @@ class EventDrivenBacktestEngine:
         self.exchange_depth: Dict[str, float] = {}
         self.exchange_mode: Dict[str, str] = {}
         exchange_configs = exchange_configs or {}
+        default_fee = 0.001
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
-            self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
+            self.exchange_fees[exch] = FeeModel(cfg.get("fee", default_fee))
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_mode[exch] = str(cfg.get("market_type", "perp"))
-        self.default_fee = FeeModel(0.0)
+        self.default_fee = FeeModel(default_fee)
         self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}
@@ -405,7 +406,7 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
-                svc.on_fill(order.symbol, order.side, fill_qty)
+                svc.on_fill(order.symbol, order.side, fill_qty, price=price)
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty
@@ -737,9 +738,6 @@ def run_backtest_csv(
     return engine.run(fills_csv=fills_csv)
 
 
-from ..experiments.mlflow_utils import log_backtest_metrics, start_run
-
-
 def run_backtest_mlflow(
     csv_paths: Dict[str, str],
     strategies: Iterable[Tuple[str, str]],
@@ -771,6 +769,8 @@ def run_backtest_mlflow(
     params: extra parameters to log to MLflow.
     experiment: MLflow experiment name.
     """
+
+    from ..experiments.mlflow_utils import log_backtest_metrics, start_run
 
     param_log = {"latency": latency, "window": window}
     if params:

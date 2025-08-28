@@ -36,6 +36,7 @@ class Position:
     """Simple container for current position size."""
 
     qty: float = 0.0
+    realized_pnl: float = 0.0
 
 
 class RiskManager:
@@ -113,24 +114,38 @@ class RiskManager:
         ``price`` es el precio del fill.  Cuando se acumulan posiciones en la
         misma dirección se recalcula ``_entry_price`` como un promedio ponderado
         por cantidad para reflejar el nuevo costo base.  Si la operación cierra
-        o invierte la posición, los *trackers* de precio se reinician.
+        o reduce la posición se actualiza ``realized_pnl`` y, cuando corresponde,
+        los *trackers* de precio se reinician.
         """
 
         signed = float(qty) if side == "buy" else -float(qty)
         prev = self.pos.qty
-        self.pos.qty += signed
+        new_qty = prev + signed
+
+        # Realiza PnL cuando el fill va en contra de la posición existente.
+        if prev != 0 and prev * signed < 0 and price is not None and self._entry_price is not None:
+            closed = min(abs(prev), abs(signed))
+            if prev > 0:
+                # Cerrando/reduciendo un largo
+                realized = (float(price) - self._entry_price) * closed
+            else:
+                # Cerrando/reduciendo un corto
+                realized = (self._entry_price - float(price)) * closed
+            self.pos.realized_pnl += realized
+
+        self.pos.qty = new_qty
 
         # Si se cerró o se invirtió la posición, reinicia trackers de precio y
         # establece un nuevo precio de entrada si corresponde.
-        if prev == 0 or prev * self.pos.qty <= 0:
+        if prev == 0 or prev * new_qty <= 0:
             self._reset_price_trackers()
-            if price is not None and abs(self.pos.qty) > 0:
+            if price is not None and abs(new_qty) > 0:
                 self._entry_price = float(price)
             return
 
         # Posición continúa en la misma dirección; si se proporciona ``price``
-        # se recalcula el precio promedio ponderado por cantidad.
-        if price is not None:
+        # y el fill incrementa la posición, se recalcula el promedio ponderado.
+        if price is not None and prev * signed > 0:
             abs_prev = abs(prev)
             abs_new = abs(signed)
             if self._entry_price is None:
