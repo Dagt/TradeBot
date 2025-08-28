@@ -15,6 +15,9 @@ import asyncio
 import signal
 import uuid
 import logging
+import json
+from time import monotonic
+from contextlib import suppress
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
@@ -630,7 +633,16 @@ async def cli_start(req: CLIRequest):
     return {"id": job_id}
 
 
-async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None, start: float):
+def format_sse(event: str, payload: str) -> str:
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def _stream_process(
+    proc: asyncio.subprocess.Process,
+    job_id: str,
+    timeout: int | None,
+    start: float,
+):
     queue: asyncio.Queue[str] = asyncio.Queue()
 
     async def reader(stream: asyncio.StreamReader):
@@ -645,35 +657,53 @@ async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None,
         asyncio.create_task(reader(proc.stderr)),
     ]
 
-    # Heartbeats keep the client-aware connection alive; the client-side
-    # fallback timer is only meant to detect hung connections, not to infer
-    # when the process has finished.
-    last_beat = time.perf_counter()
-    HEARTBEAT_INTERVAL = 5  # seconds
+    HEARTBEAT_SECS = 5
+    last_emit = monotonic()
 
     try:
         while True:
-            if proc.stdout.at_eof() and proc.stderr.at_eof() and queue.empty():
-                break
-            if timeout is not None and time.perf_counter() - start > timeout:
+            if timeout is not None and time.perf_counter() - start > timeout and proc.returncode is None:
                 proc.terminate()
-                break
+
             try:
-                line = await asyncio.wait_for(queue.get(), 0.1)
-            except asyncio.TimeoutError:
-                now = time.perf_counter()
-                if now - last_beat >= HEARTBEAT_INTERVAL:
-                    last_beat = now
-                    yield "event: heartbeat\ndata: ping\n\n"
+                line = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                line = None
+
+            if line is not None:
+                yield format_sse("message", line.rstrip())
+                last_emit = monotonic()
                 continue
-            yield f"data: {line.rstrip()}\n\n"
-            last_beat = time.perf_counter()
+
+            if proc.returncode is not None:
+                with suppress(Exception):
+                    await proc.wait()
+                while True:
+                    try:
+                        line = queue.get_nowait()
+                        yield format_sse("message", line.rstrip())
+                    except asyncio.QueueEmpty:
+                        break
+                status_payload = json.dumps(
+                    {"job_id": job_id, "status": "finished", "returncode": proc.returncode}
+                )
+                yield format_sse("status", status_payload)
+                yield format_sse("end", "")
+                break
+
+            now = monotonic()
+            if now - last_emit >= HEARTBEAT_SECS:
+                yield format_sse("heartbeat", "")
+                last_emit = now
+
+            await asyncio.sleep(0.1)
     finally:
         for t in tasks:
             t.cancel()
-        # Ensure the process is fully awaited so that ``proc.returncode``
-        # is available for the caller of :func:`cli_stream`.
-        await proc.wait()
+            with suppress(asyncio.CancelledError):
+                await t
+        with suppress(Exception):
+            await proc.wait()
 
 
 @app.get("/cli/stream/{job_id}")
@@ -688,27 +718,16 @@ async def cli_stream(job_id: str):
     start = job.get("start", time.perf_counter())
 
     async def event_gen():
-        returncode = 0
         try:
             try:
-                async for chunk in _stream_process(proc, timeout, start):
+                async for chunk in _stream_process(proc, job_id, timeout, start):
                     yield chunk
             except Exception as exc:
-                # Surface the error to the client before finishing the stream.
-                yield f"event: error\ndata: {exc}\n\n"
-            await proc.wait()
-            returncode = proc.returncode if proc.returncode is not None else 0
-            logger.debug("cli_stream %s: emitting status event", job_id)
-            yield "event: status\ndata: finished\n\n"
-            logger.debug("cli_stream %s: emitted status event", job_id)
-            logger.debug("cli_stream %s: emitting end event", job_id)
-            yield f"event: end\ndata: {returncode}\n\n"
-            logger.debug("cli_stream %s: emitted end event", job_id)
+                yield format_sse("error", str(exc))
         finally:
-            # Remove job and emit metrics after streaming is complete.
             _CLI_JOBS.pop(job_id, None)
             await proc.wait()
-            if returncode == 0:
+            if proc.returncode == 0:
                 CLI_PROCESS_COMPLETED.inc()
             else:
                 CLI_PROCESS_TIMEOUT.inc()
