@@ -61,6 +61,7 @@ class Order:
     total_cost: float = field(default=0.0, compare=False)
     queue_pos: float = field(default=0.0, compare=False)
     latency: int | None = field(default=None, compare=False)
+    post_only: bool = field(default=False, compare=False)
 
 
 class SlippageModel:
@@ -141,13 +142,18 @@ class SlippageModel:
 
 
 class FeeModel:
-    """Very small fee model applying a flat percentage to trade value."""
+    """Fee model with distinct maker/taker percentages in basis points."""
 
-    def __init__(self, fee: float = 0.0) -> None:
-        self.fee = float(fee)
+    def __init__(
+        self, maker_fee_bps: float = 0.0, taker_fee_bps: float | None = None
+    ) -> None:
+        self.maker_fee = float(maker_fee_bps) / 10000.0
+        taker = maker_fee_bps if taker_fee_bps is None else taker_fee_bps
+        self.taker_fee = float(taker) / 10000.0
 
-    def calculate(self, cash: float) -> float:
-        return abs(cash) * self.fee
+    def calculate(self, cash: float, maker: bool = False) -> float:
+        rate = self.maker_fee if maker else self.taker_fee
+        return abs(cash) * rate
 
 
 @dataclass
@@ -215,10 +221,13 @@ class EventDrivenBacktestEngine:
         self.exchange_mode: Dict[str, str] = {}
         self.exchange_tick_size: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
-        default_fee = 0.001
+        default_maker_bps = 10.0
+        default_taker_bps = 10.0
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
-            self.exchange_fees[exch] = FeeModel(cfg.get("fee", default_fee))
+            maker_bps = float(cfg.get("maker_fee_bps", cfg.get("fee", default_maker_bps)))
+            taker_bps = float(cfg.get("taker_fee_bps", cfg.get("fee", default_taker_bps)))
+            self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
             market_type = cfg.get("market_type")
@@ -240,7 +249,7 @@ class EventDrivenBacktestEngine:
                 self.exchange_mode[exchange] = (
                     "spot" if exchange.endswith("_spot") else "perp"
                 )
-        self.default_fee = FeeModel(default_fee)
+        self.default_fee = FeeModel(default_maker_bps, default_taker_bps)
         self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}
@@ -400,7 +409,10 @@ class EventDrivenBacktestEngine:
                         fill_qty = min(fill_qty, avail_base)
                     else:
                         fee_model_tmp = self.exchange_fees.get(order.exchange, self.default_fee)
-                        max_affordable = cash / (price * (1 + fee_model_tmp.fee))
+                        rate = (
+                            fee_model_tmp.maker_fee if order.post_only else fee_model_tmp.taker_fee
+                        )
+                        max_affordable = cash / (price * (1 + rate))
                         fill_qty = min(fill_qty, max_affordable)
 
                 if fill_qty <= 0 or fill_qty < self.min_fill_qty:
@@ -412,20 +424,21 @@ class EventDrivenBacktestEngine:
                 fill_qty = round(fill_qty, 8)
 
                 fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
+                maker = order.post_only
                 trade_value = fill_qty * price
-                fee = fee_model.calculate(trade_value)
+                fee = fee_model.calculate(trade_value, maker=maker)
 
                 if mode == "spot":
                     if order.side == "sell":
                         while svc.rm.pos.qty - fill_qty < 0 and fill_qty > 0:
                             fill_qty = round(fill_qty - 1e-8, 8)
                             trade_value = fill_qty * price
-                            fee = fee_model.calculate(trade_value)
+                            fee = fee_model.calculate(trade_value, maker=maker)
                     else:
                         while cash - (trade_value + fee) < 0 and fill_qty > 0:
                             fill_qty = round(fill_qty - 1e-8, 8)
                             trade_value = fill_qty * price
-                            fee = fee_model.calculate(trade_value)
+                            fee = fee_model.calculate(trade_value, maker=maker)
 
                 if fill_qty <= 0 or fill_qty < self.min_fill_qty:
                     if not self.cancel_unfilled:
@@ -442,7 +455,7 @@ class EventDrivenBacktestEngine:
                 fill_count += 1
 
                 trade_value = fill_qty * price
-                fee = fee_model.calculate(trade_value)
+                fee = fee_model.calculate(trade_value, maker=maker)
                 if order.side == "buy":
                     cash -= trade_value + fee
                 else:
@@ -477,6 +490,7 @@ class EventDrivenBacktestEngine:
 
                 timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
                 if collect_fills:
+                    fee_type = "maker" if maker else "taker"
                     fills.append(
                         (
                             timestamp,
@@ -486,6 +500,7 @@ class EventDrivenBacktestEngine:
                             order.strategy,
                             order.symbol,
                             order.exchange,
+                            fee_type,
                             fee,
                             cash,
                             base_after,
@@ -572,6 +587,7 @@ class EventDrivenBacktestEngine:
                     vol_arr = arrs.get(vol_key)
                     avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                     queue_pos = min(avail, depth)
+                post_only = bool(getattr(sig, "post_only", False))
                 order = Order(
                     exec_index,
                     i,
@@ -585,6 +601,8 @@ class EventDrivenBacktestEngine:
                     0.0,
                     0.0,
                     queue_pos,
+                    None,
+                    post_only,
                 )
                 orders.append(order)
                 heapq.heappush(order_queue, order)
@@ -636,6 +654,8 @@ class EventDrivenBacktestEngine:
                             0.0,
                             0.0,
                             0.0,
+                            None,
+                            False,
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)
@@ -735,6 +755,7 @@ class EventDrivenBacktestEngine:
                     "strategy",
                     "symbol",
                     "exchange",
+                    "fee_type",
                     "fee",
                     "cash_after",
                     "base_after",

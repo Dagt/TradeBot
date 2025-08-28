@@ -31,6 +31,8 @@ class OKXFuturesAdapter(ExchangeAdapter):
         api_secret: str | None = None,
         api_passphrase: str | None = None,
         testnet: bool = False,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
     ):
         super().__init__()
         if ccxt is None:
@@ -61,6 +63,36 @@ class OKXFuturesAdapter(ExchangeAdapter):
             else "wss://ws.okx.com:8443/ws/v5/public"
         )
         self.name = "okx_futures_testnet" if testnet else "okx_futures"
+        self.maker_fee_bps = float(
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else (
+                settings.okx_futures_testnet_maker_fee_bps
+                if testnet
+                else settings.okx_futures_maker_fee_bps
+            )
+        )
+        self.taker_fee_bps = float(
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else (
+                settings.okx_futures_testnet_taker_fee_bps
+                if testnet
+                else settings.okx_futures_taker_fee_bps
+            )
+        )
+
+    async def update_fees(self, symbol: str | None = None) -> None:
+        params = {"instType": "SWAP"}
+        if symbol:
+            params["instId"] = self.normalize_symbol(symbol)
+        try:
+            res = await self._request(self.rest.privateGetAccountTradeFee, params)
+            data = (res.get("data") or [{}])[0]
+            self.maker_fee_bps = abs(float(data.get("maker", 0.0))) * 10000
+            self.taker_fee_bps = abs(float(data.get("taker", 0.0))) * 10000
+        except Exception as e:  # pragma: no cover - best effort
+            log.warning("update_fees failed: %s", e)
 
     @staticmethod
     def normalize_symbol(symbol: str) -> str:

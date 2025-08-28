@@ -25,7 +25,12 @@ class BybitSpotAdapter(ExchangeAdapter):
 
     name = "bybit_spot"
 
-    def __init__(self, testnet: bool = False):
+    def __init__(
+        self,
+        testnet: bool = False,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
+    ):
         super().__init__()
         if ccxt is None:
             raise RuntimeError("ccxt no está instalado")
@@ -49,6 +54,32 @@ class BybitSpotAdapter(ExchangeAdapter):
             else "wss://stream.bybit.com/v5/public/spot"
         )
         self.name = "bybit_spot_testnet" if testnet else "bybit_spot"
+        self.maker_fee_bps = float(
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else (
+                settings.bybit_spot_testnet_maker_fee_bps if testnet else settings.bybit_spot_maker_fee_bps
+            )
+        )
+        self.taker_fee_bps = float(
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else (
+                settings.bybit_spot_testnet_taker_fee_bps if testnet else settings.bybit_spot_taker_fee_bps
+            )
+        )
+
+    async def update_fees(self, symbol: str | None = None) -> None:
+        params = {"category": "spot"}
+        if symbol:
+            params["symbol"] = normalize(symbol)
+        try:
+            res = await self._request(self.rest.privateGetV5AccountFeeRate, params)
+            data = (res.get("result", {}).get("list") or [])[0]
+            self.maker_fee_bps = abs(float(data.get("makerFeeRate", 0.0))) * 10000
+            self.taker_fee_bps = abs(float(data.get("takerFeeRate", 0.0))) * 10000
+        except Exception as e:  # pragma: no cover
+            log.warning("update_fees failed: %s", e)
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         url = self.ws_public_url
