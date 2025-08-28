@@ -1118,12 +1118,14 @@ def backtest_db(
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
         if fills_csv:
             verbose_fills = False
+        exchange_cfg = {venue: {}}
         eng = EventDrivenBacktestEngine(
             {symbol: df},
-            [(strategy, symbol)],
+            [(strategy, symbol, venue)],
             initial_equity=capital,
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
+            exchange_configs=exchange_cfg,
         )
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)

@@ -221,13 +221,18 @@ class EventDrivenBacktestEngine:
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             market_type = cfg.get("market_type")
             if market_type is None:
-                if exch.endswith("_spot"):
-                    market_type = "spot"
-                else:
-                    raise ValueError(
-                        f"market_type must be specified for exchange '{exch}'"
-                    )
+                market_type = "spot" if exch.endswith("_spot") else "perp"
             self.exchange_mode[exch] = str(market_type)
+        # Auto-derive market type for exchanges without explicit configs
+        for strat_info in strategies:
+            if len(strat_info) == 2:
+                exchange = "default"
+            else:
+                exchange = strat_info[2]
+            if exchange not in self.exchange_mode:
+                self.exchange_mode[exchange] = (
+                    "spot" if exchange.endswith("_spot") else "perp"
+                )
         self.default_fee = FeeModel(default_fee)
         self.default_depth = float("inf")
 
