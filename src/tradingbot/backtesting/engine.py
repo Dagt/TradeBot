@@ -441,6 +441,13 @@ class EventDrivenBacktestEngine:
                 else:
                     cash += trade_value - fee
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
+                if mode == "spot":
+                    assert cash >= -1e-9, (
+                        f"cash became negative after {order.side} {order.symbol}: {cash}"
+                    )
+                    assert svc.rm.pos.qty >= -1e-9, (
+                        f"position went negative for {order.symbol}: {svc.rm.pos.qty}"
+                    )
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty
