@@ -199,9 +199,16 @@ class RiskService:
 
     # ------------------------------------------------------------------
     # Fill / PnL updates
-    def on_fill(self, symbol: str, side: str, qty: float, venue: str | None = None) -> None:
+    def on_fill(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float | None = None,
+        venue: str | None = None,
+    ) -> None:
         """Update internal position books after a fill."""
-        self.rm.add_fill(side, qty)
+        self.rm.add_fill(side, qty, price=price)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
         if venue is not None:
             book = self.guard.st.venue_positions.get(venue, {})

@@ -32,6 +32,24 @@ def test_stop_loss_sets_reason():
     assert rm.pos.qty == pytest.approx(1.0)
 
 
+def test_stop_loss_multiple_fills_weighted_average():
+    from tradingbot.risk.exceptions import StopLossExceeded
+
+    rm = RiskManager(risk_pct=0.1)
+    rm.add_fill("buy", 1, price=100)
+    rm.add_fill("buy", 1, price=120)
+    # Precio de entrada promedio = 110
+    assert rm._entry_price == pytest.approx(110.0)
+    assert rm.pos.qty == pytest.approx(2.0)
+
+    # Precio no dispara el stop todavía
+    assert rm.check_limits(105)
+
+    # Caída por debajo del umbral de stop-loss
+    with pytest.raises(StopLossExceeded):
+        rm.check_limits(98)
+
+
 def test_manual_kill_switch_records_reason():
     rm = RiskManager()
     rm.kill_switch("manual")
