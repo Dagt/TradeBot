@@ -11,6 +11,7 @@ from tradingbot.execution.paper import PaperAdapter
 class TimedPaperAdapter(PaperAdapter):
     def __init__(self):
         super().__init__()
+        self.state.cash = 1_000_000.0
         self.call_times: list[float] = []
 
     async def place_order(self, *args, **kwargs):  # type: ignore[override]
@@ -46,6 +47,14 @@ async def test_paper_stream_updates_price(paper_adapter):
     res = await paper_adapter.place_order("BTCUSDT", "buy", "market", 0.5)
     assert res["status"] == "filled"
     assert res["price"] == 100.0
+
+
+def test_paper_adapter_uses_config_fees():
+    from tradingbot.config import settings
+
+    adapter = PaperAdapter()
+    assert adapter.maker_fee_bps == settings.paper_maker_fee_bps
+    assert adapter.taker_fee_bps == settings.paper_taker_fee_bps
 
 
 @pytest.mark.asyncio
@@ -98,6 +107,8 @@ async def test_pov_participates():
 
 
 class DummyExecAdapter:
+    name = "dummy"
+
     def __init__(self):
         self.args = None
 
