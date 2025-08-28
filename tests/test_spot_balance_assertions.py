@@ -17,7 +17,8 @@ class BuyOnceStrategy:
         if self.done:
             return SimpleNamespace(side="flat", strength=0.0)
         self.done = True
-        return SimpleNamespace(side="buy", strength=1.0)
+        # send a buy order well beyond available cash
+        return SimpleNamespace(side="buy", strength=10.0)
 
 
 class SellOnceStrategy:
@@ -30,7 +31,8 @@ class SellOnceStrategy:
         if self.done:
             return SimpleNamespace(side="flat", strength=0.0)
         self.done = True
-        return SimpleNamespace(side="sell", strength=1.0)
+        # send a sell order well beyond held position
+        return SimpleNamespace(side="sell", strength=10.0)
 
 
 class SneakyFeeModel(FeeModel):
@@ -71,7 +73,7 @@ def _make_data():
     return {"SYM": df}
 
 
-def test_negative_cash_asserts(monkeypatch):
+def test_buy_order_exceeding_cash_triggers_assert(monkeypatch):
     monkeypatch.setitem(STRATEGIES, "buy_once", BuyOnceStrategy)
     data = _make_data()
     strategies = [("buy_once", "SYM")]
@@ -89,7 +91,7 @@ def test_negative_cash_asserts(monkeypatch):
         engine.run()
 
 
-def test_negative_position_asserts(monkeypatch):
+def test_sell_order_exceeding_position_triggers_assert(monkeypatch):
     monkeypatch.setitem(STRATEGIES, "sell_once", SellOnceStrategy)
     data = _make_data()
     strategies = [("sell_once", "SYM")]
