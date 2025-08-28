@@ -701,6 +701,10 @@ async def _stream_process(
                 last_emit = now
 
             await asyncio.sleep(0.1)
+    except Exception as exc:  # pragma: no cover - defensive
+        yield format_sse("error", str(exc))
+        yield format_sse("end", "")
+        running = False
     finally:
         running = False
         for t in tasks:
