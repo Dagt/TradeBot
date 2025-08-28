@@ -955,8 +955,10 @@ def backtest(
     from pathlib import Path
 
     import pandas as pd
+    from omegaconf import OmegaConf
 
     from ..backtest.event_engine import EventDrivenBacktestEngine
+    from ..config.hydra_conf import load_config
 
     setup_logging()
     log.info("Iniciando backtest CSV: %s %s", symbol, data)
@@ -964,12 +966,17 @@ def backtest(
     log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
     if fills_csv:
         verbose_fills = False
+    cfg = load_config()
+    exchange_cfg = OmegaConf.to_container(
+        getattr(cfg, "exchange_configs", {}), resolve=True
+    )
     eng = EventDrivenBacktestEngine(
         {symbol: df},
         [(strategy, symbol)],
         initial_equity=capital,
         risk_pct=risk_pct,
         verbose_fills=verbose_fills,
+        exchange_configs=exchange_cfg,
     )
     result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
@@ -1084,8 +1091,10 @@ def backtest_db(
 
     from datetime import datetime
     import pandas as pd
+    from omegaconf import OmegaConf
     from ..storage.timescale import get_engine, select_bars
     from ..backtest.event_engine import EventDrivenBacktestEngine
+    from ..config.hydra_conf import load_config
 
     setup_logging()
     log.info(
@@ -1122,12 +1131,9 @@ def backtest_db(
         log.info("Serie con %d barras; estrategia: %s", len(df), strategy)
         if fills_csv:
             verbose_fills = False
-        from omegaconf import OmegaConf
-        from ..config.hydra_conf import load_config
-
-        cfg = load_config()
+        cfg_all = load_config()
         exchange_cfg_all = OmegaConf.to_container(
-            getattr(cfg, "exchange_configs", {}), resolve=True
+            getattr(cfg_all, "exchange_configs", {}), resolve=True
         )
         venue_cfg = exchange_cfg_all.get(venue, {})
         if not venue_cfg:
