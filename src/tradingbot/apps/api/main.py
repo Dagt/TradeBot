@@ -710,7 +710,8 @@ async def _stream_process(
         with suppress(Exception):
             await proc.wait()
         # ensure the client always receives a termination signal
-        yield format_sse("end", "")
+        rc = proc.returncode
+        yield format_sse("end", "" if rc is None else str(rc))
 
 
 @app.get("/cli/stream/{job_id}")

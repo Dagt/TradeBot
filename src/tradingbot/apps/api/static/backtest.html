@@ -128,41 +128,6 @@ function hideWorking(){
 
 let currentJob=null;
 let evt=null;
-let endTimer=null;
-const END_FALLBACK_MS = (() => {
-  const v = parseInt(new URLSearchParams(location.search).get('endFallbackMs') || '', 10);
-  return Number.isFinite(v) ? v : (window.END_FALLBACK_MS || 300000);
-})();
-
-function resetEndFallback(){
-  if(endTimer){clearTimeout(endTimer);}
-  if(!currentJob) return;
-  endTimer=setTimeout(async()=>{
-    endTimer=null;
-    const runBtn=document.getElementById('bt-run');
-    const stopBtn=document.getElementById('bt-stop');
-    const out=document.getElementById('bt-output');
-    let running=false;
-    try{
-      const r=await fetch(api(`/cli/status/${currentJob}`));
-      const j=await r.json();
-      running=j.status==='running';
-    }catch(e){
-      appendOutput(out,'[timeout] Proceso detenido por falta de respuesta.');
-    }
-    if(running){
-      resetEndFallback();
-      return;
-    }
-    runBtn.disabled=false;
-    stopBtn.disabled=true;
-    runBtn.textContent='Ejecutar';
-    currentJob=null;
-    hideWorking();
-    appendSummary(out.textContent);
-    if(evt){evt.close();}
-  },END_FALLBACK_MS);
-}
 
 const strategies = {
   breakout_atr: {
@@ -404,15 +369,12 @@ async function runBacktest(){
     currentJob=j.id;
     stopBtn.disabled=false;
     showWorking();
-    resetEndFallback();
     evt=new EventSource(api(`/cli/stream/${j.id}`));
-    evt.onopen=()=>{resetEndFallback();appendOutput(outEl,'[conexión abierta]');};
+    evt.onopen=()=>{appendOutput(outEl,'[conexión abierta]');};
     const origClose=evt.close.bind(evt);
     evt.close=()=>{evt.dispatchEvent(new Event('close'));origClose();};
-    evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
-    evt.addEventListener('heartbeat',()=>{resetEndFallback();});
+    evt.onmessage=(e)=>{appendOutput(outEl,e.data);};
     const finish=(msg, btnText='Ejecutar')=>{
-      if(endTimer){clearTimeout(endTimer);endTimer=null;}
       stopBtn.disabled=true;
       runBtn.disabled=btnText==='Finalizado';
       runBtn.textContent=btnText;
@@ -423,7 +385,6 @@ async function runBacktest(){
       appendOutput(outEl,msg);
     };
     const handleDisconnect=async(label)=>{
-      if(endTimer){clearTimeout(endTimer);endTimer=null;}
       hideWorking();
       try{
         const r=await fetch(api(`/cli/status/${currentJob}`));
@@ -447,7 +408,6 @@ async function runBacktest(){
     evt.addEventListener('close',evt.onclose);
     evt.onerror=()=>{handleDisconnect('error de conexión');};
   }catch(e){
-    if(endTimer){clearTimeout(endTimer);endTimer=null;}
     appendOutput(outEl,String(e));
     runBtn.disabled=false;
     runBtn.textContent='Ejecutar';
@@ -464,7 +424,6 @@ async function stopBacktest(){
   runBtn.disabled=false;
   runBtn.textContent='Ejecutar';
   currentJob=null;
-  if(endTimer){clearTimeout(endTimer);endTimer=null;}
   hideWorking();
 }
 
@@ -486,7 +445,6 @@ document.getElementById('bt-run').addEventListener('click',runBacktest);
 document.getElementById('bt-stop').addEventListener('click',stopBacktest);
 document.getElementById('bt-clear').addEventListener('click',()=>{
   document.getElementById('bt-output').textContent='';
-  if(endTimer){clearTimeout(endTimer);endTimer=null;}
   hideWorking();
 });
 document.getElementById('cli-run').addEventListener('click',runCli);
