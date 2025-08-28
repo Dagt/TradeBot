@@ -1,7 +1,8 @@
 import pytest
 from types import SimpleNamespace
+import yaml
+from importlib import resources
 
-from tradingbot.config import settings
 from tradingbot.cli import main as cli_main
 from tradingbot.backtest import event_engine as ev_module
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, STRATEGIES
@@ -51,15 +52,24 @@ def _run_backtest(monkeypatch, venue):
     return captured["engine"]
 
 
+def _load_cfg():
+    path = resources.files("tradingbot.backtest").joinpath("exchange_config.yaml")
+    return yaml.safe_load(path.read_text())
+
+
 def test_backtest_db_futures_config(monkeypatch):
     eng = _run_backtest(monkeypatch, "binance_futures")
-    fee = settings.binance_futures_taker_fee_bps / 10000
-    assert eng.exchange_mode["binance_futures"] == "perp"
-    assert eng.exchange_fees["binance_futures"].fee == fee
+    cfg = _load_cfg()["binance_futures"]
+    assert eng.exchange_mode["binance_futures"] == cfg["market_type"]
+    assert eng.exchange_fees["binance_futures"].fee == cfg["fee"]
+    rm = eng.risk[("dummy", "BTC/USDT")].rm
+    assert rm.allow_short is True
 
 
 def test_backtest_db_spot_config(monkeypatch):
     eng = _run_backtest(monkeypatch, "binance_spot")
-    fee = settings.binance_spot_taker_fee_bps / 10000
-    assert eng.exchange_mode["binance_spot"] == "spot"
-    assert eng.exchange_fees["binance_spot"].fee == fee
+    cfg = _load_cfg()["binance_spot"]
+    assert eng.exchange_mode["binance_spot"] == cfg["market_type"]
+    assert eng.exchange_fees["binance_spot"].fee == cfg["fee"]
+    rm = eng.risk[("dummy", "BTC/USDT")].rm
+    assert rm.allow_short is False
