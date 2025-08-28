@@ -214,9 +214,10 @@ class EventDrivenBacktestEngine:
         self.exchange_depth: Dict[str, float] = {}
         self.exchange_mode: Dict[str, str] = {}
         exchange_configs = exchange_configs or {}
+        default_fee = 0.001
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
-            self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
+            self.exchange_fees[exch] = FeeModel(cfg.get("fee", default_fee))
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             market_type = cfg.get("market_type")
             if market_type is None:
@@ -227,7 +228,7 @@ class EventDrivenBacktestEngine:
                         f"market_type must be specified for exchange '{exch}'"
                     )
             self.exchange_mode[exch] = str(market_type)
-        self.default_fee = FeeModel(0.0)
+        self.default_fee = FeeModel(default_fee)
         self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}
@@ -434,7 +435,7 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
-                svc.on_fill(order.symbol, order.side, fill_qty)
+                svc.on_fill(order.symbol, order.side, fill_qty, price)
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
                 order.total_cost += price * fill_qty

@@ -36,6 +36,7 @@ class Position:
     """Simple container for current position size."""
 
     qty: float = 0.0
+    realized_pnl: float = 0.0
 
 
 class RiskManager:
@@ -118,18 +119,33 @@ class RiskManager:
 
         signed = float(qty) if side == "buy" else -float(qty)
         prev = self.pos.qty
+
+        # Si el fill va en contra de la posición previa, calcula PnL realizado
+        if prev * signed < 0 and price is not None and self._entry_price is not None:
+            closed = min(abs(prev), abs(signed))
+            pnl = (float(price) - self._entry_price) * closed
+            # Para posiciones cortas el signo se invierte
+            if prev < 0:
+                pnl = -pnl
+            self.pos.realized_pnl += pnl
+
         self.pos.qty += signed
+        new = self.pos.qty
 
         # Si se cerró o se invirtió la posición, reinicia trackers de precio y
         # establece un nuevo precio de entrada si corresponde.
-        if prev == 0 or prev * self.pos.qty <= 0:
+        if prev == 0 or prev * new <= 0:
             self._reset_price_trackers()
-            if price is not None and abs(self.pos.qty) > 0:
+            if price is not None and abs(new) > 0:
                 self._entry_price = float(price)
             return
 
-        # Posición continúa en la misma dirección; si se proporciona ``price``
-        # se recalcula el precio promedio ponderado por cantidad.
+        # Si el fill reduce pero no invierte la posición, no cambia el precio
+        if prev * signed < 0:
+            return
+
+        # Posición continúa en la misma dirección y se acumula; si se proporciona
+        # ``price`` se recalcula el precio promedio ponderado por cantidad.
         if price is not None:
             abs_prev = abs(prev)
             abs_new = abs(signed)
