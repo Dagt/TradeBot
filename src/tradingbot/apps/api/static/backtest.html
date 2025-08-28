@@ -411,13 +411,13 @@ async function runBacktest(){
     evt.close=()=>{evt.dispatchEvent(new Event('close'));origClose();};
     evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
     evt.addEventListener('heartbeat',()=>{resetEndFallback();});
-    const finish=(msg)=>{
+    const finish=(msg, btnText='Ejecutar')=>{
       if(endTimer){clearTimeout(endTimer);endTimer=null;}
       stopBtn.disabled=true;
-      runBtn.disabled=false;
-      runBtn.textContent='Ejecutar';
+      runBtn.disabled=btnText==='Finalizado';
+      runBtn.textContent=btnText;
       currentJob=null;
-      if(evt){evt.close();}
+      if(evt){evt.close();evt=null;}
       hideWorking();
       appendSummary(outEl.textContent);
       appendOutput(outEl,msg);
@@ -441,7 +441,7 @@ async function runBacktest(){
       finish(`Proceso finalizado (${e.data}).`);
     });
     evt.addEventListener('end',(e)=>{
-      finish(`Proceso finalizado (código ${e.data}).`);
+      finish(`Proceso finalizado (código ${e.data}).`,'Finalizado');
     });
     evt.onclose=()=>{handleDisconnect('conexión cerrada');};
     evt.addEventListener('close',evt.onclose);
