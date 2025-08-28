@@ -31,7 +31,7 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     risk = engine.risk[("alwaysbuy", sym)]
     engine.verbose_fills = True
     result = engine.run()
-    assert result["fill_count"] > 0
+    assert result["fill_count"] == 1
     fills = pd.DataFrame(
         result["fills"],
         columns=[
@@ -59,6 +59,5 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     final_price = df["close"].iloc[-1]
     expected_equity = fills["cash_after"].iloc[-1] + fills["base_after"].iloc[-1] * final_price
     assert result["equity"] == pytest.approx(expected_equity)
-    avg_price = result["orders"][0]["avg_price"]
-    qty = risk.rm.pos.qty
-    assert abs(result["equity"] - engine.initial_equity) > 0
+    assert result["equity"] == pytest.approx(103.206259139547)
+    assert result["pnl"] == pytest.approx(2.706259139547001)
