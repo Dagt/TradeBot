@@ -82,6 +82,18 @@ class BinanceSpotAdapter(ExchangeAdapter):
 
         self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
+    async def update_fees(self, symbol: str | None = None) -> None:
+        params: Dict[str, Any] = {}
+        if symbol:
+            params["symbol"] = symbol.replace("/", "")
+        try:
+            res = await self._request(self.rest.sapi_get_asset_tradefee, params)
+            data = res[0] if isinstance(res, list) else res
+            self.maker_fee_bps = float(data.get("makerCommission", 0.0)) * 10000
+            self.taker_fee_bps = float(data.get("takerCommission", 0.0)) * 10000
+        except Exception as e:  # pragma: no cover - best effort
+            log.warning("update_fees failed: %s", e)
+
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         sym = normalize(symbol)
         while True:

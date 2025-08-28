@@ -56,15 +56,49 @@ class Settings(BaseSettings):
     paper_maker_fee_bps: float = 0.0
     paper_taker_fee_bps: float | None = None
 
-    binance_spot_maker_fee_bps: float = 0.0
+    # Binance Spot
+    binance_spot_maker_fee_bps: float = 10.0
     binance_spot_taker_fee_bps: float = 10.0
-    binance_spot_testnet_maker_fee_bps: float = 0.0
+    binance_spot_testnet_maker_fee_bps: float = 10.0
     binance_spot_testnet_taker_fee_bps: float = 10.0
 
-    binance_futures_maker_fee_bps: float = 0.0
-    binance_futures_taker_fee_bps: float = 5.0
-    binance_futures_testnet_maker_fee_bps: float = 0.0
-    binance_futures_testnet_taker_fee_bps: float = 5.0
+    # Binance Futuros USD-M
+    binance_futures_maker_fee_bps: float = 2.0
+    binance_futures_taker_fee_bps: float = 4.0
+    binance_futures_testnet_maker_fee_bps: float = 2.0
+    binance_futures_testnet_taker_fee_bps: float = 4.0
+
+    # OKX Spot
+    okx_spot_maker_fee_bps: float = 8.0
+    okx_spot_taker_fee_bps: float = 10.0
+    okx_spot_testnet_maker_fee_bps: float = 8.0
+    okx_spot_testnet_taker_fee_bps: float = 10.0
+
+    # OKX Futuros USDT-M
+    okx_futures_maker_fee_bps: float = 2.0
+    okx_futures_taker_fee_bps: float = 5.0
+    okx_futures_testnet_maker_fee_bps: float = 2.0
+    okx_futures_testnet_taker_fee_bps: float = 5.0
+
+    # Bybit Spot
+    bybit_spot_maker_fee_bps: float = 10.0
+    bybit_spot_taker_fee_bps: float = 10.0
+    bybit_spot_testnet_maker_fee_bps: float = 10.0
+    bybit_spot_testnet_taker_fee_bps: float = 10.0
+
+    # Bybit Futuros
+    bybit_futures_maker_fee_bps: float = 2.0
+    bybit_futures_taker_fee_bps: float = 5.5
+    bybit_futures_testnet_maker_fee_bps: float = 2.0
+    bybit_futures_testnet_taker_fee_bps: float = 5.5
+
+    # Deribit Spot
+    deribit_spot_maker_fee_bps: float = 0.0
+    deribit_spot_taker_fee_bps: float = 0.0
+
+    # Deribit Perpetuos BTC/ETH
+    deribit_perp_maker_fee_bps: float = 0.0
+    deribit_perp_taker_fee_bps: float = 5.0
 
     class Config:
         env_file = ".env"

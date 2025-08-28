@@ -107,6 +107,8 @@ class DeribitAdapter(ExchangeAdapter):
         api_key: str | None = None,
         api_secret: str | None = None,
         testnet: bool = False,
+        maker_fee_bps: float | None = None,
+        taker_fee_bps: float | None = None,
     ):
         super().__init__()
         if ccxt is None:
@@ -123,6 +125,16 @@ class DeribitAdapter(ExchangeAdapter):
         self.rest.set_sandbox_mode(testnet)
         validate_scopes(self.rest, log)
         self.name = "deribit_futures_testnet" if testnet else "deribit_futures"
+        self.maker_fee_bps = float(
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else settings.deribit_perp_maker_fee_bps
+        )
+        self.taker_fee_bps = float(
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else settings.deribit_perp_taker_fee_bps
+        )
 
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         sym = self.normalize(symbol)

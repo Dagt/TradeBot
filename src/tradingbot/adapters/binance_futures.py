@@ -91,9 +91,19 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             self._configure_lock = asyncio.Lock()
             self._position_mode_configured = False
         except Exception:
-            # Lock creation should not fail, but keep constructor safe
             self._configure_lock = None
             self._position_mode_configured = False
+
+    async def update_fees(self, symbol: str | None = None) -> None:
+        params: Dict[str, Any] = {}
+        if symbol:
+            params["symbol"] = symbol.replace("/", "")
+        try:
+            res = await self._request(self.rest.fapiPrivateGetCommissionRate, params)
+            self.maker_fee_bps = float(res.get("makerCommissionRate", 0.0)) * 10000
+            self.taker_fee_bps = float(res.get("takerCommissionRate", 0.0)) * 10000
+        except Exception as e:  # pragma: no cover - best effort
+            log.warning("update_fees failed: %s", e)
 
     async def _configure_mode(self):
         """Ensure one-way position mode is configured."""

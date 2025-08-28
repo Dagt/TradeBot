@@ -19,6 +19,7 @@ from ..utils.metrics import (
 )
 from ..storage import timescale
 from ..utils.logging import get_logger
+from ..config import settings
 
 if TYPE_CHECKING:
     from ..risk.manager import RiskManager
@@ -50,6 +51,14 @@ class ExecutionRouter:
             }
         else:  # single adapter
             self.adapters = {getattr(adapters, "name", "default"): adapters}
+
+        # Ensure adapters expose fee attributes for routing logic
+        for ad in self.adapters.values():
+            if not hasattr(ad, "maker_fee_bps"):
+                setattr(ad, "maker_fee_bps", getattr(settings, f"{ad.name}_maker_fee_bps", 0.0))
+            if not hasattr(ad, "taker_fee_bps"):
+                default = getattr(settings, f"{ad.name}_taker_fee_bps", getattr(ad, "maker_fee_bps", 0.0))
+                setattr(ad, "taker_fee_bps", default)
 
         self._maker_counts = defaultdict(int)
         self._taker_counts = defaultdict(int)
