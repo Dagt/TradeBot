@@ -644,9 +644,11 @@ async def _stream_process(
     start: float,
 ):
     queue: asyncio.Queue[str] = asyncio.Queue()
+    running = True
 
     async def reader(stream: asyncio.StreamReader):
-        while True:
+        nonlocal running
+        while running:
             line = await stream.readline()
             if not line:
                 break
@@ -661,7 +663,7 @@ async def _stream_process(
     last_emit = monotonic()
 
     try:
-        while True:
+        while running:
             if timeout is not None and time.perf_counter() - start > timeout and proc.returncode is None:
                 proc.terminate()
 
@@ -689,6 +691,8 @@ async def _stream_process(
                 )
                 yield format_sse("status", status_payload)
                 yield format_sse("end", "")
+                running = False
+                queue.put_nowait("")
                 break
 
             now = monotonic()
@@ -698,6 +702,7 @@ async def _stream_process(
 
             await asyncio.sleep(0.1)
     finally:
+        running = False
         for t in tasks:
             t.cancel()
             with suppress(asyncio.CancelledError):
