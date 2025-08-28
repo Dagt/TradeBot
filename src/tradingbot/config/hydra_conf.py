@@ -70,6 +70,15 @@ class BalanceConfig:
 
 
 @dataclass
+class ExchangeVenueConfig:
+    """Per-venue configuration such as fees and tick sizes."""
+
+    market_type: str = "spot"
+    fee: float = 0.001
+    tick_size: float = 0.0
+
+
+@dataclass
 class AppConfig:
     """Top level application configuration."""
 
@@ -79,6 +88,7 @@ class AppConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     balance: BalanceConfig = field(default_factory=BalanceConfig)
+    exchange_configs: Dict[str, ExchangeVenueConfig] = field(default_factory=dict)
 
 
 # Register configuration so Hydra validates the structure

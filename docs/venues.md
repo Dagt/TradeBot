@@ -21,3 +21,19 @@ target and the primary connection method used by each adapter.
 Deribit ofrece perpetuos no solo de BTC y ETH sino también de varios altcoins
 como SOL, XRP, MATIC, DOT, ADA, DOGE, LTC y TRX.
 
+## Exchange configuration
+
+Per-venue settings such as fees or tick sizes can be defined in
+`config/config.yaml` under an ``exchange_configs`` section:
+
+```yaml
+exchange_configs:
+  binance_spot:
+    market_type: spot
+    fee: 0.001
+    tick_size: 0.01
+```
+
+Venues without an explicit entry fall back to automatic ``_spot``/``_perp``
+inference for the market type.
+
