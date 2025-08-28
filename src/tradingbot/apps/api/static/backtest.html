@@ -131,17 +131,29 @@ let evt=null;
 let endTimer=null;
 const END_FALLBACK_MS = (() => {
   const v = parseInt(new URLSearchParams(location.search).get('endFallbackMs') || '', 10);
-  return Number.isFinite(v) ? v : (window.END_FALLBACK_MS || 60000);
+  return Number.isFinite(v) ? v : (window.END_FALLBACK_MS || 300000);
 })();
 
 function resetEndFallback(){
   if(endTimer){clearTimeout(endTimer);}
-  endTimer=setTimeout(()=>{
+  if(!currentJob) return;
+  endTimer=setTimeout(async()=>{
     endTimer=null;
     const runBtn=document.getElementById('bt-run');
     const stopBtn=document.getElementById('bt-stop');
     const out=document.getElementById('bt-output');
-    appendOutput(out,'[timeout] Proceso detenido por falta de respuesta.');
+    let running=false;
+    try{
+      const r=await fetch(api(`/cli/status/${currentJob}`));
+      const j=await r.json();
+      running=j.status==='running';
+    }catch(e){
+      appendOutput(out,'[timeout] Proceso detenido por falta de respuesta.');
+    }
+    if(running){
+      resetEndFallback();
+      return;
+    }
     runBtn.disabled=false;
     stopBtn.disabled=true;
     runBtn.textContent='Ejecutar';
@@ -400,6 +412,7 @@ async function runBacktest(){
     evt.onclose=()=>appendOutput(outEl,'[conexión cerrada]');
     evt.addEventListener('close',evt.onclose);
     evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
+    evt.addEventListener('heartbeat',()=>{resetEndFallback();});
     const finish=(msg)=>{
       if(endTimer){clearTimeout(endTimer);endTimer=null;}
       stopBtn.disabled=true;

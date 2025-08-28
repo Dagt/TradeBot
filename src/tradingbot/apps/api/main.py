@@ -645,6 +645,12 @@ async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None,
         asyncio.create_task(reader(proc.stderr)),
     ]
 
+    # Heartbeats keep the client-aware connection alive; the client-side
+    # fallback timer is only meant to detect hung connections, not to infer
+    # when the process has finished.
+    last_beat = time.perf_counter()
+    HEARTBEAT_INTERVAL = 5  # seconds
+
     try:
         while True:
             if proc.stdout.at_eof() and proc.stderr.at_eof() and queue.empty():
@@ -655,8 +661,13 @@ async def _stream_process(proc: asyncio.subprocess.Process, timeout: int | None,
             try:
                 line = await asyncio.wait_for(queue.get(), 0.1)
             except asyncio.TimeoutError:
+                now = time.perf_counter()
+                if now - last_beat >= HEARTBEAT_INTERVAL:
+                    last_beat = now
+                    yield "event: heartbeat\ndata: ping\n\n"
                 continue
             yield f"data: {line.rstrip()}\n\n"
+            last_beat = time.perf_counter()
     finally:
         for t in tasks:
             t.cancel()
@@ -714,6 +725,19 @@ async def cli_stop(job_id: str):
         raise HTTPException(status_code=404, detail="job not found")
     job["proc"].terminate()
     return {"status": "terminated"}
+
+
+@app.get("/cli/status/{job_id}")
+async def cli_status(job_id: str):
+    """Return the status of a CLI job."""
+
+    job = _CLI_JOBS.get(job_id)
+    if not job:
+        return {"status": "not-found"}
+    proc = job["proc"]
+    if proc.returncode is None:
+        return {"status": "running"}
+    return {"status": "finished", "returncode": proc.returncode}
 
 
 # --- Bot lifecycle --------------------------------------------------------------
