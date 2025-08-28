@@ -1,3 +1,5 @@
+"""Integration test for backtest-db streaming API."""
+
 import asyncio
 import sys
 from fastapi.testclient import TestClient
