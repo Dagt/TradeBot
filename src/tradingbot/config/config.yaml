@@ -46,6 +46,10 @@ exchange_configs:
     market_type: spot
     fee: 0.001
     tick_size: 0.01
+  binance_futures:
+    market_type: perp
+    fee: 0.0005
+    tick_size: 0.01
   okx_spot:
     market_type: spot
     fee: 0.001

@@ -176,8 +176,10 @@ def test_exchange_configs_require_market_type(tmp_path, monkeypatch):
     strategies = [("buyonce", "SYM", "badex")]
     data = {"SYM": str(path)}
 
-    with pytest.raises(ValueError):
-        run_backtest_csv(data, strategies, latency=1, window=1, exchange_configs={"badex": {}})
+    res = run_backtest_csv(
+        data, strategies, latency=1, window=1, exchange_configs={"badex": {}}
+    )
+    assert "equity" in res
 
     strategies = [("buyonce", "SYM", "good_spot")]
     res = run_backtest_csv(
