@@ -18,6 +18,8 @@ def dummy_data():
 def test_engine_normalizes_percentage(dummy_data):
     eng = EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=5)
     assert eng._risk_pct == pytest.approx(0.05)
+    eng = EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=1)
+    assert eng._risk_pct == pytest.approx(0.01)
 
 
 def test_engine_rejects_invalid_risk_pct(dummy_data):

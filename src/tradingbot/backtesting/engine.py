@@ -37,7 +37,7 @@ def _validate_risk_pct(value: float) -> float:
     val = float(value)
     if val < 0:
         raise ValueError("risk_pct must be non-negative")
-    if val > 1:
+    if val >= 1:
         if val <= 100:
             return val / 100
         raise ValueError("risk_pct must be between 0 and 1")
