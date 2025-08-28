@@ -409,8 +409,6 @@ async function runBacktest(){
     evt.onopen=()=>{resetEndFallback();appendOutput(outEl,'[conexión abierta]');};
     const origClose=evt.close.bind(evt);
     evt.close=()=>{evt.dispatchEvent(new Event('close'));origClose();};
-    evt.onclose=()=>appendOutput(outEl,'[conexión cerrada]');
-    evt.addEventListener('close',evt.onclose);
     evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
     evt.addEventListener('heartbeat',()=>{resetEndFallback();});
     const finish=(msg)=>{
@@ -424,15 +422,30 @@ async function runBacktest(){
       appendSummary(outEl.textContent);
       appendOutput(outEl,msg);
     };
+    const handleDisconnect=async(label)=>{
+      if(endTimer){clearTimeout(endTimer);endTimer=null;}
+      hideWorking();
+      try{
+        const r=await fetch(api(`/cli/status/${currentJob}`));
+        const j=await r.json();
+        if(j.status==='finished'){
+          finish(`Proceso finalizado (código ${j.returncode}).`);
+          return;
+        }
+        appendOutput(outEl,`[${label}] Estado: ${j.status}`);
+      }catch(err){
+        appendOutput(outEl,`[${label}] ${err}`);
+      }
+    };
     evt.addEventListener('status',(e)=>{
       finish(`Proceso finalizado (${e.data}).`);
     });
     evt.addEventListener('end',(e)=>{
       finish(`Proceso finalizado (código ${e.data}).`);
     });
-    evt.onerror=()=>{
-      finish('[error de conexión]');
-    };
+    evt.onclose=()=>{handleDisconnect('conexión cerrada');};
+    evt.addEventListener('close',evt.onclose);
+    evt.onerror=()=>{handleDisconnect('error de conexión');};
   }catch(e){
     if(endTimer){clearTimeout(endTimer);endTimer=null;}
     appendOutput(outEl,String(e));
