@@ -73,8 +73,9 @@ emplearse `PortfolioGuard`, dejando `total_cap_pct` y `per_symbol_cap_pct` en
 `null` para deshabilitar estos límites.
 
 El parámetro `risk_pct` debe indicarse como una fracción entre 0 y 1. Si se
-provee un valor entre 1 y 100 se interpreta como porcentaje y se divide entre
-100. Valores negativos o superiores a 100 generan un error.
+provee un valor de 1 a 100 se interpreta como porcentaje y se divide entre
+100 (por ejemplo, `risk_pct=1` equivale a `0.01`). Valores negativos o
+superiores a 100 generan un error.
 
 Ejemplos:
 
@@ -82,6 +83,7 @@ Ejemplos:
 python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 0.02
 # equivalente a:
 python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 2
+# y "--risk-pct 1" equivale a 0.01 (1 % de riesgo)
 ```
 
 `DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se

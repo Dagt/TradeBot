@@ -9,14 +9,16 @@ Por ejemplo, `strength = 1.5` incrementa la exposición un 50 %, mientras que
 `strength = 0.5` la reduce a la mitad. El campo `risk_pct` establece la pérdida
 máxima permitida y `vol_target` dimensiona la posición según la volatilidad.
 
-El parámetro `risk_pct` debe estar entre 0 y 1. Los valores entre 1 y 100 se
-interpretan como porcentajes y se convierten dividiéndolos entre 100. Valores
-negativos o mayores a 100 provocan un error.
+El parámetro `risk_pct` debe estar entre 0 y 1. Los valores de 1 a 100 se
+interpretan como porcentajes y se convierten dividiéndolos entre 100 (por
+ejemplo, un valor de 1 se normaliza a 0.01). Valores negativos o mayores a 100
+provocan un error.
 
 Ejemplo desde el CLI:
 
 ```bash
 python -m tradingbot.cli backtest data.csv --risk-pct 2   # 2 % de riesgo
+# también puede usarse "--risk-pct 1" para un 1 % de riesgo
 ```
 
 ## PortfolioGuard
