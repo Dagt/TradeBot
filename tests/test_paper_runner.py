@@ -45,7 +45,7 @@ class DummyRisk:
     def check_order(self, symbol, side, equity, price, strength=1.0, **_):
         return True, "", 1.0
 
-    def on_fill(self, symbol, side, qty, venue=None):
+    def on_fill(self, symbol, side, qty, price=None, venue=None):
         pass
 
 

@@ -105,14 +105,38 @@ class RiskManager:
         if abs(self.pos.qty) < 1e-12:
             self._reset_price_trackers()
 
-    def add_fill(self, side: str, qty: float) -> None:
-        """Actualiza posición interna tras un fill."""
+    def add_fill(self, side: str, qty: float, price: float | None = None) -> None:
+        """Actualiza posición interna tras un fill y precio de entrada.
+
+        ``price`` es el precio del fill.  Cuando se acumulan posiciones en la
+        misma dirección se recalcula ``_entry_price`` como un promedio ponderado
+        por cantidad para reflejar el nuevo costo base.  Si la operación cierra
+        o invierte la posición, los *trackers* de precio se reinician.
+        """
+
         signed = float(qty) if side == "buy" else -float(qty)
         prev = self.pos.qty
         self.pos.qty += signed
-        # Si se cerró o se invirtió la posición, reinicia trackers de precio
+
+        # Si se cerró o se invirtió la posición, reinicia trackers de precio y
+        # establece un nuevo precio de entrada si corresponde.
         if prev == 0 or prev * self.pos.qty <= 0:
             self._reset_price_trackers()
+            if price is not None and abs(self.pos.qty) > 0:
+                self._entry_price = float(price)
+            return
+
+        # Posición continúa en la misma dirección; si se proporciona ``price``
+        # se recalcula el precio promedio ponderado por cantidad.
+        if price is not None:
+            abs_prev = abs(prev)
+            abs_new = abs(signed)
+            if self._entry_price is None:
+                self._entry_price = float(price)
+            else:
+                self._entry_price = (
+                    self._entry_price * abs_prev + float(price) * abs_new
+                ) / (abs_prev + abs_new)
 
     # ------------------------------------------------------------------
     # Order limit helpers
@@ -189,9 +213,10 @@ class RiskManager:
     async def _on_fill_event(self, evt: dict) -> None:
         side = evt.get("side", "")
         qty = evt.get("qty", 0.0)
+        price = evt.get("price")
         venue = evt.get("venue")
         symbol = evt.get("symbol")
-        self.add_fill(side, qty)
+        self.add_fill(side, qty, price=price)
         if venue and symbol:
             book = self.positions_multi.setdefault(venue, {})
             signed = float(qty) if side == "buy" else -float(qty)
@@ -454,8 +479,9 @@ class RiskManager:
     def check_limits(self, price: float) -> bool:
         """Verifica stop loss basado en ``risk_pct``.
 
-        Cuando la pérdida latente excede ``notional * risk_pct`` se
-        lanza :class:`StopLossExceeded`.
+        El cálculo usa ``_entry_price``, actualizado con el promedio
+        ponderado cuando se escalan posiciones.  Cuando la pérdida latente
+        excede ``notional * risk_pct`` se lanza :class:`StopLossExceeded`.
         """
 
         if not self.enabled:
