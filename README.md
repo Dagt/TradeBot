@@ -72,6 +72,18 @@ la volatilidad mediante `vol_target`. Para limitar la exposición global puede
 emplearse `PortfolioGuard`, dejando `total_cap_pct` y `per_symbol_cap_pct` en
 `null` para deshabilitar estos límites.
 
+El parámetro `risk_pct` debe indicarse como una fracción entre 0 y 1. Si se
+provee un valor entre 1 y 100 se interpreta como porcentaje y se divide entre
+100. Valores negativos o superiores a 100 generan un error.
+
+Ejemplos:
+
+```bash
+python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 0.02
+# equivalente a:
+python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 2
+```
+
 `DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
 superan los límites configurados, detiene el bot o cierra las posiciones
 abiertas.

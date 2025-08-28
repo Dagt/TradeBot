@@ -150,6 +150,24 @@ def _validate_backtest_venue(value: str) -> str:
     return _validate_venue(value)
 
 
+def _parse_risk_pct(value: float) -> float:
+    """Validate and normalise risk percentage values.
+
+    Accepts values in [0, 1]. If a value between 1 and 100 is provided it is
+    assumed to be a percentage and is divided by 100. Values outside these
+    ranges raise a :class:`typer.BadParameter` error.
+    """
+
+    val = float(value)
+    if val < 0:
+        raise typer.BadParameter("risk-pct must be non-negative")
+    if val > 1:
+        if val <= 100:
+            return val / 100
+        raise typer.BadParameter("risk-pct must be between 0 and 1")
+    return val
+
+
 def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
     """Return a sorted list of stream kinds supported by ``adapter_cls``.
 
@@ -629,7 +647,12 @@ def run_bot(
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk manager loss percentage (0-1 or 0-100)",
+    ),
     daily_max_loss_pct: float = typer.Option(
         0.05, "--daily-max-loss-pct", help="Daily loss limit as fraction of equity"
     ),
@@ -675,7 +698,12 @@ def paper_run(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk manager loss percentage (0-1 or 0-100)",
+    ),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
@@ -702,7 +730,12 @@ def real_run(
         help=f"Trading venue ({_VENUE_CHOICES})",
     ),
     symbols: List[str] = typer.Option(["BTC/USDT"], "--symbol", help="Trading symbols"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk manager loss percentage"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk manager loss percentage (0-1 or 0-100)",
+    ),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Simulate orders without sending"),
     daily_max_loss_pct: float = typer.Option(
@@ -905,7 +938,12 @@ def backtest(
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk stop loss % (0-1 or 0-100)",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -943,7 +981,12 @@ def backtest(
 def backtest_cfg(
     config: str,
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk stop loss % (0-1 or 0-100)",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -1020,7 +1063,12 @@ def backtest_db(
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
-    risk_pct: float = typer.Option(0.0, "--risk-pct", help="Risk stop loss %"),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk stop loss % (0-1 or 0-100)",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
