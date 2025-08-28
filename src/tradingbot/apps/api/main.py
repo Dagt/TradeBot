@@ -14,6 +14,7 @@ import shlex
 import asyncio
 import signal
 import uuid
+import logging
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
@@ -51,6 +52,7 @@ except Exception:
     _ENGINE = None
 
 security = HTTPBasic()
+logger = logging.getLogger(__name__)
 
 
 def _check_basic_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
@@ -675,24 +677,30 @@ async def cli_stream(job_id: str):
     start = job.get("start", time.perf_counter())
 
     async def event_gen():
+        returncode = 0
         try:
-            async for chunk in _stream_process(proc, timeout, start):
-                yield chunk
-        except Exception as exc:
-            # Surface the error to the client before finishing the stream.
-            yield f"event: error\ndata: {exc}\n\n"
-        finally:
-            # Remove job and always emit an ``end`` event so that the client
-            # knows the stream is finished even if many lines were produced.
-            _CLI_JOBS.pop(job_id, None)
+            try:
+                async for chunk in _stream_process(proc, timeout, start):
+                    yield chunk
+            except Exception as exc:
+                # Surface the error to the client before finishing the stream.
+                yield f"event: error\ndata: {exc}\n\n"
             await proc.wait()
             returncode = proc.returncode if proc.returncode is not None else 0
+            logger.debug("cli_stream %s: emitting status event", job_id)
+            yield "event: status\ndata: finished\n\n"
+            logger.debug("cli_stream %s: emitted status event", job_id)
+            logger.debug("cli_stream %s: emitting end event", job_id)
+            yield f"event: end\ndata: {returncode}\n\n"
+            logger.debug("cli_stream %s: emitted end event", job_id)
+        finally:
+            # Remove job and emit metrics after streaming is complete.
+            _CLI_JOBS.pop(job_id, None)
+            await proc.wait()
             if returncode == 0:
                 CLI_PROCESS_COMPLETED.inc()
             else:
                 CLI_PROCESS_TIMEOUT.inc()
-            yield "event: status\ndata: finished\n\n"
-            yield f"event: end\ndata: {returncode}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
