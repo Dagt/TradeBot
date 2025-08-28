@@ -94,6 +94,8 @@ class BinanceFuturesAdapter(ExchangeAdapter):
             self._configure_lock = None
             self._position_mode_configured = False
 
+        self._start_fee_updater()
+
     async def update_fees(self, symbol: str | None = None) -> None:
         params: Dict[str, Any] = {}
         if symbol:

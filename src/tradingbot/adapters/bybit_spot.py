@@ -69,6 +69,8 @@ class BybitSpotAdapter(ExchangeAdapter):
             )
         )
 
+        self._start_fee_updater()
+
     async def update_fees(self, symbol: str | None = None) -> None:
         params = {"category": "spot"}
         if symbol:
