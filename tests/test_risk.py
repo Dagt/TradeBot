@@ -148,3 +148,12 @@ def test_covariance_limit_triggers_kill():
     assert ok is False
     assert rm.enabled is False
     assert rm.last_kill_reason == "covariance_limit"
+
+
+def test_long_only_prevents_shorts():
+    from tradingbot.risk.manager import RiskManager
+
+    rm = RiskManager(allow_short=False)
+    rm.set_position(1.0)
+    allowed, _, delta = rm.check_order("SYM", "sell", equity=100.0, price=100.0)
+    assert allowed and delta == pytest.approx(-1.0)

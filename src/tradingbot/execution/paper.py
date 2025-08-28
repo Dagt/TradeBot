@@ -187,6 +187,18 @@ class PaperAdapter(ExchangeAdapter):
         else:
             return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
 
+        fee_bps = self.maker_fee_bps if maker else self.taker_fee_bps
+        pos = self.state.pos.get(symbol, PaperPosition())
+        if side == "sell":
+            qty = min(qty, pos.qty)
+            if qty <= 0:
+                return {"status": "rejected", "reason": "insufficient_position", "order_id": order_id}
+        else:  # buy
+            max_aff = self.state.cash / (px_exec * (1 + fee_bps / 10000.0)) if self.state.cash > 0 else 0.0
+            qty = min(qty, max_aff)
+            if qty <= 0:
+                return {"status": "rejected", "reason": "insufficient_cash", "order_id": order_id}
+
         fill = self._apply_fill(symbol, side, qty, px_exec, maker)
         return {
             "status": "filled",

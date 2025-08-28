@@ -147,16 +147,14 @@ Ejecuta un backtest vectorizado desde un archivo CSV.
 - `--fills-csv PATH`: exporta los fills a un CSV.
 
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
-`timestamp, side, price, qty, strategy, symbol, exchange, rpnl`. Desde este
-archivo puede reconstruirse el efectivo y la posición para validar el PnL final:
+`timestamp, side, price, qty, strategy, symbol, exchange, fee, cash_after, base_after, equity_after, realized_pnl`.
+Desde este archivo puede reconstruirse el efectivo y la posición para validar el PnL final:
 
 ```python
 import pandas as pd
 
 fills = pd.read_csv("fills.csv")
-fills["signed_qty"] = fills["qty"].where(fills["side"] == "buy", -fills["qty"])
-fills["position"] = fills["signed_qty"].cumsum()
-fills["cash"] = (-fills["price"] * fills["signed_qty"]).cumsum() + INITIAL_EQUITY
+# `base_after`, `cash_after` y `equity_after` ya contienen los balances tras cada fill.
 ```
 
 La última fila de `cash` y `position` debe coincidir con los valores reportados

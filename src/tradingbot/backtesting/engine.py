@@ -212,11 +212,13 @@ class EventDrivenBacktestEngine:
         self.exchange_latency: Dict[str, int] = {}
         self.exchange_fees: Dict[str, FeeModel] = {}
         self.exchange_depth: Dict[str, float] = {}
+        self.exchange_mode: Dict[str, str] = {}
         exchange_configs = exchange_configs or {}
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             self.exchange_fees[exch] = FeeModel(cfg.get("fee", 0.0))
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
+            self.exchange_mode[exch] = str(cfg.get("market_type", "perp"))
         self.default_fee = FeeModel(0.0)
         self.default_depth = float("inf")
 
@@ -234,8 +236,10 @@ class EventDrivenBacktestEngine:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
+            allow_short = self.exchange_mode.get(exchange, "perp") != "spot"
             rm = RiskManager(
                 risk_pct=self._risk_pct,
+                allow_short=allow_short,
             )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             self.risk[key] = RiskService(rm, guard)
@@ -329,6 +333,9 @@ class EventDrivenBacktestEngine:
                 else:
                     price = float(arrs["close"][i])
 
+                svc = self.risk[(order.strategy, order.symbol)]
+                mode = self.exchange_mode.get(order.exchange, "perp")
+
                 if self.slippage:
                     bar = {vol_key: avail}
                     for k in (
@@ -366,13 +373,16 @@ class EventDrivenBacktestEngine:
                             else 0.0
                         )
 
-                if fill_qty <= 0:
-                    if not self.cancel_unfilled:
-                        order.execute_index = i + 1
-                        heapq.heappush(order_queue, order)
-                    continue
+                if mode == "spot":
+                    if order.side == "sell":
+                        avail_base = max(0.0, svc.rm.pos.qty)
+                        fill_qty = min(fill_qty, avail_base)
+                    else:
+                        fee_model_tmp = self.exchange_fees.get(order.exchange, self.default_fee)
+                        max_affordable = cash / (price * (1 + fee_model_tmp.fee))
+                        fill_qty = min(fill_qty, max_affordable)
 
-                if fill_qty < self.min_fill_qty:
+                if fill_qty <= 0 or fill_qty < self.min_fill_qty:
                     if not self.cancel_unfilled:
                         order.execute_index = i + 1
                         heapq.heappush(order_queue, order)
@@ -395,7 +405,6 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
-                svc = self.risk[(order.strategy, order.symbol)]
                 svc.on_fill(order.symbol, order.side, fill_qty)
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
@@ -404,6 +413,17 @@ class EventDrivenBacktestEngine:
                     if order.latency is None:
                         order.latency = i - order.place_index
                     svc.rm.complete_order()
+
+                base_after = svc.rm.pos.qty
+                mtm_after = 0.0
+                for (strat_s, sym_s), svc_s in self.risk.items():
+                    arrs_s = data_arrays[sym_s]
+                    sym_len_s = data_lengths[sym_s]
+                    idx_px = i if i < sym_len_s else sym_len_s - 1
+                    mark = price if sym_s == order.symbol else float(arrs_s["close"][idx_px])
+                    mtm_after += svc_s.rm.pos.qty * mark
+                equity_after = cash + mtm_after
+
                 timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
                 if collect_fills:
                     fills.append(
@@ -415,6 +435,10 @@ class EventDrivenBacktestEngine:
                             order.strategy,
                             order.symbol,
                             order.exchange,
+                            fee,
+                            cash,
+                            base_after,
+                            equity_after,
                             getattr(svc.rm.pos, "realized_pnl", 0.0),
                         )
                     )
@@ -661,7 +685,11 @@ class EventDrivenBacktestEngine:
                     "strategy",
                     "symbol",
                     "exchange",
-                    "rpnl",
+                    "fee",
+                    "cash_after",
+                    "base_after",
+                    "equity_after",
+                    "realized_pnl",
                 ],
             )
             fills_df.to_csv(fills_csv, index=False)

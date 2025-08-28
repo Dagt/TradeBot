@@ -52,6 +52,7 @@ class RiskManager:
         risk_pct: float = 0.0,
         vol_target: float = 0.0,
         *,
+        allow_short: bool = True,
         daily_loss_limit: float = 0.0,
         daily_drawdown_pct: float = 0.0,
         limits: RiskLimits | None = None,
@@ -68,6 +69,7 @@ class RiskManager:
         self.risk_pct = abs(risk_pct)
         self.vol_target = abs(vol_target)
         self._base_vol_target = self.vol_target
+        self.allow_short = bool(allow_short)
 
         self.daily_loss_limit = abs(daily_loss_limit)
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
@@ -299,6 +301,15 @@ class RiskManager:
             correlations=correlations,
             threshold=threshold,
         )
+
+        if not self.allow_short and self.pos.qty + delta < 0:
+            delta = -self.pos.qty
+
+        notional = abs(delta) * price
+        if self.risk_pct > 0 and notional > equity * self.risk_pct:
+            max_notional = equity * self.risk_pct
+            if notional > 0:
+                delta *= max_notional / notional
 
         if abs(delta) <= 0:
             return False, "zero_size", 0.0
