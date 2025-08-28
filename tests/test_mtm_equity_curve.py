@@ -41,4 +41,6 @@ def test_equity_curve_marks_open_positions(tmp_path, monkeypatch):
     res = run_backtest_csv(
         data, strategies, latency=0, window=0, initial_equity=100
     )
-    assert res["equity_curve"] == pytest.approx([100.0, 100.0, 100.0, 110.0, 120.0])
+    assert res["equity_curve"] == pytest.approx(
+        [100.0, 100.0, 99.9, 109.9, 119.9]
+    )

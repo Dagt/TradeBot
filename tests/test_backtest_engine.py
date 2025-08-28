@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from tradingbot.backtest.event_engine import SlippageModel, run_backtest_csv
 from tradingbot.strategies import STRATEGIES
+from tradingbot.risk.manager import RiskManager
 
 
 class DummyStrategy:
@@ -82,6 +83,16 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "equity_after",
         "realized_pnl",
     ]
+    # Comprobar cálculo de fee
+    expected_fee = df["price"] * df["qty"] * 0.001
+    assert np.allclose(df["fee"], expected_fee)
+    # Comprobar que realized_pnl coincide con RiskManager
+    rm = RiskManager()
+    rpnl = []
+    for row in df.itertuples():
+        rm.add_fill(row.side, row.qty, row.price)
+        rpnl.append(rm.pos.realized_pnl)
+    assert np.allclose(df["realized_pnl"], rpnl)
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
@@ -370,7 +381,8 @@ def test_funding_payment(tmp_path, monkeypatch):
         data, strategies, latency=1, window=1, initial_equity=200.0
     )
     assert pytest.approx(res["funding"], rel=1e-9) == 1.0
-    assert pytest.approx(res["equity"], rel=1e-9) == 199.0
+    # El costo de la operación incluye la comisión por defecto (0.001)
+    assert pytest.approx(res["equity"], rel=1e-9) == 198.9
 
 
 class AlwaysBuyStrategy:
