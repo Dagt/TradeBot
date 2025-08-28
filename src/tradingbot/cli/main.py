@@ -1150,7 +1150,8 @@ def backtest_db(
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)
         typer.echo(generate_report(result))
-        sys.exit(0)
+        sys.stdout.flush()
+        return
     finally:
         engine.dispose()
 

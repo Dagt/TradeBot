@@ -1,4 +1,3 @@
-import pytest
 from types import SimpleNamespace
 
 from tradingbot.config import settings
@@ -37,17 +36,16 @@ def _run_backtest(monkeypatch, venue):
 
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
 
-    with pytest.raises(SystemExit):
-        cli_main.backtest_db(
-            venue=venue,
-            symbol="BTC/USDT",
-            strategy="dummy",
-            start="2021-01-01",
-            end="2021-01-02",
-            timeframe="1m",
-            capital=0.0,
-            risk_pct=0.0,
-        )
+    cli_main.backtest_db(
+        venue=venue,
+        symbol="BTC/USDT",
+        strategy="dummy",
+        start="2021-01-01",
+        end="2021-01-02",
+        timeframe="1m",
+        capital=0.0,
+        risk_pct=0.0,
+    )
     return captured["engine"]
 
 

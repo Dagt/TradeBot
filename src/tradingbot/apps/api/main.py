@@ -690,7 +690,6 @@ async def _stream_process(
                     {"job_id": job_id, "status": "finished", "returncode": proc.returncode}
                 )
                 yield format_sse("status", status_payload)
-                yield format_sse("end", "")
                 running = False
                 queue.put_nowait("")
                 break
@@ -703,16 +702,15 @@ async def _stream_process(
             await asyncio.sleep(0.1)
     except Exception as exc:  # pragma: no cover - defensive
         yield format_sse("error", str(exc))
-        yield format_sse("end", "")
         running = False
     finally:
         running = False
         for t in tasks:
             t.cancel()
-            with suppress(asyncio.CancelledError):
-                await t
         with suppress(Exception):
             await proc.wait()
+        # ensure the client always receives a termination signal
+        yield format_sse("end", "")
 
 
 @app.get("/cli/stream/{job_id}")
