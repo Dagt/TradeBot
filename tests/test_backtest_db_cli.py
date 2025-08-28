@@ -1,10 +1,10 @@
 from types import SimpleNamespace
-import yaml
-from importlib import resources
+from omegaconf import OmegaConf
 
 from tradingbot.cli import main as cli_main
 from tradingbot.backtest import event_engine as ev_module
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, STRATEGIES
+from tradingbot.config.hydra_conf import load_config
 from tradingbot.storage import timescale as ts_module
 
 
@@ -51,8 +51,8 @@ def _run_backtest(monkeypatch, venue):
 
 
 def _load_cfg():
-    path = resources.files("tradingbot.backtest").joinpath("exchange_config.yaml")
-    return yaml.safe_load(path.read_text())
+    cfg = load_config()
+    return OmegaConf.to_container(getattr(cfg, "exchange_configs", {}), resolve=True)
 
 
 def test_backtest_db_futures_config(monkeypatch):
@@ -60,6 +60,7 @@ def test_backtest_db_futures_config(monkeypatch):
     cfg = _load_cfg()["binance_futures"]
     assert eng.exchange_mode["binance_futures"] == cfg["market_type"]
     assert eng.exchange_fees["binance_futures"].fee == cfg["fee"]
+    assert eng.exchange_tick_size["binance_futures"] == cfg["tick_size"]
     rm = eng.risk[("dummy", "BTC/USDT")].rm
     assert rm.allow_short is True
 
@@ -69,5 +70,6 @@ def test_backtest_db_spot_config(monkeypatch):
     cfg = _load_cfg()["binance_spot"]
     assert eng.exchange_mode["binance_spot"] == cfg["market_type"]
     assert eng.exchange_fees["binance_spot"].fee == cfg["fee"]
+    assert eng.exchange_tick_size["binance_spot"] == cfg["tick_size"]
     rm = eng.risk[("dummy", "BTC/USDT")].rm
     assert rm.allow_short is False

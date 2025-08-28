@@ -29,6 +29,29 @@ risk:
   per_symbol_cap_pct: null
 ```
 
+## `exchange_configs`
+
+Las configuraciones específicas de cada venue se declaran en `config/config.yaml`
+ bajo la clave `exchange_configs`. Cada entrada define el tipo de mercado,
+ la comisión y el tamaño mínimo de tick a aplicar durante los backtests y al
+ utilizar la CLI:
+
+```yaml
+exchange_configs:
+  binance_spot:
+    market_type: spot
+    fee: 0.001
+    tick_size: 0.01
+  okx_spot:
+    market_type: spot
+    fee: 0.001
+    tick_size: 0.1
+```
+
+Si un venue no aparece explícitamente, el tipo de mercado se infiere
+automáticamente: los nombres que terminan en `_spot` se consideran spot y el
+resto se tratan como futuros/perpetuos.
+
 ## `ingest`
 Recibe datos de mercado en vivo y opcionalmente los almacena.
 - `--venue`: intercambio a utilizar (ej. `binance_spot`, `binance_futures_ws`, `bybit_futures_ws`, `okx_futures_ws`). Los nombres siguen el patrón `<exchange>_<market>` para REST y `<exchange>_<market>_ws` para WebSocket; se añade `_testnet` automáticamente cuando se usa el entorno de prueba.
