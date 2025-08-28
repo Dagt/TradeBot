@@ -26,12 +26,39 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         window=1,
         slippage=SlippageModel(volume_impact=0.0),
         initial_equity=df["close"].iloc[0],
+        exchange_configs={"default": {"market_type": "spot"}},
     )
     risk = engine.risk[("alwaysbuy", sym)]
     engine.verbose_fills = True
     result = engine.run()
     assert result["fill_count"] > 0
-    assert len(result["fills"][0]) == 8
+    fills = pd.DataFrame(
+        result["fills"],
+        columns=[
+            "timestamp",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee",
+            "cash_after",
+            "base_after",
+            "equity_after",
+            "realized_pnl",
+        ],
+    )
+    assert len(result["fills"][0]) == 12
+    assert (fills["cash_after"] >= -1e-9).all()
+    assert (fills["base_after"] >= -1e-9).all()
+    assert risk.rm.pos.qty == pytest.approx(0.0)
+    assert risk.rm.pos.realized_pnl == pytest.approx(
+        fills["realized_pnl"].iloc[-1]
+    )
+    final_price = df["close"].iloc[-1]
+    expected_equity = fills["cash_after"].iloc[-1] + fills["base_after"].iloc[-1] * final_price
+    assert result["equity"] == pytest.approx(expected_equity)
     avg_price = result["orders"][0]["avg_price"]
     qty = risk.rm.pos.qty
     assert abs(result["equity"] - engine.initial_equity) > 0
