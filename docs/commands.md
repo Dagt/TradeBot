@@ -33,18 +33,20 @@ risk:
 
 Las configuraciones específicas de cada venue se declaran en `config/config.yaml`
  bajo la clave `exchange_configs`. Cada entrada define el tipo de mercado,
- la comisión y el tamaño mínimo de tick a aplicar durante los backtests y al
+ las comisiones maker/taker y el tamaño mínimo de tick a aplicar durante los backtests y al
  utilizar la CLI:
 
 ```yaml
 exchange_configs:
   binance_spot:
     market_type: spot
-    fee: 0.001
+    maker_fee_bps: 10.0
+    taker_fee_bps: 10.0
     tick_size: 0.01
   okx_spot:
     market_type: spot
-    fee: 0.001
+    maker_fee_bps: 10.0
+    taker_fee_bps: 10.0
     tick_size: 0.1
 ```
 

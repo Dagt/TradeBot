@@ -23,14 +23,15 @@ como SOL, XRP, MATIC, DOT, ADA, DOGE, LTC y TRX.
 
 ## Exchange configuration
 
-Per-venue settings such as fees or tick sizes can be defined in
+Per-venue settings such as maker/taker fees or tick sizes can be defined in
 `config/config.yaml` under an ``exchange_configs`` section:
 
 ```yaml
 exchange_configs:
   binance_spot:
     market_type: spot
-    fee: 0.001
+    maker_fee_bps: 10.0
+    taker_fee_bps: 10.0
     tick_size: 0.01
 ```
 

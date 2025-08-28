@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+
+import pytest
 from omegaconf import OmegaConf
 
 from tradingbot.cli import main as cli_main
@@ -59,7 +61,12 @@ def test_backtest_db_futures_config(monkeypatch):
     eng = _run_backtest(monkeypatch, "binance_futures")
     cfg = _load_cfg()["binance_futures"]
     assert eng.exchange_mode["binance_futures"] == cfg["market_type"]
-    assert eng.exchange_fees["binance_futures"].fee == cfg["fee"]
+    assert eng.exchange_fees["binance_futures"].maker_fee == pytest.approx(
+        cfg["maker_fee_bps"] / 10000.0
+    )
+    assert eng.exchange_fees["binance_futures"].taker_fee == pytest.approx(
+        cfg["taker_fee_bps"] / 10000.0
+    )
     assert eng.exchange_tick_size["binance_futures"] == cfg["tick_size"]
     rm = eng.risk[("dummy", "BTC/USDT")].rm
     assert rm.allow_short is True
@@ -69,7 +76,12 @@ def test_backtest_db_spot_config(monkeypatch):
     eng = _run_backtest(monkeypatch, "binance_spot")
     cfg = _load_cfg()["binance_spot"]
     assert eng.exchange_mode["binance_spot"] == cfg["market_type"]
-    assert eng.exchange_fees["binance_spot"].fee == cfg["fee"]
+    assert eng.exchange_fees["binance_spot"].maker_fee == pytest.approx(
+        cfg["maker_fee_bps"] / 10000.0
+    )
+    assert eng.exchange_fees["binance_spot"].taker_fee == pytest.approx(
+        cfg["taker_fee_bps"] / 10000.0
+    )
     assert eng.exchange_tick_size["binance_spot"] == cfg["tick_size"]
     rm = eng.risk[("dummy", "BTC/USDT")].rm
     assert rm.allow_short is False
