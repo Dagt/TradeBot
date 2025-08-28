@@ -76,8 +76,70 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "strategy",
         "symbol",
         "exchange",
-        "rpnl",
+        "fee",
+        "cash_after",
+        "base_after",
+        "equity_after",
+        "realized_pnl",
     ]
+
+
+def test_spot_long_only_enforced(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=4, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "data.csv"
+    df.to_csv(path, index=False)
+
+    class FlipStrategy:
+        def __init__(self):
+            self.i = 0
+
+        def on_bar(self, bar):
+            self.i += 1
+            side = "buy" if self.i % 2 == 1 else "sell"
+            return SimpleNamespace(side=side, strength=1.0)
+
+    monkeypatch.setitem(STRATEGIES, "flip", FlipStrategy)
+    strategies = [("flip", "SYM")]
+    data = {"SYM": str(path)}
+    cfg = {"default": {"market_type": "spot"}}
+    res = run_backtest_csv(
+        data,
+        strategies,
+        latency=1,
+        window=1,
+        exchange_configs=cfg,
+        initial_equity=1000.0,
+        verbose_fills=True,
+    )
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee",
+            "cash_after",
+            "base_after",
+            "equity_after",
+            "realized_pnl",
+        ],
+    )
+    assert fills.loc[fills.side == "sell", "qty"].max() <= fills.loc[fills.side == "buy", "qty"].max() + 1e-9
+    assert (fills.base_after >= -1e-9).all()
 
 
 def test_run_vectorbt_basic():

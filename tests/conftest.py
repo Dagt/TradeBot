@@ -73,7 +73,9 @@ def mock_adapter(mock_trades):
 
 @pytest.fixture
 def paper_adapter():
-    return PaperAdapter()
+    pa = PaperAdapter()
+    pa.state.cash = 1_000_000.0
+    return pa
 
 
 @pytest.fixture

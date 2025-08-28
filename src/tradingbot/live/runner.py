@@ -103,7 +103,7 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(risk_pct=risk_pct)
+    risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
     strat = BreakoutATR(config_path=config_path)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
