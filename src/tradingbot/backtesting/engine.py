@@ -26,6 +26,24 @@ log = logging.getLogger(__name__)
 MIN_FILL_QTY = 1e-6
 
 
+def _validate_risk_pct(value: float) -> float:
+    """Ensure ``risk_pct`` is a fraction in [0, 1].
+
+    Values greater than 1 and up to 100 are interpreted as percentages and
+    converted by dividing by 100. Values outside these ranges raise a
+    :class:`ValueError`.
+    """
+
+    val = float(value)
+    if val < 0:
+        raise ValueError("risk_pct must be non-negative")
+    if val > 1:
+        if val <= 100:
+            return val / 100
+        raise ValueError("risk_pct must be between 0 and 1")
+    return val
+
+
 @dataclass(order=True)
 class Order:
     """Representation of a pending order in the backtest queue."""
@@ -188,7 +206,7 @@ class EventDrivenBacktestEngine:
             self.slippage.spread_mult *= self.stress.spread
 
         self.initial_equity = float(initial_equity)
-        self._risk_pct = float(risk_pct)
+        self._risk_pct = _validate_risk_pct(risk_pct)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
