@@ -82,6 +82,8 @@ class BinanceSpotAdapter(ExchangeAdapter):
 
         self.name = "binance_spot_testnet" if testnet else "binance_spot"
 
+        self._start_fee_updater()
+
     async def update_fees(self, symbol: str | None = None) -> None:
         params: Dict[str, Any] = {}
         if symbol:

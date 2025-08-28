@@ -38,6 +38,7 @@ class ExchangeAdapter(ABC):
         # live market data populated by streaming helpers
         self.state = AdapterState()
         self.ping_interval = 20.0
+        self._fee_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Rate limiting helpers
@@ -81,6 +82,32 @@ class ExchangeAdapter(ABC):
                     await res
             except Exception as e:  # pragma: no cover - best effort
                 self.log.warning("%s close failed: %s", self.name, e)
+
+        task = getattr(self, "_fee_task", None)
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    def _start_fee_updater(self, interval: float = 3600.0) -> None:
+        """Launch background task refreshing trading fees periodically."""
+
+        if not hasattr(self, "update_fees"):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - no running loop
+            return
+
+        async def _runner():
+            while True:
+                try:
+                    await self.update_fees()  # type: ignore[attr-defined]
+                except Exception as e:  # pragma: no cover - best effort
+                    self.log.warning("update_fees failed: %s", e)
+                await asyncio.sleep(interval)
+
+        self._fee_task = loop.create_task(_runner())
 
     # ------------------------------------------------------------------
     # Normalization helpers

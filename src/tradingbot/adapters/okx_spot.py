@@ -74,6 +74,8 @@ class OKXSpotAdapter(ExchangeAdapter):
             )
         )
 
+        self._start_fee_updater()
+
     async def update_fees(self, symbol: str | None = None) -> None:
         params = {"instType": "SPOT"}
         if symbol:
