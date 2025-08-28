@@ -394,6 +394,11 @@ async function runBacktest(){
     showWorking();
     resetEndFallback();
     evt=new EventSource(api(`/cli/stream/${j.id}`));
+    evt.onopen=()=>{resetEndFallback();appendOutput(outEl,'[conexión abierta]');};
+    const origClose=evt.close.bind(evt);
+    evt.close=()=>{evt.dispatchEvent(new Event('close'));origClose();};
+    evt.onclose=()=>appendOutput(outEl,'[conexión cerrada]');
+    evt.addEventListener('close',evt.onclose);
     evt.onmessage=(e)=>{resetEndFallback();appendOutput(outEl,e.data);};
     const finish=(msg)=>{
       if(endTimer){clearTimeout(endTimer);endTimer=null;}
@@ -413,12 +418,7 @@ async function runBacktest(){
       finish(`Proceso finalizado (código ${e.data}).`);
     });
     evt.onerror=()=>{
-      if(endTimer){clearTimeout(endTimer);endTimer=null;}
-      appendOutput(outEl,'[error de conexión]');
-      stopBtn.disabled=true;
-      runBtn.disabled=false;
-      runBtn.textContent='Ejecutar';
-      hideWorking();
+      finish('[error de conexión]');
     };
   }catch(e){
     if(endTimer){clearTimeout(endTimer);endTimer=null;}
