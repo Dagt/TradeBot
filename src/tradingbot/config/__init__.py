@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     binance_futures_market: str = "USDT-M"  # informativo
 
     # Fees (bps) configurable por entorno
-    paper_maker_fee_bps: float = 0.0
-    paper_taker_fee_bps: float | None = None
+    paper_maker_fee_bps: float = 10.0
+    paper_taker_fee_bps: float = 10.0
 
     # Binance Spot
     binance_spot_maker_fee_bps: float = 10.0

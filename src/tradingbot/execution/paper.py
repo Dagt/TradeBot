@@ -39,17 +39,16 @@ class PaperAdapter(ExchangeAdapter):
         fee_bps: float | None = None,
     ):
         self.state = PaperState()
-        mf = maker_fee_bps
-        if mf is None:
-            mf = fee_bps if fee_bps is not None else settings.paper_maker_fee_bps
-        self.maker_fee_bps = float(mf)
-        default_taker = (
-            settings.paper_taker_fee_bps
-            if settings.paper_taker_fee_bps is not None
-            else self.maker_fee_bps
+        mf = (
+            maker_fee_bps
+            if maker_fee_bps is not None
+            else (fee_bps if fee_bps is not None else settings.paper_maker_fee_bps)
         )
+        self.maker_fee_bps = float(mf)
         self.taker_fee_bps = float(
-            taker_fee_bps if taker_fee_bps is not None else default_taker
+            taker_fee_bps
+            if taker_fee_bps is not None
+            else settings.paper_taker_fee_bps
         )
 
     def update_last_price(self, symbol: str, px: float):
