@@ -11,7 +11,7 @@ import pandas as pd
 
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -95,16 +95,22 @@ async def run_live_binance(
     daily_max_loss_pct: float = 0.05,
     daily_max_drawdown_pct: float = 0.05,
     *,
+    strategy_name: str = "breakout_atr",
     config_path: str | None = None,
-):
+    params: dict | None = None,
+) -> None:
     """
     Pipeline en vivo:
-      WS Binance -> agregador 1m -> BreakoutATR -> Risk -> PaperAdapter
+      WS Binance -> agregador 1m -> strategy -> Risk -> PaperAdapter
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
-    strat = BreakoutATR(config_path=config_path)
+    strat_cls = STRATEGIES.get(strategy_name)
+    if strat_cls is None:
+        raise ValueError(f"unknown strategy: {strategy_name}")
+    params = params or {}
+    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,

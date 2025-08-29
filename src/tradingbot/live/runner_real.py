@@ -23,7 +23,7 @@ import pandas as pd
 
 from .runner import BarAggregator
 from ..config import settings
-from ..strategies.breakout_atr import BreakoutATR
+from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -96,6 +96,8 @@ async def _run_symbol(
     daily_max_loss_pct: float,
     daily_max_drawdown_pct: float,
     corr_threshold: float,
+    strategy_name: str,
+    params: dict | None = None,
     config_path: str | None = None,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
@@ -106,7 +108,11 @@ async def _run_symbol(
     ws = ws_cls()
     exec_adapter = exec_cls(**exec_kwargs)
     agg = BarAggregator()
-    strat = BreakoutATR(config_path=config_path)
+    strat_cls = STRATEGIES.get(strategy_name)
+    if strat_cls is None:
+        raise ValueError(f"unknown strategy: {strategy_name}")
+    params = params or {}
+    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
     risk_core = RiskManager(risk_pct=cfg.risk_pct, allow_short=(market != "spot"))
     guard = PortfolioGuard(
         GuardConfig(
@@ -217,7 +223,9 @@ async def run_live_real(
     daily_max_loss_pct: float = 0.05,
     daily_max_drawdown_pct: float = 0.05,
     corr_threshold: float = 0.8,
+    strategy_name: str = "breakout_atr",
     config_path: str | None = None,
+    params: dict | None = None,
 ) -> None:
     """Run a simple live loop on a real crypto exchange."""
 
@@ -247,6 +255,8 @@ async def run_live_real(
             daily_max_loss_pct,
             daily_max_drawdown_pct,
             corr_threshold,
+            strategy_name=strategy_name,
+            params=params,
             config_path=config_path,
         )
         for c in cfgs

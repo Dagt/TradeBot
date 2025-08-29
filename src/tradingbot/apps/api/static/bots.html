@@ -80,6 +80,10 @@
         <label for="bot-threshold">Threshold</label>
         <input id="bot-threshold" type="number" step="0.0001" value="0.001"/>
       </div>
+      <div>
+        <label for="bot-config">Config YAML</label>
+        <input id="bot-config" placeholder="config.yaml"/>
+      </div>
       <div id="strategy-params" style="display:contents"></div>
       <div>
         <label for="bot-risk-pct">Risk %</label>
@@ -218,6 +222,7 @@ async function startBot(){
   const env = document.getElementById('bot-env').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
+  const config = document.getElementById('bot-config').value;
     const spot = document.getElementById('bot-spot').value;
     const perp = document.getElementById('bot-perp').value;
     const threshold = document.getElementById('bot-threshold').value;
@@ -232,6 +237,7 @@ async function startBot(){
       params[el.dataset.name]=v;
     });
     const payload = {strategy, pairs, exchange, market, testnet, dry_run};
+    if(config) payload.config = config;
     if(risk_pct) payload.risk_pct = Number(risk_pct);
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct);
     if(daily_max_drawdown_pct) payload.daily_max_drawdown_pct = Number(daily_max_drawdown_pct);

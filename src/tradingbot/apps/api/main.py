@@ -799,12 +799,13 @@ class BotConfig(BaseModel):
     spot: str | None = None
     perp: str | None = None
     threshold: float | None = None
+    config: str | None = None
 
 
 _BOTS: dict[int, dict] = {}
 
 
-def _build_bot_args(cfg: BotConfig) -> list[str]:
+def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
     # Special runner for cross exchange arbitrage / cash and carry
     if cfg.strategy == "cross_arbitrage":
         if not cfg.pairs:
@@ -849,6 +850,11 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
         args.append("--testnet" if cfg.testnet else "--no-testnet")
     if cfg.dry_run is not None:
         args.append("--dry-run" if cfg.dry_run else "--no-dry-run")
+    if cfg.config:
+        args.extend(["--config", cfg.config])
+    if params:
+        for k, v in params.items():
+            args.extend(["--param", f"{k}={v}"])
     return args
 
 
@@ -856,7 +862,8 @@ def _build_bot_args(cfg: BotConfig) -> list[str]:
 async def start_bot(cfg: BotConfig):
     """Launch a bot process using the provided configuration."""
 
-    args = _build_bot_args(cfg)
+    params = _strategy_params.get(cfg.strategy, {})
+    args = _build_bot_args(cfg, params)
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,

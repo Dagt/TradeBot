@@ -29,7 +29,7 @@ import sys
 import inspect
 import ast
 import textwrap
-from typing import List
+from typing import Any, List
 
 import click
 import typer
@@ -166,6 +166,28 @@ def _parse_risk_pct(value: float) -> float:
             return val / 100
         raise typer.BadParameter("risk-pct must be between 0 and 1")
     return val
+
+
+def _parse_params(values: list[str]) -> dict[str, Any]:
+    """Parse ``key=value`` pairs into a dictionary.
+
+    The helper attempts to interpret values using :func:`ast.literal_eval` so
+    numeric and boolean types are preserved.  Fallbacks to the original string
+    on parsing errors.
+    """
+
+    import ast
+
+    params: dict[str, Any] = {}
+    for item in values:
+        if "=" not in item:
+            raise typer.BadParameter("Parameters must be in key=value format")
+        key, val = item.split("=", 1)
+        try:
+            params[key] = ast.literal_eval(val)
+        except Exception:
+            params[key] = val
+    return params
 
 
 def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str]:
@@ -637,6 +659,7 @@ def ingest_historical(
 
 @app.command("run-bot")
 def run_bot(
+    strategy: str = typer.Option("breakout_atr", "--strategy", help="Strategy name"),
     venue: str = typer.Option(
         "binance_spot",
         "--venue",
@@ -659,10 +682,15 @@ def run_bot(
     daily_max_drawdown_pct: float = typer.Option(
         0.05, "--daily-max-drawdown-pct", help="Intraday max drawdown limit"
     ),
+    config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
+    param: list[str] = typer.Option(
+        [], "--param", help="Override strategy parameters as key=value pairs"
+    ),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
     setup_logging()
+    params = _parse_params(param)
     if testnet:
         from ..live.runner_testnet import run_live_testnet
 
@@ -677,6 +705,9 @@ def run_bot(
                 dry_run=dry_run,
                 daily_max_loss_pct=daily_max_loss_pct,
                 daily_max_drawdown_pct=daily_max_drawdown_pct,
+                strategy_name=strategy,
+                config_path=config,
+                params=params,
             )
         )
     else:
@@ -688,6 +719,9 @@ def run_bot(
                 risk_pct=risk_pct,
                 daily_max_loss_pct=daily_max_loss_pct,
                 daily_max_drawdown_pct=daily_max_drawdown_pct,
+                strategy_name=strategy,
+                config_path=config,
+                params=params,
             )
         )
 
@@ -698,6 +732,9 @@ def paper_run(
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
+    param: list[str] = typer.Option(
+        [], "--param", help="Override strategy parameters as key=value pairs"
+    ),
     risk_pct: float = typer.Option(
         0.0,
         "--risk-pct",
@@ -710,6 +747,8 @@ def paper_run(
     setup_logging()
     from ..live.runner_paper import run_paper
 
+    params = _parse_params(param)
+
     asyncio.run(
         run_paper(
             symbol=symbol,
@@ -717,6 +756,7 @@ def paper_run(
             config_path=config,
             metrics_port=metrics_port,
             risk_pct=risk_pct,
+            params=params,
         )
     )
 
@@ -937,6 +977,12 @@ def backtest(
     data: str,
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    config: str | None = typer.Option(
+        None, "--config", help="YAML config for the strategy"
+    ),
+    param: list[str] = typer.Option(
+        [], "--param", help="Override strategy parameters as key=value pairs"
+    ),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     risk_pct: float = typer.Option(
         0.0,
@@ -981,6 +1027,14 @@ def backtest(
         exchange_configs=exchange_cfg,
         min_fill_qty=min_fill_qty,
     )
+    params = _parse_params(param)
+    from ..strategies import STRATEGIES
+
+    strat_cls = STRATEGIES.get(strategy)
+    if strat_cls is None:
+        raise typer.BadParameter(f"unknown strategy: {strategy}")
+    strat = strat_cls(config_path=config, **params) if (config or params) else strat_cls()
+    eng.strategies[(strategy, symbol)] = strat
     result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
     typer.echo(generate_report(result))
@@ -1076,6 +1130,12 @@ def backtest_db(
     ),
     symbol: str = typer.Option(..., "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    config: str | None = typer.Option(
+        None, "--config", help="YAML config for the strategy"
+    ),
+    param: list[str] = typer.Option(
+        [], "--param", help="Override strategy parameters as key=value pairs"
+    ),
     start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
     timeframe: str = typer.Option("1m", help="Bar timeframe"),
@@ -1159,6 +1219,14 @@ def backtest_db(
             exchange_configs=exchange_cfg,
             min_fill_qty=min_fill_qty,
         )
+        params = _parse_params(param)
+        from ..strategies import STRATEGIES
+
+        strat_cls = STRATEGIES.get(strategy)
+        if strat_cls is None:
+            raise typer.BadParameter(f"unknown strategy: {strategy}")
+        strat = strat_cls(config_path=config, **params) if (config or params) else strat_cls()
+        eng.strategies[(strategy, symbol)] = strat
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)
         typer.echo(generate_report(result))
