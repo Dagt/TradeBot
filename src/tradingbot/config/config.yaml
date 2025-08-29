@@ -1,3 +1,5 @@
+maker_fee_bps: 0.0
+passive_rebate_bps: 0.0
 exchanges:
   binance_api_key: ""
   binance_api_secret: ""

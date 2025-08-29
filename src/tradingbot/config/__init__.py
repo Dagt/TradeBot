@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     paper_maker_fee_bps: float = 10.0
     paper_taker_fee_bps: float = 10.0
 
+    # Generic broker fees
+    maker_fee_bps: float = 0.0
+    passive_rebate_bps: float = 0.0
+
     # Binance Spot
     binance_spot_maker_fee_bps: float = 10.0
     binance_spot_taker_fee_bps: float = 10.0
