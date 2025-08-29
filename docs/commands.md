@@ -182,6 +182,15 @@ del mejor bid/ask (o `bid_px`/`ask_px`) y, si no están disponibles, utiliza el
 `base_spread` configurado. `"fixed_spread"` ignora las columnas de bid/ask y
 aplica siempre `base_spread`.
 
+Ejemplo de configuración YAML:
+
+```yaml
+backtest:
+  slippage:
+    source: bba
+    base_spread: 0.1
+```
+
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
 `timestamp, bar_index, order_id, trade_id, roundtrip_id, reason, side, price, qty, strategy, symbol, exchange, fee_type, fee, slip_bps, cash_after, base_after, equity_after, realized_pnl`.
 La columna `price` refleja el precio final de ejecución con spread y slippage aplicados.
