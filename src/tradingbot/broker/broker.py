@@ -13,9 +13,13 @@ class Broker:
     handling and accounting of partial fills.
     """
 
-    def __init__(self, adapter):
+    def __init__(self, adapter, maker_fee_bps: float | None = None):
         self.adapter = adapter
-        self.maker_fee_bps = getattr(adapter, "maker_fee_bps", settings.maker_fee_bps)
+        self.maker_fee_bps = (
+            float(maker_fee_bps)
+            if maker_fee_bps is not None
+            else getattr(adapter, "maker_fee_bps", settings.maker_fee_bps)
+        )
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
 
     async def place_limit(
