@@ -237,7 +237,8 @@ class EventDrivenBacktestEngine:
                 elif exch.endswith("_futures") or exch.endswith("_perp"):
                     market_type = "perp"
                 else:
-                    raise ValueError(f"exchange {exch} missing market_type")
+                    # Default to perpetual markets when the type cannot be inferred
+                    market_type = "perp"
             self.exchange_mode[exch] = str(market_type)
         # Auto-derive market type for exchanges without explicit configs
         for strat_info in strategies:
@@ -274,6 +275,9 @@ class EventDrivenBacktestEngine:
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             self.risk[key] = RiskService(rm, guard)
             self.strategy_exchange[key] = exchange
+
+        # Internal flag to avoid repeated on_bar calls per bar index
+        self._last_on_bar_i: int = -1
 
     # ------------------------------------------------------------------
     def run(self, fills_csv: str | None = None) -> dict:
@@ -329,6 +333,8 @@ class EventDrivenBacktestEngine:
                 returns_df[sym] = returns(df_sym).reset_index(drop=True)
             rolling_corr = returns_df.rolling(self.window).corr()
             rolling_cov = returns_df.rolling(self.window).cov()
+
+        self._last_on_bar_i = -1
 
         for i in range(max_len):
             if i and i % 500 == 0:
@@ -522,6 +528,8 @@ class EventDrivenBacktestEngine:
                     order.execute_index = i + 1
                     heapq.heappush(order_queue, order)
 
+            # ------------------------------------------------------------------
+            # After executing pending orders, update equity/positions
             mtm = sum(
                 svc.rm.pos.qty * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
@@ -536,76 +544,81 @@ class EventDrivenBacktestEngine:
                 last_index = i
                 break
 
-            # Generate new orders from strategies
-            for (strat_name, symbol), strat in self.strategies.items():
-                df = self.data[symbol]
-                arrs = data_arrays[symbol]
-                sym_len = data_lengths[symbol]
-                if i < self.window or i >= sym_len:
-                    continue
-                start_idx = i - self.window
-                if getattr(strat, "needs_window_df", True):
-                    window_df = df.iloc[start_idx:i]
-                    sig = strat.on_bar({"window": window_df})
-                else:
-                    bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
-                    sig = strat.on_bar(bar_arrays)
-                if sig is None or sig.side == "flat":
-                    continue
-                svc = self.risk[(strat_name, symbol)]
-                place_price = float(arrs["close"][i])
-                svc.mark_price(symbol, place_price)
-                symbol_vol = float(sym_vols[symbol][i])
-                if np.isnan(symbol_vol):
-                    symbol_vol = 0.0
-                if equity < 0:
-                    continue
-                equity_for_order = max(equity, 1.0)
-                allowed, _reason, delta = svc.check_order(
-                    symbol,
-                    sig.side,
-                    equity_for_order,
-                    place_price,
-                    strength=sig.strength,
-                    symbol_vol=symbol_vol,
-                    corr_threshold=0.8,
-                )
-                if not allowed or abs(delta) < 1e-9:
-                    continue
-                side = "buy" if delta > 0 else "sell"
-                qty = abs(delta)
-                notional = qty * place_price
-                if not svc.rm.register_order(notional):
-                    continue
-                exchange = self.strategy_exchange[(strat_name, symbol)]
-                base_latency = self.exchange_latency.get(exchange, self.latency)
-                exec_index = i + int(base_latency * self.stress.latency)
-                queue_pos = 0.0
-                if self.use_l2:
-                    vol_key = "ask_size" if side == "buy" else "bid_size"
-                    depth = self.exchange_depth.get(exchange, self.default_depth)
-                    vol_arr = arrs.get(vol_key)
-                    avail = float(vol_arr[i]) if vol_arr is not None else 0.0
-                    queue_pos = min(avail, depth)
-                post_only = bool(getattr(sig, "post_only", False))
-                order = Order(
-                    exec_index,
-                    i,
-                    strat_name,
-                    symbol,
-                    side,
-                    qty,
-                    exchange,
-                    place_price,
-                    qty,
-                    0.0,
-                    0.0,
-                    queue_pos,
-                    None,
-                    post_only,
-                )
-                orders.append(order)
-                heapq.heappush(order_queue, order)
+            # ------------------------------------------------------------------
+            # Run each strategy's on_bar once per bar index
+            if self._last_on_bar_i != i:
+                self._last_on_bar_i = i
+                # Generate new orders from strategies
+                for (strat_name, symbol), strat in self.strategies.items():
+                    df = self.data[symbol]
+                    arrs = data_arrays[symbol]
+                    sym_len = data_lengths[symbol]
+                    if i < self.window or i >= sym_len:
+                        continue
+                    start_idx = i - self.window
+                    if getattr(strat, "needs_window_df", True):
+                        window_df = df.iloc[start_idx:i]
+                        sig = strat.on_bar({"window": window_df})
+                    else:
+                        bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
+                        sig = strat.on_bar(bar_arrays)
+                    if sig is None or sig.side == "flat":
+                        continue
+                    svc = self.risk[(strat_name, symbol)]
+                    place_price = float(arrs["close"][i])
+                    svc.mark_price(symbol, place_price)
+                    symbol_vol = float(sym_vols[symbol][i])
+                    if np.isnan(symbol_vol):
+                        symbol_vol = 0.0
+                    if equity < 0:
+                        continue
+                    equity_for_order = max(equity, 1.0)
+                    allowed, _reason, delta = svc.check_order(
+                        symbol,
+                        sig.side,
+                        equity_for_order,
+                        place_price,
+                        strength=sig.strength,
+                        symbol_vol=symbol_vol,
+                        corr_threshold=0.8,
+                    )
+                    if not allowed or abs(delta) < 1e-9:
+                        continue
+                    side = "buy" if delta > 0 else "sell"
+                    qty = abs(delta)
+                    notional = qty * place_price
+                    if not svc.rm.register_order(notional):
+                        continue
+                    exchange = self.strategy_exchange[(strat_name, symbol)]
+                    base_latency = self.exchange_latency.get(exchange, self.latency)
+                    delay = max(1, int(base_latency * self.stress.latency))
+                    exec_index = i + delay
+                    queue_pos = 0.0
+                    if self.use_l2:
+                        vol_key = "ask_size" if side == "buy" else "bid_size"
+                        depth = self.exchange_depth.get(exchange, self.default_depth)
+                        vol_arr = arrs.get(vol_key)
+                        avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                        queue_pos = min(avail, depth)
+                    post_only = bool(getattr(sig, "post_only", False))
+                    order = Order(
+                        exec_index,
+                        i,
+                        strat_name,
+                        symbol,
+                        side,
+                        qty,
+                        exchange,
+                        place_price,
+                        qty,
+                        0.0,
+                        0.0,
+                        queue_pos,
+                        None,
+                        post_only,
+                    )
+                    orders.append(order)
+                    heapq.heappush(order_queue, order)
 
             # ------------------------------------------------------------------
             # Apply funding payments after processing the bar
@@ -640,7 +653,8 @@ class EventDrivenBacktestEngine:
                         qty = abs(delta)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
-                        exec_index = i + int(base_latency * self.stress.latency)
+                        delay = max(1, int(base_latency * self.stress.latency))
+                        exec_index = i + delay
                         order = Order(
                             exec_index,
                             i,
