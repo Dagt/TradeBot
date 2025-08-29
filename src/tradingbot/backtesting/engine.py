@@ -317,6 +317,7 @@ class EventDrivenBacktestEngine:
         slippage_total = 0.0
         funding_total = 0.0
         fill_count = 0
+        realized_pnl_total = 0.0
         equity_curve: List[float] = []
         data_arrays = {
             sym: {col: df[col].to_numpy() for col in df.columns}
@@ -493,6 +494,8 @@ class EventDrivenBacktestEngine:
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee - slip_cash
+                slippage_pnl = -slip_cash
+                realized_pnl_total += realized_pnl
                 new_qty = svc.rm.pos.qty
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
@@ -577,10 +580,12 @@ class EventDrivenBacktestEngine:
                             fee_type,
                             fee,
                             slip_bps,
+                            slippage_pnl,
                             cash,
                             base_after,
                             equity_after,
                             realized_pnl,
+                            realized_pnl_total,
                         )
                     )
                 if self.verbose_fills and not fills_csv:
@@ -666,6 +671,8 @@ class EventDrivenBacktestEngine:
                     svc.on_fill(symbol, side, exit_qty, exit_price)
                     new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                     realized_pnl = new_rpnl - prev_rpnl - fee
+                    slippage_pnl = 0.0
+                    realized_pnl_total += realized_pnl
                     key = (strat_name, symbol)
                     rt_id = active_roundtrips.get(key)
                     if prev_qty == 0 and svc.rm.pos.qty != 0:
@@ -704,10 +711,12 @@ class EventDrivenBacktestEngine:
                                 "taker",
                                 fee,
                                 0.0,
+                                slippage_pnl,
                                 cash,
                                 base_after,
                                 equity_after,
                                 realized_pnl,
+                                realized_pnl_total,
                             )
                         )
 
@@ -973,12 +982,14 @@ class EventDrivenBacktestEngine:
                     "symbol",
                     "exchange",
                     "fee_type",
-                    "fee",
+                    "fee_cost",
                     "slip_bps",
+                    "slippage_pnl",
                     "cash_after",
                     "base_after",
                     "equity_after",
                     "realized_pnl",
+                    "realized_pnl_total",
                 ],
             )
             fills_df.to_csv(fills_csv, index=False)

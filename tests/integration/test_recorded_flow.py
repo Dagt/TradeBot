@@ -48,28 +48,21 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
             "symbol",
             "exchange",
             "fee_type",
-            "fee",
+            "fee_cost",
             "slip_bps",
+            "slippage_pnl",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
+            "realized_pnl_total",
         ],
     )
-    assert len(result["fills"][0]) == 19
+    assert len(result["fills"][0]) == 21
     assert (fills["cash_after"] >= -1e-9).all()
     assert (fills["base_after"] >= -1e-9).all()
     assert risk.rm.pos.qty == pytest.approx(0.0)
-    slip_cash_total = 0.0
-    for row in fills.itertuples():
-        slip_mult = row.slip_bps / 10000.0
-        if row.side == "buy":
-            place_price = row.price / (1 + slip_mult) if 1 + slip_mult != 0 else row.price
-            slip_cash_total += (row.price - place_price) * row.qty
-        else:
-            place_price = row.price / (1 - slip_mult) if 1 - slip_mult != 0 else row.price
-            slip_cash_total += (place_price - row.price) * row.qty
-    assert risk.rm.pos.realized_pnl - fills["fee"].sum() - slip_cash_total == pytest.approx(
+    assert risk.rm.pos.realized_pnl - fills["fee_cost"].sum() + fills["slippage_pnl"].sum() == pytest.approx(
         fills["realized_pnl"].sum()
     )
     final_price = df["close"].iloc[-1]
