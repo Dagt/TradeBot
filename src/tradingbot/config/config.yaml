@@ -17,6 +17,7 @@ backtest:
   strategy: breakout_atr
   latency: 1
   window: 120
+  min_fill_qty: 0.001
 
 storage:
   backend: sqlite
@@ -47,11 +48,13 @@ exchange_configs:
     maker_fee_bps: 10.0
     taker_fee_bps: 10.0
     tick_size: 0.01
+    min_fill_qty: 0.001
   binance_futures:
     market_type: perp
     maker_fee_bps: 5.0
     taker_fee_bps: 5.0
     tick_size: 0.01
+    min_fill_qty: 0.001
   okx_spot:
     market_type: spot
     maker_fee_bps: 8.0
@@ -62,3 +65,4 @@ exchange_configs:
     maker_fee_bps: 8.0
     taker_fee_bps: 10.0
     tick_size: 0.1
+    min_fill_qty: 0.001

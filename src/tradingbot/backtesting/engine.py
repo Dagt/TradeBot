@@ -23,7 +23,7 @@ from ..data.features import returns, calc_ofi
 log = logging.getLogger(__name__)
 
 # Minimum quantity to record a fill. Fills below this threshold are ignored.
-MIN_FILL_QTY = 1e-6
+MIN_FILL_QTY = 1e-3
 
 
 def _validate_risk_pct(value: float) -> float:
@@ -168,7 +168,7 @@ class EventDrivenBacktestEngine:
     """Backtest engine supporting multiple symbols/strategies and order latency.
 
     Fills with quantity below ``min_fill_qty`` (defaults to
-    ``MIN_FILL_QTY`` = ``1e-6``) are ignored to avoid recording irrelevant
+    ``MIN_FILL_QTY`` = ``1e-3``) are ignored to avoid recording irrelevant
     residuals.
     """
 
@@ -220,6 +220,7 @@ class EventDrivenBacktestEngine:
         self.exchange_depth: Dict[str, float] = {}
         self.exchange_mode: Dict[str, str] = {}
         self.exchange_tick_size: Dict[str, float] = {}
+        self.exchange_min_fill_qty: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
         default_maker_bps = 10.0
         default_taker_bps = 10.0
@@ -230,6 +231,7 @@ class EventDrivenBacktestEngine:
             self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
+            self.exchange_min_fill_qty[exch] = float(cfg.get("min_fill_qty", self.min_fill_qty))
             market_type = cfg.get("market_type")
             if market_type is None:
                 if exch.endswith("_spot"):
@@ -421,7 +423,10 @@ class EventDrivenBacktestEngine:
                         max_affordable = cash / (price * (1 + rate))
                         fill_qty = min(fill_qty, max_affordable)
 
-                if fill_qty <= 0 or fill_qty < self.min_fill_qty:
+                min_fill_qty = self.exchange_min_fill_qty.get(
+                    order.exchange, self.min_fill_qty
+                )
+                if fill_qty <= 0 or fill_qty < min_fill_qty:
                     if not self.cancel_unfilled:
                         order.execute_index = i + 1
                         heapq.heappush(order_queue, order)
@@ -446,7 +451,7 @@ class EventDrivenBacktestEngine:
                             trade_value = fill_qty * price
                             fee = fee_model.calculate(trade_value, maker=maker)
 
-                if fill_qty <= 0 or fill_qty < self.min_fill_qty:
+                if fill_qty <= 0 or fill_qty < min_fill_qty:
                     if not self.cancel_unfilled:
                         order.execute_index = i + 1
                         heapq.heappush(order_queue, order)
@@ -797,6 +802,7 @@ def run_backtest_csv(
     initial_equity: float = 1000.0,
     verbose_fills: bool = False,
     fills_csv: str | None = None,
+    min_fill_qty: float = MIN_FILL_QTY,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -818,6 +824,7 @@ def run_backtest_csv(
         risk_pct=risk_pct,
         initial_equity=initial_equity,
         verbose_fills=verbose_fills,
+        min_fill_qty=min_fill_qty,
     )
     return engine.run(fills_csv=fills_csv)
 
@@ -844,6 +851,7 @@ def run_backtest_mlflow(
     initial_equity: float = 1000.0,
     verbose_fills: bool = False,
     fills_csv: str | None = None,
+    min_fill_qty: float = MIN_FILL_QTY,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -877,6 +885,7 @@ def run_backtest_mlflow(
             initial_equity=initial_equity,
             verbose_fills=verbose_fills,
             fills_csv=fills_csv,
+            min_fill_qty=min_fill_qty,
         )
         log_backtest_metrics(result)
         return result

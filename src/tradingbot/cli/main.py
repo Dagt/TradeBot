@@ -958,6 +958,7 @@ def backtest(
     from omegaconf import OmegaConf
 
     from ..backtest.event_engine import EventDrivenBacktestEngine
+    from ..backtesting.engine import MIN_FILL_QTY
     from ..config.hydra_conf import load_config
 
     setup_logging()
@@ -970,6 +971,7 @@ def backtest(
     exchange_cfg = OmegaConf.to_container(
         getattr(cfg, "exchange_configs", {}), resolve=True
     )
+    min_fill_qty = float(getattr(getattr(cfg, "backtest", {}), "min_fill_qty", MIN_FILL_QTY))
     eng = EventDrivenBacktestEngine(
         {symbol: df},
         [(strategy, symbol)],
@@ -977,6 +979,7 @@ def backtest(
         risk_pct=risk_pct,
         verbose_fills=verbose_fills,
         exchange_configs=exchange_cfg,
+        min_fill_qty=min_fill_qty,
     )
     result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
@@ -1027,6 +1030,7 @@ def backtest_cfg(
         import pandas as pd
 
         from ..backtest.event_engine import EventDrivenBacktestEngine
+        from ..backtesting.engine import MIN_FILL_QTY
 
         data = cfg.backtest.data
         symbol = cfg.backtest.symbol
@@ -1038,6 +1042,7 @@ def backtest_cfg(
         exchange_cfg = OmegaConf.to_container(
             getattr(cfg, "exchange_configs", {}), resolve=True
         )
+        min_fill_qty = float(getattr(cfg.backtest, "min_fill_qty", MIN_FILL_QTY))
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol)],
@@ -1045,6 +1050,7 @@ def backtest_cfg(
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
             exchange_configs=exchange_cfg,
+            min_fill_qty=min_fill_qty,
         )
         result = eng.run(fills_csv=fills_csv)
         typer.echo(OmegaConf.to_yaml(cfg))
@@ -1094,6 +1100,7 @@ def backtest_db(
     from omegaconf import OmegaConf
     from ..storage.timescale import get_engine, select_bars
     from ..backtest.event_engine import EventDrivenBacktestEngine
+    from ..backtesting.engine import MIN_FILL_QTY
     from ..config.hydra_conf import load_config
 
     setup_logging()
@@ -1135,6 +1142,9 @@ def backtest_db(
         exchange_cfg_all = OmegaConf.to_container(
             getattr(cfg_all, "exchange_configs", {}), resolve=True
         )
+        min_fill_qty = float(
+            getattr(getattr(cfg_all, "backtest", {}), "min_fill_qty", MIN_FILL_QTY)
+        )
         venue_cfg = exchange_cfg_all.get(venue, {})
         if not venue_cfg:
             typer.echo(f"missing config for {venue}")
@@ -1147,6 +1157,7 @@ def backtest_db(
             risk_pct=risk_pct,
             verbose_fills=verbose_fills,
             exchange_configs=exchange_cfg,
+            min_fill_qty=min_fill_qty,
         )
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)
@@ -1186,11 +1197,13 @@ def walk_forward_cfg(
     @hydra.main(config_path=rel_path, config_name=cfg_path.stem, version_base=None)
     def _run(cfg) -> None:  # type: ignore[override]
         from ..backtesting.walk_forward import walk_forward_backtest
+        from ..backtesting.engine import MIN_FILL_QTY
 
         wf_cfg = cfg.walk_forward
         exchange_cfg = OmegaConf.to_container(
             getattr(cfg, "exchange_configs", {}), resolve=True
         )
+        min_fill_qty = float(getattr(getattr(cfg, "backtest", {}), "min_fill_qty", MIN_FILL_QTY))
         df = walk_forward_backtest(
             wf_cfg.data,
             wf_cfg.symbol,
@@ -1203,6 +1216,7 @@ def walk_forward_cfg(
             verbose_fills=verbose_fills,
             fills_csv=fills_csv,
             exchange_configs=exchange_cfg,
+            min_fill_qty=min_fill_qty,
         )
 
         reports_dir = Path("reports")
