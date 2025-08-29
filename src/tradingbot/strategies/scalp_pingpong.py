@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, load_params, record_signal_metrics
 
 
 PARAM_INFO = {
@@ -16,6 +16,7 @@ PARAM_INFO = {
     "max_hold_bars": "Barras máximas en posición",
     "trailing_stop_bps": "Trailing stop en puntos básicos",
     "volatility_factor": "Factor de tamaño según volatilidad",
+    "config_path": "Ruta opcional al archivo de configuración",
 }
 
 
@@ -61,8 +62,15 @@ class ScalpPingPong(Strategy):
 
     name = "scalp_pingpong"
 
-    def __init__(self, cfg: ScalpPingPongConfig | None = None, **kwargs):
-        self.cfg = cfg or ScalpPingPongConfig(**kwargs)
+    def __init__(
+        self,
+        cfg: ScalpPingPongConfig | None = None,
+        *,
+        config_path: str | None = None,
+        **kwargs,
+    ):
+        params = {**load_params(config_path), **kwargs}
+        self.cfg = cfg or ScalpPingPongConfig(**params)
         self.pos_side: int = 0  # 0 flat, +1 long, -1 short
         self.entry_price: float | None = None
         self.hold_bars: int = 0
