@@ -101,7 +101,7 @@ class BreakoutATR(Strategy):
             self.trailing_stop = trail_stop
             self._last_trade_idx = current_idx
             self._last_trade_side = side
-            return Signal(side, 1.0)
+            return Signal(side, 1.0, expected_edge_bps=expected_edge_bps)
         
 
         # manage existing position
