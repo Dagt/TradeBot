@@ -9,6 +9,7 @@ import yaml
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
 from ..filters import passes as liquidity_passes
+from ..execution.order_types import Order
 
 @dataclass
 class Signal:
@@ -35,6 +36,47 @@ class Strategy(ABC):
     @abstractmethod
     def on_bar(self, bar: dict[str, Any]) -> Signal | None:
         ...
+
+    # ------------------------------------------------------------------
+    def _edge_still_exists(self, order: Order) -> bool:
+        last = getattr(self, "_last_signal", {}).get(order.symbol)
+        return bool(
+            last and last.side == order.side and getattr(last, "strength", 0.0) > 0.0
+        )
+
+    # ------------------------------------------------------------------
+    def on_partial_fill(self, order: Order, res: dict[str, Any]):
+        """Handle partial fills.
+
+        Stores remaining ``pending_qty`` and decides whether to re-quote
+        based on the current signal. When the trading edge disappears the
+        default behaviour is to cancel the rest of the order.
+        """
+
+        if not hasattr(self, "pending_qty"):
+            self.pending_qty: dict[str, float] = {}
+        pending = float(res.get("pending_qty", 0.0))
+        self.pending_qty[order.symbol] = pending
+        if pending <= 0:
+            return None
+        return "re_quote" if self._edge_still_exists(order) else None
+
+    # ------------------------------------------------------------------
+    def on_order_expiry(self, order: Order, res: dict[str, Any]):
+        """Handle order expiry events.
+
+        Behaviour mirrors :meth:`on_partial_fill` where orders are
+        re‑quoted only if the last signal still points in the same
+        direction.
+        """
+
+        if not hasattr(self, "pending_qty"):
+            self.pending_qty: dict[str, float] = {}
+        pending = float(res.get("pending_qty", order.qty))
+        self.pending_qty[order.symbol] = pending
+        if pending <= 0:
+            return None
+        return "re_quote" if self._edge_still_exists(order) else None
 
 
 def load_params(path: str | None) -> dict[str, Any]:
@@ -76,6 +118,13 @@ def record_signal_metrics(fn):
         sig = fn(self, bar)
         duration = time.monotonic() - start
         REQUEST_LATENCY.labels(method=self.name, endpoint="on_bar").observe(duration)
+
+        # track last signal for re-quoting decisions
+        symbol = bar.get("symbol")
+        if not hasattr(self, "_last_signal"):
+            self._last_signal = {}
+        if symbol:
+            self._last_signal[symbol] = sig
 
         # Risk-based sizing is now handled within ``RiskService.check_order``
         # so strategy signals keep their original strength here.
