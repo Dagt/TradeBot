@@ -85,10 +85,6 @@
         <label for="bot-config">Config YAML</label>
         <input id="bot-config" placeholder="config.yaml"/>
       </div>
-      <div id="field-toggle-params" style="grid-column:1/-1;display:flex;align-items:center;gap:4px">
-        <span>Configurar parámetros</span>
-        <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
-      </div>
       <div>
         <label for="bot-risk-pct">Risk %</label>
         <input id="bot-risk-pct" type="number" step="0.0001" required/>
@@ -113,9 +109,14 @@
           <option value="testnet" selected>Testnet</option>
         </select>
       </div>
+      <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
+        <span>Configurar parámetros</span>
+        <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
+      </div>
     </div>
-    <div id="bot-param-card" style="display:none">
-      <div id="strategy-params" class="param-grid"></div>
+    <div id="bot-params-section" style="display:none">
+      <div id="bot-strategy-params" class="param-grid"></div>
+      <p id="bot-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     </div>
     <button id="bot-start" style="margin-top:10px">Start</button>
     <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
@@ -167,9 +168,9 @@ const api = (path) => `${location.origin}${path}`;
   }
 
   async function loadStrategyParams(name){
-    const container=document.getElementById('strategy-params');
+    const container=document.getElementById('bot-strategy-params');
     container.innerHTML='';
-    const card=document.getElementById('bot-param-card');
+    const card=document.getElementById('bot-params-section');
     card.style.display='none';
     const toggle=document.getElementById('bot-toggle-params');
     toggle.checked=false;
@@ -252,7 +253,7 @@ async function startBot(){
     const spot = document.getElementById('bot-spot').value;
     const perp = document.getElementById('bot-perp').value;
     const threshold = document.getElementById('bot-threshold').value;
-    const paramEls=document.querySelectorAll('#strategy-params input');
+  const paramEls=document.querySelectorAll('#bot-strategy-params input');
     const params={};
     paramEls.forEach(el=>{
       if(!el.value) return;
@@ -375,7 +376,7 @@ document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-market').addEventListener('change', updateMarketFields);
 document.getElementById('bot-toggle-params').addEventListener('change', e => {
-  document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
+  document.getElementById('bot-params-section').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
 updateMarketFields();
