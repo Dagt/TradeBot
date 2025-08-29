@@ -86,7 +86,7 @@ class BreakoutVol(Strategy):
                 self.entry_price = last
                 self.favorable_price = last
                 self.hold_bars = 0
-                return Signal("buy", size)
+                return Signal("buy", size, expected_edge_bps=expected_edge_bps)
             if last < lower:
                 expected_edge_bps = (lower - last) / abs(last) * 10000
                 if expected_edge_bps <= self.min_edge_bps:
@@ -95,7 +95,7 @@ class BreakoutVol(Strategy):
                 self.entry_price = last
                 self.favorable_price = last
                 self.hold_bars = 0
-                return Signal("sell", size)
+                return Signal("sell", size, expected_edge_bps=expected_edge_bps)
             return None
 
         self.hold_bars += 1

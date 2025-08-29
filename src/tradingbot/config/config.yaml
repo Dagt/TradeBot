@@ -9,6 +9,7 @@ strategies:
   params:
     breakout_atr:
       min_bars_between_trades: 1
+      min_edge_bps: 0.0
     mean_rev_ofi:
       ofi_window: 20
       zscore_threshold: 1.0

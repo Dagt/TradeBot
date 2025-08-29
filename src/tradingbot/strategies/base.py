@@ -29,6 +29,7 @@ class Signal:
     take_profit: float | None = None  # optional TP price level
     stop_loss: float | None = None  # optional SL price level
     trailing_pct: float | None = None  # optional trailing stop distance as fraction
+    expected_edge_bps: float | None = None  # optional expected edge in basis points
 
 class Strategy(ABC):
     name: str
@@ -132,6 +133,9 @@ def record_signal_metrics(fn):
         if sig and sig.side in {"buy", "sell"} and {"exchange", "symbol"} <= bar.keys():
             try:
                 engine = timescale.get_engine()
+                notes = None
+                if sig.expected_edge_bps is not None:
+                    notes = {"expected_edge_bps": float(sig.expected_edge_bps)}
                 timescale.insert_order(
                     engine,
                     strategy=self.name,
@@ -142,6 +146,7 @@ def record_signal_metrics(fn):
                     qty=float(sig.strength),
                     px=bar.get("close"),
                     status="signal",
+                    notes=notes,
                 )
             except Exception:
                 # Persistence is best-effort only
