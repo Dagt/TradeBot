@@ -180,10 +180,10 @@ const api = (path) => `${location.origin}${path}`;
         const label=document.createElement('label');
         label.htmlFor=`param-${p.name}`;
         label.textContent=p.name;
-        if(p.description){
+        if(p.desc){
           const help=document.createElement('span');
           help.className='help-icon';
-          help.title=p.description;
+          help.title=p.desc;
           help.textContent='?';
           label.appendChild(document.createTextNode(' '));
           label.appendChild(help);
