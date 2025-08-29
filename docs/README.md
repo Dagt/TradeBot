@@ -11,3 +11,4 @@ Si es la primera vez que lo utiliza, comience por revisar el
 - [Estrategias disponibles](strategies.md)
 - [Dashboards de monitoreo](dashboards.md)
 - [Gestión de riesgo](risk.md)
+- [Estructura del CSV de fills](fills_csv.md)

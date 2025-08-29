@@ -87,16 +87,18 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "symbol",
         "exchange",
         "fee_type",
-        "fee",
+        "fee_cost",
         "slip_bps",
+        "slippage_pnl",
         "cash_after",
         "base_after",
         "equity_after",
         "realized_pnl",
+        "realized_pnl_total",
     ]
     # Comprobar cálculo de fee
     expected_fee = df["price"] * df["qty"] * 0.001
-    assert np.allclose(df["fee"], expected_fee)
+    assert np.allclose(df["fee_cost"], expected_fee)
     # Comprobar que realized_pnl coincide con RiskManager
     rm = RiskManager()
     expected = []
@@ -104,15 +106,9 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         prev = rm.pos.realized_pnl
         rm.add_fill(row.side, row.qty, row.price)
         delta = rm.pos.realized_pnl - prev
-        slip_mult = row.slip_bps / 10000.0
-        if row.side == "buy":
-            place_price = row.price / (1 + slip_mult) if 1 + slip_mult != 0 else row.price
-            slip_cash = (row.price - place_price) * row.qty
-        else:
-            place_price = row.price / (1 - slip_mult) if 1 - slip_mult != 0 else row.price
-            slip_cash = (place_price - row.price) * row.qty
-        expected.append(delta - row.fee - slip_cash)
+        expected.append(delta - row.fee_cost + row.slippage_pnl)
     assert np.allclose(df["realized_pnl"], expected)
+    assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
@@ -168,12 +164,14 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
             "symbol",
             "exchange",
             "fee_type",
-            "fee",
+            "fee_cost",
             "slip_bps",
+            "slippage_pnl",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
+            "realized_pnl_total",
         ],
     )
     assert fills.loc[fills.side == "sell", "qty"].max() <= fills.loc[fills.side == "buy", "qty"].max() + 1e-9
@@ -276,12 +274,14 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
             "symbol",
             "exchange",
             "fee_type",
-            "fee",
+            "fee_cost",
             "slip_bps",
+            "slippage_pnl",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
+            "realized_pnl_total",
         ],
     )
     assert (fills.cash_after >= -1e-9).all()
@@ -347,16 +347,18 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
             "symbol",
             "exchange",
             "fee_type",
-            "fee",
+            "fee_cost",
             "slip_bps",
+            "slippage_pnl",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
+            "realized_pnl_total",
         ],
     )
     assert math.isclose(
-        fills.loc[0, "fee"],
+        fills.loc[0, "fee_cost"],
         fills.loc[0, "price"] * fills.loc[0, "qty"] * 0.001,
         rel_tol=1e-9,
     )
@@ -629,12 +631,14 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
             "symbol",
             "exchange",
             "fee_type",
-            "fee",
+            "fee_cost",
             "slip_bps",
+            "slippage_pnl",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
+            "realized_pnl_total",
         ],
     )
     assert len(fills) == 2

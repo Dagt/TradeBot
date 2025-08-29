@@ -34,8 +34,15 @@ def test_event_engine_runs(tmp_path, monkeypatch):
     assert "equity" in res
     df = pd.read_csv(out)
     assert not df.empty
-    assert df.shape[1] == 19
-    assert {"fee", "realized_pnl", "trade_id", "roundtrip_id"}.issubset(df.columns)
+    assert df.shape[1] == 21
+    assert {
+        "fee_cost",
+        "slippage_pnl",
+        "realized_pnl",
+        "realized_pnl_total",
+        "trade_id",
+        "roundtrip_id",
+    }.issubset(df.columns)
 
 
 def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
@@ -59,8 +66,15 @@ def test_event_engine_single_symbol_cov(tmp_path, monkeypatch):
     assert "equity" in res
     df = pd.read_csv(out)
     assert not df.empty
-    assert df.shape[1] == 19
-    assert {"fee", "realized_pnl", "trade_id", "roundtrip_id"}.issubset(df.columns)
+    assert df.shape[1] == 21
+    assert {
+        "fee_cost",
+        "slippage_pnl",
+        "realized_pnl",
+        "realized_pnl_total",
+        "trade_id",
+        "roundtrip_id",
+    }.issubset(df.columns)
 
 
 class OneShotStrategy:
@@ -122,8 +136,15 @@ def test_stop_loss_triggers_close(tmp_path, monkeypatch):
     exit_price = df.iloc[1]["price"]
     assert exit_price <= entry_price * (1 - 0.1)
     assert res["orders"][1]["filled"] == res["orders"][0]["qty"]
-    assert df.shape[1] == 19
-    assert {"fee", "realized_pnl", "trade_id", "roundtrip_id"}.issubset(df.columns)
+    assert df.shape[1] == 21
+    assert {
+        "fee_cost",
+        "slippage_pnl",
+        "realized_pnl",
+        "realized_pnl_total",
+        "trade_id",
+        "roundtrip_id",
+    }.issubset(df.columns)
 
 
 def test_equity_loss_capped_by_risk_pct(tmp_path, monkeypatch):
