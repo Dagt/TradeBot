@@ -57,6 +57,10 @@
         <label for="bt-strategy">Estrategia</label>
         <select id="bt-strategy"></select>
       </div>
+      <div id="field-strategy-config">
+        <label for="bt-strategy-config">Config estrategia</label>
+        <input id="bt-strategy-config" placeholder="config.yaml"/>
+      </div>
       <div id="field-capital">
         <label for="bt-capital">Capital inicial</label>
         <input id="bt-capital" type="number" step="any" placeholder=""/>
@@ -87,6 +91,7 @@
           Exportar fills (CSV)
         </label>
       </div>
+      <div id="bt-strategy-params" style="display:contents"></div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
@@ -204,6 +209,32 @@ const dataInfo = {
   features: "Indicadores y estadísticas usados por un modelo de ML.",
 };
 
+async function loadStrategyParams(name){
+  const container=document.getElementById('bt-strategy-params');
+  container.innerHTML='';
+  try{
+    const r=await fetch(api(`/strategies/${name}/schema`));
+    const j=await r.json();
+    (j.params||[]).forEach(p=>{
+      const div=document.createElement('div');
+      const label=document.createElement('label');
+      label.htmlFor=`bt-param-${p.name}`;
+      label.textContent=p.name;
+      const input=document.createElement('input');
+      input.id=`bt-param-${p.name}`;
+      input.dataset.name=p.name;
+      input.dataset.type=p.type||'';
+      const type=(p.type||'').toLowerCase();
+      if(type.includes('int')||type.includes('float')||type.includes('number')){
+        input.type='number'; input.step='0.0001';
+      }else{ input.type='text'; }
+      if(p.default!==undefined && p.default!==null) input.value=p.default;
+      div.appendChild(label); div.appendChild(input);
+      container.appendChild(div);
+    });
+  }catch(e){}
+}
+
 let strategyInfo = {};
 
 async function loadStrategyInfo(){
@@ -288,6 +319,7 @@ async function loadStrategies(){
       o.value=s;o.textContent=s;sel.appendChild(o);
     });
     updateStrategyInfo();
+    loadStrategyParams(sel.value);
   }catch(e){console.error(e);}
 }
 
@@ -296,6 +328,7 @@ function updateBtFields(){
   document.getElementById('field-data').style.display=mode==='csv'?'':'none';
   document.getElementById('field-symbol').style.display=(mode==='csv'||mode==='db')?'':'none';
   document.getElementById('field-strategy').style.display=(mode==='csv'||mode==='db')?'':'none';
+  document.getElementById('field-strategy-config').style.display=(mode==='csv'||mode==='db')?'':'none';
   document.getElementById('field-config').style.display=(mode==='cfg'||mode==='walk')?'':'none';
   document.getElementById('field-venue').style.display=mode==='db'?'':'none';
   document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
@@ -305,6 +338,7 @@ function updateBtFields(){
   ['field-risk-pct'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
   });
+  document.getElementById('bt-strategy-params').style.display=(mode==='csv'||mode==='db')?'contents':'none';
 }
 
 function updateStrategyInfo(){
@@ -361,6 +395,17 @@ async function runBacktest(){
     const sl=document.getElementById('bt-risk-pct').value.trim();
     if(sl) cmd+=` --risk-pct ${sl}`;
   }
+  const stratCfg=document.getElementById('bt-strategy-config').value.trim();
+  if(stratCfg) cmd+=` --config ${stratCfg}`;
+  const paramEls=document.querySelectorAll('#bt-strategy-params input');
+  paramEls.forEach(el=>{
+    if(!el.value) return;
+    const t=(el.dataset.type||'').toLowerCase();
+    let v=el.value;
+    if(t.includes('int')) v=parseInt(v,10);
+    else if(t.includes('float')||t.includes('number')) v=parseFloat(v);
+    cmd+=` --param ${el.dataset.name}=${v}`;
+  });
   const verbose=document.getElementById('bt-verbose-fills').checked;
   if(verbose) cmd+=' --fills-csv fills.csv';
   try{
@@ -453,11 +498,15 @@ document.getElementById('bt-clear').addEventListener('click',()=>{
   hideWorking();
 });
 document.getElementById('cli-run').addEventListener('click',runCli);
-document.getElementById('bt-strategy').addEventListener('change',updateStrategyInfo);
+document.getElementById('bt-strategy').addEventListener('change',()=>{
+  updateStrategyInfo();
+  loadStrategyParams(document.getElementById('bt-strategy').value);
+});
 updateBtFields();
 loadStrategies();
 loadExchanges();
 loadStrategyInfo();
+loadStrategyParams(document.getElementById('bt-strategy').value);
 </script>
 </body>
 </html>
