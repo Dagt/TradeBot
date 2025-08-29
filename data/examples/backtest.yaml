@@ -4,5 +4,8 @@ strategies:
   - [breakout_atr, BTC/USDT]
 latency: 1
 window: 120
+slippage:
+  source: bba
+  base_spread: 0.1
 mlflow:
   run_name: example_backtest

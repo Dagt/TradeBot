@@ -107,6 +107,13 @@ risk:
 
 ```
 
+El modelo de *slippage* admite dos fuentes (`source`):
+
+- `"bba"` utiliza las columnas `bid`/`ask` (o `bid_px`/`ask_px`) si están presentes y
+  recurre al `base_spread` configurado cuando faltan.
+- `"fixed_spread"` siempre aplica el valor de `base_spread` sin considerar las
+  columnas de mejor bid/ask.
+
 El motor de backtesting ignora ejecuciones cuya cantidad sea menor a
 `min_fill_qty` para evitar registrar residuos irrelevantes. El umbral
 predeterminado es la constante `MIN_FILL_QTY = 1e-3`, pero puede ajustarse

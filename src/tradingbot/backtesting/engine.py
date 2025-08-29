@@ -79,6 +79,22 @@ class SlippageModel:
     :meth:`fill`, which returns the adjusted price, the filled quantity and
     the updated queue position.  A ``spread_mult`` parameter allows stressing
     the bid/ask spread.
+
+    Parameters
+    ----------
+    volume_impact: float, default ``0.1``
+        Impact factor relative to bar volume.
+    spread_mult: float, default ``1.0``
+        Multiplier applied to the computed spread.
+    ofi_impact: float, default ``0.0``
+        Weight applied to the order flow imbalance term.
+    source: {"bba", "fixed_spread"}, default ``"bba"``
+        Source for the base spread. ``"bba"`` uses best bid/ask columns when
+        available and falls back to ``base_spread`` otherwise.
+        ``"fixed_spread"`` always uses ``base_spread``.
+    base_spread: float, default ``0.0``
+        Fallback spread (absolute price difference) used when bid/ask columns
+        are missing or when ``source`` is ``"fixed_spread"``.
     """
 
     def __init__(
@@ -86,10 +102,17 @@ class SlippageModel:
         volume_impact: float = 0.1,
         spread_mult: float = 1.0,
         ofi_impact: float = 0.0,
+        source: str = "bba",
+        base_spread: float = 0.0,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
         self.ofi_impact = float(ofi_impact)
+        source = source.lower()
+        if source not in {"bba", "fixed_spread"}:
+            raise ValueError("source must be 'bba' or 'fixed_spread'")
+        self.source = source
+        self.base_spread = float(base_spread)
 
     def adjust(
         self,
@@ -98,7 +121,24 @@ class SlippageModel:
         price: float,
         bar: Mapping[str, float] | pd.Series,
     ) -> float:
-        spread = float(bar.get("high", 0.0) - bar.get("low", 0.0)) * self.spread_mult
+        if self.source == "bba":
+            bid = (
+                bar.get("bid")
+                or bar.get("bid_px")
+                or bar.get("bid_price")
+            )
+            ask = (
+                bar.get("ask")
+                or bar.get("ask_px")
+                or bar.get("ask_price")
+            )
+            if bid is not None and ask is not None:
+                spread = float(ask) - float(bid)
+            else:
+                spread = self.base_spread
+        else:
+            spread = self.base_spread
+        spread *= self.spread_mult
         vol = float(bar.get("volume", 0.0))
         impact = self.volume_impact * qty / max(vol, 1e-9)
         ofi_val = 0.0
