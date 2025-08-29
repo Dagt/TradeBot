@@ -98,7 +98,7 @@ class RiskService:
         )
         qty = abs(delta)
 
-        if qty <= 0:
+        if qty < self.rm.min_order_qty:
             return False, "zero_size", 0.0
 
         try:

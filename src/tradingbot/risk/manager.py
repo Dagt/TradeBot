@@ -58,6 +58,7 @@ class RiskManager:
         daily_drawdown_pct: float = 0.0,
         limits: RiskLimits | None = None,
         bus: EventBus | None = None,
+        min_order_qty: float = 1e-9,
     ):
         """Create a :class:`RiskManager`.
 
@@ -71,6 +72,7 @@ class RiskManager:
         self.vol_target = abs(vol_target)
         self._base_vol_target = self.vol_target
         self.allow_short = bool(allow_short)
+        self.min_order_qty = abs(min_order_qty)
 
         self.daily_loss_limit = abs(daily_loss_limit)
         self.daily_drawdown_pct = abs(daily_drawdown_pct)
@@ -327,7 +329,7 @@ class RiskManager:
             if notional > 0:
                 delta *= max_notional / notional
 
-        if abs(delta) <= 0:
+        if abs(delta) < self.min_order_qty:
             return False, "zero_size", 0.0
 
         try:
@@ -455,7 +457,7 @@ class RiskManager:
             for j in range(n):
                 var += positions[syms[i]] * mat[i][j] * positions[syms[j]]
         if var > max_variance:
-            self.last_kill_reason = "covariance_limit"
+            self.kill_switch("covariance_limit")
             return False
         return True
 
