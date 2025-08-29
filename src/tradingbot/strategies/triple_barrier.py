@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.base import ClassifierMixin
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, record_signal_metrics, load_params
 
 
 PARAM_INFO = {
@@ -14,6 +14,7 @@ PARAM_INFO = {
     "tp_bps": "Take profit en puntos básicos",
     "sl_bps": "Stop loss en puntos básicos",
     "max_hold_bars": "Barras máximas en posición",
+    "config_path": "Ruta opcional al archivo de configuración",
 }
 
 
@@ -115,7 +116,19 @@ class TripleBarrier(Strategy):
         tp_bps: float = 10.0,
         sl_bps: float = 15.0,
         max_hold_bars: int = 10,
+        *,
+        config_path: str | None = None,
     ) -> None:
+        params = load_params(config_path)
+        horizon = params.get("horizon", horizon)
+        upper_pct = params.get("upper_pct", upper_pct)
+        lower_pct = params.get("lower_pct", lower_pct)
+        training_window = params.get("training_window", training_window)
+        meta_model = params.get("meta_model", meta_model)
+        tp_bps = params.get("tp_bps", tp_bps)
+        sl_bps = params.get("sl_bps", sl_bps)
+        max_hold_bars = params.get("max_hold_bars", max_hold_bars)
+
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
         self.lower_pct = float(lower_pct)
