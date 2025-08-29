@@ -3,6 +3,17 @@ from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
 
 
+PARAM_INFO = {
+    "rsi_n": "Ventana para el cálculo del RSI",
+    "threshold": "Nivel de RSI para señales de tendencia",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "min_volatility": "Volatilidad mínima requerida",
+    "vol_lookback": "Ventana para calcular la volatilidad",
+}
+
+
 class TrendFollowing(Strategy):
     """RSI based trend following strategy with adaptive strength.
 

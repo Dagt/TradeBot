@@ -5,6 +5,18 @@ from sklearn.base import ClassifierMixin
 from .base import Strategy, Signal, record_signal_metrics
 
 
+PARAM_INFO = {
+    "horizon": "Número de barras futuras a evaluar",
+    "upper_pct": "Porcentaje de barrera superior",
+    "lower_pct": "Porcentaje de barrera inferior",
+    "training_window": "Ventana para entrenamiento del modelo",
+    "meta_model": "Modelo para meta etiquetado",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+}
+
+
 def apply_meta_labeling(
     labels: pd.Series,
     features: pd.DataFrame,

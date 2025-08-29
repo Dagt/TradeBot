@@ -3,6 +3,16 @@ from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import calc_ofi
 
 
+PARAM_INFO = {
+    "window": "Ventana para promediar el OFI",
+    "buy_threshold": "Umbral de compra para OFI",
+    "sell_threshold": "Umbral de venta para OFI",
+    "tp": "Take profit como fracción",
+    "sl": "Stop loss como fracción",
+    "max_duration": "Duración máxima de la posición",
+}
+
+
 class OrderFlow(Strategy):
     """Order Flow Imbalance strategy.
 

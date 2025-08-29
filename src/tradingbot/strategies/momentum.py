@@ -2,6 +2,18 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, returns
 
+
+PARAM_INFO = {
+    "rsi_n": "Ventana para el cálculo del RSI",
+    "threshold": "Nivel de RSI para generar señal",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "min_volume": "Volumen mínimo requerido",
+    "min_volatility": "Volatilidad mínima requerida",
+    "vol_window": "Ventana para estimar la volatilidad",
+}
+
 class Momentum(Strategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
 

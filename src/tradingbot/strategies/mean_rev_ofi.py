@@ -5,6 +5,18 @@ from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import calc_ofi, returns
 
 
+PARAM_INFO = {
+    "ofi_window": "Ventana para estadísticos de OFI",
+    "zscore_threshold": "Z-score absoluto requerido",
+    "vol_window": "Ventana para volatilidad de retornos",
+    "vol_threshold": "Volatilidad máxima permitida",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "config_path": "Ruta opcional de configuración",
+}
+
+
 class MeanRevOFI(Strategy):
     """Mean reversion strategy based on OFI z-score and volatility.
 

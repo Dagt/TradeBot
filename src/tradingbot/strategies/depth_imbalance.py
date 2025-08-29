@@ -6,6 +6,15 @@ from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import depth_imbalance
 
 
+PARAM_INFO = {
+    "window": "Ventana para promediar el desequilibrio",
+    "threshold": "Umbral de desequilibrio para operar",
+    "tp": "Take profit como fracción del precio",
+    "sl": "Stop loss como fracción del precio",
+    "max_duration": "Máxima duración de la posición",
+}
+
+
 class DepthImbalance(Strategy):
     """Depth Imbalance strategy.
 

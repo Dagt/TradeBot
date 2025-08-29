@@ -11,6 +11,14 @@ from joblib import dump, load
 from .base import Strategy, Signal, record_signal_metrics
 
 
+PARAM_INFO = {
+    "model": "Instancia de modelo sklearn preentrenado",
+    "model_path": "Ruta para cargar el modelo",
+    "margin": "Margen de probabilidad sobre 0.5",
+    "tp_pct": "Take profit porcentual",
+    "sl_pct": "Stop loss porcentual",
+}
+
 class MLStrategy(Strategy):
     """Machine learning based strategy using scikit-learn models.
 

@@ -3,6 +3,17 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 
 
+PARAM_INFO = {
+    "lookback": "Ventana para medias y desviación estándar",
+    "mult": "Multiplicador aplicado a la desviación",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "trailing_stop_bps": "Distancia del trailing stop en bps",
+    "volatility_factor": "Factor para dimensionar según volatilidad",
+}
+
+
 class BreakoutVol(Strategy):
     """Volatility breakout strategy using rolling standard deviation.
 

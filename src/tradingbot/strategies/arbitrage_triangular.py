@@ -5,6 +5,12 @@ from typing import Optional, Dict
 
 from .base import Strategy, Signal, record_signal_metrics
 
+PARAM_INFO = {
+    "taker_fee_bps": "Comisión taker por tramo en puntos básicos",
+    "buffer_bps": "Margen adicional por tramo en puntos básicos",
+    "min_edge": "Edge mínimo neto para operar",
+}
+
 @dataclass
 class TriRoute:
     base: str   # p.ej. "BTC"
