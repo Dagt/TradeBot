@@ -128,7 +128,8 @@ nav a:hover{
 @media (max-width: 600px){ .grid4, .grid3, .grid5{ grid-template-columns: 1fr } }
 
 /* === Sección parámetros estrategia === */
-#bt-param-card {
+#bt-param-card,
+#bot-param-card {
   margin-top: 14px;
   padding: 14px;
   border-radius: 12px;
@@ -138,7 +139,8 @@ nav a:hover{
 }
 
 /* Grid compacto */
-#bt-strategy-params {
+#bt-strategy-params,
+#bot-strategy-params {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, auto));
   gap: 8px 12px; /* menos espacio entre inputs */
@@ -146,7 +148,8 @@ nav a:hover{
 }
 
 /* Labels */
-#bt-strategy-params label {
+#bt-strategy-params label,
+#bot-strategy-params label {
   font-size: 13px;
   font-weight: 500;
   color: var(--muted);
@@ -156,13 +159,15 @@ nav a:hover{
   gap: 4px;
 }
 
-#bt-strategy-params .help-icon {
+#bt-strategy-params .help-icon,
+#bot-strategy-params .help-icon {
   margin-left: 2px;
   flex-shrink: 0;
 }
 
 /* Inputs */
-#bt-strategy-params input.param-input {
+#bt-strategy-params input.param-input,
+#bot-strategy-params input.param-input {
   width: 90px;              /* más compactos */
   padding: 5px 6px;
   border-radius: 8px;
@@ -172,11 +177,14 @@ nav a:hover{
 
 /* Quitar flechitas number */
 #bt-strategy-params input.param-input[type=number]::-webkit-inner-spin-button,
-#bt-strategy-params input.param-input[type=number]::-webkit-outer-spin-button {
+#bt-strategy-params input.param-input[type=number]::-webkit-outer-spin-button,
+#bot-strategy-params input.param-input[type=number]::-webkit-inner-spin-button,
+#bot-strategy-params input.param-input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-#bt-strategy-params input.param-input[type=number] {
+#bt-strategy-params input.param-input[type=number],
+#bot-strategy-params input.param-input[type=number] {
   -moz-appearance: textfield;
 }
 

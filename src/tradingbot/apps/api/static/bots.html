@@ -114,7 +114,7 @@
         <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
       </div>
     </div>
-    <div id="bot-params-section" style="display:none">
+    <div id="bot-param-card" style="display:none">
       <div id="bot-strategy-params" class="param-grid"></div>
       <p id="bot-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     </div>
@@ -170,7 +170,7 @@ const api = (path) => `${location.origin}${path}`;
   async function loadStrategyParams(name){
     const container=document.getElementById('bot-strategy-params');
     container.innerHTML='';
-    const card=document.getElementById('bot-params-section');
+    const card=document.getElementById('bot-param-card');
     card.style.display='none';
     const toggle=document.getElementById('bot-toggle-params');
     toggle.checked=false;
@@ -376,7 +376,7 @@ document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-market').addEventListener('change', updateMarketFields);
 document.getElementById('bot-toggle-params').addEventListener('change', e => {
-  document.getElementById('bot-params-section').style.display = e.target.checked ? 'block' : 'none';
+document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
 updateMarketFields();
