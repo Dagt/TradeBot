@@ -1040,7 +1040,10 @@ def backtest(
     strat_cls = STRATEGIES.get(strategy)
     if strat_cls is None:
         raise typer.BadParameter(f"unknown strategy: {strategy}")
-    strat = strat_cls(config_path=config, **params) if (config or params) else strat_cls()
+    kwargs = dict(params)
+    if config is not None:
+        kwargs["config_path"] = config
+    strat = strat_cls(**kwargs)
     eng.strategies[(strategy, symbol)] = strat
     result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
@@ -1248,7 +1251,10 @@ def backtest_db(
         strat_cls = STRATEGIES.get(strategy)
         if strat_cls is None:
             raise typer.BadParameter(f"unknown strategy: {strategy}")
-        strat = strat_cls(config_path=config, **params) if (config or params) else strat_cls()
+        kwargs = dict(params)
+        if config is not None:
+            kwargs["config_path"] = config
+        strat = strat_cls(**kwargs)
         eng.strategies[(strategy, symbol)] = strat
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)
