@@ -58,6 +58,7 @@ class RiskManager:
         daily_drawdown_pct: float = 0.0,
         limits: RiskLimits | None = None,
         bus: EventBus | None = None,
+        min_order_qty: float = 1e-9,
     ):
         """Create a :class:`RiskManager`.
 
@@ -98,6 +99,8 @@ class RiskManager:
             self.bus.subscribe("risk:blocked", self._on_block_event)
 
         self.limits = LimitTracker(limits, bus) if limits is not None else None
+
+        self.min_order_qty = float(min_order_qty)
 
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
@@ -327,7 +330,7 @@ class RiskManager:
             if notional > 0:
                 delta *= max_notional / notional
 
-        if abs(delta) <= 0:
+        if abs(delta) < self.min_order_qty:
             return False, "zero_size", 0.0
 
         try:
@@ -336,7 +339,7 @@ class RiskManager:
                 return False, reason, 0.0
         except StopLossExceeded:
             close_qty = -self.pos.qty
-            if abs(close_qty) > 0:
+            if abs(close_qty) >= self.min_order_qty:
                 return True, "stop_loss", close_qty
             return False, "stop_loss", 0.0
         return True, "", delta

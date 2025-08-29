@@ -24,6 +24,8 @@ log = logging.getLogger(__name__)
 
 # Minimum quantity to record a fill. Fills below this threshold are ignored.
 MIN_FILL_QTY = 1e-3
+# Minimum absolute order quantity. Orders below this are discarded.
+MIN_ORDER_QTY = 1e-9
 
 
 def _validate_risk_pct(value: float) -> float:
@@ -189,6 +191,7 @@ class EventDrivenBacktestEngine:
         risk_pct: float = 0.0,
         verbose_fills: bool = False,
         min_fill_qty: float = MIN_FILL_QTY,
+        min_order_qty: float = MIN_ORDER_QTY,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -200,6 +203,7 @@ class EventDrivenBacktestEngine:
         self.stress = stress or StressConfig()
         self.verbose_fills = bool(verbose_fills)
         self.min_fill_qty = float(min_fill_qty)
+        self.min_order_qty = float(min_order_qty)
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -273,6 +277,7 @@ class EventDrivenBacktestEngine:
             rm = RiskManager(
                 risk_pct=self._risk_pct,
                 allow_short=allow_short,
+                min_order_qty=self.min_order_qty,
             )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             self.risk[key] = RiskService(rm, guard)
@@ -587,7 +592,7 @@ class EventDrivenBacktestEngine:
                         symbol_vol=symbol_vol,
                         corr_threshold=0.8,
                     )
-                    if not allowed or abs(delta) < 1e-9:
+                    if not allowed or abs(delta) < self.min_order_qty:
                         continue
                     side = "buy" if delta > 0 else "sell"
                     qty = abs(delta)
@@ -653,7 +658,7 @@ class EventDrivenBacktestEngine:
                     svc.rm.check_limits(current_price)
                 except StopLossExceeded:
                     delta = -svc.rm.pos.qty
-                    if abs(delta) > 1e-9:
+                    if abs(delta) > self.min_order_qty:
                         side = "buy" if delta > 0 else "sell"
                         qty = abs(delta)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
@@ -702,7 +707,7 @@ class EventDrivenBacktestEngine:
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
             pos = svc.rm.pos.qty
-            if abs(pos) > 1e-9:
+            if abs(pos) > self.min_order_qty:
                 arrs = data_arrays[symbol]
                 price_idx = min(last_index, data_lengths[symbol] - 1)
                 last_price = float(arrs["close"][price_idx])
@@ -803,6 +808,7 @@ def run_backtest_csv(
     verbose_fills: bool = False,
     fills_csv: str | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
+    min_order_qty: float = MIN_ORDER_QTY,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -825,6 +831,7 @@ def run_backtest_csv(
         initial_equity=initial_equity,
         verbose_fills=verbose_fills,
         min_fill_qty=min_fill_qty,
+        min_order_qty=min_order_qty,
     )
     return engine.run(fills_csv=fills_csv)
 
@@ -852,6 +859,7 @@ def run_backtest_mlflow(
     verbose_fills: bool = False,
     fills_csv: str | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
+    min_order_qty: float = MIN_ORDER_QTY,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -886,6 +894,7 @@ def run_backtest_mlflow(
             verbose_fills=verbose_fills,
             fills_csv=fills_csv,
             min_fill_qty=min_fill_qty,
+            min_order_qty=min_order_qty,
         )
         log_backtest_metrics(result)
         return result

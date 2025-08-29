@@ -157,3 +157,16 @@ def test_long_only_prevents_shorts():
     rm.set_position(1.0)
     allowed, _, delta = rm.check_order("SYM", "sell", equity=100.0, price=100.0)
     assert allowed and delta == pytest.approx(-1.0)
+
+
+def test_min_order_qty_blocks_small_orders():
+    from tradingbot.risk.manager import RiskManager
+
+    rm = RiskManager(min_order_qty=0.01)
+    # Strength yields a delta of 0.001 which is below the threshold
+    allowed, reason, delta = rm.check_order(
+        "SYM", "buy", equity=100.0, price=100.0, strength=0.001
+    )
+    assert not allowed
+    assert reason == "zero_size"
+    assert delta == 0.0
