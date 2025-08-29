@@ -51,6 +51,7 @@ class Order:
     """Representation of a pending order in the backtest queue."""
 
     execute_index: int
+    order_id: int = field(compare=False)
     place_index: int = field(compare=False)
     strategy: str = field(compare=False)
     symbol: str = field(compare=False)
@@ -327,6 +328,7 @@ class EventDrivenBacktestEngine:
             for sym, df in self.data.items()
         }
 
+        order_seq = 0
         trade_seq = 0
         roundtrip_seq = 0
         active_roundtrips: Dict[Tuple[str, str], int] = {}
@@ -475,17 +477,22 @@ class EventDrivenBacktestEngine:
                     if order.side == "buy"
                     else order.place_price - price
                 )
-                slippage_total += slip * fill_qty
+                slip_cash = slip * fill_qty
+                slip_bps = (slip / order.place_price * 10000.0) if order.place_price else 0.0
+                slippage_total += slip_cash
                 fill_count += 1
 
                 trade_value = fill_qty * price
                 fee = fee_model.calculate(trade_value, maker=maker)
+                prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 if order.side == "buy":
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
                 prev_qty = svc.rm.pos.qty
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
+                new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                realized_pnl = new_rpnl - prev_rpnl - fee - slip_cash
                 new_qty = svc.rm.pos.qty
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
@@ -556,6 +563,11 @@ class EventDrivenBacktestEngine:
                     fills.append(
                         (
                             timestamp,
+                            i,
+                            order.order_id,
+                            trade_seq,
+                            rt_id,
+                            "order",
                             order.side,
                             price,
                             fill_qty,
@@ -564,12 +576,11 @@ class EventDrivenBacktestEngine:
                             order.exchange,
                             fee_type,
                             fee,
+                            slip_bps,
                             cash,
                             base_after,
                             equity_after,
-                            getattr(svc.rm.pos, "realized_pnl", 0.0),
-                            trade_seq,
-                            rt_id,
+                            realized_pnl,
                         )
                     )
                 if self.verbose_fills and not fills_csv:
@@ -607,6 +618,7 @@ class EventDrivenBacktestEngine:
                 sl = state.get("stop_loss")
                 trail = state.get("trail_pct")
                 best = state.get("best_price", float(arrs["close"][i]))
+                reason = ""
                 if qty > 0:
                     if trail is not None:
                         best = max(best, high)
@@ -618,9 +630,11 @@ class EventDrivenBacktestEngine:
                     if sl is not None and low <= sl:
                         exit_price = sl
                         side = "sell"
+                        reason = "trailing_stop" if trail is not None else "stop_loss"
                     elif tp is not None and high >= tp:
                         exit_price = tp
                         side = "sell"
+                        reason = "take_profit"
                 elif qty < 0:
                     if trail is not None:
                         best = min(best, low)
@@ -632,21 +646,26 @@ class EventDrivenBacktestEngine:
                     if sl is not None and high >= sl:
                         exit_price = sl
                         side = "buy"
+                        reason = "trailing_stop" if trail is not None else "stop_loss"
                     elif tp is not None and low <= tp:
                         exit_price = tp
                         side = "buy"
+                        reason = "take_profit"
                 if exit_price is not None:
                     exit_qty = abs(qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     fee_model = self.exchange_fees.get(exchange, self.default_fee)
                     trade_value = exit_qty * exit_price
                     fee = fee_model.calculate(trade_value, maker=False)
+                    prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                     if side == "sell":
                         cash += trade_value - fee
                     else:
                         cash -= trade_value + fee
                     prev_qty = svc.rm.pos.qty
                     svc.on_fill(symbol, side, exit_qty, exit_price)
+                    new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                    realized_pnl = new_rpnl - prev_rpnl - fee
                     key = (strat_name, symbol)
                     rt_id = active_roundtrips.get(key)
                     if prev_qty == 0 and svc.rm.pos.qty != 0:
@@ -671,6 +690,11 @@ class EventDrivenBacktestEngine:
                         fills.append(
                             (
                                 timestamp,
+                                i,
+                                0,
+                                trade_seq,
+                                rt_id,
+                                reason or "exit",
                                 side,
                                 exit_price,
                                 exit_qty,
@@ -679,12 +703,11 @@ class EventDrivenBacktestEngine:
                                 exchange,
                                 "taker",
                                 fee,
+                                0.0,
                                 cash,
                                 base_after,
                                 equity_after,
-                                getattr(svc.rm.pos, "realized_pnl", 0.0),
-                                trade_seq,
-                                rt_id,
+                                realized_pnl,
                             )
                         )
 
@@ -760,8 +783,10 @@ class EventDrivenBacktestEngine:
                         avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                         queue_pos = min(avail, depth)
                     post_only = bool(getattr(sig, "post_only", False))
+                    order_seq += 1
                     order = Order(
                         exec_index,
+                        order_seq,
                         i,
                         strat_name,
                         symbol,
@@ -823,8 +848,10 @@ class EventDrivenBacktestEngine:
                         base_latency = self.exchange_latency.get(exchange, self.latency)
                         delay = max(1, int(base_latency * self.stress.latency))
                         exec_index = i + delay
+                        order_seq += 1
                         order = Order(
                             exec_index,
+                            order_seq,
                             i,
                             strat_name,
                             symbol,
@@ -934,6 +961,11 @@ class EventDrivenBacktestEngine:
                 result["fills"],
                 columns=[
                     "timestamp",
+                    "bar_index",
+                    "order_id",
+                    "trade_id",
+                    "roundtrip_id",
+                    "reason",
                     "side",
                     "price",
                     "qty",
@@ -942,12 +974,11 @@ class EventDrivenBacktestEngine:
                     "exchange",
                     "fee_type",
                     "fee",
+                    "slip_bps",
                     "cash_after",
                     "base_after",
                     "equity_after",
                     "realized_pnl",
-                    "trade_id",
-                    "roundtrip_id",
                 ],
             )
             fills_df.to_csv(fills_csv, index=False)

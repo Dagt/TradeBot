@@ -178,7 +178,8 @@ Ejecuta un backtest vectorizado desde un archivo CSV.
 - `--fills-csv PATH`: exporta los fills a un CSV.
 
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
-`timestamp, side, price, qty, strategy, symbol, exchange, fee_type, fee, cash_after, base_after, equity_after, realized_pnl, trade_id, roundtrip_id`.
+`timestamp, bar_index, order_id, trade_id, roundtrip_id, reason, side, price, qty, strategy, symbol, exchange, fee_type, fee, slip_bps, cash_after, base_after, equity_after, realized_pnl`.
+La columna `price` refleja el precio final de ejecución con spread y slippage aplicados.
 Desde este archivo puede reconstruirse el efectivo y la posición para validar el PnL final:
 
 ```python

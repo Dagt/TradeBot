@@ -75,6 +75,11 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     assert not df.empty
     assert list(df.columns) == [
         "timestamp",
+        "bar_index",
+        "order_id",
+        "trade_id",
+        "roundtrip_id",
+        "reason",
         "side",
         "price",
         "qty",
@@ -83,23 +88,31 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "exchange",
         "fee_type",
         "fee",
+        "slip_bps",
         "cash_after",
         "base_after",
         "equity_after",
         "realized_pnl",
-        "trade_id",
-        "roundtrip_id",
     ]
     # Comprobar cálculo de fee
     expected_fee = df["price"] * df["qty"] * 0.001
     assert np.allclose(df["fee"], expected_fee)
     # Comprobar que realized_pnl coincide con RiskManager
     rm = RiskManager()
-    rpnl = []
+    expected = []
     for row in df.itertuples():
+        prev = rm.pos.realized_pnl
         rm.add_fill(row.side, row.qty, row.price)
-        rpnl.append(rm.pos.realized_pnl)
-    assert np.allclose(df["realized_pnl"], rpnl)
+        delta = rm.pos.realized_pnl - prev
+        slip_mult = row.slip_bps / 10000.0
+        if row.side == "buy":
+            place_price = row.price / (1 + slip_mult) if 1 + slip_mult != 0 else row.price
+            slip_cash = (row.price - place_price) * row.qty
+        else:
+            place_price = row.price / (1 - slip_mult) if 1 - slip_mult != 0 else row.price
+            slip_cash = (place_price - row.price) * row.qty
+        expected.append(delta - row.fee - slip_cash)
+    assert np.allclose(df["realized_pnl"], expected)
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
@@ -143,6 +156,11 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -151,12 +169,11 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
-            "trade_id",
-            "roundtrip_id",
         ],
     )
     assert fills.loc[fills.side == "sell", "qty"].max() <= fills.loc[fills.side == "buy", "qty"].max() + 1e-9
@@ -247,6 +264,11 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -255,12 +277,11 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
-            "trade_id",
-            "roundtrip_id",
         ],
     )
     assert (fills.cash_after >= -1e-9).all()
@@ -314,6 +335,11 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -322,12 +348,11 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
-            "trade_id",
-            "roundtrip_id",
         ],
     )
     assert math.isclose(
@@ -592,6 +617,11 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -600,12 +630,11 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
-            "trade_id",
-            "roundtrip_id",
         ],
     )
     assert len(fills) == 2
