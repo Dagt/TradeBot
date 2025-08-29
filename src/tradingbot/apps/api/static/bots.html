@@ -88,7 +88,7 @@
         <button id="bot-toggle-params" type="button">Parámetros estrategia</button>
       </div>
       <div id="bot-param-config" style="display:none; grid-column:1/-1">
-        <div id="strategy-params" style="display:contents"></div>
+        <div id="strategy-params" class="param-grid"></div>
       </div>
       <div>
         <label for="bot-risk-pct">Risk %</label>
@@ -189,6 +189,7 @@ const api = (path) => `${location.origin}${path}`;
           label.appendChild(help);
         }
         const input=document.createElement('input');
+        input.className='param-input';
         input.id=`param-${p.name}`;
         input.dataset.name=p.name;
         input.dataset.type=p.type||'';

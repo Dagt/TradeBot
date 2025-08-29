@@ -99,7 +99,7 @@
       </div>
     </div>
     <div id="bt-param-config" style="display:none">
-      <div id="bt-strategy-params" style="display:contents"></div>
+      <div id="bt-strategy-params" class="param-grid"></div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
@@ -234,6 +234,7 @@ async function loadStrategyParams(name){
       help.textContent='?';
       label.appendChild(help);
       const input=document.createElement('input');
+      input.className='param-input';
       input.id=`bt-param-${p.name}`;
       input.dataset.name=p.name;
       input.dataset.type=p.type||'';
@@ -351,7 +352,7 @@ function updateBtFields(){
   ['field-risk-pct'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
   });
-  document.getElementById('bt-strategy-params').style.display=(mode==='csv'||mode==='db')?'contents':'none';
+  document.getElementById('bt-strategy-params').style.display=(mode==='csv'||mode==='db')?'flex':'none';
 }
 
 function updateStrategyInfo(){
