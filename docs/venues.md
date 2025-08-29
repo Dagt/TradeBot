@@ -24,7 +24,8 @@ como SOL, XRP, MATIC, DOT, ADA, DOGE, LTC y TRX.
 ## Exchange configuration
 
 Per-venue settings such as maker/taker fees or tick sizes can be defined in
-`config/config.yaml` under an ``exchange_configs`` section:
+`config/config.yaml` under an ``exchange_configs`` section. Entries with a
+``_testnet`` suffix allow overriding fees for test environments:
 
 ```yaml
 exchange_configs:
@@ -33,6 +34,16 @@ exchange_configs:
     maker_fee_bps: 10.0
     taker_fee_bps: 10.0
     tick_size: 0.01
+  okx_spot:
+    market_type: spot
+    maker_fee_bps: 8.0
+    taker_fee_bps: 10.0
+    tick_size: 0.1
+  okx_spot_testnet:
+    market_type: spot
+    maker_fee_bps: 8.0
+    taker_fee_bps: 10.0
+    tick_size: 0.1
 ```
 
 Venues without an explicit entry fall back to automatic ``_spot``/``_perp``
