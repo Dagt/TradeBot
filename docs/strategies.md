@@ -10,7 +10,9 @@ local basado en `notional * risk_pct`.
 
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador
-ATR y vende cuando cae por debajo del canal inferior.
+ATR y vende cuando cae por debajo del canal inferior. El parámetro
+`min_bars_between_trades` limita la emisión de señales opuestas hasta que
+transcurra un mínimo de velas.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.
