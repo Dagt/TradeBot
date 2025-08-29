@@ -15,3 +15,8 @@ class Order:
     reduce_only: bool = False
     reason: str | None = None
     slip_bps: float | None = None
+    pending_qty: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.pending_qty is None:
+            self.pending_qty = self.qty

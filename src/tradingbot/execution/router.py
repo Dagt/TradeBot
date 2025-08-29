@@ -43,6 +43,8 @@ class ExecutionRouter:
         storage_engine=None,
         prefer: str | None = None,
         risk_manager: "RiskManager | None" = None,
+        on_partial_fill=None,
+        on_order_expiry=None,
     ):
         if isinstance(adapters, dict):
             self.adapters: Dict[str, object] = adapters  # type: ignore[assignment]
@@ -67,6 +69,8 @@ class ExecutionRouter:
         self._prefer = prefer
         self._last_maker = False
         self.risk_manager = risk_manager
+        self.on_partial_fill = on_partial_fill
+        self.on_order_expiry = on_order_expiry
 
     # ------------------------------------------------------------------
     def _is_maker(self, order: Order) -> bool:
@@ -254,6 +258,47 @@ class ExecutionRouter:
         )
         res.setdefault("fee_type", "maker" if maker else "taker")
         res.setdefault("fee_bps", fee_bps)
+        status = res.get("status")
+        if status in {"partial", "expired"}:
+            filled = float(res.get("filled_qty", 0.0))
+            order.pending_qty = max((order.pending_qty or order.qty) - filled, 0.0)
+            res["pending_qty"] = order.pending_qty
+            cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
+            action = cb(order, res) if cb else None
+            if action == "taker" and order.pending_qty > 0:
+                taker_order = Order(
+                    symbol=order.symbol,
+                    side=order.side,
+                    type_="market",
+                    qty=order.pending_qty,
+                    reason=getattr(order, "reason", None),
+                    reduce_only=order.reduce_only,
+                )
+                res2 = await self.execute(
+                    taker_order, fill_mode=fill_mode, slip_bps=slip_bps
+                )
+                order.pending_qty = 0.0
+                res2.setdefault("pending_qty", 0.0)
+                return res2
+            if action in {"re_quote", "re-quote", "requote"} and order.pending_qty > 0:
+                new_order = Order(
+                    symbol=order.symbol,
+                    side=order.side,
+                    type_=order.type_,
+                    qty=order.pending_qty,
+                    price=order.price,
+                    post_only=order.post_only,
+                    time_in_force=order.time_in_force,
+                    reduce_only=order.reduce_only,
+                    reason=getattr(order, "reason", None),
+                )
+                res2 = await self.execute(
+                    new_order, fill_mode=fill_mode, slip_bps=slip_bps
+                )
+                order.pending_qty = res2.get("pending_qty", order.pending_qty)
+                return res2
+            res.setdefault("venue", venue)
+            return res
         if res.get("status") == "filled":
             fill_price = res.get("price")
             if fill_mode == "bidask" and book and book.get("bids") and book.get("asks"):
