@@ -91,15 +91,10 @@
           Exportar fills (CSV)
         </label>
       </div>
-      <div id="field-toggle-params" style="display:flex;align-items:center">
-        <label for="bt-toggle-params" style="display:flex;align-items:center;gap:4px">
-          <input id="bt-toggle-params" type="checkbox"/>
-          Configurar parámetros
-        </label>
+      <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
+        <span>Configurar parámetros</span>
+        <label class="switch"><input id="bt-toggle-params" type="checkbox"><span class="slider"></span></label>
       </div>
-    </div>
-    <div id="bt-param-config" style="display:none">
-      <div id="bt-strategy-params" style="display:contents"></div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
@@ -107,6 +102,10 @@
     <button id="bt-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
     <span id="bt-working">Procesando<span id="bt-dots"></span></span>
     <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" id="bt-param-card" style="display:none">
+    <div id="bt-strategy-params" style="display:contents"></div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -516,7 +515,7 @@ document.getElementById('bt-strategy').addEventListener('change',()=>{
   loadStrategyParams(document.getElementById('bt-strategy').value);
 });
 document.getElementById('bt-toggle-params').addEventListener('change',e=>{
-  document.getElementById('bt-param-config').style.display=e.target.checked?'block':'none';
+  document.getElementById('bt-param-card').style.display=e.target.checked?'block':'none';
 });
 updateBtFields();
 loadStrategies();
