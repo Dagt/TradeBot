@@ -44,7 +44,7 @@ def test_triple_barrier_meta_filtering():
 
     signal = None
     for i in range(len(prices)):
-        signal = strat.on_bar({"window": prices.iloc[: i + 1]})
+        signal = strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0})
     assert meta_model.fit_called
     assert signal is None
 
@@ -57,7 +57,7 @@ def test_triple_barrier_meta_filtering():
     strat2.model = primary_model2
     signal = None
     for i in range(len(prices)):
-        signal = strat2.on_bar({"window": prices.iloc[: i + 1]})
+        signal = strat2.on_bar({"window": prices.iloc[: i + 1], "volatility": 0})
         if signal is not None:
             break
     assert signal is not None
@@ -81,6 +81,30 @@ def test_triple_barrier_scalping_exit():
     strat.model = primary_model
     signals = []
     for i in range(len(prices)):
-        signals.append(strat.on_bar({"window": prices.iloc[: i + 1]}))
+        signals.append(strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0}))
     assert signals[2] is not None and signals[2].side == "buy"
     assert signals[3] is not None and signals[3].side == "sell"
+
+
+def test_triple_barrier_loads_config(tmp_path):
+    cfg = tmp_path / "tb.yaml"
+    cfg.write_text(
+        """
+horizon: 3
+upper_pct: 0.05
+lower_pct: 0.01
+training_window: 50
+tp_bps: 20.0
+sl_bps: 30.0
+max_hold_bars: 7
+"""
+    )
+    strat = TripleBarrier(config_path=str(cfg))
+    assert strat.horizon == 3
+    assert strat.upper_pct == 0.05
+    assert strat.lower_pct == 0.01
+    assert strat.training_window == 50
+    assert strat.tp_bps == 20.0
+    assert strat.sl_bps == 30.0
+    assert strat.max_hold_bars == 7
+
