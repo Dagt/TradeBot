@@ -192,7 +192,7 @@ backtest:
 ```
 
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
-`timestamp, bar_index, order_id, trade_id, roundtrip_id, reason, side, price, qty, strategy, symbol, exchange, fee_type, fee, slip_bps, cash_after, base_after, equity_after, realized_pnl`.
+`timestamp, reason, side, price, qty, strategy, symbol, exchange, fee_cost, slippage_pnl, realized_pnl, realized_pnl_total, equity_after`.
 La columna `price` refleja el precio final de ejecución con spread y slippage aplicados.
 Desde este archivo puede reconstruirse el efectivo y la posición para validar el PnL final:
 
@@ -200,7 +200,7 @@ Desde este archivo puede reconstruirse el efectivo y la posición para validar e
 import pandas as pd
 
 fills = pd.read_csv("fills.csv")
-# `base_after`, `cash_after` y `equity_after` ya contienen los balances tras cada fill.
+# Puede calcularse el balance acumulado aplicando `price`, `qty` y `fee_cost`.
 ```
 
 La última fila de `cash` y `position` debe coincidir con los valores reportados
