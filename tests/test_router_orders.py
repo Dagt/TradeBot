@@ -81,3 +81,25 @@ async def test_router_logs_order_error(caplog):
         res = await router.execute(order)
     assert res["status"] == "error"
     assert "order placement failed" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_router_returns_reason_and_ids(caplog):
+    ob = {"XYZ": {"bids": [(99.0, 5.0)], "asks": [(101.0, 5.0)]}}
+    adapter = MockAdapter("m", ob)
+    router = ExecutionRouter(adapter)
+    order = Order(
+        symbol="XYZ",
+        side="buy",
+        type_="market",
+        qty=1.0,
+        reason="entry",
+        slip_bps=10.0,
+    )
+    with caplog.at_level(logging.INFO):
+        res = await router.execute(order)
+    assert res["reason"] == "entry"
+    assert "entry" in caplog.text
+    assert res.get("order_id")
+    assert res.get("trade_id")
+    assert res.get("fill_price") != res.get("price")
