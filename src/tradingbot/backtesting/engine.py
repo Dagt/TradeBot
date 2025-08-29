@@ -67,6 +67,11 @@ class Order:
     take_profit: float | None = field(default=None, compare=False)
     stop_loss: float | None = field(default=None, compare=False)
     trailing_pct: float | None = field(default=None, compare=False)
+    order_id: str | None = field(default=None, compare=False)
+    trade_id: str | None = field(default=None, compare=False)
+    roundtrip_id: str | None = field(default=None, compare=False)
+    reason: str | None = field(default=None, compare=False)
+    slip_bps: float | None = field(default=None, compare=False)
 
 
 class SlippageModel:
@@ -471,7 +476,8 @@ class EventDrivenBacktestEngine:
                     if order.side == "buy"
                     else order.place_price - price
                 )
-                slippage_total += slip * fill_qty
+                slip_cash = slip * fill_qty
+                slippage_total += slip_cash
                 fill_count += 1
 
                 trade_value = fill_qty * price
@@ -481,6 +487,7 @@ class EventDrivenBacktestEngine:
                 else:
                     cash += trade_value - fee
                 prev_qty = svc.rm.pos.qty
+                prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_qty = svc.rm.pos.qty
                 key = (order.strategy, order.symbol)
@@ -541,9 +548,20 @@ class EventDrivenBacktestEngine:
                 timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
                 if collect_fills:
                     fee_type = "maker" if maker else "taker"
+                    realized = (
+                        getattr(svc.rm.pos, "realized_pnl", 0.0)
+                        - prev_rpnl
+                        - fee
+                        - slip_cash
+                    )
                     fills.append(
                         (
                             timestamp,
+                            i,
+                            order.order_id,
+                            order.trade_id,
+                            order.roundtrip_id,
+                            order.reason,
                             order.side,
                             price,
                             fill_qty,
@@ -552,10 +570,11 @@ class EventDrivenBacktestEngine:
                             order.exchange,
                             fee_type,
                             fee,
+                            order.slip_bps,
                             cash,
                             base_after,
                             equity_after,
-                            getattr(svc.rm.pos, "realized_pnl", 0.0),
+                            realized,
                         )
                     )
                 if self.verbose_fills and not fills_csv:
@@ -566,7 +585,7 @@ class EventDrivenBacktestEngine:
                         order.side,
                         f"{fill_qty:.8f}",
                         price,
-                        getattr(svc.rm.pos, "realized_pnl", 0.0),
+                        realized,
                     )
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
@@ -589,6 +608,7 @@ class EventDrivenBacktestEngine:
                 low = float(arrs.get("low", arrs["close"])[i])
                 exit_price = None
                 side = None
+                reason = None
                 tp = state.get("take_profit")
                 sl = state.get("stop_loss")
                 trail = state.get("trail_pct")
@@ -604,9 +624,11 @@ class EventDrivenBacktestEngine:
                     if sl is not None and low <= sl:
                         exit_price = sl
                         side = "sell"
+                        reason = "stop_loss"
                     elif tp is not None and high >= tp:
                         exit_price = tp
                         side = "sell"
+                        reason = "take_profit"
                 elif qty < 0:
                     if trail is not None:
                         best = min(best, low)
@@ -618,9 +640,11 @@ class EventDrivenBacktestEngine:
                     if sl is not None and high >= sl:
                         exit_price = sl
                         side = "buy"
+                        reason = "stop_loss"
                     elif tp is not None and low <= tp:
                         exit_price = tp
                         side = "buy"
+                        reason = "take_profit"
                 if exit_price is not None:
                     exit_qty = abs(qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
@@ -631,6 +655,7 @@ class EventDrivenBacktestEngine:
                         cash += trade_value - fee
                     else:
                         cash -= trade_value + fee
+                    prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                     svc.on_fill(symbol, side, exit_qty, exit_price)
                     position_levels.pop((strat_name, symbol), None)
                     base_after = svc.rm.pos.qty
@@ -644,9 +669,17 @@ class EventDrivenBacktestEngine:
                     equity_after = cash + mtm_after
                     if collect_fills:
                         timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
+                        realized = (
+                            getattr(svc.rm.pos, "realized_pnl", 0.0) - prev_rpnl - fee
+                        )
                         fills.append(
                             (
                                 timestamp,
+                                i,
+                                None,
+                                None,
+                                None,
+                                reason,
                                 side,
                                 exit_price,
                                 exit_qty,
@@ -655,10 +688,11 @@ class EventDrivenBacktestEngine:
                                 exchange,
                                 "taker",
                                 fee,
+                                0.0,
                                 cash,
                                 base_after,
                                 equity_after,
-                                getattr(svc.rm.pos, "realized_pnl", 0.0),
+                                realized,
                             )
                         )
 
@@ -752,6 +786,11 @@ class EventDrivenBacktestEngine:
                         getattr(sig, "take_profit", None),
                         getattr(sig, "stop_loss", None),
                         getattr(sig, "trailing_pct", None),
+                        getattr(sig, "order_id", None),
+                        getattr(sig, "trade_id", None),
+                        getattr(sig, "roundtrip_id", None),
+                        getattr(sig, "reason", None),
+                        getattr(sig, "slip_bps", None),
                     )
                     orders.append(order)
                     heapq.heappush(order_queue, order)
@@ -812,6 +851,11 @@ class EventDrivenBacktestEngine:
                             0.0,
                             None,
                             False,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
                             None,
                             None,
                             None,
@@ -908,6 +952,11 @@ class EventDrivenBacktestEngine:
                 result["fills"],
                 columns=[
                     "timestamp",
+                    "bar_index",
+                    "order_id",
+                    "trade_id",
+                    "roundtrip_id",
+                    "reason",
                     "side",
                     "price",
                     "qty",
@@ -916,6 +965,7 @@ class EventDrivenBacktestEngine:
                     "exchange",
                     "fee_type",
                     "fee",
+                    "slip_bps",
                     "cash_after",
                     "base_after",
                     "equity_after",

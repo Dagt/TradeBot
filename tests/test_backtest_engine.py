@@ -75,6 +75,11 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     assert not df.empty
     assert list(df.columns) == [
         "timestamp",
+        "bar_index",
+        "order_id",
+        "trade_id",
+        "roundtrip_id",
+        "reason",
         "side",
         "price",
         "qty",
@@ -83,6 +88,7 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "exchange",
         "fee_type",
         "fee",
+        "slip_bps",
         "cash_after",
         "base_after",
         "equity_after",
@@ -94,9 +100,12 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     # Comprobar que realized_pnl coincide con RiskManager
     rm = RiskManager()
     rpnl = []
+    prev = rm.pos.realized_pnl
     for row in df.itertuples():
         rm.add_fill(row.side, row.qty, row.price)
-        rpnl.append(rm.pos.realized_pnl)
+        delta = rm.pos.realized_pnl - prev
+        rpnl.append(delta - row.fee)
+        prev = rm.pos.realized_pnl
     assert np.allclose(df["realized_pnl"], rpnl)
 
 
@@ -141,6 +150,11 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -149,6 +163,7 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
@@ -243,6 +258,11 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -251,6 +271,7 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
@@ -308,6 +329,11 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -316,6 +342,7 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",

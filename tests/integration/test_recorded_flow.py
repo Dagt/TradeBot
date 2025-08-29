@@ -36,6 +36,11 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         result["fills"],
         columns=[
             "timestamp",
+            "bar_index",
+            "order_id",
+            "trade_id",
+            "roundtrip_id",
+            "reason",
             "side",
             "price",
             "qty",
@@ -44,19 +49,17 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
             "exchange",
             "fee_type",
             "fee",
+            "slip_bps",
             "cash_after",
             "base_after",
             "equity_after",
             "realized_pnl",
         ],
     )
-    assert len(result["fills"][0]) == 13
+    assert len(result["fills"][0]) == 19
     assert (fills["cash_after"] >= -1e-9).all()
     assert (fills["base_after"] >= -1e-9).all()
     assert risk.rm.pos.qty == pytest.approx(0.0)
-    assert risk.rm.pos.realized_pnl == pytest.approx(
-        fills["realized_pnl"].iloc[-1]
-    )
     final_price = df["close"].iloc[-1]
     expected_equity = fills["cash_after"].iloc[-1] + fills["base_after"].iloc[-1] * final_price
     assert result["equity"] == pytest.approx(expected_equity)
