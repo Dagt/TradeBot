@@ -64,6 +64,10 @@ class Order:
     queue_pos: float = field(default=0.0, compare=False)
     latency: int | None = field(default=None, compare=False)
     post_only: bool = field(default=False, compare=False)
+    order_id: str | None = field(default=None, compare=False)
+    trade_id: str | None = field(default=None, compare=False)
+    roundtrip_id: int | None = field(default=None, compare=False)
+    reason: str | None = field(default=None, compare=False)
 
 
 class SlippageModel:
@@ -467,16 +471,24 @@ class EventDrivenBacktestEngine:
                     if order.side == "buy"
                     else order.place_price - price
                 )
-                slippage_total += slip * fill_qty
+                slip_cash = slip * fill_qty
+                slip_bps = (
+                    (slip / order.place_price) * 10000 if order.place_price else 0.0
+                )
+                slippage_total += slip_cash
                 fill_count += 1
 
                 trade_value = fill_qty * price
                 fee = fee_model.calculate(trade_value, maker=maker)
+                rpnl_before = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 if order.side == "buy":
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
+                rpnl_after = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                realized_delta = rpnl_after - rpnl_before
+                realized_pnl = realized_delta - fee - slip_cash
                 if mode == "spot":
                     if cash < -1e-9:
                         raise AssertionError(
@@ -510,6 +522,11 @@ class EventDrivenBacktestEngine:
                     fills.append(
                         (
                             timestamp,
+                            i,
+                            getattr(order, "order_id", None),
+                            getattr(order, "trade_id", None),
+                            getattr(order, "roundtrip_id", None),
+                            getattr(order, "reason", None),
                             order.side,
                             price,
                             fill_qty,
@@ -518,10 +535,11 @@ class EventDrivenBacktestEngine:
                             order.exchange,
                             fee_type,
                             fee,
+                            slip_bps,
                             cash,
                             base_after,
                             equity_after,
-                            getattr(svc.rm.pos, "realized_pnl", 0.0),
+                            realized_pnl,
                         )
                     )
                 if self.verbose_fills and not fills_csv:
@@ -532,7 +550,7 @@ class EventDrivenBacktestEngine:
                         order.side,
                         f"{fill_qty:.8f}",
                         price,
-                        getattr(svc.rm.pos, "realized_pnl", 0.0),
+                        realized_pnl,
                     )
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
@@ -773,6 +791,11 @@ class EventDrivenBacktestEngine:
                 result["fills"],
                 columns=[
                     "timestamp",
+                    "bar_index",
+                    "order_id",
+                    "trade_id",
+                    "roundtrip_id",
+                    "reason",
                     "side",
                     "price",
                     "qty",
@@ -781,6 +804,7 @@ class EventDrivenBacktestEngine:
                     "exchange",
                     "fee_type",
                     "fee",
+                    "slip_bps",
                     "cash_after",
                     "base_after",
                     "equity_after",
