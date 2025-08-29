@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Sequence, Tuple
 
 import pandas as pd
 
-from .engine import EventDrivenBacktestEngine, MIN_FILL_QTY
+from .engine import EventDrivenBacktestEngine, MIN_FILL_QTY, SlippageModel
 from ..strategies import STRATEGIES
 from ..reporting.metrics import evaluate
 
@@ -45,6 +45,7 @@ def walk_forward_backtest(
     fills_csv: str | None = None,
     exchange_configs: Dict[str, Dict[str, float]] | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
+    slippage: SlippageModel | None = None,
 ) -> pd.DataFrame:
     """Run a basic walk-forward analysis and return metrics for each split."""
 
@@ -74,6 +75,7 @@ def walk_forward_backtest(
                 verbose_fills=verbose_fills,
                 exchange_configs=exchange_configs,
                 min_fill_qty=min_fill_qty,
+                slippage=slippage,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -91,6 +93,7 @@ def walk_forward_backtest(
             verbose_fills=verbose_fills,
             exchange_configs=exchange_configs,
             min_fill_qty=min_fill_qty,
+            slippage=slippage,
         )
         engine.strategies[(strategy_name, symbol)] = strat
         test_res = engine.run(fills_csv=fills_csv)

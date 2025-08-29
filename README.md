@@ -114,6 +114,15 @@ El modelo de *slippage* admite dos fuentes (`source`):
 - `"fixed_spread"` siempre aplica el valor de `base_spread` sin considerar las
   columnas de mejor bid/ask.
 
+Ejemplo en la configuración:
+
+```yaml
+backtest:
+  slippage:
+    source: bba
+    base_spread: 0.1
+```
+
 El motor de backtesting ignora ejecuciones cuya cantidad sea menor a
 `min_fill_qty` para evitar registrar residuos irrelevantes. El umbral
 predeterminado es la constante `MIN_FILL_QTY = 1e-3`, pero puede ajustarse
