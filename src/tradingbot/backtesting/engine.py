@@ -327,6 +327,10 @@ class EventDrivenBacktestEngine:
             for sym, df in self.data.items()
         }
 
+        trade_seq = 0
+        roundtrip_seq = 0
+        active_roundtrips: Dict[Tuple[str, str], int] = {}
+
         mtm = sum(
             svc.rm.pos.qty * data_arrays[sym]["close"][0]
             for (strat, sym), svc in self.risk.items()
@@ -486,6 +490,13 @@ class EventDrivenBacktestEngine:
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
                 new_sign = 1 if new_qty > 0 else -1 if new_qty < 0 else 0
+                rt_id = active_roundtrips.get(key)
+                if prev_qty == 0 and new_qty != 0:
+                    roundtrip_seq += 1
+                    rt_id = roundtrip_seq
+                    active_roundtrips[key] = rt_id
+                elif new_qty == 0 and rt_id is not None:
+                    active_roundtrips.pop(key, None)
                 if new_sign == 0:
                     position_levels.pop(key, None)
                 elif prev_sign == 0 or prev_sign != new_sign:
@@ -541,6 +552,7 @@ class EventDrivenBacktestEngine:
                 timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
                 if collect_fills:
                     fee_type = "maker" if maker else "taker"
+                    trade_seq += 1
                     fills.append(
                         (
                             timestamp,
@@ -556,6 +568,8 @@ class EventDrivenBacktestEngine:
                             base_after,
                             equity_after,
                             getattr(svc.rm.pos, "realized_pnl", 0.0),
+                            trade_seq,
+                            rt_id,
                         )
                     )
                 if self.verbose_fills and not fills_csv:
@@ -631,7 +645,16 @@ class EventDrivenBacktestEngine:
                         cash += trade_value - fee
                     else:
                         cash -= trade_value + fee
+                    prev_qty = svc.rm.pos.qty
                     svc.on_fill(symbol, side, exit_qty, exit_price)
+                    key = (strat_name, symbol)
+                    rt_id = active_roundtrips.get(key)
+                    if prev_qty == 0 and svc.rm.pos.qty != 0:
+                        roundtrip_seq += 1
+                        rt_id = roundtrip_seq
+                        active_roundtrips[key] = rt_id
+                    elif svc.rm.pos.qty == 0 and rt_id is not None:
+                        active_roundtrips.pop(key, None)
                     position_levels.pop((strat_name, symbol), None)
                     base_after = svc.rm.pos.qty
                     mtm_after = 0.0
@@ -644,6 +667,7 @@ class EventDrivenBacktestEngine:
                     equity_after = cash + mtm_after
                     if collect_fills:
                         timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
+                        trade_seq += 1
                         fills.append(
                             (
                                 timestamp,
@@ -659,6 +683,8 @@ class EventDrivenBacktestEngine:
                                 base_after,
                                 equity_after,
                                 getattr(svc.rm.pos, "realized_pnl", 0.0),
+                                trade_seq,
+                                rt_id,
                             )
                         )
 
@@ -920,6 +946,8 @@ class EventDrivenBacktestEngine:
                     "base_after",
                     "equity_after",
                     "realized_pnl",
+                    "trade_id",
+                    "roundtrip_id",
                 ],
             )
             fills_df.to_csv(fills_csv, index=False)

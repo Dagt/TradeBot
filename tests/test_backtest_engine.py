@@ -87,6 +87,8 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "base_after",
         "equity_after",
         "realized_pnl",
+        "trade_id",
+        "roundtrip_id",
     ]
     # Comprobar cálculo de fee
     expected_fee = df["price"] * df["qty"] * 0.001
@@ -153,6 +155,8 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
             "base_after",
             "equity_after",
             "realized_pnl",
+            "trade_id",
+            "roundtrip_id",
         ],
     )
     assert fills.loc[fills.side == "sell", "qty"].max() <= fills.loc[fills.side == "buy", "qty"].max() + 1e-9
@@ -255,6 +259,8 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
             "base_after",
             "equity_after",
             "realized_pnl",
+            "trade_id",
+            "roundtrip_id",
         ],
     )
     assert (fills.cash_after >= -1e-9).all()
@@ -320,6 +326,8 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
             "base_after",
             "equity_after",
             "realized_pnl",
+            "trade_id",
+            "roundtrip_id",
         ],
     )
     assert math.isclose(
@@ -596,6 +604,8 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
             "base_after",
             "equity_after",
             "realized_pnl",
+            "trade_id",
+            "roundtrip_id",
         ],
     )
     assert len(fills) == 2

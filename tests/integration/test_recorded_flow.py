@@ -48,9 +48,11 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
             "base_after",
             "equity_after",
             "realized_pnl",
+            "trade_id",
+            "roundtrip_id",
         ],
     )
-    assert len(result["fills"][0]) == 13
+    assert len(result["fills"][0]) == 15
     assert (fills["cash_after"] >= -1e-9).all()
     assert (fills["base_after"] >= -1e-9).all()
     assert risk.rm.pos.qty == pytest.approx(0.0)
