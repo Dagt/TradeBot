@@ -3,6 +3,7 @@ import yaml
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
+from tradingbot.strategies.breakout_vol import BreakoutVol
 from hypothesis import given, strategies as st
 
 
@@ -27,6 +28,17 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
 
     sig_sell = strat.on_bar({"window": df_wait})
     assert sig_sell.side == "sell"
+
+
+def test_breakout_atr_min_edge(breakout_df_buy, breakout_df_sell):
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=200)
+    assert strat.on_bar({"window": breakout_df_buy}) is None
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=100)
+    assert strat.on_bar({"window": breakout_df_buy}).side == "buy"
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=1000)
+    assert strat.on_bar({"window": breakout_df_sell}) is None
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=900)
+    assert strat.on_bar({"window": breakout_df_sell}).side == "sell"
 
 
 def test_order_flow_signals():
@@ -76,6 +88,19 @@ vol_threshold: 1.0
 
     sig_buy = strat.on_bar({"window": df_buy})
     assert sig_buy.side == "buy"
+
+
+def test_breakout_vol_min_edge():
+    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
+    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=1100)
+    assert strat.on_bar({"window": df_buy}) is None
+    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=1000)
+    assert strat.on_bar({"window": df_buy}).side == "buy"
+    df_sell = pd.DataFrame({"close": [1, 2, 3, -5]})
+    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=2400)
+    assert strat.on_bar({"window": df_sell}) is None
+    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=2000)
+    assert strat.on_bar({"window": df_sell}).side == "sell"
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))

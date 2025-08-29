@@ -11,6 +11,7 @@ PARAM_INFO = {
     "max_hold_bars": "Barras máximas en posición",
     "trailing_stop_bps": "Distancia del trailing stop en bps",
     "volatility_factor": "Factor para dimensionar según volatilidad",
+    "min_edge_bps": "Edge mínimo en puntos básicos para operar",
 }
 
 
@@ -39,6 +40,8 @@ class BreakoutVol(Strategy):
     volatility_factor : float, optional
         Multiplier applied to recent volatility (in bps) to size positions,
         default ``0.02``.
+    min_edge_bps : float, optional
+        Edge mínimo en puntos básicos requerido para operar, default ``0``.
     """
 
     name = "breakout_vol"
@@ -51,6 +54,7 @@ class BreakoutVol(Strategy):
         self.max_hold_bars = kwargs.get("max_hold_bars", 10)
         self.trailing_stop_bps = kwargs.get("trailing_stop_bps", 10.0)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
+        self.min_edge_bps = kwargs.get("min_edge_bps", 0.0)
         self.pos_side: int = 0
         self.entry_price: float | None = None
         self.favorable_price: float | None = None
@@ -75,12 +79,18 @@ class BreakoutVol(Strategy):
 
         if self.pos_side == 0:
             if last > upper:
+                expected_edge_bps = (last - upper) / abs(last) * 10000
+                if expected_edge_bps <= self.min_edge_bps:
+                    return None
                 self.pos_side = 1
                 self.entry_price = last
                 self.favorable_price = last
                 self.hold_bars = 0
                 return Signal("buy", size)
             if last < lower:
+                expected_edge_bps = (lower - last) / abs(last) * 10000
+                if expected_edge_bps <= self.min_edge_bps:
+                    return None
                 self.pos_side = -1
                 self.entry_price = last
                 self.favorable_price = last
