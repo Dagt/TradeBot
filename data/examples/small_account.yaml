@@ -6,5 +6,5 @@ backtest:
   initial_equity: 100
   slippage:
     source: bba
-    base_spread: 0.1
+    base_spread: 0.1  # spread fijo si faltan columnas bid/ask o tienen NaN
   min_fill_qty: 0.001

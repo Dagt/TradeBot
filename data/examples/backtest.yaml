@@ -6,6 +6,6 @@ latency: 1
 window: 120
 slippage:
   source: bba
-  base_spread: 0.1
+  base_spread: 0.1   # spread fijo si faltan columnas bid/ask o tienen NaN
 mlflow:
   run_name: example_backtest

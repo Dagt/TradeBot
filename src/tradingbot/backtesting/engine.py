@@ -12,6 +12,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 import random
+import math
 
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -90,11 +91,11 @@ class SlippageModel:
         Weight applied to the order flow imbalance term.
     source: {"bba", "fixed_spread"}, default ``"bba"``
         Source for the base spread. ``"bba"`` uses best bid/ask columns when
-        available and falls back to ``base_spread`` otherwise.
-        ``"fixed_spread"`` always uses ``base_spread``.
+        available and falls back to ``base_spread`` when they are missing or
+        contain ``NaN`` values. ``"fixed_spread"`` always uses ``base_spread``.
     base_spread: float, default ``0.0``
         Fallback spread (absolute price difference) used when bid/ask columns
-        are missing or when ``source`` is ``"fixed_spread"``.
+        are absent, ``NaN`` or when ``source`` is ``"fixed_spread"``.
     """
 
     def __init__(
@@ -133,7 +134,12 @@ class SlippageModel:
                 or bar.get("ask_price")
             )
             if bid is not None and ask is not None:
-                spread = float(ask) - float(bid)
+                bid = float(bid)
+                ask = float(ask)
+                if not (math.isnan(bid) or math.isnan(ask)):
+                    spread = ask - bid
+                else:
+                    spread = self.base_spread
             else:
                 spread = self.base_spread
         else:

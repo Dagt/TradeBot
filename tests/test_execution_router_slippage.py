@@ -167,6 +167,10 @@ def test_slippage_model_sources():
     adj_fixed = model_fixed.adjust("sell", 1.0, price, bar)
     assert adj_fixed == pytest.approx(99.8, rel=1e-9)
 
+    bar_nan = {"bid": float("nan"), "ask": float("nan"), "volume": 1000.0}
+    model_nan = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.3)
+    adj_nan = model_nan.adjust("sell", 1.0, price, bar_nan)
+    assert adj_nan == pytest.approx(99.85, rel=1e-9)
 
 def test_slippage_helpers():
     asks = [(100.0, 1.0), (101.0, 1.0)]
