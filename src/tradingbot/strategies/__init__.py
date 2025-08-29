@@ -90,6 +90,14 @@ STRATEGY_INFO: dict[str, dict] = {
         "desc": "Reversión a la media con OFI",
         "requires": ["book_delta"],
     },
+    "scalp_pingpong": {
+        "desc": "Scalping de reversión a la media con z-score",
+        "requires": ["ohlcv"],
+    },
+    "composite_signals": {
+        "desc": "Combina señales de múltiples subestrategias",
+        "requires": [],
+    },
 }
 
 __all__ = [

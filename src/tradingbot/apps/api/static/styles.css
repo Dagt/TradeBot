@@ -130,6 +130,14 @@ nav a:hover{
 /* Parámetros estrategia */
 .param-grid{display:flex;flex-wrap:wrap;gap:8px}
 .param-input{width:80px}
+.param-input[type=number]::-webkit-inner-spin-button,
+.param-input[type=number]::-webkit-outer-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
+.param-input[type=number]{
+  -moz-appearance:textfield;
+}
 
 /* ====== Tablas ====== */
 table{ width:100%; border-collapse:collapse; font-size:14px }
