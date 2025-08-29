@@ -373,7 +373,12 @@ async function runBacktest(){
     evt.onopen=()=>{appendOutput(outEl,'[conexión abierta]');};
     const origClose=evt.close.bind(evt);
     evt.close=()=>{evt.dispatchEvent(new Event('close'));origClose();};
-    evt.onmessage=(e)=>{appendOutput(outEl,e.data);};
+    evt.onmessage=(e)=>{
+      appendOutput(outEl,e.data);
+      if(e.data.includes('Backtest finalizado')){
+        hideWorking();
+      }
+    };
     const finish=(msg, btnText='Ejecutar')=>{
       stopBtn.disabled=true;
       runBtn.disabled=btnText==='Finalizado';
