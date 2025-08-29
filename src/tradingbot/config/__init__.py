@@ -53,18 +53,18 @@ class Settings(BaseSettings):
     binance_futures_market: str = "USDT-M"  # informativo
 
     # Fees (bps) configurable por entorno
-    paper_maker_fee_bps: float = 10.0
-    paper_taker_fee_bps: float = 10.0
+    paper_maker_fee_bps: float = 7.5
+    paper_taker_fee_bps: float = 7.5
 
     # Generic broker fees
-    maker_fee_bps: float = 0.0
+    maker_fee_bps: float = 7.5
     passive_rebate_bps: float = 0.0
 
     # Binance Spot
-    binance_spot_maker_fee_bps: float = 10.0
-    binance_spot_taker_fee_bps: float = 10.0
-    binance_spot_testnet_maker_fee_bps: float = 10.0
-    binance_spot_testnet_taker_fee_bps: float = 10.0
+    binance_spot_maker_fee_bps: float = 7.5
+    binance_spot_taker_fee_bps: float = 7.5
+    binance_spot_testnet_maker_fee_bps: float = 7.5
+    binance_spot_testnet_taker_fee_bps: float = 7.5
 
     # Binance Futuros USD-M
     binance_futures_maker_fee_bps: float = 2.0
@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     # OKX Spot
     okx_spot_maker_fee_bps: float = 8.0
     okx_spot_taker_fee_bps: float = 10.0
-    okx_spot_testnet_maker_fee_bps: float = 8.0
-    okx_spot_testnet_taker_fee_bps: float = 10.0
+    okx_spot_testnet_maker_fee_bps: float = 7.5
+    okx_spot_testnet_taker_fee_bps: float = 7.5
 
     # OKX Futuros USDT-M
     okx_futures_maker_fee_bps: float = 2.0
