@@ -158,6 +158,8 @@ class PaperAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
+        take_profit: float | None = None,
+        stop_loss: float | None = None,
         reduce_only: bool = False,
     ) -> dict:
         order_id = self._next_order_id()

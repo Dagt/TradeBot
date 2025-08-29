@@ -106,6 +106,8 @@ async def run_paper(
                 side=side,
                 type_="market",
                 qty=abs(delta),
+                take_profit=getattr(signal, "take_profit", None),
+                stop_loss=getattr(signal, "stop_loss", None),
                 reduce_only=signal.reduce_only,
             )
             await router.execute(order)
