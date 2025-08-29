@@ -358,3 +358,7 @@ nav a.active::after{
   margin-right: 2px; /* micro-espacio visual */
 }
 
+/* ====== Parámetros dinámicos ====== */
+.param-grid{display:flex;flex-wrap:wrap;gap:8px}
+.param-input{width:80px}
+
