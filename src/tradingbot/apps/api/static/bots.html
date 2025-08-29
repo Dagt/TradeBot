@@ -122,7 +122,7 @@
   <div class="card" id="bot-param-card" style="display:none; margin-top:16px">
     <h2>Parámetros estrategia</h2>
     <div id="bot-param-config">
-      <div id="strategy-params" style="display:contents"></div>
+      <div id="strategy-params" class="param-grid"></div>
     </div>
   </div>
 
@@ -199,6 +199,7 @@ const api = (path) => `${location.origin}${path}`;
           label.appendChild(help);
         }
         const input=document.createElement('input');
+        input.className='param-input';
         input.id=`param-${p.name}`;
         input.dataset.name=p.name;
         input.dataset.type=p.type||'';

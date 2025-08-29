@@ -127,6 +127,10 @@ nav a:hover{
 @media (max-width: 900px){ .grid4, .grid3, .grid5{ grid-template-columns: repeat(2,1fr) } }
 @media (max-width: 600px){ .grid4, .grid3, .grid5{ grid-template-columns: 1fr } }
 
+/* Parámetros estrategia */
+.param-grid{display:flex;flex-wrap:wrap;gap:8px}
+.param-input{width:80px}
+
 /* ====== Tablas ====== */
 table{ width:100%; border-collapse:collapse; font-size:14px }
 th,td{ padding:10px 8px; border-bottom:1px solid #253346 }
