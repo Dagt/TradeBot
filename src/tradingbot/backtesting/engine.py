@@ -493,19 +493,19 @@ class EventDrivenBacktestEngine:
                 fee_model = self.exchange_fees.get(order.exchange, self.default_fee)
                 maker = order.post_only
                 trade_value = fill_qty * price
-                fee = fee_model.calculate(trade_value, maker=maker)
+                fee_cost = fee_model.calculate(trade_value, maker=maker)
 
                 if mode == "spot":
                     if order.side == "sell":
                         while svc.rm.pos.qty - fill_qty < 0 and fill_qty > 0:
                             fill_qty = round(fill_qty - 1e-8, 8)
                             trade_value = fill_qty * price
-                            fee = fee_model.calculate(trade_value, maker=maker)
+                            fee_cost = fee_model.calculate(trade_value, maker=maker)
                     else:
-                        while cash - (trade_value + fee) < 0 and fill_qty > 0:
+                        while cash - (trade_value + fee_cost) < 0 and fill_qty > 0:
                             fill_qty = round(fill_qty - 1e-8, 8)
                             trade_value = fill_qty * price
-                            fee = fee_model.calculate(trade_value, maker=maker)
+                            fee_cost = fee_model.calculate(trade_value, maker=maker)
 
                 if fill_qty <= 0 or fill_qty < min_fill_qty:
                     if not self.cancel_unfilled:
@@ -524,18 +524,19 @@ class EventDrivenBacktestEngine:
                 fill_count += 1
 
                 trade_value = fill_qty * price
-                fee = fee_model.calculate(trade_value, maker=maker)
+                fee_cost = fee_model.calculate(trade_value, maker=maker)
                 prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 if order.side == "buy":
-                    cash -= trade_value + fee
+                    cash -= trade_value + fee_cost
                 else:
-                    cash += trade_value - fee
+                    cash += trade_value - fee_cost
                 prev_qty = svc.rm.pos.qty
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
-                realized_pnl = new_rpnl - prev_rpnl - fee - slip_cash
+                realized_pnl = new_rpnl - prev_rpnl - fee_cost - slip_cash
                 slippage_pnl = -slip_cash
                 realized_pnl_total += realized_pnl
+                svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
                 new_qty = svc.rm.pos.qty
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
@@ -618,7 +619,7 @@ class EventDrivenBacktestEngine:
                             order.symbol,
                             order.exchange,
                             fee_type,
-                            fee,
+                            fee_cost,
                             slip_bps,
                             slippage_pnl,
                             cash,
@@ -701,18 +702,19 @@ class EventDrivenBacktestEngine:
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     fee_model = self.exchange_fees.get(exchange, self.default_fee)
                     trade_value = exit_qty * exit_price
-                    fee = fee_model.calculate(trade_value, maker=False)
+                    fee_cost = fee_model.calculate(trade_value, maker=False)
                     prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                     if side == "sell":
-                        cash += trade_value - fee
+                        cash += trade_value - fee_cost
                     else:
-                        cash -= trade_value + fee
+                        cash -= trade_value + fee_cost
                     prev_qty = svc.rm.pos.qty
                     svc.on_fill(symbol, side, exit_qty, exit_price)
                     new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
-                    realized_pnl = new_rpnl - prev_rpnl - fee
+                    realized_pnl = new_rpnl - prev_rpnl - fee_cost
                     slippage_pnl = 0.0
                     realized_pnl_total += realized_pnl
+                    svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
                     key = (strat_name, symbol)
                     rt_id = active_roundtrips.get(key)
                     if prev_qty == 0 and svc.rm.pos.qty != 0:
@@ -749,7 +751,7 @@ class EventDrivenBacktestEngine:
                                 symbol,
                                 exchange,
                                 "taker",
-                                fee,
+                                fee_cost,
                                 0.0,
                                 slippage_pnl,
                                 cash,
