@@ -109,8 +109,9 @@ risk:
 
 El modelo de *slippage* admite dos fuentes (`source`):
 
-- `"bba"` utiliza las columnas `bid`/`ask` (o `bid_px`/`ask_px`) si están presentes y
-  recurre al `base_spread` configurado cuando faltan.
+- `"bba"` utiliza las columnas `bid`/`ask` (o `bid_px`/`ask_px`) si están
+  presentes y recurre al `base_spread` configurado cuando faltan o contienen
+  valores `NaN`.
 - `"fixed_spread"` siempre aplica el valor de `base_spread` sin considerar las
   columnas de mejor bid/ask.
 
@@ -120,7 +121,7 @@ Ejemplo en la configuración:
 backtest:
   slippage:
     source: bba
-    base_spread: 0.1
+    base_spread: 0.1  # spread fijo si faltan columnas bid/ask o tienen NaN
 ```
 
 El motor de backtesting ignora ejecuciones cuya cantidad sea menor a

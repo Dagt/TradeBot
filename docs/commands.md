@@ -178,9 +178,9 @@ Ejecuta un backtest vectorizado desde un archivo CSV.
 - `--fills-csv PATH`: exporta los fills a un CSV.
 
 El modelo de *slippage* soporta dos fuentes (`source`): `"bba"` toma el spread
-del mejor bid/ask (o `bid_px`/`ask_px`) y, si no están disponibles, utiliza el
-`base_spread` configurado. `"fixed_spread"` ignora las columnas de bid/ask y
-aplica siempre `base_spread`.
+del mejor bid/ask (o `bid_px`/`ask_px`) y, si no están disponibles o contienen
+`NaN`, utiliza el `base_spread` configurado. `"fixed_spread"` ignora las
+columnas de bid/ask y aplica siempre `base_spread`.
 
 Ejemplo de configuración YAML:
 
@@ -188,7 +188,7 @@ Ejemplo de configuración YAML:
 backtest:
   slippage:
     source: bba
-    base_spread: 0.1
+    base_spread: 0.1  # spread fijo si faltan columnas bid/ask o tienen NaN
 ```
 
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
