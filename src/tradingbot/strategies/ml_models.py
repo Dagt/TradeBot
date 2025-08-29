@@ -25,11 +25,17 @@ class MLStrategy(Strategy):
         self,
         model: BaseEstimator | None = None,
         model_path: str | Path | None = None,
-        threshold: float = 0.5,
+        margin: float = 0.1,
+        tp_pct: float = 0.02,
+        sl_pct: float = 0.02,
     ) -> None:
         self.model: BaseEstimator | None = model
         self.scaler = StandardScaler()
-        self.threshold = threshold
+        self.margin = float(margin)
+        self.tp_pct = float(tp_pct)
+        self.sl_pct = float(sl_pct)
+        self.pos_side: int = 0  # 0 flat, +1 long, -1 short
+        self.entry_price: float | None = None
         if model_path:
             self.load_model(model_path)
 
@@ -81,11 +87,44 @@ class MLStrategy(Strategy):
         except NotFittedError:
             return None
         proba = max(0.0, min(1.0, proba))
-        if proba >= self.threshold:
-            return Signal("buy", proba)
-        if proba <= 1 - self.threshold:
-            return Signal("sell", 1 - proba)
-        return Signal("flat", 0.0)
+        price = float(bar.get("close") or bar.get("price") or 0.0)
+
+        if self.pos_side == 0:
+            if proba > 0.5 + self.margin:
+                self.pos_side = 1
+                self.entry_price = price
+                return Signal("buy", proba)
+            if proba < 0.5 - self.margin:
+                self.pos_side = -1
+                self.entry_price = price
+                return Signal("sell", 1 - proba)
+            return None
+
+        assert self.entry_price is not None
+        if self.pos_side > 0:
+            tp_price = self.entry_price * (1 + self.tp_pct)
+            sl_price = self.entry_price * (1 - self.sl_pct)
+            if (
+                price >= tp_price
+                or price <= sl_price
+                or proba < 0.5 - self.margin
+            ):
+                self.pos_side = 0
+                self.entry_price = None
+                return Signal("sell", 1.0)
+            return None
+
+        tp_price = self.entry_price * (1 - self.tp_pct)
+        sl_price = self.entry_price * (1 + self.sl_pct)
+        if (
+            price <= tp_price
+            or price >= sl_price
+            or proba > 0.5 + self.margin
+        ):
+            self.pos_side = 0
+            self.entry_price = None
+            return Signal("buy", 1.0)
+        return None
 
 
 __all__ = ["MLStrategy"]
