@@ -91,6 +91,14 @@
           Exportar fills (CSV)
         </label>
       </div>
+      <div id="field-toggle-params" style="display:flex;align-items:center">
+        <label for="bt-toggle-params" style="display:flex;align-items:center;gap:4px">
+          <input id="bt-toggle-params" type="checkbox"/>
+          Configurar parámetros
+        </label>
+      </div>
+    </div>
+    <div id="bt-param-config" style="display:none">
       <div id="bt-strategy-params" style="display:contents"></div>
     </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
@@ -220,6 +228,11 @@ async function loadStrategyParams(name){
       const label=document.createElement('label');
       label.htmlFor=`bt-param-${p.name}`;
       label.textContent=p.name;
+      const help=document.createElement('span');
+      help.className='help-icon';
+      help.title=p.desc||'';
+      help.textContent='?';
+      label.appendChild(help);
       const input=document.createElement('input');
       input.id=`bt-param-${p.name}`;
       input.dataset.name=p.name;
@@ -501,6 +514,9 @@ document.getElementById('cli-run').addEventListener('click',runCli);
 document.getElementById('bt-strategy').addEventListener('change',()=>{
   updateStrategyInfo();
   loadStrategyParams(document.getElementById('bt-strategy').value);
+});
+document.getElementById('bt-toggle-params').addEventListener('change',e=>{
+  document.getElementById('bt-param-config').style.display=e.target.checked?'block':'none';
 });
 updateBtFields();
 loadStrategies();
