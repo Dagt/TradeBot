@@ -8,10 +8,10 @@ from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import StandardScaler
 from joblib import dump, load
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import StatefulStrategy, Signal, record_signal_metrics
 
 
-class MLStrategy(Strategy):
+class MLStrategy(StatefulStrategy):
     """Machine learning based strategy using scikit-learn models.
 
     The strategy generates buy/sell signals from feature vectors present in the
@@ -26,7 +26,12 @@ class MLStrategy(Strategy):
         model: BaseEstimator | None = None,
         model_path: str | Path | None = None,
         threshold: float = 0.5,
+        *,
+        tp_pct: float = 0.0,
+        sl_pct: float = 0.0,
+        max_hold_bars: int = 0,
     ) -> None:
+        super().__init__(tp_pct=tp_pct, sl_pct=sl_pct, max_hold_bars=max_hold_bars)
         self.model: BaseEstimator | None = model
         self.scaler = StandardScaler()
         self.threshold = threshold
@@ -74,17 +79,23 @@ class MLStrategy(Strategy):
         feats = bar.get("features")
         if feats is None:
             return None
+        price = bar.get("price")
+        if price is not None:
+            exit_sig = self.check_exit(float(price))
+            if exit_sig:
+                return exit_sig
         X = np.asarray(feats, dtype=float).reshape(1, -1)
         try:
             X_scaled = self.scaler.transform(X)
             proba = float(self.model.predict_proba(X_scaled)[0, 1])
         except NotFittedError:
             return None
-        if proba >= self.threshold:
-            return Signal("buy", proba)
-        if proba <= 1 - self.threshold:
-            return Signal("sell", 1 - proba)
-        return Signal("flat", 1.0 - abs(0.5 - proba) * 2)
+        if self.pos_side is None and price is not None:
+            if proba >= self.threshold:
+                return self.open_position("buy", float(price))
+            if proba <= 1 - self.threshold:
+                return self.open_position("sell", float(price))
+        return None
 
 
 __all__ = ["MLStrategy"]

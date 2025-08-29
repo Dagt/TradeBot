@@ -1,8 +1,8 @@
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+from .base import StatefulStrategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
 
-class Momentum(Strategy):
+class Momentum(StatefulStrategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
 
     Parameters are provided via ``**kwargs`` so the class can be easily
@@ -19,25 +19,40 @@ class Momentum(Strategy):
 
     name = "momentum"
 
-    def __init__(self, **kwargs):
-        self.rsi_n = kwargs.get("rsi_n", 14)
-        self.threshold = kwargs.get("rsi_threshold", 60.0)
+    def __init__(
+        self,
+        *,
+        rsi_n: int = 14,
+        rsi_threshold: float = 60.0,
+        tp_pct: float = 0.0,
+        sl_pct: float = 0.0,
+        max_hold_bars: int = 0,
+    ) -> None:
+        super().__init__(tp_pct=tp_pct, sl_pct=sl_pct, max_hold_bars=max_hold_bars)
+        self.rsi_n = rsi_n
+        self.threshold = rsi_threshold
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:
             return None
+        price = float(df["close"].iloc[-1]) if "close" in df.columns else None
+        if price is not None:
+            exit_sig = self.check_exit(price)
+            if exit_sig:
+                return exit_sig
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
-        if last_rsi > self.threshold and ofi_val >= 0:
-            return Signal("buy", 1.0)
-        if last_rsi < 100 - self.threshold and ofi_val <= 0:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+        if self.pos_side is None:
+            if last_rsi > self.threshold and ofi_val >= 0 and price is not None:
+                return self.open_position("buy", price)
+            if last_rsi < 100 - self.threshold and ofi_val <= 0 and price is not None:
+                return self.open_position("sell", price)
+        return None
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:

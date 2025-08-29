@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.base import ClassifierMixin
 
-from .base import Strategy, Signal, record_signal_metrics
+from .base import StatefulStrategy, Signal, record_signal_metrics
 
 
 def apply_meta_labeling(
@@ -88,7 +88,7 @@ def triple_barrier_labels(
     return labels
 
 
-class TripleBarrier(Strategy):
+class TripleBarrier(StatefulStrategy):
     """Strategy using triple-barrier labeling and a gradient boosting model."""
 
     name = "triple_barrier"
@@ -100,7 +100,12 @@ class TripleBarrier(Strategy):
         lower_pct: float = 0.02,
         training_window: int = 200,
         meta_model: ClassifierMixin | None = None,
+        *,
+        tp_pct: float = 0.0,
+        sl_pct: float = 0.0,
+        max_hold_bars: int = 0,
     ) -> None:
+        super().__init__(tp_pct=tp_pct, sl_pct=sl_pct, max_hold_bars=max_hold_bars)
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
         self.lower_pct = float(lower_pct)
@@ -126,6 +131,10 @@ class TripleBarrier(Strategy):
         df: pd.DataFrame = bar["window"]
         if len(df) < self.training_window:
             return None
+        price = float(df["close"].iloc[-1])
+        exit_sig = self.check_exit(price)
+        if exit_sig:
+            return exit_sig
         features = self._prepare_features(df)
         if not self.fitted:
             labels = triple_barrier_labels(
@@ -144,13 +153,14 @@ class TripleBarrier(Strategy):
         x_last = features.iloc[[-1]]
         pred = self.model.predict(x_last)[0]
         if pred == 0:
-            return Signal("flat", 0.0)
+            return None
         if self.meta_fitted:
             meta_pred = self.meta_model.predict(x_last)[0]
             if meta_pred == 0:
-                return Signal("flat", 0.0)
-        if pred == 1:
-            return Signal("buy", 1.0)
-        if pred == -1:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+                return None
+        if self.pos_side is None:
+            if pred == 1:
+                return self.open_position("buy", price)
+            if pred == -1:
+                return self.open_position("sell", price)
+        return None

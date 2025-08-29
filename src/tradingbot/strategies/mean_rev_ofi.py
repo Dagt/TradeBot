@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from .base import Strategy, Signal, load_params, record_signal_metrics
+from .base import StatefulStrategy, Signal, load_params, record_signal_metrics
 from ..data.features import calc_ofi, returns
 
 
-class MeanRevOFI(Strategy):
+class MeanRevOFI(StatefulStrategy):
     """Mean reversion strategy based on OFI z-score and volatility.
 
     Generates inverse signals: when buying pressure (positive OFI z-score)
@@ -33,6 +33,9 @@ class MeanRevOFI(Strategy):
         vol_window: int = 20,
         vol_threshold: float = 0.01,
         *,
+        tp_pct: float = 0.0,
+        sl_pct: float = 0.0,
+        max_hold_bars: int = 0,
         config_path: str | None = None,
     ) -> None:
         params = load_params(config_path)
@@ -40,6 +43,7 @@ class MeanRevOFI(Strategy):
         self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
         self.vol_window = int(params.get("vol_window", vol_window))
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
+        super().__init__(tp_pct=tp_pct, sl_pct=sl_pct, max_hold_bars=max_hold_bars)
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -56,11 +60,17 @@ class MeanRevOFI(Strategy):
 
         vol = returns(df).rolling(self.vol_window).std().iloc[-1]
 
-        if pd.isna(zscore) or pd.isna(vol) or vol >= self.vol_threshold:
-            return Signal("flat", 0.0)
+        price = float(df["close"].iloc[-1])
+        exit_sig = self.check_exit(price)
+        if exit_sig:
+            return exit_sig
 
-        if zscore > self.zscore_threshold:
-            return Signal("sell", 1.0)
-        if zscore < -self.zscore_threshold:
-            return Signal("buy", 1.0)
-        return Signal("flat", 0.0)
+        if pd.isna(zscore) or pd.isna(vol) or vol >= self.vol_threshold:
+            return None
+
+        if self.pos_side is None:
+            if zscore > self.zscore_threshold:
+                return self.open_position("sell", price)
+            if zscore < -self.zscore_threshold:
+                return self.open_position("buy", price)
+        return None

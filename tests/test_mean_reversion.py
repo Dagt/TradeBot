@@ -6,9 +6,10 @@ def test_mean_reversion_on_bar_signals():
     df_up = pd.DataFrame({"close": list(range(1, 21))})
     strat = MeanReversion(rsi_n=5, upper=70, lower=30)
     sig_buy = strat.on_bar({"window": df_down})
-    sig_sell = strat.on_bar({"window": df_up})
-    assert sig_buy.side == "buy"
-    assert sig_sell.side == "sell"
+    strat2 = MeanReversion(rsi_n=5, upper=70, lower=30)
+    sig_sell = strat2.on_bar({"window": df_up})
+    assert sig_buy and sig_buy.side == "buy"
+    assert sig_sell and sig_sell.side == "sell"
 
 def test_mean_reversion_generate_signals():
     df = pd.DataFrame({"price": [1, 2, 3, 4, 3, 2, 1, 2, 3]})
