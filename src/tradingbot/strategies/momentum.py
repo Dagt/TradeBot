@@ -1,6 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import rsi
+from ..data.features import rsi, returns
 
 class Momentum(Strategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
@@ -22,19 +22,70 @@ class Momentum(Strategy):
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 55.0)
+        self.tp_bps = kwargs.get("tp_bps", 30.0)
+        self.sl_bps = kwargs.get("sl_bps", 40.0)
+        self.max_hold_bars = kwargs.get("max_hold_bars", 20)
+        # Optional market activity filters
+        self.min_volume = kwargs.get("min_volume")
+        self.min_volatility = kwargs.get("min_volatility")
+        self.vol_window = kwargs.get("vol_window", 20)
+
+        # Position state
+        self.pos_side: int = 0
+        self.entry_price: float | None = None
+        self.hold_bars: int = 0
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < self.rsi_n + 1:
+        if len(df) < self.rsi_n + 2:
             return None
+
+        closes = df["close"]
+        price = closes.iloc[-1]
         rsi_series = rsi(df, self.rsi_n)
+        prev_rsi = rsi_series.iloc[-2]
         last_rsi = rsi_series.iloc[-1]
-        if last_rsi > self.threshold:
-            return Signal("buy", 1.0)
-        if last_rsi < 100 - self.threshold:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+
+        if self.pos_side == 0:
+            # Optional inactivity filters
+            if self.min_volume is not None:
+                if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
+                    return None
+            if self.min_volatility is not None:
+                vol = returns(df).rolling(self.vol_window).std().iloc[-1]
+                if pd.isna(vol) or vol < self.min_volatility:
+                    return None
+
+            upper = self.threshold
+            lower = 100 - self.threshold
+            if prev_rsi <= upper and last_rsi > upper:
+                self.pos_side = 1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("buy", 1.0)
+            if prev_rsi >= lower and last_rsi < lower:
+                self.pos_side = -1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("sell", 1.0)
+            return None
+
+        # Manage open position
+        self.hold_bars += 1
+        assert self.entry_price is not None
+        pnl_bps = (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+        if (
+            pnl_bps >= self.tp_bps
+            or pnl_bps <= -self.sl_bps
+            or self.hold_bars >= self.max_hold_bars
+        ):
+            side = "sell" if self.pos_side > 0 else "buy"
+            self.pos_side = 0
+            self.entry_price = None
+            self.hold_bars = 0
+            return Signal(side, 1.0)
+        return None
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
