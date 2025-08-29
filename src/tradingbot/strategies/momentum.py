@@ -1,6 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import rsi, calc_ofi
+from ..data.features import rsi
 
 class Momentum(Strategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
@@ -21,7 +21,7 @@ class Momentum(Strategy):
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.threshold = kwargs.get("rsi_threshold", 60.0)
+        self.threshold = kwargs.get("rsi_threshold", 55.0)
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -30,12 +30,9 @@ class Momentum(Strategy):
             return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
-        ofi_val = 0.0
-        if {"bid_qty", "ask_qty"}.issubset(df.columns):
-            ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
-        if last_rsi > self.threshold and ofi_val >= 0:
+        if last_rsi > self.threshold:
             return Signal("buy", 1.0)
-        if last_rsi < 100 - self.threshold and ofi_val <= 0:
+        if last_rsi < 100 - self.threshold:
             return Signal("sell", 1.0)
         return Signal("flat", 0.0)
 

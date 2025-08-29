@@ -11,6 +11,8 @@ from .liquidity_events import LiquidityEvents
 from .triple_barrier import TripleBarrier
 from .ml_models import MLStrategy
 from .mean_rev_ofi import MeanRevOFI
+from .scalp_pingpong import ScalpPingPong
+from .composite_signals import CompositeSignals
 
 # Registry of available strategies, useful for CLI/backtests
 STRATEGIES = {
@@ -27,6 +29,8 @@ STRATEGIES = {
     TripleBarrier.name: TripleBarrier,
     MLStrategy.name: MLStrategy,
     MeanRevOFI.name: MeanRevOFI,
+    ScalpPingPong.name: ScalpPingPong,
+    CompositeSignals.name: CompositeSignals,
 }
 
 # Metadata describing each strategy.  ``desc`` provides a short human
@@ -102,6 +106,8 @@ __all__ = [
     "TripleBarrier",
     "MLStrategy",
     "MeanRevOFI",
+    "ScalpPingPong",
+    "CompositeSignals",
     "STRATEGIES",
     "STRATEGY_INFO",
 ]

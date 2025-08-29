@@ -1,6 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
-from ..data.features import rsi, calc_ofi
+from ..data.features import rsi
 
 class MeanReversion(Strategy):
     """RSI based mean reversion strategy with adaptive strength.
@@ -30,8 +30,8 @@ class MeanReversion(Strategy):
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.upper = kwargs.get("upper", 70.0)
-        self.lower = kwargs.get("lower", 30.0)
+        self.upper = kwargs.get("upper", 60.0)
+        self.lower = kwargs.get("lower", 40.0)
         # Track current position to adapt strength
         self._pos_side: str | None = None
         self._entry_price: float | None = None
@@ -67,15 +67,12 @@ class MeanReversion(Strategy):
             return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
-        ofi_val = 0.0
-        if {"bid_qty", "ask_qty"}.issubset(df.columns):
-            ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
         price_col = "close" if "close" in df.columns else "price"
         price = float(df[price_col].iloc[-1])
-        if last_rsi > self.upper and ofi_val <= 0:
+        if last_rsi > self.upper:
             strength = self._calc_strength("sell", price)
             return Signal("sell", strength)
-        if last_rsi < self.lower and ofi_val >= 0:
+        if last_rsi < self.lower:
             strength = self._calc_strength("buy", price)
             return Signal("buy", strength)
         strength = self._calc_strength("flat", price)
