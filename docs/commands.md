@@ -34,7 +34,8 @@ risk:
 Las configuraciones específicas de cada venue se declaran en `config/config.yaml`
  bajo la clave `exchange_configs`. Cada entrada define el tipo de mercado,
  las comisiones maker/taker y el tamaño mínimo de tick a aplicar durante los backtests y al
- utilizar la CLI:
+ utilizar la CLI. Se pueden definir entradas adicionales con el sufijo `_testnet`
+ para ajustar tarifas en entornos de prueba:
 
 ```yaml
 exchange_configs:
@@ -45,7 +46,12 @@ exchange_configs:
     tick_size: 0.01
   okx_spot:
     market_type: spot
-    maker_fee_bps: 10.0
+    maker_fee_bps: 8.0
+    taker_fee_bps: 10.0
+    tick_size: 0.1
+  okx_spot_testnet:
+    market_type: spot
+    maker_fee_bps: 8.0
     taker_fee_bps: 10.0
     tick_size: 0.1
 ```
