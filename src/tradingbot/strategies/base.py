@@ -16,13 +16,16 @@ class Signal:
     ``strength`` defines sizing through ``notional = equity * strength``. A
     value of ``1.0`` uses the full account equity, values above ``1.0`` pyramid
     exposure and values between ``0`` and ``1`` scale it down. ``0`` or
-    negative values close the position. ``risk_pct`` acts as a local stop‑loss
-    calculated as ``notional * risk_pct``.
+    negative values close the position. Optional ``take_profit`` and
+    ``stop_loss`` levels express absolute prices for OCO orders. ``risk_pct``
+    acts as a local stop‑loss calculated as ``notional * risk_pct``.
     """
 
     side: str  # 'buy' | 'sell' | 'flat'
     strength: float = 1.0  # fraction of the base equity allocation
     reduce_only: bool = False
+    take_profit: float | None = None  # optional TP price level
+    stop_loss: float | None = None  # optional SL price level
 
 class Strategy(ABC):
     name: str

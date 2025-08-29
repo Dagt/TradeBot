@@ -189,7 +189,14 @@ async def run_live_binance(
 
         side = "buy" if delta > 0 else "sell"
         prev_rpnl = broker.state.realized_pnl
-        resp = await broker.place_order(symbol, side, "market", abs(delta))
+        resp = await broker.place_order(
+            symbol,
+            side,
+            "market",
+            abs(delta),
+            take_profit=getattr(signal, "take_profit", None),
+            stop_loss=getattr(signal, "stop_loss", None),
+        )
         fills += 1
         log.info("FILL live %s", resp)
         risk.on_fill(symbol, side, abs(delta), venue="binance")

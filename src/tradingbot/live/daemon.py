@@ -531,6 +531,8 @@ class TradeBotDaemon:
             side="buy" if delta > 0 else "sell",
             type_="market",
             qty=abs(delta),
+            take_profit=getattr(signal, "take_profit", None),
+            stop_loss=getattr(signal, "stop_loss", None),
             reduce_only=getattr(signal, "reduce_only", False),
         )
         res = await self.router.execute(order)
