@@ -645,6 +645,7 @@ async def _stream_process(
 ):
     queue: asyncio.Queue[str] = asyncio.Queue()
     running = True
+    ended = False
 
     async def reader(stream: asyncio.StreamReader):
         nonlocal running
@@ -673,8 +674,16 @@ async def _stream_process(
                 line = None
 
             if line is not None:
-                yield format_sse("message", line.rstrip())
+                line = line.rstrip()
+                yield format_sse("message", line)
                 last_emit = monotonic()
+                if "Backtest finalizado" in line:
+                    yield format_sse("status", "done")
+                    yield format_sse("end", "")
+                    ended = True
+                    running = False
+                    queue.put_nowait("")
+                    break
                 continue
 
             if proc.returncode is not None:
@@ -709,9 +718,10 @@ async def _stream_process(
             t.cancel()
         with suppress(Exception):
             await proc.wait()
-        # ensure the client always receives a termination signal
-        rc = proc.returncode
-        yield format_sse("end", "" if rc is None else str(rc))
+        if not ended:
+            # ensure the client always receives a termination signal
+            rc = proc.returncode
+            yield format_sse("end", "" if rc is None else str(rc))
 
 
 @app.get("/cli/stream/{job_id}")
