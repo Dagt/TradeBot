@@ -12,7 +12,20 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
     sig_buy = strat.on_bar({"window": breakout_df_buy})
     assert sig_buy.side == "buy"
 
-    sig_sell = strat.on_bar({"window": breakout_df_sell})
+    # ensure at least one bar passes before opposite signal
+    row = {
+        "open": 4,
+        "high": 5,
+        "low": 3.5,
+        "close": -20.0,
+        "volume": 1,
+    }
+    df_wait = pd.concat(
+        [breakout_df_sell, pd.DataFrame([row])],
+        ignore_index=True,
+    )
+
+    sig_sell = strat.on_bar({"window": df_wait})
     assert sig_sell.side == "sell"
 
 
