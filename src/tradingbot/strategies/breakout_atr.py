@@ -14,6 +14,7 @@ PARAM_INFO = {
     "max_hold_bars": "Máximo de barras en posición",
     "min_atr": "ATR mínimo para operar",
     "trail_atr_mult": "Multiplicador del trailing stop basado en ATR",
+    "min_edge_bps": "Edge mínimo en puntos básicos para operar",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -31,6 +32,7 @@ class BreakoutATR(Strategy):
         max_hold_bars: int = 3,
         min_atr: float = 0.0,
         trail_atr_mult: float = 1.0,
+        min_edge_bps: float = 0.0,
         *,
         config_path: str | None = None,
     ):
@@ -47,6 +49,7 @@ class BreakoutATR(Strategy):
         self.max_hold_bars = int(params.get("max_hold_bars", max_hold_bars))
         self.min_atr = float(params.get("min_atr", min_atr))
         self.trail_atr_mult = float(params.get("trail_atr_mult", trail_atr_mult))
+        self.min_edge_bps = float(params.get("min_edge_bps", min_edge_bps))
         self.pos_side: int = 0
         self.entry_price: float | None = None
         self.hold_bars: int = 0
@@ -68,34 +71,38 @@ class BreakoutATR(Strategy):
         if self.pos_side == 0:
             if atr_val < self.min_atr:
                 return None
-            sig: Signal | None = None
+            side: str | None = None
+            expected_edge_bps = 0.0
+            trail_stop: float | None = None
             if last_close > upper.iloc[-1]:
-                sig = Signal("buy", 1.0)
-                self.pos_side = 1
-                self.entry_price = last_close
-                self.hold_bars = 0
-                self.trailing_stop = last_close - atr_val * self.trail_atr_mult
+                expected_edge_bps = (
+                    (last_close - upper.iloc[-1]) / abs(last_close) * 10000
+                )
+                side = "buy"
+                trail_stop = last_close - atr_val * self.trail_atr_mult
             elif last_close < lower.iloc[-1]:
-                sig = Signal("sell", 1.0)
-                self.pos_side = -1
-                self.entry_price = last_close
-                self.hold_bars = 0
-                self.trailing_stop = last_close + atr_val * self.trail_atr_mult
-            if sig and sig.side in {"buy", "sell"}:
-                if (
-                    self._last_trade_idx is not None
-                    and self._last_trade_side is not None
-                    and sig.side != self._last_trade_side
-                    and current_idx - self._last_trade_idx
-                    < self.min_bars_between_trades
-                ):
-                    self.pos_side = 0
-                    self.entry_price = None
-                    return None
-                self._last_trade_idx = current_idx
-                self._last_trade_side = sig.side
-                return sig
-            return None
+                expected_edge_bps = (
+                    (lower.iloc[-1] - last_close) / abs(last_close) * 10000
+                )
+                side = "sell"
+                trail_stop = last_close + atr_val * self.trail_atr_mult
+            if side is None or expected_edge_bps <= self.min_edge_bps:
+                return None
+            if (
+                self._last_trade_idx is not None
+                and self._last_trade_side is not None
+                and side != self._last_trade_side
+                and current_idx - self._last_trade_idx < self.min_bars_between_trades
+            ):
+                return None
+            self.pos_side = 1 if side == "buy" else -1
+            self.entry_price = last_close
+            self.hold_bars = 0
+            self.trailing_stop = trail_stop
+            self._last_trade_idx = current_idx
+            self._last_trade_side = side
+            return Signal(side, 1.0)
+        
 
         # manage existing position
         self.hold_bars += 1
