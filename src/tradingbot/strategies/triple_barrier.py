@@ -100,6 +100,9 @@ class TripleBarrier(Strategy):
         lower_pct: float = 0.02,
         training_window: int = 200,
         meta_model: ClassifierMixin | None = None,
+        tp_bps: float = 10.0,
+        sl_bps: float = 15.0,
+        max_hold_bars: int = 10,
     ) -> None:
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
@@ -109,6 +112,12 @@ class TripleBarrier(Strategy):
         self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
         self.meta_fitted = False
+        self.tp_bps = float(tp_bps)
+        self.sl_bps = float(sl_bps)
+        self.max_hold_bars = int(max_hold_bars)
+        self.pos_side: int = 0
+        self.entry_price: float | None = None
+        self.hold_bars: int = 0
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         returns = df["close"].pct_change().fillna(0)
@@ -126,6 +135,25 @@ class TripleBarrier(Strategy):
         df: pd.DataFrame = bar["window"]
         if len(df) < self.training_window:
             return None
+        last = df["close"].iloc[-1]
+        if self.pos_side != 0:
+            self.hold_bars += 1
+            assert self.entry_price is not None
+            pnl_bps = (
+                (last - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            )
+            if (
+                pnl_bps >= self.tp_bps
+                or pnl_bps <= -self.sl_bps
+                or self.hold_bars >= self.max_hold_bars
+            ):
+                side = "sell" if self.pos_side > 0 else "buy"
+                self.pos_side = 0
+                self.entry_price = None
+                self.hold_bars = 0
+                return Signal(side, 1.0)
+            return None
+
         features = self._prepare_features(df)
         if not self.fitted:
             labels = triple_barrier_labels(
@@ -144,13 +172,19 @@ class TripleBarrier(Strategy):
         x_last = features.iloc[[-1]]
         pred = self.model.predict(x_last)[0]
         if pred == 0:
-            return Signal("flat", 0.0)
+            return None
         if self.meta_fitted:
             meta_pred = self.meta_model.predict(x_last)[0]
             if meta_pred == 0:
-                return Signal("flat", 0.0)
+                return None
         if pred == 1:
+            self.pos_side = 1
+            self.entry_price = last
+            self.hold_bars = 0
             return Signal("buy", 1.0)
         if pred == -1:
+            self.pos_side = -1
+            self.entry_price = last
+            self.hold_bars = 0
             return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+        return None

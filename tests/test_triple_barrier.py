@@ -46,8 +46,7 @@ def test_triple_barrier_meta_filtering():
     for i in range(len(prices)):
         signal = strat.on_bar({"window": prices.iloc[: i + 1]})
     assert meta_model.fit_called
-    assert signal is not None
-    assert signal.side == "flat"
+    assert signal is None
 
     # allow trades by setting meta model to return 1
     meta_model2 = DummyModel(value=1)
@@ -59,5 +58,29 @@ def test_triple_barrier_meta_filtering():
     signal = None
     for i in range(len(prices)):
         signal = strat2.on_bar({"window": prices.iloc[: i + 1]})
+        if signal is not None:
+            break
     assert signal is not None
     assert signal.side == "buy"
+
+
+def test_triple_barrier_scalping_exit():
+    prices = pd.DataFrame({"close": [100, 104, 97, 103]})
+    primary_model = DummyModel(value=1)
+    meta_model = DummyModel(value=1)
+    strat = TripleBarrier(
+        horizon=1,
+        upper_pct=0.02,
+        lower_pct=0.02,
+        training_window=3,
+        meta_model=meta_model,
+        tp_bps=50.0,
+        sl_bps=50.0,
+        max_hold_bars=5,
+    )
+    strat.model = primary_model
+    signals = []
+    for i in range(len(prices)):
+        signals.append(strat.on_bar({"window": prices.iloc[: i + 1]}))
+    assert signals[2] is not None and signals[2].side == "buy"
+    assert signals[3] is not None and signals[3].side == "sell"
