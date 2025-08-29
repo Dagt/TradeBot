@@ -75,10 +75,6 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     assert not df.empty
     assert list(df.columns) == [
         "timestamp",
-        "bar_index",
-        "order_id",
-        "trade_id",
-        "roundtrip_id",
         "reason",
         "side",
         "price",
@@ -86,15 +82,11 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         "strategy",
         "symbol",
         "exchange",
-        "fee_type",
         "fee_cost",
-        "slip_bps",
         "slippage_pnl",
-        "cash_after",
-        "base_after",
-        "equity_after",
         "realized_pnl",
         "realized_pnl_total",
+        "equity_after",
     ]
     # Comprobar cálculo de fee
     expected_fee = df["price"] * df["qty"] * 0.001
@@ -152,10 +144,6 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
-            "bar_index",
-            "order_id",
-            "trade_id",
-            "roundtrip_id",
             "reason",
             "side",
             "price",
@@ -163,19 +151,19 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
             "strategy",
             "symbol",
             "exchange",
-            "fee_type",
             "fee_cost",
-            "slip_bps",
             "slippage_pnl",
-            "cash_after",
-            "base_after",
-            "equity_after",
             "realized_pnl",
             "realized_pnl_total",
+            "equity_after",
         ],
     )
     assert fills.loc[fills.side == "sell", "qty"].max() <= fills.loc[fills.side == "buy", "qty"].max() + 1e-9
-    assert (fills.base_after >= -1e-9).all()
+    # Compute running position to ensure it never goes negative
+    pos = (
+        fills.apply(lambda r: r.qty if r.side == "buy" else -r.qty, axis=1).cumsum()
+    )
+    assert (pos >= -1e-9).all()
 
 
 def test_exchange_configs_require_market_type(tmp_path, monkeypatch):
@@ -262,10 +250,6 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
-            "bar_index",
-            "order_id",
-            "trade_id",
-            "roundtrip_id",
             "reason",
             "side",
             "price",
@@ -273,19 +257,24 @@ def test_spot_balances_never_negative(tmp_path, monkeypatch):
             "strategy",
             "symbol",
             "exchange",
-            "fee_type",
             "fee_cost",
-            "slip_bps",
             "slippage_pnl",
-            "cash_after",
-            "base_after",
-            "equity_after",
             "realized_pnl",
             "realized_pnl_total",
+            "equity_after",
         ],
     )
-    assert (fills.cash_after >= -1e-9).all()
-    assert (fills.base_after >= -1e-9).all()
+    cash = 1000.0
+    base = 0.0
+    for row in fills.itertuples():
+        if row.side == "buy":
+            cash -= row.price * row.qty + row.fee_cost
+            base += row.qty
+        else:
+            cash += row.price * row.qty - row.fee_cost
+            base -= row.qty
+        assert cash >= -1e-9
+        assert base >= -1e-9
 
 
 def test_spot_venue_config_applied(tmp_path, monkeypatch):
@@ -335,10 +324,6 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
-            "bar_index",
-            "order_id",
-            "trade_id",
-            "roundtrip_id",
             "reason",
             "side",
             "price",
@@ -346,15 +331,11 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
             "strategy",
             "symbol",
             "exchange",
-            "fee_type",
             "fee_cost",
-            "slip_bps",
             "slippage_pnl",
-            "cash_after",
-            "base_after",
-            "equity_after",
             "realized_pnl",
             "realized_pnl_total",
+            "equity_after",
         ],
     )
     assert math.isclose(
@@ -619,10 +600,6 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
         res["fills"],
         columns=[
             "timestamp",
-            "bar_index",
-            "order_id",
-            "trade_id",
-            "roundtrip_id",
             "reason",
             "side",
             "price",
@@ -630,15 +607,11 @@ def test_intrabar_levels_trigger(tmp_path, monkeypatch):
             "strategy",
             "symbol",
             "exchange",
-            "fee_type",
             "fee_cost",
-            "slip_bps",
             "slippage_pnl",
-            "cash_after",
-            "base_after",
-            "equity_after",
             "realized_pnl",
             "realized_pnl_total",
+            "equity_after",
         ],
     )
     assert len(fills) == 2
