@@ -25,6 +25,20 @@ except Exception:  # pragma: no cover - Timescale optional
 
 log = logging.getLogger(__name__)
 
+# Descriptions used by ``/strategies/{name}/schema`` to expose configurable
+# parameters of :class:`CrossArbConfig` in the API/front-end.  Each key must
+# match a field defined on the dataclass below so the schema can surface it.
+PARAM_INFO: dict[str, str] = {
+    "symbol": "Par a arbitrar, por ejemplo 'BTC/USDT'",
+    "spot": "Conector para el mercado spot",
+    "perp": "Conector para el mercado perp",
+    "threshold": "Umbral de premium como decimal",
+    "persist_pg": "Persistir señales y fills en TimescaleDB",
+    "rebalance_assets": "Activos a rebalancear periódicamente",
+    "rebalance_threshold": "Desequilibrio mínimo para rebalancear",
+    "latency": "Latencia simulada antes de enviar órdenes (s)",
+}
+
 
 @dataclass
 class CrossArbConfig:
