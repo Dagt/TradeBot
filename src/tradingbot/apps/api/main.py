@@ -16,6 +16,7 @@ import signal
 import uuid
 import logging
 import json
+import re
 from time import monotonic
 from contextlib import suppress
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -463,6 +464,22 @@ def strategy_schema(name: str):
 
     sig = inspect.signature(strategy_cls.__init__)
     params: list[dict] = []
+
+    # Collect optional descriptions from PARAM_INFO and docstrings
+    param_info: dict[str, str] = {}
+    for source in (
+        getattr(module, "PARAM_INFO", None),
+        getattr(strategy_cls, "PARAM_INFO", None),
+    ):
+        if isinstance(source, dict):
+            param_info.update({str(k): str(v) for k, v in source.items()})
+
+    doc_params: dict[str, str] = {}
+    doc = inspect.getdoc(strategy_cls.__init__) or inspect.getdoc(strategy_cls)
+    if doc:
+        for m in re.finditer(r":param\s+(\w+)\s*:\s*(.+)", doc):
+            doc_params[m.group(1)] = m.group(2).strip()
+
     for p in list(sig.parameters.values())[1:]:  # skip ``self``
         if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
             continue
@@ -473,7 +490,10 @@ def strategy_schema(name: str):
             annotation = p.annotation.__name__
         else:
             annotation = str(p.annotation)
-        params.append({"name": p.name, "type": annotation, "default": default})
+        desc = param_info.get(p.name) or doc_params.get(p.name) or ""
+        params.append(
+            {"name": p.name, "type": annotation, "default": default, "desc": desc}
+        )
 
     # Strategies relying solely on ``**kwargs`` won't expose parameters via the
     # signature.  Attempt to instantiate the class and inspect its attributes to
@@ -484,7 +504,10 @@ def strategy_schema(name: str):
             for k, v in vars(inst).items():
                 if k.startswith("_"):
                     continue
-                params.append({"name": k, "type": type(v).__name__, "default": v})
+                desc = param_info.get(k) or doc_params.get(k) or ""
+                params.append(
+                    {"name": k, "type": type(v).__name__, "default": v, "desc": desc}
+                )
         except Exception:
             pass
 
