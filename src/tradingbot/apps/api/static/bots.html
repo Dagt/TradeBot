@@ -80,51 +80,45 @@
         <label for="bot-threshold">Threshold</label>
         <input id="bot-threshold" type="number" step="0.0001" value="0.001"/>
       </div>
-      <div>
-        <label for="bot-config">Config YAML</label>
-        <input id="bot-config" placeholder="config.yaml"/>
+        <div>
+          <label for="bot-config">Config YAML</label>
+          <input id="bot-config" placeholder="config.yaml"/>
+        </div>
+        <div>
+          <label for="bot-risk-pct">Risk %</label>
+          <input id="bot-risk-pct" type="number" step="0.0001" required/>
+        </div>
+        <div>
+          <label for="bot-daily-max-loss-pct">Daily max loss %
+            <span class="help-icon" title="Pérdida diaria máxima permitida (porcentaje del equity)">?</span>
+          </label>
+          <input id="bot-daily-max-loss-pct" type="number" step="0.0001"/>
+        </div>
+        <div>
+          <label for="bot-daily-max-drawdown-pct">Daily max drawdown %
+            <span class="help-icon" title="Drawdown diario máximo relativo al pico intradía">?</span>
+          </label>
+          <input id="bot-daily-max-drawdown-pct" type="number" step="0.0001"/>
+        </div>
+        <div>
+          <label for="bot-env">Entorno</label>
+          <select id="bot-env">
+            <option value="live">Live</option>
+            <option value="paper">Paper trading</option>
+            <option value="testnet" selected>Testnet</option>
+          </select>
+        </div>
+        <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
+          <span>Configurar parámetros</span>
+          <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
+        </div>
       </div>
-      <div id="field-toggle-params" style="grid-column:1/-1;display:flex;align-items:center">
-        <label for="bot-toggle-params" style="display:flex;align-items:center;gap:4px">
-          <input id="bot-toggle-params" type="checkbox"/>
-          Configurar parámetros
-        </label>
+      <div id="bot-param-card" style="display:none">
+        <div id="bot-strategy-params" class="param-grid"></div>
       </div>
-      <div>
-        <label for="bot-risk-pct">Risk %</label>
-        <input id="bot-risk-pct" type="number" step="0.0001" required/>
-      </div>
-      <div>
-        <label for="bot-daily-max-loss-pct">Daily max loss %
-          <span class="help-icon" title="Pérdida diaria máxima permitida (porcentaje del equity)">?</span>
-        </label>
-        <input id="bot-daily-max-loss-pct" type="number" step="0.0001"/>
-      </div>
-      <div>
-        <label for="bot-daily-max-drawdown-pct">Daily max drawdown %
-          <span class="help-icon" title="Drawdown diario máximo relativo al pico intradía">?</span>
-        </label>
-        <input id="bot-daily-max-drawdown-pct" type="number" step="0.0001"/>
-      </div>
-      <div>
-        <label for="bot-env">Entorno</label>
-        <select id="bot-env">
-          <option value="live">Live</option>
-          <option value="paper">Paper trading</option>
-          <option value="testnet" selected>Testnet</option>
-        </select>
-      </div>
+      <button id="bot-start" style="margin-top:10px">Start</button>
+      <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
     </div>
-    <button id="bot-start" style="margin-top:10px">Start</button>
-    <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
-  </div>
-
-  <div class="card" id="bot-param-card" style="display:none; margin-top:16px">
-    <h2>Parámetros estrategia</h2>
-    <div id="bot-param-config">
-      <div id="strategy-params" class="param-grid"></div>
-    </div>
-  </div>
 
   <div class="card" style="margin-top:16px">
     <h2>Bots activos</h2>
@@ -172,7 +166,7 @@ const api = (path) => `${location.origin}${path}`;
   }
 
   async function loadStrategyParams(name){
-    const container=document.getElementById('strategy-params');
+    const container=document.getElementById('bot-strategy-params');
     container.innerHTML='';
     const card=document.getElementById('bot-param-card');
     card.style.display='none';
@@ -188,7 +182,7 @@ const api = (path) => `${location.origin}${path}`;
       params.forEach(p=>{
         const div=document.createElement('div');
         const label=document.createElement('label');
-        label.htmlFor=`param-${p.name}`;
+        label.htmlFor=`bot-param-${p.name}`;
         label.textContent=p.name;
         if(p.desc){
           const help=document.createElement('span');
@@ -200,7 +194,7 @@ const api = (path) => `${location.origin}${path}`;
         }
         const input=document.createElement('input');
         input.className='param-input';
-        input.id=`param-${p.name}`;
+        input.id=`bot-param-${p.name}`;
         input.dataset.name=p.name;
         input.dataset.type=p.type||'';
         let type=(p.type||'').toLowerCase();
@@ -257,7 +251,7 @@ async function startBot(){
     const spot = document.getElementById('bot-spot').value;
     const perp = document.getElementById('bot-perp').value;
     const threshold = document.getElementById('bot-threshold').value;
-    const paramEls=document.querySelectorAll('#strategy-params input');
+    const paramEls=document.querySelectorAll('#bot-strategy-params input');
     const params={};
     paramEls.forEach(el=>{
       if(!el.value) return;
