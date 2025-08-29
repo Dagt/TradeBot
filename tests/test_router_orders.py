@@ -19,7 +19,7 @@ class MockAdapter:
         price = kwargs.get("price")
         if price is None:
             price = book["asks"][0][0] if kwargs["side"] == "buy" else book["bids"][0][0]
-        return {"status": "filled", "price": price, **kwargs}
+        return {**kwargs, "status": "filled", "price": price}
 
 
 @pytest.mark.asyncio
@@ -103,3 +103,59 @@ async def test_router_returns_reason_and_ids(caplog):
     assert res.get("order_id")
     assert res.get("trade_id")
     assert res.get("fill_price") != res.get("price")
+
+
+class PartialFillAdapter:
+    def __init__(self):
+        self.calls = []
+        self.name = "p"
+    async def place_order(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            filled = kwargs["qty"] / 2
+            return {
+                "status": "partial",
+                "price": kwargs.get("price", 100.0),
+                "filled_qty": filled,
+            }
+        return {"status": "filled", "price": kwargs.get("price", 100.0)}
+
+
+@pytest.mark.asyncio
+async def test_partial_fill_triggers_taker_completion():
+    adapter = PartialFillAdapter()
+    def on_pf(order, res):
+        return "taker"
+    router = ExecutionRouter(adapter, on_partial_fill=on_pf)
+    order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
+    res = await router.execute(order)
+    assert res["status"] == "filled"
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]["type_"] == "market"
+    assert adapter.calls[1]["qty"] == pytest.approx(5.0)
+    assert order.pending_qty == pytest.approx(0.0)
+
+
+class ExpiringAdapter:
+    def __init__(self):
+        self.calls = []
+        self.name = "e"
+    async def place_order(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"status": "expired", "price": kwargs.get("price", 100.0)}
+
+
+@pytest.mark.asyncio
+async def test_order_expiry_cancelled():
+    adapter = ExpiringAdapter()
+    actions = []
+    def on_exp(order, res):
+        actions.append("called")
+        return "cancel"
+    router = ExecutionRouter(adapter, on_order_expiry=on_exp)
+    order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
+    res = await router.execute(order)
+    assert res["status"] == "expired"
+    assert len(adapter.calls) == 1
+    assert order.pending_qty == pytest.approx(10.0)
+    assert actions == ["called"]
