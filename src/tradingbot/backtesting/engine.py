@@ -312,6 +312,7 @@ class EventDrivenBacktestEngine:
         slippage_total = 0.0
         funding_total = 0.0
         fill_count = 0
+        trade_seq = 0
         equity_curve: List[float] = []
         data_arrays = {
             sym: {col: df[col].to_numpy() for col in df.columns}
@@ -476,7 +477,8 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
-                svc.on_fill(order.symbol, order.side, fill_qty, price)
+                rtid = svc.on_fill(order.symbol, order.side, fill_qty, price)
+                trade_seq += 1
                 if mode == "spot":
                     if cash < -1e-9:
                         raise AssertionError(
@@ -516,6 +518,8 @@ class EventDrivenBacktestEngine:
                             order.strategy,
                             order.symbol,
                             order.exchange,
+                            rtid,
+                            trade_seq,
                             fee_type,
                             fee,
                             cash,
@@ -779,6 +783,8 @@ class EventDrivenBacktestEngine:
                     "strategy",
                     "symbol",
                     "exchange",
+                    "roundtrip_id",
+                    "trade_id",
                     "fee_type",
                     "fee",
                     "cash_after",

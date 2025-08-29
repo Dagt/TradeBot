@@ -37,6 +37,7 @@ class Position:
 
     qty: float = 0.0
     realized_pnl: float = 0.0
+    roundtrip_id: int | None = None
 
 
 class RiskManager:
@@ -81,6 +82,7 @@ class RiskManager:
         self.enabled = True
         self.last_kill_reason: str | None = None
         self.pos = Position()
+        self._roundtrip_seq: int = 0
         # Multi-exchange position book: {exchange: {symbol: qty}}
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
         # PnL por exchange
@@ -111,17 +113,25 @@ class RiskManager:
         if abs(self.pos.qty) < 1e-12:
             self._reset_price_trackers()
 
-    def add_fill(self, side: str, qty: float, price: float | None = None) -> None:
+    def add_fill(self, side: str, qty: float, price: float | None = None) -> int | None:
         """Actualiza posición interna tras un fill y precio de entrada.
 
         ``price`` es el precio del fill.  Cuando se acumulan posiciones en la
         misma dirección se recalcula ``_entry_price`` como un promedio ponderado
         por cantidad para reflejar el nuevo costo base.  Si la operación cierra
         o invierte la posición, los *trackers* de precio se reinician.
+
+        Returns the ``roundtrip_id`` associated with the fill.
         """
 
         signed = float(qty) if side == "buy" else -float(qty)
         prev = self.pos.qty
+        rtid = self.pos.roundtrip_id
+
+        # Si abrimos una nueva posición, asignar un roundtrip_id
+        if prev == 0 and signed != 0:
+            self._roundtrip_seq += 1
+            rtid = self._roundtrip_seq
 
         # Si el fill va en contra de la posición previa, calcula PnL realizado
         if prev * signed < 0 and price is not None and self._entry_price is not None:
@@ -139,13 +149,23 @@ class RiskManager:
         # establece un nuevo precio de entrada si corresponde.
         if prev == 0 or prev * new <= 0:
             self._reset_price_trackers()
-            if price is not None and abs(new) > 0:
-                self._entry_price = float(price)
-            return
+            if new == 0:
+                self.pos.roundtrip_id = None
+            else:
+                if prev * new < 0:
+                    # Posición se revierte, asignar nuevo roundtrip para el remanente
+                    self._roundtrip_seq += 1
+                    self.pos.roundtrip_id = self._roundtrip_seq
+                else:
+                    self.pos.roundtrip_id = rtid
+                if price is not None:
+                    self._entry_price = float(price)
+            return rtid
 
         # Si el fill reduce pero no invierte la posición, no cambia el precio
         if prev * signed < 0:
-            return
+            self.pos.roundtrip_id = rtid
+            return rtid
 
         # Posición continúa en la misma dirección y se acumula; si se proporciona
         # ``price`` se recalcula el precio promedio ponderado por cantidad.
@@ -158,6 +178,8 @@ class RiskManager:
                 self._entry_price = (
                     self._entry_price * abs_prev + float(price) * abs_new
                 ) / (abs_prev + abs_new)
+        self.pos.roundtrip_id = rtid
+        return rtid
 
     # ------------------------------------------------------------------
     # Order limit helpers

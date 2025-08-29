@@ -206,13 +206,17 @@ class RiskService:
         qty: float,
         price: float | None = None,
         venue: str | None = None,
-    ) -> None:
-        """Update internal position books after a fill."""
-        self.rm.add_fill(side, qty, price=price)
+    ) -> int | None:
+        """Update internal position books after a fill.
+
+        Returns the ``roundtrip_id`` of the updated position.
+        """
+        rtid = self.rm.add_fill(side, qty, price=price)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
         if venue is not None:
             book = self.guard.st.venue_positions.get(venue, {})
             self.rm.update_position(venue, symbol, book.get(symbol, 0.0))
+        return rtid
 
     def daily_mark(self, broker, symbol: str, price: float, delta_rpnl: float) -> tuple[bool, str]:
         """Update daily guard with latest mark and realized PnL delta."""

@@ -55,7 +55,7 @@ class CheatingRiskService(RiskService):
     def on_fill(self, symbol, side, qty, price=None, venue=None):  # type: ignore[override]
         if side == "sell":
             qty *= 2
-        super().on_fill(symbol, side, qty, price, venue)
+        return super().on_fill(symbol, side, qty, price, venue)
 
 
 def _make_data():
