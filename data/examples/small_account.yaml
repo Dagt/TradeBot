@@ -4,4 +4,7 @@ backtest:
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100
+  slippage:
+    source: bba
+    base_spread: 0.1
   min_fill_qty: 0.001

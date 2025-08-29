@@ -147,6 +147,27 @@ def test_slippage_model_ofi_impact():
     assert adj_sell == pytest.approx(price - 0.5, rel=1e-9)
 
 
+def test_slippage_model_sources():
+    bar = {"bid": 100.0, "ask": 100.2, "volume": 1000.0}
+    price = 100.0
+    model_bba = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.05)
+    adj_bba = model_bba.adjust("buy", 1.0, price, bar)
+    assert adj_bba == pytest.approx(100.1, rel=1e-9)
+
+    bar_missing = {"volume": 1000.0}
+    model_fallback = SlippageModel(
+        volume_impact=0.0, source="bba", base_spread=0.3
+    )
+    adj_fallback = model_fallback.adjust("buy", 1.0, price, bar_missing)
+    assert adj_fallback == pytest.approx(100.15, rel=1e-9)
+
+    model_fixed = SlippageModel(
+        volume_impact=0.0, source="fixed_spread", base_spread=0.4
+    )
+    adj_fixed = model_fixed.adjust("sell", 1.0, price, bar)
+    assert adj_fixed == pytest.approx(99.8, rel=1e-9)
+
+
 def test_slippage_helpers():
     asks = [(100.0, 1.0), (101.0, 1.0)]
     bps = impact_by_depth("buy", 1.5, asks)
