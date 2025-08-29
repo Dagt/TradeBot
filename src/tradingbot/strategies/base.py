@@ -8,6 +8,7 @@ import yaml
 
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
+from ..filters import passes as liquidity_passes
 
 @dataclass
 class Signal:
@@ -69,6 +70,8 @@ def record_signal_metrics(fn):
     """
 
     def wrapper(self: Strategy, bar: dict[str, Any]) -> Signal | None:  # type: ignore[misc]
+        if not liquidity_passes(bar):
+            return None
         start = time.monotonic()
         sig = fn(self, bar)
         duration = time.monotonic() - start

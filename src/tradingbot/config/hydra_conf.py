@@ -82,6 +82,15 @@ class ExchangeVenueConfig:
 
 
 @dataclass
+class FiltersConfig:
+    """Thresholds for pre-signal liquidity checks."""
+
+    max_spread: float = float("inf")
+    min_volume: float = 0.0
+    max_volatility: float = float("inf")
+
+
+@dataclass
 class AppConfig:
     """Top level application configuration."""
 
@@ -91,6 +100,7 @@ class AppConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     balance: BalanceConfig = field(default_factory=BalanceConfig)
+    filters: FiltersConfig = field(default_factory=FiltersConfig)
     exchange_configs: Dict[str, ExchangeVenueConfig] = field(default_factory=dict)
 
 
