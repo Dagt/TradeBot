@@ -220,6 +220,14 @@ async function loadStrategyParams(name){
       const label=document.createElement('label');
       label.htmlFor=`bt-param-${p.name}`;
       label.textContent=p.name;
+      if(p.desc){
+        const span=document.createElement('span');
+        span.className='help-icon';
+        span.title=p.desc;
+        span.textContent='?';
+        label.appendChild(document.createTextNode(' '));
+        label.appendChild(span);
+      }
       const input=document.createElement('input');
       input.id=`bt-param-${p.name}`;
       input.dataset.name=p.name;

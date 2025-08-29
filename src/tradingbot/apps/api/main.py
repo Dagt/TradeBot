@@ -461,6 +461,41 @@ def strategy_schema(name: str):
     if strategy_cls is None:
         raise HTTPException(status_code=404, detail="strategy class not found")
 
+    def _parse_param_docs(obj) -> dict[str, str]:
+        doc = inspect.getdoc(obj)
+        if not doc:
+            return {}
+        lines = doc.splitlines()
+        out: dict[str, str] = {}
+        in_params = False
+        current = None
+        for line in lines:
+            stripped = line.strip()
+            if not in_params:
+                if stripped.lower() == "parameters":
+                    in_params = True
+                continue
+            if stripped.startswith("---") or stripped.startswith("==="):
+                continue
+            if not stripped:
+                current = None
+                continue
+            if not line.startswith(" ") and ":" not in stripped:
+                break
+            if ":" in stripped and not line.startswith(" "):
+                current = stripped.split(":", 1)[0].strip()
+                out[current] = ""
+                continue
+            if current:
+                out[current] += stripped + " "
+        return {k: v.strip() for k, v in out.items()}
+
+    param_docs: dict[str, str] = {}
+    param_docs.update(_parse_param_docs(strategy_cls))
+    param_docs.update(_parse_param_docs(strategy_cls.__init__))
+    param_docs.update(getattr(module, "PARAM_INFO", {}))
+    param_docs.update(getattr(strategy_cls, "PARAM_INFO", {}))
+
     sig = inspect.signature(strategy_cls.__init__)
     params: list[dict] = []
     for p in list(sig.parameters.values())[1:]:  # skip ``self``
@@ -473,7 +508,14 @@ def strategy_schema(name: str):
             annotation = p.annotation.__name__
         else:
             annotation = str(p.annotation)
-        params.append({"name": p.name, "type": annotation, "default": default})
+        params.append(
+            {
+                "name": p.name,
+                "type": annotation,
+                "default": default,
+                "desc": param_docs.get(p.name, ""),
+            }
+        )
 
     # Strategies relying solely on ``**kwargs`` won't expose parameters via the
     # signature.  Attempt to instantiate the class and inspect its attributes to
@@ -484,7 +526,14 @@ def strategy_schema(name: str):
             for k, v in vars(inst).items():
                 if k.startswith("_"):
                     continue
-                params.append({"name": k, "type": type(v).__name__, "default": v})
+                params.append(
+                    {
+                        "name": k,
+                        "type": type(v).__name__,
+                        "default": v,
+                        "desc": param_docs.get(k, ""),
+                    }
+                )
         except Exception:
             pass
 
