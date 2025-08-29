@@ -96,16 +96,15 @@
         <label class="switch"><input id="bt-toggle-params" type="checkbox"><span class="slider"></span></label>
       </div>
     </div>
+    <div id="bt-param-card" style="display:none">
+      <div id="bt-strategy-params" class="param-grid"></div>
+    </div>
     <p id="bt-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
     <button id="bt-run" style="margin-top:10px">Ejecutar</button>
     <button id="bt-stop" style="margin-top:10px;margin-left:8px" disabled>Detener</button>
     <button id="bt-clear" style="margin-top:10px;margin-left:8px">Limpiar</button>
     <span id="bt-working">Procesando<span id="bt-dots"></span></span>
     <pre id="bt-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
-  </div>
-
-  <div class="card" id="bt-param-card" style="display:none">
-    <div id="bt-strategy-params" class="param-grid"></div>
   </div>
 
   <div class="card" style="margin-top:16px">
