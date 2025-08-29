@@ -14,6 +14,9 @@ import pandas as pd
 from .base import Strategy, Signal
 
 
+PARAM_INFO: dict[str, str] = {}
+
+
 class Arbitrage(Strategy):
     """Placeholder arbitrage strategy used for live experimentation."""
 

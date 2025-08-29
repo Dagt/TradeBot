@@ -2,6 +2,17 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi
 
+
+PARAM_INFO = {
+    "rsi_n": "Ventana para el cálculo del RSI",
+    "upper": "Nivel RSI superior para vender",
+    "lower": "Nivel RSI inferior para comprar",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "scale_by": "Método para escalar la fuerza de la señal",
+}
+
 class MeanReversion(Strategy):
     """RSI based mean reversion strategy with adaptive strength.
 

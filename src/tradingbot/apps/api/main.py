@@ -494,19 +494,68 @@ def strategy_schema(name: str):
         params.append(
             {"name": p.name, "type": annotation, "default": default, "desc": desc}
         )
+    # Expand dataclass configs if only ``cfg`` was captured
+    if params and len(params) == 1 and params[0]["name"] == "cfg":
+        try:  # pragma: no cover - best effort
+            import dataclasses
 
+            inst = strategy_cls()
+            cfg = getattr(inst, "cfg", None)
+            if dataclasses.is_dataclass(cfg):
+                params = []
+                for f in dataclasses.fields(cfg):
+                    field_name = f.name
+                    default = getattr(cfg, field_name)
+                    if field_name not in param_info and field_name not in doc_params:
+                        continue
+                    desc = param_info.get(field_name) or doc_params.get(field_name) or ""
+                    params.append(
+                        {
+                            "name": field_name,
+                            "type": type(default).__name__,
+                            "default": default,
+                            "desc": desc,
+                        }
+                    )
+        except Exception:
+            pass
     # Strategies relying solely on ``**kwargs`` won't expose parameters via the
     # signature.  Attempt to instantiate the class and inspect its attributes to
     # derive defaults in that case.
     if not params:
         try:  # pragma: no cover - best effort
+            import dataclasses
+
             inst = strategy_cls()
-            for k, v in vars(inst).items():
-                if k.startswith("_"):
+            for attr_name, v in vars(inst).items():
+                if attr_name.startswith("_"):
                     continue
-                desc = param_info.get(k) or doc_params.get(k) or ""
+                if dataclasses.is_dataclass(v):
+                    for f in dataclasses.fields(v):
+                        field_name = f.name
+                        default = getattr(v, field_name)
+                        if field_name not in param_info and field_name not in doc_params:
+                            continue
+                        desc = param_info.get(field_name) or doc_params.get(field_name) or ""
+                        params.append(
+                            {
+                                "name": field_name,
+                                "type": type(default).__name__,
+                                "default": default,
+                                "desc": desc,
+                            }
+                        )
+                    continue
+                if attr_name not in param_info and attr_name not in doc_params:
+                    continue
+                desc = param_info.get(attr_name) or doc_params.get(attr_name) or ""
                 params.append(
-                    {"name": k, "type": type(v).__name__, "default": v, "desc": desc}
+                    {
+                        "name": attr_name,
+                        "type": type(v).__name__,
+                        "default": v,
+                        "desc": desc,
+                    }
                 )
         except Exception:
             pass

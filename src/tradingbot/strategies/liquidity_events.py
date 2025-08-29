@@ -6,6 +6,17 @@ from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import book_vacuum, liquidity_gap
 
 
+PARAM_INFO = {
+    "vacuum_threshold": "Umbral para detectar vacíos de liquidez",
+    "gap_threshold": "Umbral para detectar gaps de liquidez",
+    "tp_pct": "Take profit porcentual",
+    "sl_pct": "Stop loss porcentual",
+    "max_hold": "Barras máximas en posición",
+    "vol_window": "Ventana para calcular la volatilidad",
+    "dynamic_thresholds": "Ajustar umbrales según volatilidad",
+}
+
+
 class LiquidityEvents(Strategy):
     """React to liquidity vacuum and gap events.
 

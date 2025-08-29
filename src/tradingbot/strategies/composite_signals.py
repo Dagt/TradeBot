@@ -5,6 +5,13 @@ from typing import Sequence, Type
 from .base import Strategy, Signal, record_signal_metrics
 
 
+PARAM_INFO = {
+    "strategies": "Lista de subestrategias y sus parámetros",
+    "tp_pct": "Take profit porcentual",
+    "sl_pct": "Stop loss porcentual",
+}
+
+
 class CompositeSignals(Strategy):
     """Combine signals from multiple sub-strategies."""
 

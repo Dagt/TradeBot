@@ -4,6 +4,19 @@ from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import atr, keltner_channels
 
 
+PARAM_INFO = {
+    "ema_n": "Periodo de la EMA para la línea central",
+    "atr_n": "Periodo del ATR usado en los canales",
+    "mult": "Multiplicador aplicado al ATR",
+    "min_bars_between_trades": "Barras mínimas entre operaciones",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Máximo de barras en posición",
+    "min_atr": "ATR mínimo para operar",
+    "trail_atr_mult": "Multiplicador del trailing stop basado en ATR",
+    "config_path": "Ruta opcional al archivo de configuración",
+}
+
 class BreakoutATR(Strategy):
     name = "breakout_atr"
 

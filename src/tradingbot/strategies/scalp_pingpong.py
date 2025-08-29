@@ -7,6 +7,18 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 
 
+PARAM_INFO = {
+    "lookback": "Ventana para el cálculo del z-score",
+    "z_threshold": "Z-score absoluto para abrir operación",
+    "exit_z": "Z-score para cerrar la posición",
+    "tp_bps": "Take profit en puntos básicos",
+    "sl_bps": "Stop loss en puntos básicos",
+    "max_hold_bars": "Barras máximas en posición",
+    "trailing_stop_bps": "Trailing stop en puntos básicos",
+    "volatility_factor": "Factor de tamaño según volatilidad",
+}
+
+
 @dataclass
 class ScalpPingPongConfig:
     """Configuration for :class:`ScalpPingPong`.

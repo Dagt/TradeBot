@@ -14,6 +14,14 @@ except Exception:  # pragma: no cover - optional
 
 log = logging.getLogger(__name__)
 
+PARAM_INFO = {
+    "symbol": "Par de trading, ej. BTC/USDT",
+    "spot_exchange": "Nombre del exchange spot",
+    "perp_exchange": "Nombre del exchange perp",
+    "threshold": "Base mínima para actuar",
+    "persist_pg": "Persistir señales en TimescaleDB",
+}
+
 @dataclass
 class CashCarryConfig:
     """Configuration parameters for :class:`CashAndCarry`.
