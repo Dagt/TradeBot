@@ -13,3 +13,5 @@ class Order:
     take_profit: float | None = None
     stop_loss: float | None = None
     reduce_only: bool = False
+    reason: str | None = None
+    slip_bps: float | None = None

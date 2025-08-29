@@ -24,6 +24,7 @@ class PaperState:
     cash: float = 0.0
     realized_pnl: float = 0.0
     order_id_seq: int = 0
+    trade_id_seq: int = 0
 
 class PaperAdapter(ExchangeAdapter):
     """
@@ -94,6 +95,10 @@ class PaperAdapter(ExchangeAdapter):
         self.state.order_id_seq += 1
         return f"paper-{self.state.order_id_seq}"
 
+    def _next_trade_id(self) -> str:
+        self.state.trade_id_seq += 1
+        return f"trade-{self.state.trade_id_seq}"
+
     def _apply_fill(
         self,
         symbol: str,
@@ -163,9 +168,15 @@ class PaperAdapter(ExchangeAdapter):
         reduce_only: bool = False,
     ) -> dict:
         order_id = self._next_order_id()
+        trade_id = self._next_trade_id()
         last = self.state.last_px.get(symbol)
         if last is None:
-            return {"status": "rejected", "reason": "no_last_price", "order_id": order_id}
+            return {
+                "status": "rejected",
+                "reason": "no_last_price",
+                "order_id": order_id,
+                "trade_id": trade_id,
+            }
 
         # Determine maker/taker
         maker = post_only or (
@@ -184,26 +195,47 @@ class PaperAdapter(ExchangeAdapter):
                 px_exec = last
             else:
                 status = "canceled" if time_in_force in {"IOC", "FOK"} else "new"
-                return {"status": status, "order_id": order_id, "note": "limit no cruzó; no simulo book"}
+                return {
+                    "status": status,
+                    "order_id": order_id,
+                    "trade_id": trade_id,
+                    "note": "limit no cruzó; no simulo book",
+                }
         else:
-            return {"status": "rejected", "reason": "type_not_supported", "order_id": order_id}
+            return {
+                "status": "rejected",
+                "reason": "type_not_supported",
+                "order_id": order_id,
+                "trade_id": trade_id,
+            }
 
         fee_bps = self.maker_fee_bps if maker else self.taker_fee_bps
         pos = self.state.pos.get(symbol, PaperPosition())
         if side == "sell":
             qty = min(qty, pos.qty)
             if qty <= 0:
-                return {"status": "rejected", "reason": "insufficient_position", "order_id": order_id}
+                return {
+                    "status": "rejected",
+                    "reason": "insufficient_position",
+                    "order_id": order_id,
+                    "trade_id": trade_id,
+                }
         else:  # buy
             max_aff = self.state.cash / (px_exec * (1 + fee_bps / 10000.0)) if self.state.cash > 0 else 0.0
             qty = min(qty, max_aff)
             if qty <= 0:
-                return {"status": "rejected", "reason": "insufficient_cash", "order_id": order_id}
+                return {
+                    "status": "rejected",
+                    "reason": "insufficient_cash",
+                    "order_id": order_id,
+                    "trade_id": trade_id,
+                }
 
         fill = self._apply_fill(symbol, side, qty, px_exec, maker)
         return {
             "status": "filled",
             "order_id": order_id,
+            "trade_id": trade_id,
             "symbol": symbol,
             "side": side,
             "qty": qty,

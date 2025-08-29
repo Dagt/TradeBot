@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import inspect
+import uuid
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
@@ -177,7 +178,12 @@ class ExecutionRouter:
 
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
-        log.info("Routing order %s via %s", order, venue)
+        log.info(
+            "Routing order %s via %s reason=%s",
+            order,
+            venue,
+            getattr(order, "reason", None),
+        )
 
         maker = getattr(self, "_last_maker", self._is_maker(order))
 
@@ -231,6 +237,9 @@ class ExecutionRouter:
         ORDER_LATENCY.labels(venue=venue).observe(latency)
         res.setdefault("est_slippage_bps", est_slippage)
         res.setdefault("queue_position", queue_pos)
+        res.setdefault("order_id", uuid.uuid4().hex)
+        res.setdefault("trade_id", uuid.uuid4().hex)
+        res.setdefault("reason", getattr(order, "reason", None))
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
         fee_bps = float(
             getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
@@ -261,6 +270,14 @@ class ExecutionRouter:
                 except Exception:  # pragma: no cover - logging only
                     log.exception("Persist failure: insert_order")
 
+        base_price = res.get("fill_price") or res.get("price")
+        slip_bps = getattr(order, "slip_bps", None)
+        if base_price is not None:
+            fp = float(base_price)
+            if slip_bps:
+                adj = fp * float(slip_bps) / 10000.0
+                fp = fp + adj if order.side == "buy" else fp - adj
+            res["fill_price"] = fp
         exec_price = res.get("price")
         expected = order.price
         if expected is None:
@@ -280,6 +297,13 @@ class ExecutionRouter:
         MAKER_TAKER_RATIO.labels(venue=venue).set(ratio)
         # Propagate venue so downstream components can track positions per exchange
         res.setdefault("venue", venue)
+        log.info(
+            "Order executed venue=%s oid=%s tid=%s reason=%s", 
+            venue,
+            res.get("order_id"),
+            res.get("trade_id"),
+            res.get("reason"),
+        )
         return res
 
 
