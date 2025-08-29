@@ -203,6 +203,14 @@ const strategies = {
     desc: "Arbitraje del mismo par entre dos exchanges; compra donde esté barato y vende donde esté caro.",
     requires: ["prices"],
   },
+  scalp_pingpong: {
+    desc: "Scalping de reversión a la media con z‑score",
+    requires: ["ohlcv"],
+  },
+  composite_signals: {
+    desc: "Combina señales de múltiples subestrategias",
+    requires: [],
+  },
 };
 
 const dataInfo = {
