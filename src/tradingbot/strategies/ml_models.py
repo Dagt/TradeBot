@@ -26,10 +26,20 @@ class MLStrategy(Strategy):
         model: BaseEstimator | None = None,
         model_path: str | Path | None = None,
         threshold: float = 0.5,
+        *,
+        tp_bps: float = 30.0,
+        sl_bps: float = 40.0,
+        max_hold_bars: int = 20,
     ) -> None:
         self.model: BaseEstimator | None = model
         self.scaler = StandardScaler()
         self.threshold = threshold
+        self.tp_bps = float(tp_bps)
+        self.sl_bps = float(sl_bps)
+        self.max_hold_bars = int(max_hold_bars)
+        self.pos_side: int = 0
+        self.entry_price: float | None = None
+        self.hold_bars: int = 0
         if model_path:
             self.load_model(model_path)
 
@@ -81,11 +91,41 @@ class MLStrategy(Strategy):
         except NotFittedError:
             return None
         proba = max(0.0, min(1.0, proba))
-        if proba >= self.threshold:
-            return Signal("buy", proba)
-        if proba <= 1 - self.threshold:
-            return Signal("sell", 1 - proba)
-        return Signal("flat", 0.0)
+        buy = proba >= self.threshold
+        sell = proba <= 1 - self.threshold
+        price = bar.get("price") or bar.get("close")
+        price = float(price) if price is not None else None
+
+        if self.pos_side == 0:
+            if buy:
+                self.pos_side = 1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("buy", proba)
+            if sell:
+                self.pos_side = -1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("sell", 1 - proba)
+            return None
+
+        self.hold_bars += 1
+        exit_signal = (sell and self.pos_side > 0) or (buy and self.pos_side < 0)
+        exit_tp = exit_sl = False
+        if price is not None and self.entry_price is not None:
+            pnl_bps = (
+                (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            )
+            exit_tp = pnl_bps >= self.tp_bps
+            exit_sl = pnl_bps <= -self.sl_bps
+        exit_time = self.hold_bars >= self.max_hold_bars
+        if exit_signal or exit_tp or exit_sl or exit_time:
+            side = "sell" if self.pos_side > 0 else "buy"
+            self.pos_side = 0
+            self.entry_price = None
+            self.hold_bars = 0
+            return Signal(side, 1.0)
+        return None
 
 
 __all__ = ["MLStrategy"]

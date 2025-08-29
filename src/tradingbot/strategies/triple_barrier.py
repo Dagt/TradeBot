@@ -109,6 +109,9 @@ class TripleBarrier(Strategy):
         self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
         self.meta_fitted = False
+        self.pos_side: int = 0
+        self.entry_price: float | None = None
+        self.hold_bars: int = 0
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         returns = df["close"].pct_change().fillna(0)
@@ -144,13 +147,45 @@ class TripleBarrier(Strategy):
         x_last = features.iloc[[-1]]
         pred = self.model.predict(x_last)[0]
         if pred == 0:
-            return Signal("flat", 0.0)
+            return None
         if self.meta_fitted:
             meta_pred = self.meta_model.predict(x_last)[0]
             if meta_pred == 0:
-                return Signal("flat", 0.0)
-        if pred == 1:
-            return Signal("buy", 1.0)
-        if pred == -1:
-            return Signal("sell", 1.0)
-        return Signal("flat", 0.0)
+                return None
+
+        price = float(df["close"].iloc[-1])
+        buy = pred == 1
+        sell = pred == -1
+
+        if self.pos_side == 0:
+            if buy:
+                self.pos_side = 1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("buy", 1.0)
+            if sell:
+                self.pos_side = -1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("sell", 1.0)
+            return None
+
+        self.hold_bars += 1
+        exit_signal = (sell and self.pos_side > 0) or (buy and self.pos_side < 0)
+        pnl_bps = (
+            (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            if self.entry_price is not None
+            else 0.0
+        )
+        tp_bps = self.upper_pct * 10000
+        sl_bps = self.lower_pct * 10000
+        exit_tp = pnl_bps >= tp_bps
+        exit_sl = pnl_bps <= -sl_bps
+        exit_time = self.hold_bars >= self.horizon
+        if exit_signal or exit_tp or exit_sl or exit_time:
+            side = "sell" if self.pos_side > 0 else "buy"
+            self.pos_side = 0
+            self.entry_price = None
+            self.hold_bars = 0
+            return Signal(side, 1.0)
+        return None

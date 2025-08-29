@@ -33,6 +33,9 @@ class MeanRevOFI(Strategy):
         vol_window: int = 20,
         vol_threshold: float = 0.01,
         *,
+        tp_bps: float = 30.0,
+        sl_bps: float = 40.0,
+        max_hold_bars: int = 20,
         config_path: str | None = None,
     ) -> None:
         params = load_params(config_path)
@@ -40,6 +43,12 @@ class MeanRevOFI(Strategy):
         self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
         self.vol_window = int(params.get("vol_window", vol_window))
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
+        self.tp_bps = float(params.get("tp_bps", tp_bps))
+        self.sl_bps = float(params.get("sl_bps", sl_bps))
+        self.max_hold_bars = int(params.get("max_hold_bars", max_hold_bars))
+        self.pos_side: int = 0
+        self.entry_price: float | None = None
+        self.hold_bars: int = 0
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -57,10 +66,39 @@ class MeanRevOFI(Strategy):
         vol = returns(df).rolling(self.vol_window).std().iloc[-1]
 
         if pd.isna(zscore) or pd.isna(vol) or vol >= self.vol_threshold:
-            return Signal("flat", 0.0)
+            return None
 
-        if zscore > self.zscore_threshold:
-            return Signal("sell", 1.0)
-        if zscore < -self.zscore_threshold:
-            return Signal("buy", 1.0)
-        return Signal("flat", 0.0)
+        buy = zscore < -self.zscore_threshold
+        sell = zscore > self.zscore_threshold
+        price = float(df["close"].iloc[-1])
+
+        if self.pos_side == 0:
+            if buy:
+                self.pos_side = 1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("buy", 1.0)
+            if sell:
+                self.pos_side = -1
+                self.entry_price = price
+                self.hold_bars = 0
+                return Signal("sell", 1.0)
+            return None
+
+        self.hold_bars += 1
+        exit_signal = (sell and self.pos_side > 0) or (buy and self.pos_side < 0)
+        pnl_bps = (
+            (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            if self.entry_price is not None
+            else 0.0
+        )
+        exit_tp = pnl_bps >= self.tp_bps
+        exit_sl = pnl_bps <= -self.sl_bps
+        exit_time = self.hold_bars >= self.max_hold_bars
+        if exit_signal or exit_tp or exit_sl or exit_time:
+            side = "sell" if self.pos_side > 0 else "buy"
+            self.pos_side = 0
+            self.entry_price = None
+            self.hold_bars = 0
+            return Signal(side, 1.0)
+        return None
