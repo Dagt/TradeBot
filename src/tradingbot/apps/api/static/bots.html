@@ -84,7 +84,12 @@
         <label for="bot-config">Config YAML</label>
         <input id="bot-config" placeholder="config.yaml"/>
       </div>
-      <div id="strategy-params" style="display:contents"></div>
+      <div style="grid-column:1/-1">
+        <button id="bot-toggle-params" type="button">Parámetros estrategia</button>
+      </div>
+      <div id="bot-param-config" style="display:none; grid-column:1/-1">
+        <div id="strategy-params" style="display:contents"></div>
+      </div>
       <div>
         <label for="bot-risk-pct">Risk %</label>
         <input id="bot-risk-pct" type="number" step="0.0001" required/>
@@ -162,19 +167,32 @@ const api = (path) => `${location.origin}${path}`;
   async function loadStrategyParams(name){
     const container=document.getElementById('strategy-params');
     container.innerHTML='';
+    const cfg=document.getElementById('bot-param-config');
+    cfg.style.display='none';
     try{
       const r=await fetch(api(`/strategies/${name}/schema`));
       const j=await r.json();
-      (j.params||[]).forEach(p=>{
+      const params=j.params||[];
+      const toggle=document.getElementById('bot-toggle-params');
+      toggle.style.display=params.length ? '' : 'none';
+      params.forEach(p=>{
         const div=document.createElement('div');
         const label=document.createElement('label');
         label.htmlFor=`param-${p.name}`;
         label.textContent=p.name;
+        if(p.description){
+          const help=document.createElement('span');
+          help.className='help-icon';
+          help.title=p.description;
+          help.textContent='?';
+          label.appendChild(document.createTextNode(' '));
+          label.appendChild(help);
+        }
         const input=document.createElement('input');
         input.id=`param-${p.name}`;
         input.dataset.name=p.name;
         input.dataset.type=p.type||'';
-        let type = (p.type||'').toLowerCase();
+        let type=(p.type||'').toLowerCase();
         if(type.includes('int') || type.includes('float') || type.includes('number')){
           input.type='number';
           input.step='0.0001';
@@ -348,6 +366,10 @@ async function resetRisk(){
 document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-market').addEventListener('change', updateMarketFields);
+document.getElementById('bot-toggle-params').addEventListener('click', () => {
+  const cfg = document.getElementById('bot-param-config');
+  cfg.style.display = (cfg.style.display === 'none' || cfg.style.display === '') ? 'block' : 'none';
+});
 loadStrategies();
 updateMarketFields();
 refreshBots();
