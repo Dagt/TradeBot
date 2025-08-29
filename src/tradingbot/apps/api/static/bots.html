@@ -84,11 +84,11 @@
         <label for="bot-config">Config YAML</label>
         <input id="bot-config" placeholder="config.yaml"/>
       </div>
-      <div style="grid-column:1/-1">
-        <button id="bot-toggle-params" type="button">Parámetros estrategia</button>
-      </div>
-      <div id="bot-param-config" style="display:none; grid-column:1/-1">
-        <div id="strategy-params" style="display:contents"></div>
+      <div id="field-toggle-params" style="grid-column:1/-1;display:flex;align-items:center">
+        <label for="bot-toggle-params" style="display:flex;align-items:center;gap:4px">
+          <input id="bot-toggle-params" type="checkbox"/>
+          Configurar parámetros
+        </label>
       </div>
       <div>
         <label for="bot-risk-pct">Risk %</label>
@@ -117,6 +117,13 @@
     </div>
     <button id="bot-start" style="margin-top:10px">Start</button>
     <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" id="bot-param-card" style="display:none; margin-top:16px">
+    <h2>Parámetros estrategia</h2>
+    <div id="bot-param-config">
+      <div id="strategy-params" style="display:contents"></div>
+    </div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -167,14 +174,17 @@ const api = (path) => `${location.origin}${path}`;
   async function loadStrategyParams(name){
     const container=document.getElementById('strategy-params');
     container.innerHTML='';
-    const cfg=document.getElementById('bot-param-config');
-    cfg.style.display='none';
+    const card=document.getElementById('bot-param-card');
+    card.style.display='none';
+    const toggle=document.getElementById('bot-toggle-params');
+    toggle.checked=false;
+    const field=document.getElementById('field-toggle-params');
+    field.style.display='none';
     try{
       const r=await fetch(api(`/strategies/${name}/schema`));
       const j=await r.json();
       const params=j.params||[];
-      const toggle=document.getElementById('bot-toggle-params');
-      toggle.style.display=params.length ? '' : 'none';
+      field.style.display=params.length ? '' : 'none';
       params.forEach(p=>{
         const div=document.createElement('div');
         const label=document.createElement('label');
@@ -204,7 +214,9 @@ const api = (path) => `${location.origin}${path}`;
         div.appendChild(input);
         container.appendChild(div);
       });
-    }catch(e){}
+    }catch(e){
+      field.style.display='none';
+    }
   }
 
   function updateMarketFields(){
@@ -366,9 +378,8 @@ async function resetRisk(){
 document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-market').addEventListener('change', updateMarketFields);
-document.getElementById('bot-toggle-params').addEventListener('click', () => {
-  const cfg = document.getElementById('bot-param-config');
-  cfg.style.display = (cfg.style.display === 'none' || cfg.style.display === '') ? 'block' : 'none';
+document.getElementById('bot-toggle-params').addEventListener('change', e => {
+  document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
 updateMarketFields();
