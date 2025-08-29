@@ -64,6 +64,9 @@ class Order:
     queue_pos: float = field(default=0.0, compare=False)
     latency: int | None = field(default=None, compare=False)
     post_only: bool = field(default=False, compare=False)
+    take_profit: float | None = field(default=None, compare=False)
+    stop_loss: float | None = field(default=None, compare=False)
+    trailing_pct: float | None = field(default=None, compare=False)
 
 
 class SlippageModel:
@@ -309,6 +312,7 @@ class EventDrivenBacktestEngine:
         fills: List[tuple] = [] if collect_fills else []
         order_queue: List[Order] = []
         orders: List[Order] = []
+        position_levels: Dict[Tuple[str, str], Dict[str, Any]] = {}
         slippage_total = 0.0
         funding_total = 0.0
         fill_count = 0
@@ -476,7 +480,37 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee
                 else:
                     cash += trade_value - fee
+                prev_qty = svc.rm.pos.qty
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
+                new_qty = svc.rm.pos.qty
+                key = (order.strategy, order.symbol)
+                prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
+                new_sign = 1 if new_qty > 0 else -1 if new_qty < 0 else 0
+                if new_sign == 0:
+                    position_levels.pop(key, None)
+                elif prev_sign == 0 or prev_sign != new_sign:
+                    position_levels[key] = {
+                        "entry_i": i,
+                        "take_profit": order.take_profit,
+                        "stop_loss": order.stop_loss,
+                        "trail_pct": order.trailing_pct,
+                        "best_price": price,
+                    }
+                else:
+                    state = position_levels.get(key)
+                    if state is not None:
+                        state["entry_i"] = i
+                        if order.take_profit is not None:
+                            state["take_profit"] = order.take_profit
+                        if order.stop_loss is not None:
+                            state["stop_loss"] = order.stop_loss
+                        if order.trailing_pct is not None:
+                            state["trail_pct"] = order.trailing_pct
+                        if state.get("trail_pct") is not None:
+                            if new_sign > 0:
+                                state["best_price"] = max(state.get("best_price", price), price)
+                            else:
+                                state["best_price"] = min(state.get("best_price", price), price)
                 if mode == "spot":
                     if cash < -1e-9:
                         raise AssertionError(
@@ -539,7 +573,96 @@ class EventDrivenBacktestEngine:
                     heapq.heappush(order_queue, order)
 
             # ------------------------------------------------------------------
-            # After executing pending orders, update equity/positions
+            # After executing pending orders, evaluate TP/SL/Trailing exits
+            for (strat_name, symbol), state in list(position_levels.items()):
+                svc = self.risk[(strat_name, symbol)]
+                arrs = data_arrays[symbol]
+                sym_len = data_lengths[symbol]
+                if i >= sym_len:
+                    continue
+                qty = svc.rm.pos.qty
+                if abs(qty) < self.min_order_qty:
+                    continue
+                if state.get("entry_i") == i:
+                    continue
+                high = float(arrs.get("high", arrs["close"])[i])
+                low = float(arrs.get("low", arrs["close"])[i])
+                exit_price = None
+                side = None
+                tp = state.get("take_profit")
+                sl = state.get("stop_loss")
+                trail = state.get("trail_pct")
+                best = state.get("best_price", float(arrs["close"][i]))
+                if qty > 0:
+                    if trail is not None:
+                        best = max(best, high)
+                        state["best_price"] = best
+                        tr_stop = best * (1 - trail)
+                        if sl is None or tr_stop > sl:
+                            sl = tr_stop
+                            state["stop_loss"] = sl
+                    if sl is not None and low <= sl:
+                        exit_price = sl
+                        side = "sell"
+                    elif tp is not None and high >= tp:
+                        exit_price = tp
+                        side = "sell"
+                elif qty < 0:
+                    if trail is not None:
+                        best = min(best, low)
+                        state["best_price"] = best
+                        tr_stop = best * (1 + trail)
+                        if sl is None or tr_stop < sl:
+                            sl = tr_stop
+                            state["stop_loss"] = sl
+                    if sl is not None and high >= sl:
+                        exit_price = sl
+                        side = "buy"
+                    elif tp is not None and low <= tp:
+                        exit_price = tp
+                        side = "buy"
+                if exit_price is not None:
+                    exit_qty = abs(qty)
+                    exchange = self.strategy_exchange[(strat_name, symbol)]
+                    fee_model = self.exchange_fees.get(exchange, self.default_fee)
+                    trade_value = exit_qty * exit_price
+                    fee = fee_model.calculate(trade_value, maker=False)
+                    if side == "sell":
+                        cash += trade_value - fee
+                    else:
+                        cash -= trade_value + fee
+                    svc.on_fill(symbol, side, exit_qty, exit_price)
+                    position_levels.pop((strat_name, symbol), None)
+                    base_after = svc.rm.pos.qty
+                    mtm_after = 0.0
+                    for (strat_s, sym_s), svc_s in self.risk.items():
+                        arrs_s = data_arrays[sym_s]
+                        sym_len_s = data_lengths[sym_s]
+                        idx_px = i if i < sym_len_s else sym_len_s - 1
+                        mark = exit_price if sym_s == symbol else float(arrs_s["close"][idx_px])
+                        mtm_after += svc_s.rm.pos.qty * mark
+                    equity_after = cash + mtm_after
+                    if collect_fills:
+                        timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
+                        fills.append(
+                            (
+                                timestamp,
+                                side,
+                                exit_price,
+                                exit_qty,
+                                strat_name,
+                                symbol,
+                                exchange,
+                                "taker",
+                                fee,
+                                cash,
+                                base_after,
+                                equity_after,
+                                getattr(svc.rm.pos, "realized_pnl", 0.0),
+                            )
+                        )
+
+            # After executing pending orders and intrabar exits, update equity/positions
             mtm = sum(
                 svc.rm.pos.qty * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
@@ -626,6 +749,9 @@ class EventDrivenBacktestEngine:
                         queue_pos,
                         None,
                         post_only,
+                        getattr(sig, "take_profit", None),
+                        getattr(sig, "stop_loss", None),
+                        getattr(sig, "trailing_pct", None),
                     )
                     orders.append(order)
                     heapq.heappush(order_queue, order)
@@ -654,8 +780,14 @@ class EventDrivenBacktestEngine:
                     continue
                 current_price = float(arrs["close"][i])
                 svc.mark_price(symbol, current_price)
+                check_price = current_price
+                pos_qty = svc.rm.pos.qty
+                if pos_qty > 0 and "low" in arrs:
+                    check_price = float(arrs["low"][i])
+                elif pos_qty < 0 and "high" in arrs:
+                    check_price = float(arrs["high"][i])
                 try:
-                    svc.rm.check_limits(current_price)
+                    svc.rm.check_limits(check_price)
                 except StopLossExceeded:
                     delta = -svc.rm.pos.qty
                     if abs(delta) > self.min_order_qty:
@@ -680,6 +812,9 @@ class EventDrivenBacktestEngine:
                             0.0,
                             None,
                             False,
+                            None,
+                            None,
+                            None,
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)

@@ -26,6 +26,7 @@ class Signal:
     reduce_only: bool = False
     take_profit: float | None = None  # optional TP price level
     stop_loss: float | None = None  # optional SL price level
+    trailing_pct: float | None = None  # optional trailing stop distance as fraction
 
 class Strategy(ABC):
     name: str
