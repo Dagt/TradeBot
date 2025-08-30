@@ -63,63 +63,72 @@ class BreakoutVol(Strategy):
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
+        closes = df["close"]
+        last = closes.iloc[-1]
+
+        if self.pos_side != 0:
+            # Manage existing position before considering new entries
+            self.hold_bars += 1
+            assert self.entry_price is not None and self.favorable_price is not None
+            if self.pos_side > 0:
+                self.favorable_price = max(self.favorable_price, last)
+            else:
+                self.favorable_price = min(self.favorable_price, last)
+
+            pnl_bps = (last - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            trail_hit = False
+            if self.trailing_stop_bps is not None:
+                best_pnl = (
+                    (last - self.favorable_price) / self.favorable_price * 10000 * self.pos_side
+                )
+                trail_hit = best_pnl <= -self.trailing_stop_bps
+            if (
+                pnl_bps >= self.tp_bps
+                or pnl_bps <= -self.sl_bps
+                or self.hold_bars >= self.max_hold_bars
+                or trail_hit
+            ):
+                side = "sell" if self.pos_side > 0 else "buy"
+                self.pos_side = 0
+                self.entry_price = None
+                self.favorable_price = None
+                self.hold_bars = 0
+                return Signal(side, 1.0)
+            return None
+
         if len(df) < self.lookback + 1:
             return None
-        closes = df["close"]
+
         mean = closes.rolling(self.lookback).mean().iloc[-1]
         std = closes.rolling(self.lookback).std().iloc[-1]
-        last = closes.iloc[-1]
         upper = mean + self.mult * std
         lower = mean - self.mult * std
 
         returns = closes.pct_change().dropna()
-        vol = returns.rolling(self.lookback).std().iloc[-1] if len(returns) >= self.lookback else 0.0
+        vol = (
+            returns.rolling(self.lookback).std().iloc[-1]
+            if len(returns) >= self.lookback
+            else 0.0
+        )
         vol_bps = vol * 10000
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
-        if self.pos_side == 0:
-            if last > upper:
-                expected_edge_bps = (last - upper) / abs(last) * 10000
-                if expected_edge_bps <= self.min_edge_bps:
-                    return None
-                self.pos_side = 1
-                self.entry_price = last
-                self.favorable_price = last
-                self.hold_bars = 0
-                return Signal("buy", size, expected_edge_bps=expected_edge_bps)
-            if last < lower:
-                expected_edge_bps = (lower - last) / abs(last) * 10000
-                if expected_edge_bps <= self.min_edge_bps:
-                    return None
-                self.pos_side = -1
-                self.entry_price = last
-                self.favorable_price = last
-                self.hold_bars = 0
-                return Signal("sell", size, expected_edge_bps=expected_edge_bps)
-            return None
-
-        self.hold_bars += 1
-        assert self.entry_price is not None and self.favorable_price is not None
-        if self.pos_side > 0:
-            self.favorable_price = max(self.favorable_price, last)
-        else:
-            self.favorable_price = min(self.favorable_price, last)
-
-        pnl_bps = (last - self.entry_price) / self.entry_price * 10000 * self.pos_side
-        trail_hit = False
-        if self.trailing_stop_bps is not None:
-            best_pnl = (last - self.favorable_price) / self.favorable_price * 10000 * self.pos_side
-            trail_hit = best_pnl <= -self.trailing_stop_bps
-        if (
-            pnl_bps >= self.tp_bps
-            or pnl_bps <= -self.sl_bps
-            or self.hold_bars >= self.max_hold_bars
-            or trail_hit
-        ):
-            side = "sell" if self.pos_side > 0 else "buy"
-            self.pos_side = 0
-            self.entry_price = None
-            self.favorable_price = None
+        if last > upper:
+            expected_edge_bps = (last - upper) / abs(last) * 10000
+            if expected_edge_bps <= self.min_edge_bps:
+                return None
+            self.pos_side = 1
+            self.entry_price = last
+            self.favorable_price = last
             self.hold_bars = 0
-            return Signal(side, 1.0)
+            return Signal("buy", size, expected_edge_bps=expected_edge_bps)
+        if last < lower:
+            expected_edge_bps = (lower - last) / abs(last) * 10000
+            if expected_edge_bps <= self.min_edge_bps:
+                return None
+            self.pos_side = -1
+            self.entry_price = last
+            self.favorable_price = last
+            self.hold_bars = 0
+            return Signal("sell", size, expected_edge_bps=expected_edge_bps)
         return None

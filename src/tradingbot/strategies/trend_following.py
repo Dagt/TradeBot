@@ -68,14 +68,12 @@ class TrendFollowing(Strategy):
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < max(self.rsi_n, self.vol_lookback) + 1:
-            return None
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
-        returns = prices.pct_change().dropna()
-        vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
+
         if self._pos_side:
+            # Manage open position before computing new signals
             self.hold_bars += 1
             assert self._entry_price is not None
             pnl_bps = (price - self._entry_price) / self._entry_price * 10000
@@ -88,8 +86,16 @@ class TrendFollowing(Strategy):
                 side = "sell" if self._pos_side == "buy" else "buy"
                 self._calc_strength("flat", price)
                 return Signal(side, 1.0)
+            return None
+
+        if len(df) < max(self.rsi_n, self.vol_lookback) + 1:
+            return None
+
+        returns = prices.pct_change().dropna()
+        vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
         if pd.isna(vol) or vol < self.min_volatility:
             return None
+
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
         ofi_val = 0.0
