@@ -8,14 +8,15 @@ own besides what is supplied in method calls.
 
 Main features
 -------------
-* Size positions based on a fixed percentage of available balance and an input
-  signal strength.
-* Calculate initial stop prices using the Average True Range (ATR).
-* Progressively tighten stops as a trade becomes profitable using four stages:
-  1. move stop to break‑even once price moves half the initial risk,
-  2. lock in one dollar of net profit (after fees and slippage),
-  3. afterwards trail the stop at ``2 × ATR``.
-* Check global exposure limits before submitting new orders.
+    * Size positions based on a fixed percentage of available balance and an input
+      signal strength.
+    * Calculate initial stop prices using a fixed percentage of the entry price.
+    * Progressively tighten stops as a trade becomes profitable using four stages:
+      1. cut the initial risk in half,
+      2. move the stop to break‑even once price moves the full initial risk,
+      3. lock in one dollar of net profit (after fees and slippage),
+      4. afterwards trail the stop at ``2 × ATR``.
+    * Check global exposure limits before submitting new orders.
 """
 
 from __future__ import annotations
@@ -59,6 +60,7 @@ class RiskManager:
     account: Account
     risk_per_trade: float = 0.01
     atr_mult: float = 2.0
+    risk_pct: float = 0.01
 
     # ------------------------------------------------------------------
     # Position sizing
@@ -82,8 +84,7 @@ class RiskManager:
     def initial_stop(self, entry_price: float, side: str, atr: float | None = None) -> float:
         """Return the initial stop price for a new position."""
 
-        atr = float(atr or 0.0)
-        delta = self.atr_mult * atr
+        delta = float(entry_price) * float(self.risk_pct)
         if side.lower() in {"buy", "long"}:
             return float(entry_price) - delta
         return float(entry_price) + delta
@@ -102,23 +103,30 @@ class RiskManager:
         risk = abs(entry - stop)
         move = current_price - entry if side in {"buy", "long"} else entry - current_price
 
-        # Stage 0 -> 1: price moves half the risk, move stop to break-even
+        # Stage 0 -> 1: price moves half the risk, cut risk in half
         if stage == 0 and move >= risk / 2:
-            _set(trade, "stop", entry)
+            new_stop = entry - risk / 2 if side in {"buy", "long"} else entry + risk / 2
+            _set(trade, "stop", new_stop)
             _set(trade, "stage", 1)
             return
 
-        # Stage 1 -> 2: lock in +1 USD net after fees/slippage
-        net = move * qty - float(fees_slip)
-        if stage <= 1 and net >= 1.0:
-            price_shift = (1.0 + float(fees_slip)) / qty
-            new_stop = entry + price_shift if side in {"buy", "long"} else entry - price_shift
-            _set(trade, "stop", new_stop)
+        # Stage 1 -> 2: move stop to break-even after full risk move
+        if stage == 1 and move >= risk:
+            _set(trade, "stop", entry)
             _set(trade, "stage", 2)
             return
 
-        # Stage 2 -> 3+: trailing at 2 * ATR
-        if stage >= 2 and atr > 0:
+        # Stage 2 -> 3: lock in +1 USD net after fees/slippage
+        net = move * qty - float(fees_slip)
+        if stage <= 2 and net >= 1.0:
+            price_shift = (1.0 + float(fees_slip)) / qty
+            new_stop = entry + price_shift if side in {"buy", "long"} else entry - price_shift
+            _set(trade, "stop", new_stop)
+            _set(trade, "stage", 3)
+            return
+
+        # Stage 3 -> 4+: trailing at 2 * ATR
+        if stage >= 3 and atr > 0:
             trail = current_price - 2 * atr if side in {"buy", "long"} else current_price + 2 * atr
             if side in {"buy", "long"}:
                 if trail > stop:
@@ -126,7 +134,7 @@ class RiskManager:
             else:
                 if trail < stop:
                     _set(trade, "stop", trail)
-            _set(trade, "stage", max(stage, 3))
+            _set(trade, "stage", max(stage, 4))
 
     # ------------------------------------------------------------------
     def manage_position(self, trade: Any, signal: dict | None = None) -> str:
@@ -154,6 +162,18 @@ class RiskManager:
                 return "close"
             if signal.get("exit"):
                 return "close"
+
+            strength = signal.get("strength")
+            cur_strength = float(_get(trade, "strength", 1.0))
+            if sig_side and sig_side.lower() == side.lower() and strength is not None:
+                if strength > cur_strength:
+                    _set(trade, "strength", strength)
+                    return "scale_in"
+                if strength < cur_strength:
+                    _set(trade, "strength", strength)
+                    if strength <= 0:
+                        return "close"
+                    return "scale_out"
         return "hold"
 
     # ------------------------------------------------------------------
