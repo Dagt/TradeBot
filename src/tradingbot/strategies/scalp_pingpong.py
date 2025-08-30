@@ -151,7 +151,7 @@ class ScalpPingPong(Strategy):
             qty = self.risk_service.calc_position_size(size, price)
             trade = {"side": side, "entry_price": price, "qty": qty}
             atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.core.initial_stop(
+            trade["stop"] = self.risk_service.initial_stop(
                 price, side, atr
             )
             trade["atr"] = atr
