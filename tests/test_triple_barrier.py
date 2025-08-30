@@ -75,25 +75,18 @@ def test_triple_barrier_scalping_exit():
         lower_pct=0.02,
         training_window=3,
         meta_model=meta_model,
-        max_hold_bars=5,
     )
     strat.model = primary_model
     signals = []
     for i in range(len(prices)):
         signals.append(strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0}))
     assert signals[2] is not None and signals[2].side == "buy"
-
-    # RiskManager handles position exits
-    trade = {
-        "side": "buy",
-        "entry_price": 97.0,
-        "stop": 96.0,
-        "qty": 1.0,
-        "current_price": 96.0,
-    }
+    trade = {"side": "buy", "entry_price": 97.0, "qty": 1.0, "stop": 96.0}
     account = Account(float("inf"), cash=1000.0)
     rm = CoreRiskManager(account)
-    assert rm.manage_position(trade) == "close"
+    rm.update_trailing(trade, 96.0)
+    decision = rm.manage_position({**trade, "current_price": 96.0})
+    assert decision == "close"
 
 
 def test_triple_barrier_loads_config(tmp_path):
@@ -104,7 +97,6 @@ horizon: 3
 upper_pct: 0.05
 lower_pct: 0.01
 training_window: 50
-max_hold_bars: 7
 """
     )
     strat = TripleBarrier(config_path=str(cfg))
@@ -112,5 +104,4 @@ max_hold_bars: 7
     assert strat.upper_pct == 0.05
     assert strat.lower_pct == 0.01
     assert strat.training_window == 50
-    assert strat.max_hold_bars == 7
 

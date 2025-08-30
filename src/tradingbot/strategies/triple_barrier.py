@@ -11,9 +11,6 @@ PARAM_INFO = {
     "lower_pct": "Porcentaje de barrera inferior",
     "training_window": "Ventana para entrenamiento del modelo",
     "meta_model": "Modelo para meta etiquetado",
-    "tp_bps": "Take profit en puntos básicos",
-    "sl_bps": "Stop loss en puntos básicos",
-    "max_hold_bars": "Barras máximas en posición",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -113,11 +110,9 @@ class TripleBarrier(Strategy):
         lower_pct: float = 0.02,
         training_window: int = 200,
         meta_model: ClassifierMixin | None = None,
-        tp_bps: float = 10.0,
-        sl_bps: float = 15.0,
-        max_hold_bars: int = 10,
         *,
         config_path: str | None = None,
+        risk_service=None,
     ) -> None:
         params = load_params(config_path)
         horizon = params.get("horizon", horizon)
@@ -125,9 +120,6 @@ class TripleBarrier(Strategy):
         lower_pct = params.get("lower_pct", lower_pct)
         training_window = params.get("training_window", training_window)
         meta_model = params.get("meta_model", meta_model)
-        tp_bps = params.get("tp_bps", tp_bps)
-        sl_bps = params.get("sl_bps", sl_bps)
-        max_hold_bars = params.get("max_hold_bars", max_hold_bars)
 
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
@@ -137,12 +129,8 @@ class TripleBarrier(Strategy):
         self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
         self.meta_fitted = False
-        self.tp_bps = float(tp_bps)
-        self.sl_bps = float(sl_bps)
-        self.max_hold_bars = int(max_hold_bars)
-        self.pos_side: int = 0
-        self.entry_price: float | None = None
-        self.hold_bars: int = 0
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         returns = df["close"].pct_change().fillna(0)
@@ -161,21 +149,14 @@ class TripleBarrier(Strategy):
         if len(df) < self.training_window:
             return None
         last = df["close"].iloc[-1]
-        if self.pos_side != 0:
-            self.hold_bars += 1
-            assert self.entry_price is not None
-            pnl_bps = (
-                (last - self.entry_price) / self.entry_price * 10000 * self.pos_side
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, last)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": last}
             )
-            if (
-                pnl_bps >= self.tp_bps
-                or pnl_bps <= -self.sl_bps
-                or self.hold_bars >= self.max_hold_bars
-            ):
-                side = "sell" if self.pos_side > 0 else "buy"
-                self.pos_side = 0
-                self.entry_price = None
-                self.hold_bars = 0
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
                 return Signal(side, 1.0)
             return None
 
@@ -203,13 +184,16 @@ class TripleBarrier(Strategy):
             if meta_pred == 0:
                 return None
         if pred == 1:
-            self.pos_side = 1
-            self.entry_price = last
-            self.hold_bars = 0
-            return Signal("buy", 1.0)
-        if pred == -1:
-            self.pos_side = -1
-            self.entry_price = last
-            self.hold_bars = 0
-            return Signal("sell", 1.0)
-        return None
+            side = "buy"
+        elif pred == -1:
+            side = "sell"
+        else:
+            return None
+        if self.risk_service:
+            qty = self.risk_service.calc_position_size(1.0, last)
+            trade = {"side": side, "entry_price": float(last), "qty": qty}
+            atr = bar.get("atr") or bar.get("volatility")
+            trade["stop"] = self.risk_service.core.initial_stop(last, side, atr)
+            self.risk_service.update_trailing(trade, float(last))
+            self.trade = trade
+        return Signal(side, 1.0)
