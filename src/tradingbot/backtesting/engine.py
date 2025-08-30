@@ -342,7 +342,13 @@ class EventDrivenBacktestEngine:
             )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             account = CoreAccount(float("inf"), cash=self.initial_equity)
-            self.risk[key] = RiskService(rm, guard, account=account, risk_per_trade=1.0)
+            self.risk[key] = RiskService(
+                rm,
+                guard,
+                account=account,
+                risk_per_trade=1.0,
+                risk_pct=self._risk_pct,
+            )
             self.strategy_exchange[key] = exchange
 
         # Internal flag to avoid repeated on_bar calls per bar index

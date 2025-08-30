@@ -124,7 +124,14 @@ async def run_live_binance(
         halt_action="close_all",
     ), venue="binance")
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
-    risk = RiskService(risk_core, guard, dguard, engine=pg_engine, account=broker.account)
+    risk = RiskService(
+        risk_core,
+        guard,
+        dguard,
+        engine=pg_engine,
+        account=broker.account,
+        risk_pct=risk_pct,
+    )
     guard.refresh_usd_caps(broker.equity({}))
     oco_book = OcoBook()
     if pg_engine is not None:

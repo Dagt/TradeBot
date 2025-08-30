@@ -39,6 +39,7 @@ class RiskService:
         account: CoreAccount | None = None,
         risk_per_trade: float = 0.01,
         atr_mult: float = 2.0,
+        risk_pct: float = 0.01,
     ) -> None:
         self.rm = manager
         self.guard = guard
@@ -47,7 +48,10 @@ class RiskService:
         self.engine = engine
         self.account = account or CoreAccount(float("inf"))
         self.core = CoreRiskManager(
-            self.account, risk_per_trade=risk_per_trade, atr_mult=atr_mult
+            self.account,
+            risk_per_trade=risk_per_trade,
+            atr_mult=atr_mult,
+            risk_pct=risk_pct,
         )
         self.trades: Dict[str, dict] = {}
 

@@ -52,6 +52,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
         risk = RiskService(
             RiskManager(risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="binance")),
+            risk_pct=0.0,
         )
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None

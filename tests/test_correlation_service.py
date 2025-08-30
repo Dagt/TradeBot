@@ -56,7 +56,7 @@ def test_risk_service_uses_correlation_service():
     guard.refresh_usd_caps(1.0)
     rm = RiskManager(vol_target=0.02)
     corr = CorrelationService()
-    svc = RiskService(rm, guard, corr_service=corr)
+    svc = RiskService(rm, guard, corr_service=corr, risk_pct=0.0)
     now = datetime.now(timezone.utc)
     price_btc = 100.0
     price_eth = 200.0
