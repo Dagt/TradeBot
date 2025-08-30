@@ -431,10 +431,13 @@ class EventDrivenBacktestEngine:
                     if abs(pos_qty) > self.min_order_qty:
                         trade = {
                             "side": "buy" if pos_qty > 0 else "sell",
-                            "current_price": price,
+                            "entry_price": getattr(svc.rm, "_entry_price", None),
+                            "qty": abs(pos_qty),
                             "stop": getattr(svc.rm, "_entry_price", None),
                         }
+                        svc.update_trailing(trade, price)
                         svc.manage_position(trade)
+                        svc.rm._entry_price = trade.get("stop", svc.rm._entry_price)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
@@ -789,9 +792,6 @@ class EventDrivenBacktestEngine:
                     svc = self.risk[(strat_name, symbol)]
                     place_price = float(arrs["close"][i])
                     svc.mark_price(symbol, place_price)
-                    symbol_vol = float(sym_vols[symbol][i])
-                    if np.isnan(symbol_vol):
-                        symbol_vol = 0.0
                     if equity < 0:
                         continue
                     equity_for_order = max(equity, 1.0)
@@ -801,8 +801,6 @@ class EventDrivenBacktestEngine:
                         equity_for_order,
                         place_price,
                         strength=sig.strength,
-                        symbol_vol=symbol_vol,
-                        corr_threshold=0.8,
                     )
                     if not allowed or abs(delta) < self.min_order_qty:
                         continue
