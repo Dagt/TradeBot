@@ -105,6 +105,7 @@ class SlippageModel:
         ofi_impact: float = 0.0,
         source: str = "bba",
         base_spread: float = 0.0,
+        pct: float = 0.0001,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
@@ -114,6 +115,7 @@ class SlippageModel:
             raise ValueError("source must be 'bba' or 'fixed_spread'")
         self.source = source
         self.base_spread = float(base_spread)
+        self.pct = float(pct)
 
     def adjust(
         self,
@@ -156,7 +158,7 @@ class SlippageModel:
                     pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
                 ).iloc[-1]
             )
-        slip = spread / 2 + impact + self.ofi_impact * ofi_val
+        slip = spread / 2 + impact + self.ofi_impact * ofi_val + price * self.pct
         return price + slip if side == "buy" else price - slip
 
     # ------------------------------------------------------------------
@@ -231,6 +233,8 @@ class EventDrivenBacktestEngine:
         latency: int = 1,
         window: int = 120,
         slippage: SlippageModel | None = None,
+        fee_bps: float = 5.0,
+        slippage_bps: float = 1.0,
         exchange_configs: Dict[str, Dict[str, float]] | None = None,
         use_l2: bool = False,
         partial_fills: bool = True,
@@ -247,6 +251,12 @@ class EventDrivenBacktestEngine:
         self.latency = int(latency)
         self.window = int(window)
         self.slippage = slippage
+        self.fee_bps = float(fee_bps)
+        self.slippage_bps = float(slippage_bps)
+        if self.slippage is None:
+            self.slippage = SlippageModel(pct=self.slippage_bps / 10000.0)
+        else:
+            self.slippage.pct = self.slippage_bps / 10000.0
         self.use_l2 = bool(use_l2)
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
@@ -276,8 +286,8 @@ class EventDrivenBacktestEngine:
         self.exchange_tick_size: Dict[str, float] = {}
         self.exchange_min_fill_qty: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
-        default_maker_bps = 10.0
-        default_taker_bps = 10.0
+        default_maker_bps = self.fee_bps
+        default_taker_bps = self.fee_bps
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             maker_bps = float(cfg.get("maker_fee_bps", default_maker_bps))

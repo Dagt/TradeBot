@@ -85,6 +85,14 @@
         <label for="bt-risk-pct">Risk %</label>
         <input id="bt-risk-pct" type="number" step="any"/>
       </div>
+      <div id="field-fee-bps">
+        <label for="bt-fee-bps">Comisión (bps)</label>
+        <input id="bt-fee-bps" type="number" step="any" placeholder="5"/>
+      </div>
+      <div id="field-slippage-bps">
+        <label for="bt-slippage-bps">Slippage (bps)</label>
+        <input id="bt-slippage-bps" type="number" step="any" placeholder="1"/>
+      </div>
       <div id="field-verbose-fills">
   <span>Exportar fills (CSV)</span>
   <label class="switch">
@@ -365,7 +373,7 @@ function updateBtFields(){
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
   const showRisk = mode!=='walk';
-  ['field-risk-pct'].forEach(id=>{
+  ['field-risk-pct','field-fee-bps','field-slippage-bps'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
   });
   document.getElementById('bt-strategy-params').style.display=(mode==='csv'||mode==='db')?'':'none';
@@ -424,6 +432,10 @@ async function runBacktest(){
   if(mode!=='walk'){
     const sl=document.getElementById('bt-risk-pct').value.trim();
     if(sl) cmd+=` --risk-pct ${sl}`;
+    const fee=document.getElementById('bt-fee-bps').value.trim();
+    if(fee) cmd+=` --fee-bps ${fee}`;
+    const sb=document.getElementById('bt-slippage-bps').value.trim();
+    if(sb) cmd+=` --slippage-bps ${sb}`;
   }
   const stratCfg=document.getElementById('bt-strategy-config').value.trim();
   if(stratCfg) cmd+=` --config ${stratCfg}`;

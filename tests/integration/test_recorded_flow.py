@@ -24,9 +24,10 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
         [("alwaysbuy", sym)],
         latency=1,
         window=1,
-        slippage=SlippageModel(volume_impact=0.0),
+        slippage=SlippageModel(volume_impact=0.0, pct=0.0),
         initial_equity=df["close"].iloc[0],
         exchange_configs={"default": {"market_type": "spot"}},
+        slippage_bps=0.0,
     )
     risk = engine.risk[("alwaysbuy", sym)]
     engine.verbose_fills = True
@@ -67,5 +68,5 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     final_price = df["close"].iloc[-1]
     expected_equity = cash + base * final_price
     assert result["equity"] == pytest.approx(expected_equity)
-    assert result["equity"] == pytest.approx(103.97112767590798)
-    assert result["pnl"] == pytest.approx(3.4711276759079794)
+    assert result["equity"] == pytest.approx(104.02308726847399)
+    assert result["pnl"] == pytest.approx(3.5230872684739865)

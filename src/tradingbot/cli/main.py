@@ -990,6 +990,8 @@ def backtest(
         callback=_parse_risk_pct,
         help="Risk stop loss % (0-1 or 0-100)",
     ),
+    fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
+    slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -1033,6 +1035,8 @@ def backtest(
         exchange_configs=exchange_cfg,
         min_fill_qty=min_fill_qty,
         slippage=slippage,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
     )
     params = _parse_params(param) if isinstance(param, list) else {}
     from ..strategies import STRATEGIES
@@ -1061,6 +1065,8 @@ def backtest_cfg(
         callback=_parse_risk_pct,
         help="Risk stop loss % (0-1 or 0-100)",
     ),
+    fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
+    slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -1122,6 +1128,8 @@ def backtest_cfg(
             exchange_configs=exchange_cfg,
             min_fill_qty=min_fill_qty,
             slippage=slippage,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
         )
         result = eng.run(fills_csv=fills_csv)
         typer.echo(OmegaConf.to_yaml(cfg))
@@ -1163,6 +1171,8 @@ def backtest_db(
         callback=_parse_risk_pct,
         help="Risk stop loss % (0-1 or 0-100)",
     ),
+    fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
+    slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -1242,6 +1252,8 @@ def backtest_db(
             exchange_configs=exchange_cfg,
             min_fill_qty=min_fill_qty,
             slippage=slippage,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
         )
         params = _parse_params(param) if isinstance(param, list) else {}
         if not isinstance(config, str):
@@ -1268,6 +1280,8 @@ def backtest_db(
 @app.command("walk-forward")
 def walk_forward_cfg(
     config: str,
+    fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
+    slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -1318,6 +1332,8 @@ def walk_forward_cfg(
             window=getattr(wf_cfg, "window", 120),
             verbose_fills=verbose_fills,
             fills_csv=fills_csv,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
             exchange_configs=exchange_cfg,
             min_fill_qty=min_fill_qty,
             slippage=slippage,

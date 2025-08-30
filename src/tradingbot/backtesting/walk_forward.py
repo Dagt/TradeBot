@@ -43,6 +43,8 @@ def walk_forward_backtest(
     window: int = 120,
     verbose_fills: bool = False,
     fills_csv: str | None = None,
+    fee_bps: float = 5.0,
+    slippage_bps: float = 1.0,
     exchange_configs: Dict[str, Dict[str, float]] | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
     slippage: SlippageModel | None = None,
@@ -76,6 +78,8 @@ def walk_forward_backtest(
                 exchange_configs=exchange_configs,
                 min_fill_qty=min_fill_qty,
                 slippage=slippage,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -94,6 +98,8 @@ def walk_forward_backtest(
             exchange_configs=exchange_configs,
             min_fill_qty=min_fill_qty,
             slippage=slippage,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
         )
         engine.strategies[(strategy_name, symbol)] = strat
         test_res = engine.run(fills_csv=fills_csv)
