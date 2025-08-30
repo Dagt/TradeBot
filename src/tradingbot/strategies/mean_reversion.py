@@ -9,7 +9,8 @@ PARAM_INFO = {
     "lower": "Nivel RSI inferior para comprar",
     "tp_bps": "Take profit en puntos básicos",
     "sl_bps": "Stop loss en puntos básicos",
-    "max_hold_bars": "Barras máximas en posición",
+    "max_hold_bars": "Barras máximas en posición (rango 5-10)",
+    "min_bars_between_trades": "Barras mínimas entre operaciones",
     "scale_by": "Método para escalar la fuerza de la señal",
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
@@ -44,7 +45,9 @@ class MeanReversion(Strategy):
     sl_bps : float, optional
         Stop loss in basis points, by default ``40``.
     max_hold_bars : int, optional
-        Maximum number of bars to hold a trade, by default ``15``.
+        Maximum number of bars to hold a trade (clamped to 5-10), by default ``10``.
+    min_bars_between_trades : int, optional
+        Minimum bars between trades to enforce a cooldown, by default ``5``.
     scale_by : {"pnl", "rsi"}, optional
         Method used to scale signal ``strength``, by default ``"pnl"``.
     """
@@ -57,7 +60,9 @@ class MeanReversion(Strategy):
         self.lower = kwargs.get("lower", 40.0)
         self.tp_bps = kwargs.get("tp_bps", 30.0)
         self.sl_bps = kwargs.get("sl_bps", 40.0)
-        self.max_hold_bars = kwargs.get("max_hold_bars", 15)
+        max_hold_val = kwargs.get("max_hold_bars", 10)
+        self.max_hold_bars = max(min(max_hold_val, 10), 5)
+        self.min_bars_between_trades = kwargs.get("min_bars_between_trades", 5)
         self.scale_by = kwargs.get("scale_by", "pnl")
         self.trend_ma = kwargs.get("trend_ma", 50)
         self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
@@ -67,8 +72,9 @@ class MeanReversion(Strategy):
         self._pos_side: str | None = None
         self._entry_price: float | None = None
         self._hold_bars: int = 0
+        self._last_trade_idx: int = -self.min_bars_between_trades
 
-    def _manage_position(self, price: float, last_rsi: float) -> Signal | None:
+    def _manage_position(self, price: float, last_rsi: float, idx: int) -> Signal | None:
         """Handle an open position and return an exit signal if needed."""
         self._hold_bars += 1
         assert self._entry_price is not None
@@ -84,6 +90,7 @@ class MeanReversion(Strategy):
             self._pos_side = None
             self._entry_price = None
             self._hold_bars = 0
+            self._last_trade_idx = idx
             return Signal(side, 1.0)
         return None
 
@@ -111,13 +118,16 @@ class MeanReversion(Strategy):
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:
             return None
+        idx = len(df) - 1
         price_col = "close" if "close" in df.columns else "price"
         price_series = df[price_col]
         price = float(price_series.iloc[-1])
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
         if self._pos_side is not None:
-            return self._manage_position(price, last_rsi)
+            return self._manage_position(price, last_rsi, idx)
+        if idx - self._last_trade_idx < self.min_bars_between_trades:
+            return None
 
         returns = price_series.pct_change().dropna()
         vol = (
@@ -153,12 +163,14 @@ class MeanReversion(Strategy):
             self._pos_side = "sell"
             self._entry_price = price
             self._hold_bars = 0
+            self._last_trade_idx = idx
             return Signal("sell", strength)
         if last_rsi < lower:
             strength = self._calc_strength("buy", price, last_rsi)
             self._pos_side = "buy"
             self._entry_price = price
             self._hold_bars = 0
+            self._last_trade_idx = idx
             return Signal("buy", strength)
         return None
 
