@@ -48,5 +48,5 @@ def test_ml_strategy_risk_service_handles_stop_and_size():
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, bar_open["close"])
     assert trade["qty"] == pytest.approx(expected_qty)
-    expected_stop = svc.core.initial_stop(bar_open["close"], "buy")
+    expected_stop = svc.initial_stop(bar_open["close"], "buy")
     assert trade["stop"] == pytest.approx(expected_stop)

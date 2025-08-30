@@ -82,7 +82,7 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
     assert trade["qty"] == pytest.approx(expected_qty)
-    expected_stop = svc.core.initial_stop(trade["entry_price"], "buy")
+    expected_stop = svc.initial_stop(trade["entry_price"], "buy")
     assert trade["stop"] == pytest.approx(expected_stop)
 
 
