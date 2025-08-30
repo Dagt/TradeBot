@@ -39,6 +39,22 @@ class TrendFollowing(Strategy):
         self._entry_price: float | None = None
         self.hold_bars = 0
 
+    def _manage_position(self, price: float) -> Signal | None:
+        """Handle an open position and return an exit signal if needed."""
+        self.hold_bars += 1
+        assert self._entry_price is not None
+        pnl_bps = (price - self._entry_price) / self._entry_price * 10000
+        if self._pos_side == "sell":
+            pnl_bps = -pnl_bps
+        exit_tp = pnl_bps >= self.tp_bps
+        exit_sl = pnl_bps <= -self.sl_bps
+        exit_time = self.hold_bars >= self.max_hold_bars
+        if exit_tp or exit_sl or exit_time:
+            side = "sell" if self._pos_side == "buy" else "buy"
+            self._calc_strength("flat", price)
+            return Signal(side, 1.0)
+        return None
+
     def _calc_strength(self, side: str, price: float) -> float:
         if side == "flat":
             self._pos_side = None
@@ -76,18 +92,10 @@ class TrendFollowing(Strategy):
         returns = prices.pct_change().dropna()
         vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
         if self._pos_side:
-            self.hold_bars += 1
-            assert self._entry_price is not None
-            pnl_bps = (price - self._entry_price) / self._entry_price * 10000
-            if self._pos_side == "sell":
-                pnl_bps = -pnl_bps
-            exit_tp = pnl_bps >= self.tp_bps
-            exit_sl = pnl_bps <= -self.sl_bps
-            exit_time = self.hold_bars >= self.max_hold_bars
-            if exit_tp or exit_sl or exit_time:
-                side = "sell" if self._pos_side == "buy" else "buy"
-                self._calc_strength("flat", price)
-                return Signal(side, 1.0)
+            res = self._manage_position(price)
+            if res is not None:
+                return res
+            return None
         if pd.isna(vol) or vol < self.min_volatility:
             return None
         rsi_series = rsi(df, self.rsi_n)

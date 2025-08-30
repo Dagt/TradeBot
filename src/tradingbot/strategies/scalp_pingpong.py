@@ -100,6 +100,40 @@ class ScalpPingPong(Strategy):
         self.hold_bars: int = 0
         self.favorable_price: float | None = None
 
+    def _manage_position(self, price: float, z: float) -> Signal | None:
+        """Handle an open position and return an exit signal if needed."""
+        self.hold_bars += 1
+        assert self.entry_price is not None and self.favorable_price is not None
+        if self.pos_side > 0:
+            self.favorable_price = max(self.favorable_price, price)
+        else:
+            self.favorable_price = min(self.favorable_price, price)
+
+        pnl_bps = (
+            (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+        )
+        exit_z = abs(z) < self.cfg.exit_z
+        exit_tp = pnl_bps >= self.cfg.tp_bps
+        exit_sl = pnl_bps <= -self.cfg.sl_bps
+        exit_time = self.hold_bars >= self.cfg.max_hold_bars
+        exit_trail = False
+        if self.cfg.trailing_stop_bps is not None:
+            best_pnl = (
+                (price - self.favorable_price)
+                / self.favorable_price
+                * 10000
+                * self.pos_side
+            )
+            exit_trail = best_pnl <= -self.cfg.trailing_stop_bps
+        if exit_z or exit_tp or exit_sl or exit_time or exit_trail:
+            side = "sell" if self.pos_side > 0 else "buy"
+            self.pos_side = 0
+            self.entry_price = None
+            self.favorable_price = None
+            self.hold_bars = 0
+            return Signal(side, 1.0)
+        return None
+
     def _calc_zscore(self, closes: pd.Series) -> float:
         returns = closes.pct_change().dropna()
         if len(returns) < self.cfg.lookback:
@@ -120,6 +154,8 @@ class ScalpPingPong(Strategy):
         returns = closes.pct_change().dropna()
         z = self._calc_zscore(closes)
         price = float(closes.iloc[-1])
+        if self.pos_side != 0:
+            return self._manage_position(price, z)
 
         vol = (
             returns.rolling(self.cfg.lookback).std().iloc[-1]
@@ -147,51 +183,29 @@ class ScalpPingPong(Strategy):
             elif trsi < 50 - self.cfg.trend_threshold:
                 trend_dir = -1
 
-        z_buy = self.cfg.z_threshold + (self.cfg.trend_threshold / 100 if trend_dir == -1 else 0)
-        z_sell = self.cfg.z_threshold + (self.cfg.trend_threshold / 100 if trend_dir == 1 else 0)
+        z_buy = self.cfg.z_threshold + (
+            self.cfg.trend_threshold / 100 if trend_dir == -1 else 0
+        )
+        z_sell = self.cfg.z_threshold + (
+            self.cfg.trend_threshold / 100 if trend_dir == 1 else 0
+        )
 
-        if self.pos_side == 0:
-            if z <= -z_buy:
-                self.pos_side = 1
-                self.entry_price = price
-                self.favorable_price = price
-                self.hold_bars = 0
-                strength = min(1.0, abs(z) / z_buy)
-                size = min(1.0, strength * vol_size)
-                if size > 0:
-                    return Signal("buy", size)
-            if z >= z_sell:
-                self.pos_side = -1
-                self.entry_price = price
-                self.favorable_price = price
-                self.hold_bars = 0
-                strength = min(1.0, abs(z) / z_sell)
-                size = min(1.0, strength * vol_size)
-                if size > 0:
-                    return Signal("sell", size)
-            return None
-
-        self.hold_bars += 1
-        assert self.entry_price is not None and self.favorable_price is not None
-        if self.pos_side > 0:
-            self.favorable_price = max(self.favorable_price, price)
-        else:
-            self.favorable_price = min(self.favorable_price, price)
-
-        pnl_bps = (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
-        exit_z = abs(z) < self.cfg.exit_z
-        exit_tp = pnl_bps >= self.cfg.tp_bps
-        exit_sl = pnl_bps <= -self.cfg.sl_bps
-        exit_time = self.hold_bars >= self.cfg.max_hold_bars
-        exit_trail = False
-        if self.cfg.trailing_stop_bps is not None:
-            best_pnl = (price - self.favorable_price) / self.favorable_price * 10000 * self.pos_side
-            exit_trail = best_pnl <= -self.cfg.trailing_stop_bps
-        if exit_z or exit_tp or exit_sl or exit_time or exit_trail:
-            side = "sell" if self.pos_side > 0 else "buy"
-            self.pos_side = 0
-            self.entry_price = None
-            self.favorable_price = None
+        if z <= -z_buy:
+            self.pos_side = 1
+            self.entry_price = price
+            self.favorable_price = price
             self.hold_bars = 0
-            return Signal(side, 1.0)
+            strength = min(1.0, abs(z) / z_buy)
+            size = min(1.0, strength * vol_size)
+            if size > 0:
+                return Signal("buy", size)
+        if z >= z_sell:
+            self.pos_side = -1
+            self.entry_price = price
+            self.favorable_price = price
+            self.hold_bars = 0
+            strength = min(1.0, abs(z) / z_sell)
+            size = min(1.0, strength * vol_size)
+            if size > 0:
+                return Signal("sell", size)
         return None

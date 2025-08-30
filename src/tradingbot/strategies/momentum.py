@@ -47,46 +47,13 @@ class Momentum(Strategy):
         self.entry_price: float | None = None
         self.hold_bars: int = 0
 
-    @record_signal_metrics
-    def on_bar(self, bar: dict) -> Signal | None:
-        df: pd.DataFrame = bar["window"]
-        if len(df) < self.rsi_n + 2:
-            return None
-
-        closes = df["close"]
-        price = closes.iloc[-1]
-        rsi_series = rsi(df, self.rsi_n)
-        prev_rsi = rsi_series.iloc[-2]
-        last_rsi = rsi_series.iloc[-1]
-
-        if self.pos_side == 0:
-            # Optional inactivity filters
-            if self.min_volume is not None:
-                if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
-                    return None
-            if self.min_volatility is not None:
-                vol = returns(df).rolling(self.vol_window).std().iloc[-1]
-                if pd.isna(vol) or vol < self.min_volatility:
-                    return None
-
-            upper = self.threshold
-            lower = 100 - self.threshold
-            if prev_rsi <= upper and last_rsi > upper:
-                self.pos_side = 1
-                self.entry_price = price
-                self.hold_bars = 0
-                return Signal("buy", 1.0)
-            if prev_rsi >= lower and last_rsi < lower:
-                self.pos_side = -1
-                self.entry_price = price
-                self.hold_bars = 0
-                return Signal("sell", 1.0)
-            return None
-
-        # Manage open position
+    def _manage_position(self, price: float) -> Signal | None:
+        """Handle an open position and return an exit signal if needed."""
         self.hold_bars += 1
         assert self.entry_price is not None
-        pnl_bps = (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+        pnl_bps = (
+            (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+        )
         if (
             pnl_bps >= self.tp_bps
             or pnl_bps <= -self.sl_bps
@@ -97,6 +64,43 @@ class Momentum(Strategy):
             self.entry_price = None
             self.hold_bars = 0
             return Signal(side, 1.0)
+        return None
+
+    @record_signal_metrics
+    def on_bar(self, bar: dict) -> Signal | None:
+        df: pd.DataFrame = bar["window"]
+        if len(df) < self.rsi_n + 2:
+            return None
+
+        closes = df["close"]
+        price = closes.iloc[-1]
+        if self.pos_side != 0:
+            return self._manage_position(price)
+        rsi_series = rsi(df, self.rsi_n)
+        prev_rsi = rsi_series.iloc[-2]
+        last_rsi = rsi_series.iloc[-1]
+
+        # Optional inactivity filters
+        if self.min_volume is not None:
+            if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
+                return None
+        if self.min_volatility is not None:
+            vol = returns(df).rolling(self.vol_window).std().iloc[-1]
+            if pd.isna(vol) or vol < self.min_volatility:
+                return None
+
+        upper = self.threshold
+        lower = 100 - self.threshold
+        if prev_rsi <= upper and last_rsi > upper:
+            self.pos_side = 1
+            self.entry_price = price
+            self.hold_bars = 0
+            return Signal("buy", 1.0)
+        if prev_rsi >= lower and last_rsi < lower:
+            self.pos_side = -1
+            self.entry_price = price
+            self.hold_bars = 0
+            return Signal("sell", 1.0)
         return None
 
 
