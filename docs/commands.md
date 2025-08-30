@@ -135,7 +135,6 @@ Ejecuta el bot en modo en vivo (testnet o real).
 - `--risk-pct`: porcentaje de pérdida máxima del equity asignado.
 - `--leverage`: apalancamiento para futuros.
 - `--dry-run`: simula órdenes en testnet.
-- `--take-profit`: porcentaje de toma de ganancias.
 
 ## `paper-run`
 Corre una estrategia en modo paper (sin dinero real) y expone métricas.
@@ -241,7 +240,7 @@ Ejecuta un arbitraje triangular simple en Binance.
 - `route`: cadena `BASE-MID-QUOTE` que define los tres pares.
 
 El tamaño de la operación se calcula automáticamente a partir de la señal
-`strength` y el `RiskService`.
+`strength` y el `RiskService`, respetando el `risk_pct` configurado.
 
 ## `cross-arb`
 Arbitraje entre un mercado spot y uno de futuros.
@@ -250,11 +249,13 @@ Arbitraje entre un mercado spot y uno de futuros.
 - `perp`: nombre del adaptador de futuros.
 - `--threshold`: diferencia mínima de precio para actuar.
 
-El tamaño de cada pata se calcula de forma automática a partir del diferencial
-(`edge`) y el capital disponible reportado por `broker.equity()`.
+El diferencial (`edge`) se traduce en una señal `strength` y el `RiskService`
+dimensiona cada pata respetando el `risk_pct` y el capital disponible reportado
+por `broker.equity()`.
 
 ## `run-cross-arb`
 Versión que utiliza el `ExecutionRouter` para arbitraje spot/perp.
 Acepta los mismos parámetros que `cross-arb` y dimensiona las órdenes de la
-misma manera.
+misma manera, respetando el `risk_pct` y la señal `strength` derivada del
+`edge`.
 
