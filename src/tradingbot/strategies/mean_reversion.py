@@ -14,6 +14,7 @@ PARAM_INFO = {
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
+    "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
 class MeanReversion(Strategy):
@@ -61,6 +62,7 @@ class MeanReversion(Strategy):
         self.trend_ma = kwargs.get("trend_ma", 50)
         self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
         self.trend_threshold = kwargs.get("trend_threshold", 10.0)
+        self.min_volatility = kwargs.get("min_volatility", 0.0)
         # Track current position to adapt strength
         self._pos_side: str | None = None
         self._entry_price: float | None = None
@@ -90,10 +92,20 @@ class MeanReversion(Strategy):
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:
             return None
+        price_col = "close" if "close" in df.columns else "price"
+        price_series = df[price_col]
+        price = float(price_series.iloc[-1])
+        returns = price_series.pct_change().dropna()
+        vol = (
+            returns.rolling(self.rsi_n).std().iloc[-1]
+            if len(returns) >= self.rsi_n
+            else 0.0
+        )
+        vol_bps = vol * 10000
+        if vol_bps < self.min_volatility:
+            return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
-        price_col = "close" if "close" in df.columns else "price"
-        price = float(df[price_col].iloc[-1])
 
         trend_dir = 0
         if len(df) >= self.trend_ma:
