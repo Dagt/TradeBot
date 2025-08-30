@@ -4,6 +4,8 @@ from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
 from tradingbot.strategies.breakout_vol import BreakoutVol
+from tradingbot.core import Account, RiskManager as CoreRiskManager
+import pytest
 from hypothesis import given, strategies as st
 
 
@@ -78,6 +80,21 @@ vol_threshold: 1.0
     strat = MeanRevOFI(**cfg)
     sig_buy = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig_buy.side == "buy"
+
+
+def test_mean_rev_ofi_trailing_stop_uses_atr():
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account)
+    trade = {
+        "side": "sell",
+        "entry_price": 100.0,
+        "qty": 1.0,
+        "stop": 101.0,
+        "atr": 1.0,
+        "stage": 3,
+    }
+    rm.update_trailing(trade, 90.0)
+    assert trade["stop"] == pytest.approx(90.0 + 2 * trade["atr"])
 
 
 def test_breakout_vol_min_edge():
