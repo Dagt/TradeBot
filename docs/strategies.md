@@ -12,7 +12,7 @@ local basado en `notional * risk_pct`.
 Compra cuando el precio supera el canal superior calculado con el indicador
 ATR y vende cuando cae por debajo del canal inferior. El parámetro
 `min_bars_between_trades` limita la emisión de señales opuestas hasta que
-transcurra un mínimo de velas.
+transcurra un mínimo de 5 velas.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.

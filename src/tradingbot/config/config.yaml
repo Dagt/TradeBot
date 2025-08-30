@@ -8,7 +8,8 @@ strategies:
   default: breakout_atr
   params:
     breakout_atr:
-      min_bars_between_trades: 1
+      min_bars_between_trades: 5
+      max_hold_bars: 5
       min_edge_bps: 0.0
     mean_rev_ofi:
       ofi_window: 20

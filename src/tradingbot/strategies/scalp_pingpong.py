@@ -13,7 +13,7 @@ PARAM_INFO = {
     "exit_z": "Z-score para cerrar la posición",
     "tp_bps": "Take profit en puntos básicos",
     "sl_bps": "Stop loss en puntos básicos",
-    "max_hold_bars": "Barras máximas en posición",
+    "max_hold_bars": "Barras máximas en posición (5-10)",
     "trailing_stop_bps": "Trailing stop en puntos básicos",
     "volatility_factor": "Factor de tamaño según volatilidad",
     "config_path": "Ruta opcional al archivo de configuración",
@@ -38,7 +38,8 @@ class ScalpPingPongConfig:
     sl_bps : float, optional
         Stop loss in basis points, by default ``15``.
     max_hold_bars : int, optional
-        Maximum number of bars to hold a trade, by default ``8``.
+        Maximum number of bars to hold a trade, by default ``8`` (clamped to
+        the range ``5``–``10``).
     trailing_stop_bps : float, optional
         Distance from the best price in basis points to trigger a trailing stop,
         default ``10``.
@@ -55,6 +56,10 @@ class ScalpPingPongConfig:
     max_hold_bars: int = 8
     trailing_stop_bps: float | None = 10.0
     volatility_factor: float = 0.02
+
+    def __post_init__(self) -> None:
+        # Ensure max_hold_bars stays within [5, 10]
+        self.max_hold_bars = max(5, min(self.max_hold_bars, 10))
 
 
 class ScalpPingPong(Strategy):
