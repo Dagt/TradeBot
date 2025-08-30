@@ -143,8 +143,9 @@ async def _run_symbol(
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
-            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
-            risk.rm._entry_price = data.get("avg_price")
+            risk.update_position(
+                guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
+            )
         oco_book.preload(
             load_active_oco(engine, venue=guard.cfg.venue, symbols=[cfg.symbol])
         )
@@ -160,17 +161,11 @@ async def _run_symbol(
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
-        pos_qty = risk.rm.pos.qty
-        if abs(pos_qty) > risk.rm.min_order_qty:
-            trade = {
-                "side": "buy" if pos_qty > 0 else "sell",
-                "entry_price": getattr(risk.rm, "_entry_price", None),
-                "qty": abs(pos_qty),
-                "stop": getattr(risk.rm, "_entry_price", None),
-            }
+        pos_qty, _ = risk.account.current_exposure(cfg.symbol)
+        trade = risk.get_trade(cfg.symbol)
+        if trade and abs(pos_qty) > risk.rm.min_order_qty:
             risk.update_trailing(trade, px)
             decision = risk.manage_position(trade)
-            risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
                 if dry_run:

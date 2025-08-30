@@ -114,8 +114,9 @@ async def _run_symbol(
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
-            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
-            risk.rm._entry_price = data.get("avg_price")
+            risk.update_position(
+                guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
+            )
         oco_book.preload(
             load_active_oco(engine, venue=guard.cfg.venue, symbols=[cfg.symbol])
         )
