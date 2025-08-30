@@ -39,6 +39,7 @@ class PaperAdapter(ExchangeAdapter):
         taker_fee_bps: float | None = None,
         fee_bps: float | None = None,
     ):
+        super().__init__()
         self.state = PaperState()
         mf = (
             maker_fee_bps
@@ -54,6 +55,7 @@ class PaperAdapter(ExchangeAdapter):
 
     def update_last_price(self, symbol: str, px: float):
         self.state.last_px[symbol] = px
+        self.account.mark_price(symbol, px)
 
     async def stream_trades(
         self,
@@ -126,6 +128,8 @@ class PaperAdapter(ExchangeAdapter):
                 self.state.realized_pnl += (pos.avg_px - px) * closed
             pos.qty = new_qty
             self.state.cash -= qty * px + fee
+            self.account.update_position(symbol, qty, px)
+            self.account.update_cash(-(qty * px + fee))
         elif side == "sell":
             new_qty = pos.qty - qty
             if new_qty == 0:
@@ -137,6 +141,8 @@ class PaperAdapter(ExchangeAdapter):
                 self.state.realized_pnl += (px - pos.avg_px) * closed
             pos.qty = new_qty
             self.state.cash += qty * px - fee
+            self.account.update_position(symbol, -qty, px)
+            self.account.update_cash(qty * px - fee)
         else:
             raise ValueError("side debe ser buy/sell")
 

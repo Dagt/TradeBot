@@ -10,6 +10,7 @@ import json
 import websockets
 
 from ..core.symbols import normalize as normalize_symbol
+from ..core.account import Account
 from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 
@@ -37,6 +38,8 @@ class ExchangeAdapter(ABC):
         self.log = logging.getLogger(getattr(self, "name", self.__class__.__name__))
         # live market data populated by streaming helpers
         self.state = AdapterState()
+        # basic account information for the adapter
+        self.account = Account(float("inf"))
         self.ping_interval = 20.0
         self._fee_task: asyncio.Task | None = None
 
