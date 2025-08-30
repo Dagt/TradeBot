@@ -155,10 +155,13 @@ async def run_live_binance(
         if abs(pos_qty) > risk.rm.min_order_qty:
             trade = {
                 "side": "buy" if pos_qty > 0 else "sell",
-                "current_price": px,
+                "entry_price": getattr(risk.rm, "_entry_price", None),
+                "qty": abs(pos_qty),
                 "stop": getattr(risk.rm, "_entry_price", None),
             }
+            risk.update_trailing(trade, px)
             decision = risk.manage_position(trade)
+            risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
                 prev_rpnl = broker.state.realized_pnl
@@ -205,8 +208,6 @@ async def run_live_binance(
             eq,
             closed.c,
             strength=signal.strength,
-            symbol_vol=float(bar.get("volatility", 0.0) or 0.0),
-            corr_threshold=0.8,
         )
         if not allowed or abs(delta) <= 1e-9:
             if not allowed:

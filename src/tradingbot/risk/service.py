@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Tuple
+from typing import Dict
 
 import pandas as pd
 import numpy as np
@@ -100,28 +100,17 @@ class RiskService:
         """Check limits and compute sized order before submitting.
 
         Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
-        proposed after volatility and correlation adjustments.
+        based solely on ``signal_strength`` and ``price``.
         """
 
         self.guard.refresh_usd_caps(equity)
 
-        if symbol_vol is None or symbol_vol <= 0:
-            symbol_vol = self.guard.volatility(symbol)
+        qty = self.calc_position_size(strength, price)
+        delta = qty if side == "buy" else -qty
 
-        correlations: Dict[Tuple[str, str], float] = {}
-        if self.corr is not None:
-            correlations = self.corr.get_correlations()
-
-        delta = self.rm.size(
-            side,
-            strength=strength,
-            equity=equity,
-            price=price,
-            symbol=symbol,
-            symbol_vol=symbol_vol or 0.0,
-            correlations=correlations,
-            threshold=corr_threshold,
-        )
+        alloc = abs(delta) * price
+        if not self.check_global_exposure(symbol, alloc):
+            return False, "symbol_exposure", 0.0
         qty = abs(delta)
 
         if qty < self.rm.min_order_qty:

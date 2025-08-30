@@ -86,10 +86,13 @@ async def run_paper(
             if abs(pos_qty) > risk.rm.min_order_qty:
                 trade = {
                     "side": "buy" if pos_qty > 0 else "sell",
-                    "current_price": px,
+                    "entry_price": getattr(risk.rm, "_entry_price", None),
+                    "qty": abs(pos_qty),
                     "stop": getattr(risk.rm, "_entry_price", None),
                 }
+                risk.update_trailing(trade, px)
                 decision = risk.manage_position(trade)
+                risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"
                     await router.execute(
@@ -113,7 +116,6 @@ async def run_paper(
                 eq,
                 closed.c,
                 strength=signal.strength,
-                corr_threshold=corr_threshold,
             )
             if not allowed or abs(delta) <= 0:
                 continue

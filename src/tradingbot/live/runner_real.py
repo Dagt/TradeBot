@@ -164,10 +164,13 @@ async def _run_symbol(
         if abs(pos_qty) > risk.rm.min_order_qty:
             trade = {
                 "side": "buy" if pos_qty > 0 else "sell",
-                "current_price": px,
+                "entry_price": getattr(risk.rm, "_entry_price", None),
+                "qty": abs(pos_qty),
                 "stop": getattr(risk.rm, "_entry_price", None),
             }
+            risk.update_trailing(trade, px)
             decision = risk.manage_position(trade)
+            risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
                 if dry_run:
@@ -200,7 +203,6 @@ async def _run_symbol(
             eq,
             closed.c,
             strength=sig.strength,
-            corr_threshold=corr_threshold,
         )
         if not allowed or abs(delta) <= 0:
             if reason:
