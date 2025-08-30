@@ -8,8 +8,6 @@ strategies:
   default: breakout_atr
   params:
     breakout_atr:
-      min_bars_between_trades: 5
-      max_hold_bars: 5
       min_edge_bps: 0.0
     mean_rev_ofi:
       ofi_window: 20
@@ -49,6 +47,7 @@ ingestion:
 
 risk:
   risk_pct: 0.02
+  max_symbol_exposure: null
   vol_target: 0.01
   total_cap_pct: null
   per_symbol_cap_pct: null

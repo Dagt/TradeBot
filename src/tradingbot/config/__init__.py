@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     maker_fee_bps: float = 7.5
     passive_rebate_bps: float = 0.0
 
+    # Risk manager defaults
+    risk_pct: float = 0.0
+    max_symbol_exposure: float | None = None
+
     # Binance Spot
     binance_spot_maker_fee_bps: float = 7.5
     binance_spot_taker_fee_bps: float = 7.5
