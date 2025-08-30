@@ -67,7 +67,7 @@ def test_risk_service_uses_guard_volatility():
     rm = RiskManager(vol_target=0.02)
     rm_guard_equity = 1.0
     guard.refresh_usd_caps(rm_guard_equity)
-    svc = RiskService(rm, guard)
+    svc = RiskService(rm, guard, risk_pct=0.0)
     guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
     base = rm.size(
         "buy", 1.0, 1.0, strength=0.1, symbol="BTC", symbol_vol=guard.volatility("BTC")

@@ -48,6 +48,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             RiskManager(risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="cross")),
             daily=None,
+            risk_pct=0.0,
         )
 
     engine = get_engine() if _CAN_PG else None

@@ -76,7 +76,11 @@ async def test_cross_exchange_updates_risk_positions(monkeypatch):
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
     cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
-    risk = RiskService(RiskManager(), PortfolioGuard(GuardConfig(venue="test")))
+    risk = RiskService(
+        RiskManager(),
+        PortfolioGuard(GuardConfig(venue="test")),
+        risk_pct=0.0,
+    )
     monkeypatch.setattr(
         "tradingbot.live.runner_cross_exchange.balances",
         {spot.name: 2.0, perp.name: 1.0},

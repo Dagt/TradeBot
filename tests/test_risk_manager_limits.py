@@ -93,7 +93,7 @@ def test_risk_service_updates_and_persists(monkeypatch):
     monkeypatch.setattr(
         timescale, "insert_risk_event", lambda engine, **kw: events.append(kw)
     )
-    svc = RiskService(rm, guard, daily, engine=object())
+    svc = RiskService(rm, guard, daily, engine=object(), risk_pct=0.0)
     allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, 1.0, strength=1.0)
     assert not allowed
     assert events and events[0]["kind"] == "VIOLATION"
@@ -102,7 +102,7 @@ def test_risk_service_updates_and_persists(monkeypatch):
 def test_risk_service_stop_loss_triggers_close():
     rm = RiskManager(risk_pct=0.05)
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard)
+    svc = RiskService(rm, guard, risk_pct=0.05)
     rm.set_position(1.0)
     svc.update_position("X", "BTC", 1.0)
     rm.check_limits(100.0)

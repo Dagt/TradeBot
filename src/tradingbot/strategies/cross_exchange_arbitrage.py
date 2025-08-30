@@ -101,7 +101,11 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
     risk_mgr = RiskManager(risk_pct=0.0)
-    risk = RiskService(risk_mgr, PortfolioGuard(GuardConfig(venue="cross")))
+    risk = RiskService(
+        risk_mgr,
+        PortfolioGuard(GuardConfig(venue="cross")),
+        risk_pct=0.0,
+    )
 
     async def maybe_trade() -> None:
         nonlocal position_sign, entry_edge
