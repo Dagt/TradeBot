@@ -88,7 +88,7 @@ class LiquidityEvents(Strategy):
                 qty = self.risk_service.calc_position_size(strength, last_price)
                 trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
                 atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.core.initial_stop(last_price, side, atr)
+                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
                     trade["atr"] = atr
                 self.risk_service.update_trailing(trade, last_price)
@@ -101,7 +101,7 @@ class LiquidityEvents(Strategy):
                 qty = self.risk_service.calc_position_size(strength, last_price)
                 trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
                 atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.core.initial_stop(last_price, side, atr)
+                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
                     trade["atr"] = atr
                 self.risk_service.update_trailing(trade, last_price)
@@ -117,7 +117,7 @@ class LiquidityEvents(Strategy):
                 qty = self.risk_service.calc_position_size(strength, last_price)
                 trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
                 atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.core.initial_stop(last_price, side, atr)
+                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
                     trade["atr"] = atr
                 self.risk_service.update_trailing(trade, last_price)
@@ -130,7 +130,7 @@ class LiquidityEvents(Strategy):
                 qty = self.risk_service.calc_position_size(strength, last_price)
                 trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
                 atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.core.initial_stop(last_price, side, atr)
+                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
                     trade["atr"] = atr
                 self.risk_service.update_trailing(trade, last_price)
