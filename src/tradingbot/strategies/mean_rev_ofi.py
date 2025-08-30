@@ -63,13 +63,15 @@ class MeanRevOFI(Strategy):
 
         if self.trade and self.risk_service and last_close is not None:
             self.risk_service.update_trailing(self.trade, last_close)
-            decision = self.risk_service.manage_position(
-                {**self.trade, "current_price": last_close}
-            )
+            trade = {**self.trade, "current_price": last_close}
+            decision = self.risk_service.manage_position(trade)
+            self.trade.update(trade)
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
                 return Signal(side, 1.0)
+            if decision in {"scale_in", "scale_out"}:
+                return Signal(self.trade["side"], self.trade.get("strength", 1.0))
             return None
 
         needed = {"bid_qty", "ask_qty", "close"}

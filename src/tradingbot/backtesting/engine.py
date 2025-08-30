@@ -436,8 +436,49 @@ class EventDrivenBacktestEngine:
                             "stop": getattr(svc.rm, "_entry_price", None),
                         }
                         svc.update_trailing(trade, price)
-                        svc.manage_position(trade)
+                        decision = svc.manage_position(trade)
                         svc.rm._entry_price = trade.get("stop", svc.rm._entry_price)
+                        if decision in {"scale_in", "scale_out"}:
+                            target = svc.calc_position_size(trade.get("strength", 1.0), price)
+                            delta = target - abs(pos_qty)
+                            if abs(delta) >= self.min_order_qty:
+                                side = "buy" if delta > 0 else "sell"
+                                notional = abs(delta) * price
+                                if svc.rm.register_order(notional):
+                                    exchange = self.strategy_exchange[(strat, sym)]
+                                    base_latency = self.exchange_latency.get(exchange, self.latency)
+                                    delay = max(1, int(base_latency * self.stress.latency))
+                                    exec_index = i + delay
+                                    queue_pos = 0.0
+                                    if self.use_l2:
+                                        vol_key = "ask_size" if side == "buy" else "bid_size"
+                                        depth = self.exchange_depth.get(exchange, self.default_depth)
+                                        vol_arr = arrs.get(vol_key)
+                                        avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                                        queue_pos = min(avail, depth)
+                                    order_seq += 1
+                                    order = Order(
+                                        exec_index,
+                                        order_seq,
+                                        i,
+                                        strat,
+                                        sym,
+                                        side,
+                                        abs(delta),
+                                        exchange,
+                                        price,
+                                        abs(delta),
+                                        0.0,
+                                        0.0,
+                                        queue_pos,
+                                        None,
+                                        False,
+                                        None,
+                                        None,
+                                        None,
+                                    )
+                                    orders.append(order)
+                                    heapq.heappush(order_queue, order)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)

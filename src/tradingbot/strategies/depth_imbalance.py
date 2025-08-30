@@ -42,11 +42,15 @@ class DepthImbalance(Strategy):
         price = bar.get("close")
         if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
-            decision = self.risk_service.manage_position({**self.trade, "current_price": price})
+            trade = {**self.trade, "current_price": price}
+            decision = self.risk_service.manage_position(trade)
+            self.trade.update(trade)
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
                 return Signal(side, 1.0)
+            if decision in {"scale_in", "scale_out"}:
+                return Signal(self.trade["side"], self.trade.get("strength", 1.0))
             return None
 
         di_series = depth_imbalance(df[list(needed)])
