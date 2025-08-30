@@ -12,6 +12,7 @@ PARAM_INFO = {
     "trailing_stop_bps": "Distancia del trailing stop en bps",
     "volatility_factor": "Factor para dimensionar según volatilidad",
     "min_edge_bps": "Edge mínimo en puntos básicos para operar",
+    "min_volatility": "Desviación estándar mínima en bps para operar",
 }
 
 
@@ -42,6 +43,8 @@ class BreakoutVol(Strategy):
         default ``0.02``.
     min_edge_bps : float, optional
         Edge mínimo en puntos básicos requerido para operar, default ``0``.
+    min_volatility : float, optional
+        Volatilidad mínima (en bps) requerida para operar, default ``0``.
     """
 
     name = "breakout_vol"
@@ -55,6 +58,7 @@ class BreakoutVol(Strategy):
         self.trailing_stop_bps = kwargs.get("trailing_stop_bps", 10.0)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
         self.min_edge_bps = kwargs.get("min_edge_bps", 0.0)
+        self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.pos_side: int = 0
         self.entry_price: float | None = None
         self.favorable_price: float | None = None
@@ -73,11 +77,17 @@ class BreakoutVol(Strategy):
         lower = mean - self.mult * std
 
         returns = closes.pct_change().dropna()
-        vol = returns.rolling(self.lookback).std().iloc[-1] if len(returns) >= self.lookback else 0.0
+        vol = (
+            returns.rolling(self.lookback).std().iloc[-1]
+            if len(returns) >= self.lookback
+            else 0.0
+        )
         vol_bps = vol * 10000
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
         if self.pos_side == 0:
+            if vol_bps < self.min_volatility:
+                return None
             if last > upper:
                 expected_edge_bps = (last - upper) / abs(last) * 10000
                 if expected_edge_bps <= self.min_edge_bps:

@@ -12,13 +12,39 @@ PARAM_INFO = {
     "tp_bps": "Take profit en puntos básicos",
     "sl_bps": "Stop loss en puntos básicos",
     "max_hold_bars": "Máximo de barras en posición",
-    "min_atr": "ATR mínimo para operar",
+    "min_volatility": "ATR mínimo en puntos básicos para operar",
     "trail_atr_mult": "Multiplicador del trailing stop basado en ATR",
     "min_edge_bps": "Edge mínimo en puntos básicos para operar",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
 class BreakoutATR(Strategy):
+    """Keltner channel breakout strategy using ATR.
+
+    Parameters
+    ----------
+    ema_n : int, optional
+        Periodo de la EMA para la línea central, por defecto ``20``.
+    atr_n : int, optional
+        Periodo del ATR usado en los canales, por defecto ``14``.
+    mult : float, optional
+        Multiplicador aplicado al ATR, por defecto ``1.0``.
+    min_bars_between_trades : int, optional
+        Barras mínimas entre operaciones, por defecto ``1``.
+    tp_bps : float, optional
+        Take profit en puntos básicos, por defecto ``5.0``.
+    sl_bps : float, optional
+        Stop loss en puntos básicos, por defecto ``5.0``.
+    max_hold_bars : int, optional
+        Máximo de barras en posición, por defecto ``3``.
+    min_volatility : float, optional
+        ATR mínimo en puntos básicos requerido para operar, por defecto ``0.0``.
+    trail_atr_mult : float, optional
+        Multiplicador del trailing stop basado en ATR, por defecto ``1.0``.
+    min_edge_bps : float, optional
+        Edge mínimo en puntos básicos para operar, por defecto ``0.0``.
+    """
+
     name = "breakout_atr"
 
     def __init__(
@@ -30,7 +56,7 @@ class BreakoutATR(Strategy):
         tp_bps: float = 5.0,
         sl_bps: float = 5.0,
         max_hold_bars: int = 3,
-        min_atr: float = 0.0,
+        min_volatility: float = 0.0,
         trail_atr_mult: float = 1.0,
         min_edge_bps: float = 0.0,
         *,
@@ -47,7 +73,7 @@ class BreakoutATR(Strategy):
         self.tp_bps = float(params.get("tp_bps", tp_bps))
         self.sl_bps = float(params.get("sl_bps", sl_bps))
         self.max_hold_bars = int(params.get("max_hold_bars", max_hold_bars))
-        self.min_atr = float(params.get("min_atr", min_atr))
+        self.min_volatility = float(params.get("min_volatility", min_volatility))
         self.trail_atr_mult = float(params.get("trail_atr_mult", trail_atr_mult))
         self.min_edge_bps = float(params.get("min_edge_bps", min_edge_bps))
         self.pos_side: int = 0
@@ -67,9 +93,10 @@ class BreakoutATR(Strategy):
         last_close = df["close"].iloc[-1]
         current_idx = len(df) - 1
         atr_val = atr(df, self.atr_n).iloc[-1]
+        atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
         if self.pos_side == 0:
-            if atr_val < self.min_atr:
+            if atr_bps < self.min_volatility:
                 return None
             side: str | None = None
             expected_edge_bps = 0.0

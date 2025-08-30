@@ -52,6 +52,11 @@ def test_breakout_atr_min_edge(breakout_df_buy, breakout_df_sell):
     )
 
 
+def test_breakout_atr_min_volatility(breakout_df_buy):
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_volatility=2000)
+    assert strat.on_bar({"window": breakout_df_buy, "volatility": 0.0}) is None
+
+
 def test_order_flow_signals():
     df_buy = pd.DataFrame({
         "bid_qty": [1, 2, 3, 5],
@@ -121,6 +126,12 @@ def test_breakout_vol_min_edge():
     std = df_sell["close"].rolling(2).std().iloc[-1]
     expected_edge = ((mean - 0.5 * std) - df_sell["close"].iloc[-1]) / abs(df_sell["close"].iloc[-1]) * 10000
     assert sig_sell.expected_edge_bps == pytest.approx(expected_edge)
+
+
+def test_breakout_vol_min_volatility():
+    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
+    strat = BreakoutVol(lookback=2, mult=0.5, min_volatility=20000)
+    assert strat.on_bar({"window": df_buy, "volatility": 0.0}) is None
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
