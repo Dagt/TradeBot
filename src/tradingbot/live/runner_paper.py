@@ -55,7 +55,7 @@ async def run_paper(
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
     guard.refresh_usd_caps(1000.0)
     corr = CorrelationService()
-    risk = RiskService(risk_core, guard, corr_service=corr)
+    risk = RiskService(risk_core, guard, corr_service=corr, account=broker.account)
     engine = get_engine() if _CAN_PG else None
     oco_book = OcoBook()
     if engine is not None:
@@ -82,6 +82,21 @@ async def run_paper(
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
             risk.update_correlation(corr._returns.corr(), corr_threshold)
+            pos_qty = risk.rm.pos.qty
+            if abs(pos_qty) > risk.rm.min_order_qty:
+                trade = {
+                    "side": "buy" if pos_qty > 0 else "sell",
+                    "current_price": px,
+                    "stop": getattr(risk.rm, "_entry_price", None),
+                }
+                decision = risk.manage_position(trade)
+                if decision == "close":
+                    close_side = "sell" if pos_qty > 0 else "buy"
+                    await router.execute(
+                        Order(symbol=symbol, side=close_side, type_="market", qty=abs(pos_qty))
+                    )
+                    risk.on_fill(symbol, close_side, abs(pos_qty), venue="paper")
+                    continue
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
                 continue
@@ -108,8 +123,6 @@ async def run_paper(
                 side=side,
                 type_="market",
                 qty=abs(delta),
-                take_profit=getattr(signal, "take_profit", None),
-                stop_loss=getattr(signal, "stop_loss", None),
                 reduce_only=signal.reduce_only,
             )
             await router.execute(order)

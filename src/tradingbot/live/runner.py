@@ -124,7 +124,7 @@ async def run_live_binance(
         halt_action="close_all",
     ), venue="binance")
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
-    risk = RiskService(risk_core, guard, dguard, engine=pg_engine)
+    risk = RiskService(risk_core, guard, dguard, engine=pg_engine, account=broker.account)
     guard.refresh_usd_caps(broker.equity({}))
     oco_book = OcoBook()
     if pg_engine is not None:
@@ -150,6 +150,26 @@ async def run_live_binance(
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
+
+        pos_qty = risk.rm.pos.qty
+        if abs(pos_qty) > risk.rm.min_order_qty:
+            trade = {
+                "side": "buy" if pos_qty > 0 else "sell",
+                "current_price": px,
+                "stop": getattr(risk.rm, "_entry_price", None),
+            }
+            decision = risk.manage_position(trade)
+            if decision == "close":
+                close_side = "sell" if pos_qty > 0 else "buy"
+                prev_rpnl = broker.state.realized_pnl
+                resp = await broker.place_order(symbol, close_side, "market", abs(pos_qty))
+                risk.on_fill(symbol, close_side, abs(pos_qty), venue="binance")
+                delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+                if halted:
+                    log.error("[HALT] motivo=%s", reason)
+                    break
+                continue
 
         # Persistencia opcional: guardar trade crudo
         if pg_engine is not None:
@@ -200,8 +220,6 @@ async def run_live_binance(
             side,
             "market",
             abs(delta),
-            take_profit=getattr(signal, "take_profit", None),
-            stop_loss=getattr(signal, "stop_loss", None),
         )
         fills += 1
         log.info("FILL live %s", resp)
