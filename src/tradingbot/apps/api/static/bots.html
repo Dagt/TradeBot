@@ -117,7 +117,6 @@
       <div id="bot-param-card" style="display:none">
         <div id="bot-strategy-params" class="param-grid"></div>
       </div>
-      <p id="bot-strategy-info" class="dm-kind-desc" style="grid-column:1 / -1;"></p>
       <button id="bot-start" style="margin-top:10px">Start</button>
       <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
     </div>
@@ -153,20 +152,6 @@
 <script>
 const api = (path) => `${location.origin}${path}`;
 
-const dataInfo = {
-  ohlcv: "Serie de velas con Open-High-Low-Close-Volume.",
-  prices: "Secuencia de precios (spot o perp) en ticks/velas, útil para spreads.",
-  bba: "Best Bid/Ask (mejor postor y oferente) con sus volúmenes.",
-  book_delta: "Variaciones por nivel del libro entre dos snapshots consecutivos.",
-  trades: "Historial de operaciones ejecutadas (agresivas).",
-  spot: "Precio de mercado spot.",
-  perp: "Precio de futuros perpetuos.",
-  funding: "Historial de tasas de financiamiento de los perpetuos.",
-  features: "Indicadores y estadísticas usados por un modelo de ML.",
-};
-
-let strategyInfo = {};
-
   async function loadStrategies(){
     try{
       const r = await fetch(api('/strategies/status'));
@@ -195,13 +180,7 @@ async function loadStrategyParams(name){
     const r=await fetch(api(`/strategies/${name}/schema`));
     const j=await r.json();
     const params=(j.params||[]).filter(p=>p.name!=='config_path');
-    if(!params.length){
-      container.innerHTML='<p>Esta estrategia no tiene parámetros configurables</p>';
-      card.style.display='block';
-      return;
-    }
-    field.style.display='flex';
-
+    field.style.display=params.length?'flex':'none';
     params.forEach(p=>{
       const div=document.createElement('div');
 
@@ -236,41 +215,9 @@ async function loadStrategyParams(name){
       div.appendChild(input);
       container.appendChild(div);
     });
-  }catch(e){
-    container.innerHTML='<p>Esta estrategia no tiene parámetros configurables</p>';
-    card.style.display='block';
-    document.getElementById('bot-output').textContent=String(e);
-  }
+  }catch(e){}
 }
 
-
-async function loadStrategyInfo(){
-  try{
-    const r=await fetch(api('/strategies/info'));
-    strategyInfo=await r.json();
-  }catch(e){
-    console.error(e);
-    strategyInfo={};
-  }
-  updateStrategyInfo();
-}
-
-function updateStrategyInfo(){
-  const sel=document.getElementById('bot-strategy');
-  const info=strategyInfo[sel.value]||{};
-  const el=document.getElementById('bot-strategy-info');
-  if(info.desc){
-    let html=`<p>${info.desc}</p>`;
-    if(info.requires && info.requires.length){
-      html += "<p>Datos necesarios:</p><ul>" +
-              info.requires.map(r => `<li><strong>${r}</strong>: ${dataInfo[r]}</li>`).join("") +
-              "</ul>";
-    }
-    el.innerHTML = html;
-  }else{
-    el.textContent='';
-  }
-}
 
   function updateMarketFields(){
     const market=document.getElementById('bot-market').value;
@@ -290,7 +237,6 @@ function updateStrategyInfo(){
       document.getElementById(id).style.display = cross ? '' : 'none';
     });
     await loadStrategyParams(strat);
-    updateStrategyInfo();
     updateMarketFields();
   }
 
@@ -451,7 +397,6 @@ document.getElementById('bot-toggle-params').addEventListener('change', e => {
   document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
-loadStrategyInfo();
 updateMarketFields();
 refreshBots();
 setInterval(refreshBots,5000);
