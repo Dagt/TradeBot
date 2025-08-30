@@ -17,6 +17,7 @@ import math
 from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..core.account import Account as CoreAccount
 from ..risk.exceptions import StopLossExceeded
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
@@ -340,7 +341,8 @@ class EventDrivenBacktestEngine:
                 min_order_qty=self.min_order_qty,
             )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
-            self.risk[key] = RiskService(rm, guard)
+            account = CoreAccount(float("inf"), cash=self.initial_equity)
+            self.risk[key] = RiskService(rm, guard, account=account, risk_per_trade=1.0)
             self.strategy_exchange[key] = exchange
 
         # Internal flag to avoid repeated on_bar calls per bar index
@@ -431,7 +433,46 @@ class EventDrivenBacktestEngine:
                     trade = svc.get_trade(sym)
                     if trade and abs(pos_qty) > self.min_order_qty:
                         svc.update_trailing(trade, price)
-                        svc.manage_position(trade)
+                        decision = svc.manage_position(trade)
+                        if decision in {"scale_in", "scale_out"}:
+                            target = svc.calc_position_size(trade.get("strength", 1.0), price)
+                            delta_qty = target - abs(pos_qty)
+                            if abs(delta_qty) > self.min_order_qty:
+                                side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                                exchange = self.strategy_exchange[(strat, sym)]
+                                base_latency = self.exchange_latency.get(exchange, self.latency)
+                                delay = max(1, int(base_latency * self.stress.latency))
+                                exec_index = i + delay
+                                queue_pos = 0.0
+                                if self.use_l2:
+                                    vol_key = "ask_size" if side == "buy" else "bid_size"
+                                    depth = self.exchange_depth.get(exchange, self.default_depth)
+                                    vol_arr = arrs.get(vol_key)
+                                    avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                                    queue_pos = min(avail, depth)
+                                order_seq += 1
+                                order = Order(
+                                    exec_index,
+                                    order_seq,
+                                    i,
+                                    strat,
+                                    sym,
+                                    side,
+                                    abs(delta_qty),
+                                    exchange,
+                                    price,
+                                    abs(delta_qty),
+                                    0.0,
+                                    0.0,
+                                    queue_pos,
+                                    None,
+                                    False,
+                                    None,
+                                    None,
+                                    None,
+                                )
+                                orders.append(order)
+                                heapq.heappush(order_queue, order)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
@@ -777,6 +818,10 @@ class EventDrivenBacktestEngine:
                     sym_len = data_lengths[symbol]
                     if i < self.window or i >= sym_len:
                         continue
+                    svc = self.risk[(strat_name, symbol)]
+                    pos_qty, _ = svc.account.current_exposure(symbol)
+                    if abs(pos_qty) > self.min_order_qty:
+                        continue
                     start_idx = i - self.window
                     if getattr(strat, "needs_window_df", True):
                         window_df = df.iloc[start_idx:i]
@@ -786,7 +831,6 @@ class EventDrivenBacktestEngine:
                         sig = strat.on_bar(bar_arrays)
                     if sig is None or sig.side == "flat":
                         continue
-                    svc = self.risk[(strat_name, symbol)]
                     place_price = float(arrs["close"][i])
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
@@ -937,6 +981,7 @@ class EventDrivenBacktestEngine:
                 cash += pos * last_price
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 svc.update_position(exchange, symbol, 0.0)
+                svc.rm.set_position(0.0)
 
         equity = cash
         # Update final equity in the curve without duplicating the last value
