@@ -13,6 +13,7 @@ PARAM_INFO = {
     "sl_bps": "Stop loss en puntos básicos",
     "max_hold_bars": "Máximo de barras en posición (5-10)",
     "min_atr": "ATR mínimo para operar",
+    "min_volatility": "Volatilidad mínima reciente en bps",
     "trail_atr_mult": "Multiplicador del trailing stop basado en ATR",
     "min_edge_bps": "Edge mínimo en puntos básicos para operar",
     "config_path": "Ruta opcional al archivo de configuración",
@@ -31,6 +32,7 @@ class BreakoutATR(Strategy):
         sl_bps: float = 5.0,
         max_hold_bars: int = 5,
         min_atr: float = 0.0,
+        min_volatility: float = 0.0,
         trail_atr_mult: float = 1.0,
         min_edge_bps: float = 0.0,
         *,
@@ -51,6 +53,7 @@ class BreakoutATR(Strategy):
         # max_hold_bars clamped to the range [5, 10]
         self.max_hold_bars = max(5, min(int(mhb), 10))
         self.min_atr = float(params.get("min_atr", min_atr))
+        self.min_volatility = float(params.get("min_volatility", min_volatility))
         self.trail_atr_mult = float(params.get("trail_atr_mult", trail_atr_mult))
         self.min_edge_bps = float(params.get("min_edge_bps", min_edge_bps))
         self.pos_side: int = 0
@@ -70,9 +73,10 @@ class BreakoutATR(Strategy):
         last_close = df["close"].iloc[-1]
         current_idx = len(df) - 1
         atr_val = atr(df, self.atr_n).iloc[-1]
+        atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
         if self.pos_side == 0:
-            if atr_val < self.min_atr:
+            if atr_val < self.min_atr or atr_bps < self.min_volatility:
                 return None
             side: str | None = None
             expected_edge_bps = 0.0

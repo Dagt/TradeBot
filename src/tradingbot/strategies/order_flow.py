@@ -10,6 +10,7 @@ PARAM_INFO = {
     "tp": "Take profit como fracción",
     "sl": "Stop loss como fracción",
     "max_duration": "Duración máxima de la posición",
+    "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
 
@@ -30,6 +31,7 @@ class OrderFlow(Strategy):
         tp: float | None = None,
         sl: float | None = None,
         max_duration: pd.Timedelta | int | float | str | None = None,
+        min_volatility: float = 0.0,
     ):
         self.window = window
         self.buy_threshold = buy_threshold
@@ -37,6 +39,7 @@ class OrderFlow(Strategy):
         self.tp = tp
         self.sl = sl
         self.max_duration = pd.Timedelta(max_duration) if max_duration else None
+        self.min_volatility = min_volatility
         self.pos_side: str | None = None
         self.entry_price: float | None = None
         self.entry_time: pd.Timestamp | None = None
@@ -47,9 +50,22 @@ class OrderFlow(Strategy):
         needed = {"bid_qty", "ask_qty"}
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
-
         price = bar.get("close")
         now = pd.Timestamp(bar.get("ts") or bar.get("timestamp") or pd.Timestamp.utcnow())
+
+        vol_bps = float("inf")
+        price_col = "close" if "close" in df.columns else None
+        if price_col:
+            closes = df[price_col]
+            returns = closes.pct_change().dropna()
+            vol = (
+                returns.rolling(self.window).std().iloc[-1]
+                if len(returns) >= self.window
+                else 0.0
+            )
+            vol_bps = vol * 10000
+        if vol_bps < self.min_volatility:
+            return None
 
         if self.pos_side and self.entry_price is not None:
             pnl = (

@@ -10,6 +10,7 @@ PARAM_INFO = {
     "zscore_threshold": "Z-score absoluto requerido",
     "vol_window": "Ventana para volatilidad de retornos",
     "vol_threshold": "Volatilidad máxima permitida",
+    "min_volatility": "Volatilidad mínima reciente en bps",
     "tp_bps": "Take profit en puntos básicos",
     "sl_bps": "Stop loss en puntos básicos",
     "max_hold_bars": "Barras máximas en posición",
@@ -52,6 +53,7 @@ class MeanRevOFI(Strategy):
         zscore_threshold: float = 1.0,
         vol_window: int = 20,
         vol_threshold: float = 0.01,
+        min_volatility: float = 0.0,
         tp_bps: float = 30.0,
         sl_bps: float = 40.0,
         max_hold_bars: int = 20,
@@ -63,6 +65,7 @@ class MeanRevOFI(Strategy):
         self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
         self.vol_window = int(params.get("vol_window", vol_window))
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
+        self.min_volatility = float(params.get("min_volatility", min_volatility))
         self.tp_bps = float(params.get("tp_bps", tp_bps))
         self.sl_bps = float(params.get("sl_bps", sl_bps))
         self.max_hold_bars = int(params.get("max_hold_bars", max_hold_bars))
@@ -107,8 +110,14 @@ class MeanRevOFI(Strategy):
         zscore = ((ofi_series - rolling_mean) / rolling_std).iloc[-1]
 
         vol = returns(df).rolling(self.vol_window).std().iloc[-1]
+        vol_bps = vol * 10000
 
-        if pd.isna(zscore) or pd.isna(vol) or vol >= self.vol_threshold:
+        if (
+            pd.isna(zscore)
+            or pd.isna(vol)
+            or vol >= self.vol_threshold
+            or vol_bps < self.min_volatility
+        ):
             return None
 
         if zscore > self.zscore_threshold:

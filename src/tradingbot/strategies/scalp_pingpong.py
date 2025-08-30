@@ -17,6 +17,7 @@ PARAM_INFO = {
     "max_hold_bars": "Barras máximas en posición (5-10)",
     "trailing_stop_bps": "Trailing stop en puntos básicos",
     "volatility_factor": "Factor de tamaño según volatilidad",
+    "min_volatility": "Volatilidad mínima reciente en bps",
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
@@ -50,6 +51,8 @@ class ScalpPingPongConfig:
     volatility_factor : float, optional
         Multiplier applied to recent volatility (in bps) to size positions,
         default ``0.02``.
+    min_volatility : float, optional
+        Volatilidad mínima reciente en bps requerida para operar, por defecto ``0``.
     trend_ma : int, optional
         Window for the moving average used to gauge trend, by default ``50``.
     trend_rsi_n : int, optional
@@ -68,6 +71,7 @@ class ScalpPingPongConfig:
     max_hold_bars: int = 8
     trailing_stop_bps: float | None = 10.0
     volatility_factor: float = 0.02
+    min_volatility: float = 0.0
     trend_ma: int = 50
     trend_rsi_n: int = 50
     trend_threshold: float = 10.0
@@ -117,8 +121,14 @@ class ScalpPingPong(Strategy):
         z = self._calc_zscore(closes)
         price = float(closes.iloc[-1])
 
-        vol = returns.rolling(self.cfg.lookback).std().iloc[-1] if len(returns) >= self.cfg.lookback else 0.0
+        vol = (
+            returns.rolling(self.cfg.lookback).std().iloc[-1]
+            if len(returns) >= self.cfg.lookback
+            else 0.0
+        )
         vol_bps = vol * 10000
+        if vol_bps < self.cfg.min_volatility:
+            return None
         vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor))
 
         trend_dir = 0
