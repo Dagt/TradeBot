@@ -88,7 +88,7 @@ services:
   questdb:
     image: questdb/questdb:latest
     ports:
-      - "9000:9000"   # REST API
+      - "9001:9000"   # REST API
       - "8812:8812"   # PostgreSQL wire protocol
     volumes:
       - questdb-data:/root/.questdb

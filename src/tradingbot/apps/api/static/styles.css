@@ -127,16 +127,6 @@ nav a:hover{
 @media (max-width: 900px){ .grid4, .grid3, .grid5{ grid-template-columns: repeat(2,1fr) } }
 @media (max-width: 600px){ .grid4, .grid3, .grid5{ grid-template-columns: 1fr } }
 
-/* === Sección parámetros estrategia === */
-#bt-param-card,
-#bot-param-card {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 12px;
-  background: linear-gradient(145deg, #0f1622, #152232);
-  border: 1px solid #223146;
-  box-shadow: 0 6px 16px rgba(0,0,0,.35);
-}
 
 /* Grid compacto */
 #bt-strategy-params,
@@ -445,3 +435,103 @@ nav a.active::after{
   margin-right: 2px; /* micro-espacio visual */
 }
 
+/* === Panel de parámetros estrategia (Bots y Backtest) === */
+#bt-param-card,
+#bot-param-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #0f1622, #152232);
+  border: 1px solid #223146;
+  box-shadow: 0 6px 16px rgba(0,0,0,.35);
+}
+
+/* Grid compacto */
+#bt-strategy-params,
+#bot-strategy-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, auto));
+  gap: 8px 12px;
+  align-items: end;
+}
+
+#bt-strategy-params label,
+#bot-strategy-params label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#bt-strategy-params .help-icon,
+#bot-strategy-params .help-icon {
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+/* Inputs compactos */
+#bt-strategy-params input.param-input,
+#bot-strategy-params input.param-input {
+  width: 90px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: right;
+}
+
+/* Quitar flechas de number */
+#bt-strategy-params input.param-input[type=number]::-webkit-inner-spin-button,
+#bt-strategy-params input.param-input[type=number]::-webkit-outer-spin-button,
+#bot-strategy-params input.param-input[type=number]::-webkit-inner-spin-button,
+#bot-strategy-params input.param-input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#bt-strategy-params input.param-input[type=number],
+#bot-strategy-params input.param-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+
+/* Botones de acción (íconos minimalistas) */
+button.icon-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #314156;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+button.icon-btn i {
+  font-size: 14px;
+}
+
+button.icon-btn:hover {
+  color: var(--primary);
+  border-color: #3b4a63;
+  background: rgba(255,255,255,.03);
+}
+
+/* variantes de color */
+button.icon-btn.danger:hover {
+  color: var(--danger);
+  border-color: rgba(239,68,68,.6);
+  background: rgba(239,68,68,.08);
+}
+
+button.icon-btn.warn:hover {
+  color: var(--warning);
+  border-color: rgba(250,204,21,.6);
+  background: rgba(250,204,21,.08);
+}
