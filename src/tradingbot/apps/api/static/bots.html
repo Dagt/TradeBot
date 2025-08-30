@@ -193,12 +193,12 @@ async function loadStrategyParams(name){
     try{
       const r=await fetch(api(`/strategies/${name}/schema`));
       const j=await r.json();
-      const params=j.params||[];
+      const params=(j.params||[]).filter(p=>p.name!=='config_path');
+      field.style.display=params.length?'':'none';
       if(!params.length){
         document.getElementById('bot-output').textContent='No se pudieron cargar los parámetros';
         return;
       }
-      field.style.display='';
       params.forEach(p=>{
         const div=document.createElement('div');
         const label=document.createElement('label');
@@ -231,7 +231,6 @@ async function loadStrategyParams(name){
       });
     }catch(e){
       document.getElementById('bot-output').textContent=String(e);
-      field.style.display='';
     }
   }
 

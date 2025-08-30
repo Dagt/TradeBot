@@ -228,10 +228,18 @@ const dataInfo = {
 async function loadStrategyParams(name){
   const container=document.getElementById('bt-strategy-params');
   container.innerHTML='';
+  const card=document.getElementById('bt-param-card');
+  card.style.display='none';
+  const toggle=document.getElementById('bt-toggle-params');
+  toggle.checked=false;
+  const field=document.getElementById('field-toggle-params');
+  field.style.display='none';
   try{
     const r=await fetch(api(`/strategies/${name}/schema`));
     const j=await r.json();
-    (j.params||[]).forEach(p=>{
+    const params=(j.params||[]).filter(p=>p.name!=='config_path');
+    field.style.display=params.length?'':'none';
+    params.forEach(p=>{
       const div=document.createElement('div');
       const label=document.createElement('label');
       label.htmlFor=`bt-param-${p.name}`;
