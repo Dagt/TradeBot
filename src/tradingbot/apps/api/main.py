@@ -445,20 +445,51 @@ def strategy_schema(name: str):
     be discovered.
     """
 
+    import dataclasses
     import importlib
     import inspect
+    import re
 
-    try:
-        module = importlib.import_module(f"tradingbot.strategies.{name}")
-    except ModuleNotFoundError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=404, detail="unknown strategy") from exc
+    from ...strategies import STRATEGIES
 
-    strategy_cls = None
-    for attr in dir(module):
-        obj = getattr(module, attr)
-        if inspect.isclass(obj) and getattr(obj, "name", None) == name:
-            strategy_cls = obj
-            break
+    # Special case for the functional cross exchange arbitrage strategy
+    if name == "cross_arbitrage":
+        from ...strategies.cross_exchange_arbitrage import (
+            CrossArbConfig,
+            PARAM_INFO as param_info,
+        )
+
+        params: list[dict] = []
+        for f in dataclasses.fields(CrossArbConfig):
+            if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
+                default = None
+            else:
+                default = (
+                    f.default
+                    if f.default is not dataclasses.MISSING
+                    else f.default_factory()
+                )
+            annotation = f.type.__name__ if isinstance(f.type, type) else str(f.type)
+            desc = param_info.get(f.name, "")
+            params.append(
+                {"name": f.name, "type": annotation, "default": default, "desc": desc}
+            )
+        return {"strategy": name, "params": params}
+
+    strategy_cls = STRATEGIES.get(name)
+    module = None
+    if strategy_cls is not None:
+        module = importlib.import_module(strategy_cls.__module__)
+    else:
+        try:
+            module = importlib.import_module(f"tradingbot.strategies.{name}")
+        except ModuleNotFoundError as exc:  # pragma: no cover - defensive
+            raise HTTPException(status_code=404, detail="unknown strategy") from exc
+        for attr in dir(module):
+            obj = getattr(module, attr)
+            if inspect.isclass(obj) and getattr(obj, "name", None) == name:
+                strategy_cls = obj
+                break
     if strategy_cls is None:
         raise HTTPException(status_code=404, detail="strategy class not found")
 
