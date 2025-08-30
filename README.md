@@ -92,9 +92,11 @@ abiertas.
 
 ### Ejemplo para cuenta pequeña
 
+Las configuraciones de ejemplo utilizan velas de 3 minutos.
+
 ```yaml
 backtest:
-  data: data/examples/btcusdt_1m.csv   # reemplazar con datos del activo elegido
+  data: data/examples/btcusdt_3m.csv   # reemplazar con datos del activo elegido
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100

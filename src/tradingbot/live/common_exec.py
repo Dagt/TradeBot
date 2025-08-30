@@ -8,7 +8,7 @@ log = get_logger(__name__)
 
 try:
     from ..storage.timescale import (
-        insert_bar_1m, insert_portfolio_snapshot, insert_order, insert_fill,
+        insert_bar, insert_portfolio_snapshot, insert_order, insert_fill,
         upsert_position, insert_pnl_snapshot, insert_risk_event
     )
     _CAN_PG = True
@@ -24,17 +24,25 @@ def persist_bar_and_snapshot(
     cur_pos: float | None = None
 ):
     """
-    Inserta barra 1m y snapshot de portafolio (si hay engine).
+    Inserta barra 3m y snapshot de portafolio (si hay engine).
     """
     if engine is None or not _CAN_PG:
         return
     try:
-        insert_bar_1m(
-            engine, exchange=venue, symbol=symbol,
-            ts=bar.ts_open, o=bar.o, h=bar.h, l=bar.l, c=bar.c, v=bar.v
+        insert_bar(
+            engine,
+            exchange=venue,
+            symbol=symbol,
+            ts=bar.ts_open,
+            timeframe="3m",
+            o=bar.o,
+            h=bar.h,
+            low=bar.l,
+            c=bar.c,
+            v=bar.v,
         )
     except Exception:
-        log.exception("[%s] persist failure: insert_bar_1m", symbol)
+        log.exception("[%s] persist failure: insert_bar", symbol)
 
     if cur_pos is not None:
         try:

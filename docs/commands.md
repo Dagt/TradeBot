@@ -217,7 +217,7 @@ Realiza un backtest usando datos almacenados en la base de datos.
 - `--symbol`: par a evaluar.
 - `--strategy`: estrategia.
 - `--start` y `--end`: rango de fechas (YYYY-MM-DD).
-- `--timeframe`: periodo de las velas (`1m`).
+- `--timeframe`: periodo de las velas (`3m`).
 - `--fills-csv PATH`: exporta los fills a un CSV.
 
 ## `walk-forward`

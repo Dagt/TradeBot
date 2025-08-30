@@ -1,5 +1,5 @@
 csv_paths:
-  BTC/USDT: data/examples/btcusdt_1m.csv
+  BTC/USDT: data/examples/btcusdt_3m.csv
 strategies:
   - [breakout_atr, BTC/USDT]
 latency: 1

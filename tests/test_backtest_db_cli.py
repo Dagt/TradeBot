@@ -45,7 +45,7 @@ def _run_backtest(monkeypatch, venue):
         strategy="dummy",
         start="2021-01-01",
         end="2021-01-02",
-        timeframe="1m",
+        timeframe="3m",
         capital=0.0,
         risk_pct=0.0,
     )

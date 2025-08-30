@@ -179,7 +179,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             }
 
     async def stream_open_interest(
-        self, symbol: str, interval: str = "1m", per_symbol: bool = True
+        self, symbol: str, interval: str = "3m", per_symbol: bool = True
     ) -> AsyncIterator[dict]:
         """Stream open interest updates for ``symbol``.
 
@@ -189,7 +189,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             Market symbol to subscribe to.
         interval: str, optional
             Update interval for open interest aggregation.  Binance supports
-            values such as ``"1m"`` and ``"5m"``.  Defaults to ``"1m"``.
+            values such as ``"3m"`` and ``"5m"``.  Defaults to ``"3m"``.
         per_symbol: bool, optional
             Subscribe to per-symbol stream.  If ``False`` the aggregated
             ``!openInterest@arr`` channel is used and results are filtered

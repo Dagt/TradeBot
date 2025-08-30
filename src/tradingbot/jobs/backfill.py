@@ -126,7 +126,7 @@ async def backfill(
                 ohlcvs = await _retry(
                     ex.fetch_ohlcv,
                     ccxt_symbol,
-                    "1m",
+                    "3m",
                     since,
                     1000,
                 )
@@ -138,7 +138,7 @@ async def backfill(
                         "market.bars",
                         {
                             "ts": datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc),
-                            "timeframe": "1m",
+                            "timeframe": "3m",
                             "exchange": ex.id,
                             "symbol": db_symbol,
                             "o": o,
@@ -148,7 +148,7 @@ async def backfill(
                             "v": v,
                         },
                     )
-                since = ohlcvs[-1][0] + 60_000
+                since = ohlcvs[-1][0] + 180_000
 
             # --- Trades backfill -----------------------------------------------
             since = start_ms

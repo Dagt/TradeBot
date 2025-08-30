@@ -80,7 +80,7 @@ async def test_insert_and_query_bars(client):
     await worker.add(
         {
             "ts": dt.datetime.utcnow(),
-            "timeframe": "1m",
+            "timeframe": "3m",
             "exchange": "binance",
             "symbol": "BTCUSDT",
             "o": 100,
@@ -94,7 +94,7 @@ async def test_insert_and_query_bars(client):
     rows = await client.fetch(
         "SELECT timeframe, o, c, v FROM market.bars WHERE symbol='BTCUSDT'"
     )
-    assert rows[0]["timeframe"] == "1m"
+    assert rows[0]["timeframe"] == "3m"
     assert float(rows[0]["o"]) == 100
     assert float(rows[0]["c"]) == 105
     assert float(rows[0]["v"]) == 10

@@ -67,12 +67,13 @@ def insert_trades(engine, trades: Iterable[Any]):
 def insert_trade(engine, t):
     insert_trades(engine, [t])
 
-def insert_bars_1m(engine, bars: Iterable[Any]):
-    """Insert multiple 1-minute OHLCV bars."""
+def insert_bars(engine, bars: Iterable[Any]):
+    """Insert multiple OHLCV bars."""
 
     payload = [
         dict(
             ts=b.ts,
+            timeframe=b.timeframe,
             exchange=b.exchange,
             symbol=normalize(getattr(b, "symbol", "")),
             o=b.o,
@@ -91,19 +92,30 @@ def insert_bars_1m(engine, bars: Iterable[Any]):
             text(
                 """
             INSERT INTO market.bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
-            VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
+            VALUES (:ts, :timeframe, :exchange, :symbol, :o, :h, :l, :c, :v)
             """
             ),
             payload,
         )
 
 
-def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
-                  low: float, c: float, v: float):
-    """Insert a single 1-minute OHLCV bar into TimescaleDB."""
+def insert_bar(
+    engine,
+    exchange: str,
+    symbol: str,
+    ts,
+    timeframe: str,
+    o: float,
+    h: float,
+    low: float,
+    c: float,
+    v: float,
+):
+    """Insert a single OHLCV bar into TimescaleDB."""
 
     bar = SimpleNamespace(
         ts=ts,
+        timeframe=timeframe,
         exchange=exchange,
         symbol=normalize(symbol),
         o=o,
@@ -112,7 +124,7 @@ def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
         c=c,
         v=v,
     )
-    insert_bars_1m(engine, [bar])
+    insert_bars(engine, [bar])
 
 def insert_funding(
     engine,
@@ -288,7 +300,7 @@ def select_bars(
     symbol: str,
     start: datetime,
     end: datetime,
-    timeframe: str = "1m",
+    timeframe: str = "3m",
 ) -> list[dict[str, Any]]:
     """Load OHLCV bars from TimescaleDB."""
     with engine.begin() as conn:

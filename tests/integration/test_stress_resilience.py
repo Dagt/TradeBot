@@ -20,7 +20,7 @@ class BuyOnceStrategy:
 
 @pytest.mark.integration
 def test_engine_resilient_under_stress(monkeypatch):
-    csv_path = "data/examples/btcusdt_1m.csv"
+    csv_path = "data/examples/btcusdt_3m.csv"
     monkeypatch.setitem(STRATEGIES, "buyonce", BuyOnceStrategy)
     strategies = [("buyonce", "SYM")]
     data = {"SYM": csv_path}

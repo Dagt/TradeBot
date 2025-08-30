@@ -186,18 +186,28 @@ def insert_book_delta(
         )
 
 
-def insert_bar_1m(engine, exchange: str, symbol: str, ts, o: float, h: float,
-                  l: float, c: float, v: float):
-    """Insert a 1-minute bar into QuestDB."""
+def insert_bar(
+    engine,
+    exchange: str,
+    symbol: str,
+    ts,
+    timeframe: str,
+    o: float,
+    h: float,
+    l: float,
+    c: float,
+    v: float,
+):
+    """Insert an OHLCV bar into QuestDB."""
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
                 INSERT INTO bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
-                VALUES (:ts, '1m', :exchange, :symbol, :o, :h, :l, :c, :v)
+                VALUES (:ts, :timeframe, :exchange, :symbol, :o, :h, :l, :c, :v)
                 """
             ),
-            dict(ts=ts, exchange=exchange, symbol=normalize(symbol), o=o, h=h, l=l, c=c, v=v),
+            dict(ts=ts, timeframe=timeframe, exchange=exchange, symbol=normalize(symbol), o=o, h=h, l=l, c=c, v=v),
         )
 
 
@@ -360,7 +370,7 @@ __all__ = [
     "insert_orderbook",
     "insert_bba",
     "insert_book_delta",
-    "insert_bar_1m",
+    "insert_bar",
     "insert_funding",
     "insert_open_interest",
     "insert_basis",

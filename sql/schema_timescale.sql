@@ -53,7 +53,7 @@ SELECT create_hypertable('market.book_delta', by_range('ts'), if_not_exists => T
 -- Bars
 CREATE TABLE IF NOT EXISTS market.bars (
   ts timestamptz NOT NULL,
-  timeframe text NOT NULL,   -- e.g. 1s,1m,5m
+  timeframe text NOT NULL,   -- e.g. 1s,3m,5m
   exchange text NOT NULL,
   symbol text NOT NULL,
   o numeric, h numeric, l numeric, c numeric, v numeric

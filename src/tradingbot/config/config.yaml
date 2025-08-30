@@ -17,7 +17,7 @@ strategies:
       vol_threshold: 0.01
 
 backtest:
-  data: data/examples/btcusdt_1m.csv
+  data: data/examples/btcusdt_3m.csv
   symbol: BTC/USDT
   strategy: breakout_atr
   latency: 1

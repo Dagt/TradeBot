@@ -92,15 +92,15 @@ async def _download_bars(
     end_ms = int(end.timestamp() * 1000)
     while since < end_ms:
         ohlcvs = await with_retry(
-            ex.fetch_ohlcv, symbol, timeframe="1m", since=since, limit=1000
+            ex.fetch_ohlcv, symbol, timeframe="3m", since=since, limit=1000
         )
         if not ohlcvs:
             break
         for ts_ms, o, h, l, c, v in ohlcvs:
             ts = datetime.utcfromtimestamp(ts_ms / 1000)
-            storage.insert_bar_1m(engine, exchange, symbol, ts, o, h, l, c, v)
+            storage.insert_bar(engine, exchange, symbol, ts, "3m", o, h, l, c, v)
         log.info("inserted %d bars up to %s", len(ohlcvs), ts)
-        since = ohlcvs[-1][0] + 60_000
+        since = ohlcvs[-1][0] + 180_000
     await ex.close()
 
 
@@ -158,7 +158,7 @@ def ohlcv(
     end: datetime,
     backend: Backend = "timescale",
 ):
-    """Backfill 1m OHLCV bars."""
+    """Backfill 3m OHLCV bars."""
     asyncio.run(_download_bars(exchange, symbol, start, end, backend))
 
 

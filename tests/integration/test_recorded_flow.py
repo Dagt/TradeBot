@@ -16,7 +16,7 @@ class AlwaysBuyStrategy:
 
 @pytest.mark.integration
 def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
-    df = pd.read_csv("data/examples/btcusdt_1m.csv")
+    df = pd.read_csv("data/examples/btcusdt_3m.csv")
     monkeypatch.setitem(STRATEGIES, "alwaysbuy", AlwaysBuyStrategy)
     sym = normalize("BTC-USDT")
     engine = EventDrivenBacktestEngine(

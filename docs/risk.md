@@ -35,7 +35,7 @@ Configuración orientada a una cuenta pequeña operando un activo de bajo valor:
 
 ```yaml
 backtest:
-  data: data/examples/btcusdt_1m.csv   # reemplazar con datos del activo elegido
+  data: data/examples/btcusdt_3m.csv   # reemplazar con datos del activo elegido
   symbol: DOGE/USDT
   strategy: breakout_atr
   initial_equity: 100
