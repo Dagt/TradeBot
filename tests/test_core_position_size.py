@@ -19,7 +19,13 @@ def test_service_calc_position_size_passes_strength():
     account = Account(float("inf"), cash=1000.0)
     rm = RiskManager()
     guard = PortfolioGuard(GuardConfig(venue="test"))
-    svc = RiskService(rm, guard, account=account, risk_per_trade=0.1)
+    svc = RiskService(
+        rm,
+        guard,
+        account=account,
+        risk_per_trade=0.1,
+        risk_pct=0.01,
+    )
     price = 100.0
     full = svc.calc_position_size(1.0, price)
     partial = svc.calc_position_size(0.37, price)

@@ -23,7 +23,7 @@ def test_rehydrate_state():
     rm = RiskManager()
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="paper"))
     guard.refresh_usd_caps(1e6)
-    risk = RiskService(rm, guard)
+    risk = RiskService(rm, guard, risk_pct=0.0)
 
     # Rehydrate
     pos_map = load_positions(engine, "paper")

@@ -103,7 +103,13 @@ async def _run_symbol(
         halt_action="close_all",
     ), venue=venue)
     corr = CorrelationService()
-    risk = RiskService(risk_core, guard, dguard, corr_service=corr)
+    risk = RiskService(
+        risk_core,
+        guard,
+        dguard,
+        corr_service=corr,
+        risk_pct=cfg.risk_pct,
+    )
     broker = PaperAdapter(fee_bps=1.5)
     try:
         guard.refresh_usd_caps(broker.equity({}))

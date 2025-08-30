@@ -39,6 +39,7 @@ class RiskService:
         account: CoreAccount | None = None,
         risk_per_trade: float = 0.01,
         atr_mult: float = 2.0,
+        risk_pct: float = 0.01,
     ) -> None:
         self.rm = manager
         self.guard = guard
@@ -47,7 +48,10 @@ class RiskService:
         self.engine = engine
         self.account = account or CoreAccount(float("inf"))
         self.core = CoreRiskManager(
-            self.account, risk_per_trade=risk_per_trade, atr_mult=atr_mult
+            self.account,
+            risk_per_trade=risk_per_trade,
+            atr_mult=atr_mult,
+            risk_pct=risk_pct,
         )
         self.trades: Dict[str, dict] = {}
 
@@ -58,6 +62,7 @@ class RiskService:
     ) -> None:
         """Synchronise position and track trade state for ``symbol``."""
         self.rm.update_position(exchange, symbol, qty)
+        self.rm.set_position(qty)
         self.guard.set_position(exchange, symbol, qty)
         cur = self.account.positions.get(symbol, 0.0)
         self.account.update_position(symbol, qty - cur, price=entry_price)
@@ -250,6 +255,9 @@ class RiskService:
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
         delta = qty if side == "buy" else -qty
         self.account.update_position(symbol, delta, price=price)
+        if price is not None:
+            cash_delta = -qty * price if side == "buy" else qty * price
+            self.account.update_cash(cash_delta)
         if venue is not None:
             book = self.guard.st.venue_positions.get(venue, {})
             self.rm.update_position(venue, symbol, book.get(symbol, 0.0))

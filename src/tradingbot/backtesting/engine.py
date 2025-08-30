@@ -20,6 +20,7 @@ from ..risk.service import RiskService
 from ..risk.exceptions import StopLossExceeded
 from ..strategies import STRATEGIES
 from ..data.features import returns, calc_ofi
+from ..core import Account as CoreAccount
 
 log = logging.getLogger(__name__)
 
@@ -340,7 +341,14 @@ class EventDrivenBacktestEngine:
                 min_order_qty=self.min_order_qty,
             )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
-            self.risk[key] = RiskService(rm, guard)
+            account = CoreAccount(float("inf"), cash=self.initial_equity)
+            self.risk[key] = RiskService(
+                rm,
+                guard,
+                account=account,
+                risk_pct=self._risk_pct,
+                risk_per_trade=1.0,
+            )
             self.strategy_exchange[key] = exchange
 
         # Internal flag to avoid repeated on_bar calls per bar index
