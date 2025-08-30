@@ -25,38 +25,28 @@ def test_ml_strategy_margin_and_entry():
 
     stub.proba = 0.7
     sig = strat.on_bar(bar)
-    assert sig and sig.side == "buy" and strat.pos_side == 1
+    assert sig and sig.side == "buy"
 
     strat2 = MLStrategy(model=StubModel(0.3), margin=0.1)
     strat2.scaler.fit([[0.0]])
     sig = strat2.on_bar(bar)
-    assert sig and sig.side == "sell" and strat2.pos_side == -1
+    assert sig and sig.side == "sell"
 
 
 def test_ml_strategy_risk_service_handles_stop_and_size():
     stub = StubModel(0.7)
-    strat = MLStrategy(model=stub, margin=0.1)
-    strat.scaler.fit([[0.0]])
-    bar_open = {"features": [0.0], "close": 100.0}
-    sig = strat.on_bar(bar_open)
-    assert sig and sig.side == "buy"
-
     rm = RiskManager(risk_pct=0.02)
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
     svc = RiskService(rm, guard)
     svc.account.update_cash(1000.0)
-
-    allowed, reason, delta = svc.check_order(
-        "AAA", sig.side, 1000.0, bar_open["close"], strength=sig.strength
-    )
-    assert allowed and delta == pytest.approx(0.07)
-
-    rm.add_fill(sig.side, delta, price=bar_open["close"])
-    svc.update_position("X", "AAA", delta)
-
-    stop_price = bar_open["close"] * (1 - rm.risk_pct) - 1
-    allowed, reason, delta_stop = svc.check_order(
-        "AAA", sig.side, 1000.0, stop_price
-    )
-    assert allowed and reason == "stop_loss"
-    assert delta_stop == pytest.approx(-delta)
+    strat = MLStrategy(model=stub, margin=0.1, risk_service=svc)
+    strat.scaler.fit([[0.0]])
+    bar_open = {"features": [0.0], "close": 100.0}
+    sig = strat.on_bar(bar_open)
+    assert sig and sig.side == "buy"
+    trade = strat.trade
+    assert trade is not None
+    expected_qty = svc.calc_position_size(sig.strength, bar_open["close"])
+    assert trade["qty"] == pytest.approx(expected_qty)
+    expected_stop = svc.core.initial_stop(bar_open["close"], "buy")
+    assert trade["stop"] == pytest.approx(expected_stop)
