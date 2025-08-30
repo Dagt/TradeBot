@@ -18,21 +18,7 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
     last_close = breakout_df_buy["close"].iloc[-1]
     expected_edge = (last_close - upper.iloc[-1]) / abs(last_close) * 10000
     assert sig_buy.expected_edge_bps == pytest.approx(expected_edge)
-
-    # ensure at least one bar passes before opposite signal
-    row = {
-        "open": 4,
-        "high": 5,
-        "low": 3.5,
-        "close": -20.0,
-        "volume": 1,
-    }
-    df_wait = pd.concat(
-        [breakout_df_sell, pd.DataFrame([row])],
-        ignore_index=True,
-    )
-
-    sig_sell = strat.on_bar({"window": df_wait, "volatility": 0.0})
+    sig_sell = strat.on_bar({"window": breakout_df_sell, "volatility": 0.0})
     assert sig_sell.side == "sell"
 
 

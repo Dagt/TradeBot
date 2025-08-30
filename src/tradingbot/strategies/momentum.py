@@ -6,10 +6,6 @@ from ..data.features import rsi, returns
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "threshold": "Nivel de RSI para generar señal",
-    "tp_bps": "Take profit en puntos básicos",
-    "sl_bps": "Stop loss en puntos básicos",
-    "max_hold_bars": "Barras máximas en posición (rango 5-10)",
-    "min_bars_between_trades": "Barras mínimas entre operaciones",
     "min_volume": "Volumen mínimo requerido",
     "min_volatility": "Volatilidad mínima requerida",
     "vol_window": "Ventana para estimar la volatilidad",
@@ -35,41 +31,10 @@ class Momentum(Strategy):
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 55.0)
-        self.tp_bps = kwargs.get("tp_bps", 30.0)
-        self.sl_bps = kwargs.get("sl_bps", 40.0)
-        max_hold_val = kwargs.get("max_hold_bars", 10)
-        self.max_hold_bars = max(min(max_hold_val, 10), 5)
-        self.min_bars_between_trades = kwargs.get("min_bars_between_trades", 5)
         # Optional market activity filters
         self.min_volume = kwargs.get("min_volume")
         self.min_volatility = kwargs.get("min_volatility")
         self.vol_window = kwargs.get("vol_window", 20)
-
-        # Position state
-        self.pos_side: int = 0
-        self.entry_price: float | None = None
-        self.hold_bars: int = 0
-        self._last_trade_idx: int = -self.min_bars_between_trades
-
-    def _manage_position(self, price: float, idx: int) -> Signal | None:
-        """Handle an open position and return an exit signal if needed."""
-        self.hold_bars += 1
-        assert self.entry_price is not None
-        pnl_bps = (
-            (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
-        )
-        if (
-            pnl_bps >= self.tp_bps
-            or pnl_bps <= -self.sl_bps
-            or self.hold_bars >= self.max_hold_bars
-        ):
-            side = "sell" if self.pos_side > 0 else "buy"
-            self.pos_side = 0
-            self.entry_price = None
-            self.hold_bars = 0
-            self._last_trade_idx = idx
-            return Signal(side, 1.0)
-        return None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -77,13 +42,8 @@ class Momentum(Strategy):
         if len(df) < self.rsi_n + 2:
             return None
 
-        idx = len(df) - 1
         closes = df["close"]
         price = closes.iloc[-1]
-        if self.pos_side != 0:
-            return self._manage_position(price, idx)
-        if idx - self._last_trade_idx < self.min_bars_between_trades:
-            return None
         rsi_series = rsi(df, self.rsi_n)
         prev_rsi = rsi_series.iloc[-2]
         last_rsi = rsi_series.iloc[-1]
@@ -100,16 +60,8 @@ class Momentum(Strategy):
         upper = self.threshold
         lower = 100 - self.threshold
         if prev_rsi <= upper and last_rsi > upper:
-            self.pos_side = 1
-            self.entry_price = price
-            self.hold_bars = 0
-            self._last_trade_idx = idx
             return Signal("buy", 1.0)
         if prev_rsi >= lower and last_rsi < lower:
-            self.pos_side = -1
-            self.entry_price = price
-            self.hold_bars = 0
-            self._last_trade_idx = idx
             return Signal("sell", 1.0)
         return None
 
@@ -122,14 +74,12 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     data : pd.DataFrame
         Price data with a ``price`` column.
     params : dict
-        Parameters including ``window``, ``position_size``, ``stop_loss``,
-        ``take_profit``, ``fee`` and ``slippage``.
+        Parameters including ``window``, ``position_size``, ``fee`` y ``slippage``.
 
     Returns
     -------
     pd.DataFrame
-        Data with signal, position, stop-loss/take-profit levels and
-        transaction cost estimates.
+        Data con señal, posición y estimaciones de costos de transacción.
     """
 
     df = data.copy()
@@ -137,8 +87,6 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     position_size = params.get("position_size", 1)
     fee = params.get("fee", 0.0)
     slippage = params.get("slippage", 0.0)
-    sl_pct = params.get("stop_loss", 0.0)
-    tp_pct = params.get("take_profit", 0.0)
 
     ma = df["price"].rolling(window).mean()
     df["signal"] = 0
@@ -146,9 +94,7 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df.loc[df["price"] < ma, "signal"] = -1
 
     df["position"] = df["signal"].shift(1).fillna(0) * position_size
-    df["stop_loss"] = df["price"] * (1 - sl_pct)
-    df["take_profit"] = df["price"] * (1 + tp_pct)
     df["fee"] = df["position"].abs() * fee
     df["slippage"] = df["position"].abs() * slippage
 
-    return df[["signal", "position", "stop_loss", "take_profit", "fee", "slippage"]]
+    return df[["signal", "position", "fee", "slippage"]]

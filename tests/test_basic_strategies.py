@@ -15,8 +15,6 @@ def test_momentum_backtest():
     base_params = {
         "window": 2,
         "position_size": 1,
-        "stop_loss": 0.05,
-        "take_profit": 0.1,
     }
     pnl_no_fee = backtest(
         data,
@@ -37,8 +35,6 @@ def test_mean_reversion_backtest():
         "window": 2,
         "threshold": 0.1,
         "position_size": 1,
-        "stop_loss": 0.05,
-        "take_profit": 0.1,
     }
     pnl_no_fee = backtest(
         data,
