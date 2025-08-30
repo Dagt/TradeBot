@@ -73,8 +73,8 @@ class TrendFollowing(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
-        returns = prices.pct_change().dropna()
-        vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
+
+        # Manage existing position first
         if self._pos_side:
             self.hold_bars += 1
             assert self._entry_price is not None
@@ -88,6 +88,11 @@ class TrendFollowing(Strategy):
                 side = "sell" if self._pos_side == "buy" else "buy"
                 self._calc_strength("flat", price)
                 return Signal(side, 1.0)
+            return None
+
+        # No position: compute indicators for entry
+        returns = prices.pct_change().dropna()
+        vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
         if pd.isna(vol) or vol < self.min_volatility:
             return None
         rsi_series = rsi(df, self.rsi_n)

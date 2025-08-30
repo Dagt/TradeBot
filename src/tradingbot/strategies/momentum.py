@@ -55,48 +55,52 @@ class Momentum(Strategy):
 
         closes = df["close"]
         price = closes.iloc[-1]
+
+        # Manage open position before evaluating new entries
+        if self.pos_side != 0:
+            self.hold_bars += 1
+            assert self.entry_price is not None
+            pnl_bps = (
+                (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
+            )
+            if (
+                pnl_bps >= self.tp_bps
+                or pnl_bps <= -self.sl_bps
+                or self.hold_bars >= self.max_hold_bars
+            ):
+                side = "sell" if self.pos_side > 0 else "buy"
+                self.pos_side = 0
+                self.entry_price = None
+                self.hold_bars = 0
+                return Signal(side, 1.0)
+            return None
+
+        # No position: compute indicators for entry
         rsi_series = rsi(df, self.rsi_n)
         prev_rsi = rsi_series.iloc[-2]
         last_rsi = rsi_series.iloc[-1]
 
-        if self.pos_side == 0:
-            # Optional inactivity filters
-            if self.min_volume is not None:
-                if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
-                    return None
-            if self.min_volatility is not None:
-                vol = returns(df).rolling(self.vol_window).std().iloc[-1]
-                if pd.isna(vol) or vol < self.min_volatility:
-                    return None
+        # Optional inactivity filters
+        if self.min_volume is not None:
+            if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
+                return None
+        if self.min_volatility is not None:
+            vol = returns(df).rolling(self.vol_window).std().iloc[-1]
+            if pd.isna(vol) or vol < self.min_volatility:
+                return None
 
-            upper = self.threshold
-            lower = 100 - self.threshold
-            if prev_rsi <= upper and last_rsi > upper:
-                self.pos_side = 1
-                self.entry_price = price
-                self.hold_bars = 0
-                return Signal("buy", 1.0)
-            if prev_rsi >= lower and last_rsi < lower:
-                self.pos_side = -1
-                self.entry_price = price
-                self.hold_bars = 0
-                return Signal("sell", 1.0)
-            return None
-
-        # Manage open position
-        self.hold_bars += 1
-        assert self.entry_price is not None
-        pnl_bps = (price - self.entry_price) / self.entry_price * 10000 * self.pos_side
-        if (
-            pnl_bps >= self.tp_bps
-            or pnl_bps <= -self.sl_bps
-            or self.hold_bars >= self.max_hold_bars
-        ):
-            side = "sell" if self.pos_side > 0 else "buy"
-            self.pos_side = 0
-            self.entry_price = None
+        upper = self.threshold
+        lower = 100 - self.threshold
+        if prev_rsi <= upper and last_rsi > upper:
+            self.pos_side = 1
+            self.entry_price = price
             self.hold_bars = 0
-            return Signal(side, 1.0)
+            return Signal("buy", 1.0)
+        if prev_rsi >= lower and last_rsi < lower:
+            self.pos_side = -1
+            self.entry_price = price
+            self.hold_bars = 0
+            return Signal("sell", 1.0)
         return None
 
 
