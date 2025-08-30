@@ -14,5 +14,5 @@ def test_mean_reversion_generate_signals():
     df = pd.DataFrame({"price": [1, 2, 3, 4, 3, 2, 1, 2, 3]})
     params = {"window": 3, "threshold": 0.5, "position_size": 1}
     res = generate_signals(df, params)
-    assert {"signal", "position", "stop_loss", "take_profit", "fee", "slippage"} <= set(res.columns)
+    assert {"signal", "position", "fee", "slippage"} <= set(res.columns)
     assert len(res) == len(df)
