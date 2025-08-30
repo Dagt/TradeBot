@@ -16,15 +16,13 @@ A continuación se describen los comandos disponibles. Todas las estrategias
 emiten señales con un campo `strength`. El `RiskService` utiliza esa señal para
 dimensionar automáticamente la posición (`notional = equity * strength`).
 Valores mayores a `1.0` piramidan la exposición, menores la desescalan. El
-parámetro `risk_pct` establece la pérdida máxima permitida y `vol_target`
-dimensiona la posición según la volatilidad.
+parámetro `risk_pct` establece la pérdida máxima permitida.
 
 Ejemplo de configuración de riesgo:
 
 ```yaml
 risk:
   risk_pct: 0.02
-  vol_target: 0.01
   total_cap_pct: null
   per_symbol_cap_pct: null
 ```

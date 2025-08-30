@@ -70,7 +70,6 @@ class RiskConfig:
 
     risk_pct: float = 0.0
     max_symbol_exposure: float | None = None
-    vol_target: float = 0.0
     total_cap_pct: float | None = None
     per_symbol_cap_pct: float | None = None
     correlation_threshold: float = 0.8

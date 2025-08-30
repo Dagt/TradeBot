@@ -117,7 +117,6 @@ backtest:
 
 risk:
   risk_pct: 0.02
-  vol_target: 0.01
   total_cap_pct: null
   per_symbol_cap_pct: null
 
