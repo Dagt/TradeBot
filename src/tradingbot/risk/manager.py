@@ -284,7 +284,9 @@ class RiskManager:
         """
 
         signed_strength = strength if signal_side == "buy" else -strength
-        delta = delta_from_strength(signed_strength, equity, price, self.pos.qty)
+        delta = delta_from_strength(
+            signed_strength, equity, price, self.pos.qty, self.risk_pct
+        )
 
         if symbol_vol > 0:
             delta += self.size_with_volatility(symbol_vol, price, equity)
@@ -324,11 +326,14 @@ class RiskManager:
         if not self.allow_short and self.pos.qty + delta < 0:
             delta = -self.pos.qty
 
-        notional = abs(delta) * price
-        if self.risk_pct > 0 and notional > equity * self.risk_pct:
-            max_notional = equity * self.risk_pct
-            if notional > 0:
-                delta *= max_notional / notional
+        if self.risk_pct > 0 and price > 0 and equity > 0:
+            max_pos = (equity * self.risk_pct) / price
+            new_qty = self.pos.qty + delta
+            if new_qty > max_pos:
+                new_qty = max_pos
+            elif new_qty < -max_pos:
+                new_qty = -max_pos
+            delta = new_qty - self.pos.qty
 
         if abs(delta) < self.min_order_qty:
             return False, "zero_size", 0.0
@@ -363,7 +368,9 @@ class RiskManager:
         else:
             strength = target * price / equity
         RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return delta_from_strength(strength, equity, price, self.pos.qty)
+        return delta_from_strength(
+            strength, equity, price, self.pos.qty, self.risk_pct
+        )
 
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float

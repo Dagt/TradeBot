@@ -45,13 +45,15 @@ def delta_from_strength(
     equity: float,
     price: float,
     current_qty: float,
+    risk_pct: float | None = None,
 ) -> float:
     """Translate a signal ``strength`` into a position delta.
 
     ``strength`` controls notional through ``notional = equity * strength``.
     Values above ``1.0`` pyramid exposure, values between ``0`` and ``1`` scale
-    it down and negatives close or flip the position. A separate ``risk_pct``
-    can later apply a local stop‑loss as ``notional * risk_pct``.  The target
+    it down and negatives close or flip the position. When ``risk_pct`` is
+    provided, the resulting position is capped at
+    ``(equity * risk_pct) / price`` before calculating the delta. The target
     quantity is ``(equity * strength) / price`` and the delta from
     ``current_qty`` is returned.
 
@@ -67,6 +69,9 @@ def delta_from_strength(
         Asset price used to convert notional into quantity.
     current_qty:
         Existing position size.
+    risk_pct:
+        Optional fraction of equity to risk. When supplied and positive, it
+        limits the target quantity to ``±(equity * risk_pct) / price``.
 
     Returns
     -------
@@ -88,6 +93,15 @@ def delta_from_strength(
 
     if price <= 0:
         return -current_qty
+
     target_qty = (equity * strength) / price
+
+    if risk_pct is not None and risk_pct > 0 and equity > 0:
+        max_pos = (equity * risk_pct) / price
+        if target_qty > max_pos:
+            target_qty = max_pos
+        elif target_qty < -max_pos:
+            target_qty = -max_pos
+
     return target_qty - current_qty
 
