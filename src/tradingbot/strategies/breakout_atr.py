@@ -49,13 +49,13 @@ class BreakoutATR(Strategy):
             return None
 
         if last_close > upper.iloc[-1]:
-            expected_edge_bps = (last_close - upper.iloc[-1]) / abs(last_close) * 10000
-            if expected_edge_bps <= self.min_edge_bps:
+            edge_bps = (last_close - upper.iloc[-1]) / abs(last_close) * 10000
+            if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("buy", 1.0, expected_edge_bps=expected_edge_bps)
+            return Signal("buy", 1.0)
         if last_close < lower.iloc[-1]:
-            expected_edge_bps = (lower.iloc[-1] - last_close) / abs(last_close) * 10000
-            if expected_edge_bps <= self.min_edge_bps:
+            edge_bps = (lower.iloc[-1] - last_close) / abs(last_close) * 10000
+            if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("sell", 1.0, expected_edge_bps=expected_edge_bps)
+            return Signal("sell", 1.0)
         return None

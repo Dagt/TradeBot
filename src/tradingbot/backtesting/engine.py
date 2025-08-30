@@ -838,9 +838,9 @@ class EventDrivenBacktestEngine:
                         queue_pos,
                         None,
                         post_only,
-                        getattr(sig, "take_profit", None),
-                        getattr(sig, "stop_loss", None),
-                        getattr(sig, "trailing_pct", None),
+                        None,
+                        None,
+                        None,
                     )
                     orders.append(order)
                     heapq.heappush(order_queue, order)
