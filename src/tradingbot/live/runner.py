@@ -130,8 +130,9 @@ async def run_live_binance(
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)
         for sym, data in pos_map.items():
-            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
-            risk.rm._entry_price = data.get("avg_price")
+            risk.update_position(
+                guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
+            )
         oco_items = load_active_oco(pg_engine, venue=guard.cfg.venue, symbols=[symbol])
         oco_book.preload(oco_items)
     if persist_pg and not _CAN_PG:
@@ -151,17 +152,11 @@ async def run_live_binance(
             log.error("[HALT] motivo=%s", reason)
             break
 
-        pos_qty = risk.rm.pos.qty
-        if abs(pos_qty) > risk.rm.min_order_qty:
-            trade = {
-                "side": "buy" if pos_qty > 0 else "sell",
-                "entry_price": getattr(risk.rm, "_entry_price", None),
-                "qty": abs(pos_qty),
-                "stop": getattr(risk.rm, "_entry_price", None),
-            }
+        pos_qty, _ = risk.account.current_exposure(symbol)
+        trade = risk.get_trade(symbol)
+        if trade and abs(pos_qty) > risk.rm.min_order_qty:
             risk.update_trailing(trade, px)
             decision = risk.manage_position(trade)
-            risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
                 prev_rpnl = broker.state.realized_pnl

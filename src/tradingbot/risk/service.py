@@ -49,19 +49,37 @@ class RiskService:
         self.core = CoreRiskManager(
             self.account, risk_per_trade=risk_per_trade, atr_mult=atr_mult
         )
+        self.trades: Dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # Position helpers
-    def update_position(self, exchange: str, symbol: str, qty: float) -> None:
-        """Synchronise position for ``exchange``/``symbol`` across components."""
+    def update_position(
+        self, exchange: str, symbol: str, qty: float, *, entry_price: float | None = None
+    ) -> None:
+        """Synchronise position and track trade state for ``symbol``."""
         self.rm.update_position(exchange, symbol, qty)
         self.guard.set_position(exchange, symbol, qty)
         cur = self.account.positions.get(symbol, 0.0)
-        self.account.update_position(symbol, qty - cur)
+        self.account.update_position(symbol, qty - cur, price=entry_price)
+        if abs(qty) < self.rm.min_order_qty:
+            self.trades.pop(symbol, None)
+            return
+        side = "buy" if qty > 0 else "sell"
+        trade = self.trades.get(symbol, {})
+        trade.update({"side": side, "qty": abs(qty)})
+        if entry_price is not None:
+            trade["entry_price"] = entry_price
+            trade.setdefault("stop", entry_price)
+        trade.setdefault("stage", 0)
+        self.trades[symbol] = trade
 
     def aggregate_positions(self) -> Dict[str, float]:
         """Return aggregated positions across all venues."""
         return self.rm.aggregate_positions()
+
+    def get_trade(self, symbol: str) -> dict | None:
+        """Return tracked trade for ``symbol`` if any."""
+        return self.trades.get(symbol)
 
     # Delegates to core risk manager
     def calc_position_size(self, signal_strength: float, price: float) -> float:
@@ -230,9 +248,26 @@ class RiskService:
         """Update internal position books after a fill."""
         self.rm.add_fill(side, qty, price=price)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
+        delta = qty if side == "buy" else -qty
+        self.account.update_position(symbol, delta, price=price)
         if venue is not None:
             book = self.guard.st.venue_positions.get(venue, {})
             self.rm.update_position(venue, symbol, book.get(symbol, 0.0))
+        cur_qty, _ = self.account.current_exposure(symbol)
+        if abs(cur_qty) < self.rm.min_order_qty:
+            self.trades.pop(symbol, None)
+            return
+        trade = self.trades.get(symbol, {})
+        trade.update(
+            {
+                "side": "buy" if cur_qty > 0 else "sell",
+                "qty": abs(cur_qty),
+                "entry_price": getattr(self.rm, "_entry_price", None),
+            }
+        )
+        trade.setdefault("stop", trade["entry_price"])
+        trade.setdefault("stage", 0)
+        self.trades[symbol] = trade
 
     def daily_mark(self, broker, symbol: str, price: float, delta_rpnl: float) -> tuple[bool, str]:
         """Update daily guard with latest mark and realized PnL delta."""

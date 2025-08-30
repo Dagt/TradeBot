@@ -61,8 +61,9 @@ async def run_paper(
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
-            risk.update_position(guard.cfg.venue, sym, data.get("qty", 0.0))
-            risk.rm._entry_price = data.get("avg_price")
+            risk.update_position(
+                guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
+            )
         oco_book.preload(load_active_oco(engine, venue=guard.cfg.venue, symbols=[symbol]))
 
     strat_cls = STRATEGIES.get(strategy_name)
@@ -82,17 +83,11 @@ async def run_paper(
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
             risk.update_correlation(corr._returns.corr(), corr_threshold)
-            pos_qty = risk.rm.pos.qty
-            if abs(pos_qty) > risk.rm.min_order_qty:
-                trade = {
-                    "side": "buy" if pos_qty > 0 else "sell",
-                    "entry_price": getattr(risk.rm, "_entry_price", None),
-                    "qty": abs(pos_qty),
-                    "stop": getattr(risk.rm, "_entry_price", None),
-                }
+            pos_qty, _ = risk.account.current_exposure(symbol)
+            trade = risk.get_trade(symbol)
+            if trade and abs(pos_qty) > risk.rm.min_order_qty:
                 risk.update_trailing(trade, px)
                 decision = risk.manage_position(trade)
-                risk.rm._entry_price = trade.get("stop", risk.rm._entry_price)
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"
                     await router.execute(

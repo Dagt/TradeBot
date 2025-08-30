@@ -388,7 +388,7 @@ class EventDrivenBacktestEngine:
         order_seq = 0
 
         mtm = sum(
-            svc.rm.pos.qty * data_arrays[sym]["close"][0]
+            svc.account.current_exposure(sym)[0] * data_arrays[sym]["close"][0]
             for (strat, sym), svc in self.risk.items()
             if data_lengths[sym] > 0
         )
@@ -427,17 +427,11 @@ class EventDrivenBacktestEngine:
                 sym_len = data_lengths[sym]
                 if i < sym_len:
                     price = float(arrs["close"][i])
-                    pos_qty = svc.rm.pos.qty
-                    if abs(pos_qty) > self.min_order_qty:
-                        trade = {
-                            "side": "buy" if pos_qty > 0 else "sell",
-                            "entry_price": getattr(svc.rm, "_entry_price", None),
-                            "qty": abs(pos_qty),
-                            "stop": getattr(svc.rm, "_entry_price", None),
-                        }
+                    pos_qty, _ = svc.account.current_exposure(sym)
+                    trade = svc.get_trade(sym)
+                    if trade and abs(pos_qty) > self.min_order_qty:
                         svc.update_trailing(trade, price)
                         svc.manage_position(trade)
-                        svc.rm._entry_price = trade.get("stop", svc.rm._entry_price)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
@@ -498,7 +492,7 @@ class EventDrivenBacktestEngine:
 
                 if mode == "spot":
                     if order.side == "sell":
-                        avail_base = max(0.0, svc.rm.pos.qty)
+                        avail_base = max(0.0, svc.account.current_exposure(order.symbol)[0])
                         fill_qty = min(fill_qty, avail_base)
                     else:
                         fee_model_tmp = self.exchange_fees.get(order.exchange, self.default_fee)
@@ -526,7 +520,10 @@ class EventDrivenBacktestEngine:
 
                 if mode == "spot":
                     if order.side == "sell":
-                        while svc.rm.pos.qty - fill_qty < 0 and fill_qty > 0:
+                        while (
+                            svc.account.current_exposure(order.symbol)[0] - fill_qty < 0
+                            and fill_qty > 0
+                        ):
                             fill_qty = round(fill_qty - 1e-8, 8)
                             trade_value = fill_qty * price
                             fee_cost = fee_model.calculate(trade_value, maker=maker)
@@ -558,14 +555,14 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee_cost
                 else:
                     cash += trade_value - fee_cost
-                prev_qty = svc.rm.pos.qty
+                prev_qty = svc.account.current_exposure(order.symbol)[0]
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slip_cash
                 slippage_pnl = -slip_cash
                 realized_pnl_total += realized_pnl
                 svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
-                new_qty = svc.rm.pos.qty
+                new_qty = svc.account.current_exposure(order.symbol)[0]
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
                 new_sign = 1 if new_qty > 0 else -1 if new_qty < 0 else 0
@@ -599,9 +596,9 @@ class EventDrivenBacktestEngine:
                         raise AssertionError(
                             f"cash became negative after {order.side} {order.symbol}: {cash}"
                         )
-                    if svc.rm.pos.qty < -1e-9:
+                    if svc.account.current_exposure(order.symbol)[0] < -1e-9:
                         raise AssertionError(
-                            f"position went negative for {order.symbol}: {svc.rm.pos.qty}"
+                            f"position went negative for {order.symbol}: {svc.account.current_exposure(order.symbol)[0]}"
                         )
                 order.filled_qty += fill_qty
                 order.remaining_qty -= fill_qty
@@ -617,7 +614,7 @@ class EventDrivenBacktestEngine:
                     sym_len_s = data_lengths[sym_s]
                     idx_px = i if i < sym_len_s else sym_len_s - 1
                     mark = price if sym_s == order.symbol else float(arrs_s["close"][idx_px])
-                    mtm_after += svc_s.rm.pos.qty * mark
+                    mtm_after += svc_s.account.current_exposure(sym_s)[0] * mark
                 equity_after = cash + mtm_after
 
                 timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
@@ -661,7 +658,7 @@ class EventDrivenBacktestEngine:
                 sym_len = data_lengths[symbol]
                 if i >= sym_len:
                     continue
-                qty = svc.rm.pos.qty
+                qty = svc.account.current_exposure(symbol)[0]
                 if abs(qty) < self.min_order_qty:
                     continue
                 if state.get("entry_i") == i:
@@ -718,7 +715,7 @@ class EventDrivenBacktestEngine:
                         cash += trade_value - fee_cost
                     else:
                         cash -= trade_value + fee_cost
-                    prev_qty = svc.rm.pos.qty
+                    prev_qty = svc.account.current_exposure(symbol)[0]
                     svc.on_fill(symbol, side, exit_qty, exit_price)
                     new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
                     realized_pnl = new_rpnl - prev_rpnl - fee_cost
@@ -732,7 +729,7 @@ class EventDrivenBacktestEngine:
                         sym_len_s = data_lengths[sym_s]
                         idx_px = i if i < sym_len_s else sym_len_s - 1
                         mark = exit_price if sym_s == symbol else float(arrs_s["close"][idx_px])
-                        mtm_after += svc_s.rm.pos.qty * mark
+                        mtm_after += svc_s.account.current_exposure(sym_s)[0] * mark
                     equity_after = cash + mtm_after
                     if collect_fills:
                         timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
@@ -756,7 +753,7 @@ class EventDrivenBacktestEngine:
 
             # After executing pending orders and intrabar exits, update equity/positions
             mtm = sum(
-                svc.rm.pos.qty * data_arrays[sym]["close"][i]
+                svc.account.current_exposure(sym)[0] * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
                 if i < data_lengths[sym]
             )
@@ -856,7 +853,7 @@ class EventDrivenBacktestEngine:
                 rate = float(rate_arr[i]) if rate_arr is not None else 0.0
                 if rate:
                     price = float(arrs["close"][i])
-                    pos = svc.rm.pos.qty
+                    pos = svc.account.current_exposure(symbol)[0]
                     funding_cash = pos * price * rate
                     cash -= funding_cash
                     funding_total += funding_cash
@@ -870,7 +867,7 @@ class EventDrivenBacktestEngine:
                 current_price = float(arrs["close"][i])
                 svc.mark_price(symbol, current_price)
                 check_price = current_price
-                pos_qty = svc.rm.pos.qty
+                pos_qty, _ = svc.account.current_exposure(symbol)
                 if pos_qty > 0 and "low" in arrs:
                     check_price = float(arrs["low"][i])
                 elif pos_qty < 0 and "high" in arrs:
@@ -878,7 +875,7 @@ class EventDrivenBacktestEngine:
                 try:
                     svc.rm.check_limits(check_price)
                 except StopLossExceeded:
-                    delta = -svc.rm.pos.qty
+                    delta = -svc.account.current_exposure(symbol)[0]
                     if abs(delta) > self.min_order_qty:
                         side = "buy" if delta > 0 else "sell"
                         qty = abs(delta)
@@ -912,7 +909,7 @@ class EventDrivenBacktestEngine:
 
             # Track equity after processing each bar
             mtm = sum(
-                svc.rm.pos.qty * data_arrays[sym]["close"][i]
+                svc.account.current_exposure(sym)[0] * data_arrays[sym]["close"][i]
                 for (strat, sym), svc in self.risk.items()
                 if i < data_lengths[sym]
             )
@@ -932,13 +929,14 @@ class EventDrivenBacktestEngine:
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
-            pos = svc.rm.pos.qty
+            pos = svc.account.current_exposure(symbol)[0]
             if abs(pos) > self.min_order_qty:
                 arrs = data_arrays[symbol]
                 price_idx = min(last_index, data_lengths[symbol] - 1)
                 last_price = float(arrs["close"][price_idx])
                 cash += pos * last_price
-                svc.rm.set_position(0.0)
+                exchange = self.strategy_exchange[(strat_name, symbol)]
+                svc.update_position(exchange, symbol, 0.0)
 
         equity = cash
         # Update final equity in the curve without duplicating the last value

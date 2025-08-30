@@ -35,13 +35,24 @@ class DummyStrat:
 class DummyRisk:
     def __init__(self, *a, **k):
         self.last_strength: float | None = None
-        self.rm = types.SimpleNamespace(pos=types.SimpleNamespace(qty=0.0), min_order_qty=0.0)
+        self.rm = types.SimpleNamespace(min_order_qty=0.0)
+        self.account = types.SimpleNamespace(current_exposure=lambda symbol: (0.0, 0.0))
+        self.trades: dict = {}
 
     def mark_price(self, symbol, price):
         pass
 
     def update_correlation(self, *a, **k):
         pass
+
+    def get_trade(self, symbol):
+        return self.trades.get(symbol)
+
+    def update_trailing(self, trade, px):
+        pass
+
+    def manage_position(self, trade):
+        return "hold"
 
     def check_order(self, symbol, side, equity, price, strength=1.0, **_):
         self.last_strength = strength
