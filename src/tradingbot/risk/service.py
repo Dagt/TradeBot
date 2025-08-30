@@ -70,6 +70,12 @@ class RiskService:
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
         return self.core.check_global_exposure(symbol, new_alloc)
 
+    def initial_stop(
+        self, entry_price: float, side: str, atr: float | None = None
+    ) -> float:
+        """Return the initial stop price for a new position."""
+        return self.core.initial_stop(entry_price, side, atr)
+
     def update_trailing(
         self, trade: dict | object, current_price: float, fees_slip: float = 0.0
     ) -> None:

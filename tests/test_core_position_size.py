@@ -40,6 +40,16 @@ def test_initial_stop_uses_risk_pct():
     assert rm.initial_stop(100.0, "sell") == pytest.approx(102.0)
 
 
+def test_service_initial_stop_delegates_to_core():
+    account = Account(float("inf"), cash=1000.0)
+    rm = RiskManager()
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    svc = RiskService(rm, guard, account=account, risk_per_trade=0.1)
+    assert svc.initial_stop(100.0, "buy") == pytest.approx(
+        svc.core.initial_stop(100.0, "buy")
+    )
+
+
 def test_update_trailing_advances_stop_and_stage():
     account = Account(float("inf"), cash=1000.0)
     rm = CoreRiskManager(account, risk_per_trade=0.1)

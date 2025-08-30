@@ -104,7 +104,7 @@ class MeanRevOFI(Strategy):
             qty = self.risk_service.calc_position_size(strength, last_close)
             trade = {"side": side, "entry_price": last_close, "qty": qty}
             atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.core.initial_stop(
+            trade["stop"] = self.risk_service.initial_stop(
                 last_close, side, atr
             )
             self.risk_service.update_trailing(trade, last_close)
