@@ -64,27 +64,37 @@ entorno real de Binance Futures.
 
 ## Gestión de riesgo
 
-Las señales incluyen un parámetro `strength` que dimensiona la orden según
-`notional = equity * strength`. Un `strength = 1.0` usa todo el capital
-disponible; valores mayores piramidan la posición y menores la reducen. El
-gestor de riesgo limita la pérdida con `risk_pct` y permite dimensionar según
-la volatilidad mediante `vol_target`. Para limitar la exposición global puede
-emplearse `PortfolioGuard`, dejando `total_cap_pct` y `per_symbol_cap_pct` en
-`null` para deshabilitar estos límites.
+El módulo [`core/risk_manager.py`](src/tradingbot/core/risk_manager.py) provee
+un `RiskManager` universal que trabaja junto a
+[`core/account.py`](src/tradingbot/core/account.py). Las señales incluyen un
+parámetro `strength` continuo que dimensiona la orden según
+`notional = equity * strength`. El gestor aplica un trailing stop adaptativo
+basado en la volatilidad (ATR) y verifica la exposición global.
 
-El parámetro `risk_pct` debe indicarse como una fracción entre 0 y 1. Si se
-provee un valor de 1 a 100 se interpreta como porcentaje y se divide entre
-100 (por ejemplo, `risk_pct=1` equivale a `0.01`). Valores negativos o
-superiores a 100 generan un error.
+El riesgo por operación se controla con `risk_per_trade` (equivalente a
+`--risk-pct` en el CLI). Para limitar la exposición global pueden usarse los
+parámetros `total_cap_pct` y `per_symbol_cap_pct` de `PortfolioGuard`.
 
-Ejemplos:
+### Ejemplo
 
-```bash
-python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 0.02
-# equivalente a:
-python -m tradingbot.cli backtest data.csv --symbol BTC/USDT --risk-pct 2
-# y "--risk-pct 1" equivale a 0.01 (1 % de riesgo)
+```python
+from tradingbot.core.account import Account
+from tradingbot.core.risk_manager import RiskManager
+
+account = Account(max_symbol_exposure=1000.0, cash=1000.0)
+rm = RiskManager(account, risk_per_trade=0.02)
+
+signal = {"side": "buy", "strength": 0.5, "atr": 6}
+size = rm.calc_position_size(signal["strength"], price=100)
+stop = rm.initial_stop(100, "buy", atr=signal["atr"])
+trade = {"side": "buy", "entry_price": 100, "qty": size, "stop": stop, "atr": signal["atr"]}
+rm.update_trailing(trade, current_price=108)
 ```
+
+El parámetro `risk_per_trade` debe indicarse como una fracción entre 0 y 1.
+Si se provee un valor de 1 a 100 se interpreta como porcentaje y se divide
+entre 100 (por ejemplo, `--risk-pct 1` equivale a `0.01`). Valores negativos
+o superiores a 100 generan un error.
 
 `DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
 superan los límites configurados, detiene el bot o cierra las posiciones

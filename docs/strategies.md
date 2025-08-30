@@ -3,16 +3,20 @@
 Las estrategias definen cómo se toman decisiones de compra o venta. A
 continuación se presenta un resumen en lenguaje sencillo.
 
-Todas las señales incluyen un campo `strength` que dimensiona las órdenes
-mediante `notional = equity * strength`. Valores superiores a `1.0` piramidan
-la posición y menores la desescalan. Además, `risk_pct` define un stop‑loss
-local basado en `notional * risk_pct`.
+Todas las señales incluyen un campo `strength` continuo que dimensiona las
+órdenes mediante `notional = equity * strength`. El `RiskManager` universal
+utiliza este valor para calcular el tamaño y aplicar un trailing stop
+adaptativo.
+
+Ejemplo de señal:
+
+```python
+signal = {"side": "buy", "strength": 0.75, "atr": 4.2}
+```
 
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador
-ATR y vende cuando cae por debajo del canal inferior. El parámetro
-`min_bars_between_trades` limita la emisión de señales opuestas hasta que
-transcurra un mínimo de 5 velas.
+ATR y vende cuando cae por debajo del canal inferior.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.
@@ -42,8 +46,8 @@ Analiza el flujo de órdenes que llegan al mercado para detectar presiones de
 compra o venta.
 
 ### Triple Barrier (`triple_barrier`)
-Define tres barreras (objetivo, stop loss y tiempo) y cierra la posición
-según cuál se alcance primero.
+Define tres barreras (objetivo, límite de pérdida y tiempo) y cierra la
+posición según cuál se alcance primero.
 
 ### Cash and Carry (`cash_and_carry`)
 Aprovecha diferencias de precio entre el mercado spot y los futuros para
