@@ -182,6 +182,23 @@ async def _run_symbol(
                     log.error("[HALT] motivo=%s", reason)
                     break
                 continue
+            if decision in {"scale_in", "scale_out"}:
+                target = risk.calc_position_size(trade.get("strength", 1.0), px)
+                delta_qty = target - abs(pos_qty)
+                if abs(delta_qty) > risk.rm.min_order_qty:
+                    side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                    if dry_run:
+                        resp = await broker.place_order(cfg.symbol, side, "market", abs(delta_qty))
+                    else:
+                        resp = await exec_adapter.place_order(
+                            cfg.symbol, side, "market", abs(delta_qty), mark_price=px
+                        )
+                    risk.on_fill(cfg.symbol, side, abs(delta_qty), venue=venue if not dry_run else "paper")
+                    halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+                    if halted:
+                        log.error("[HALT] motivo=%s", reason)
+                        break
+                continue
         closed = agg.on_trade(ts, px, qty)
         if closed is None:
             continue

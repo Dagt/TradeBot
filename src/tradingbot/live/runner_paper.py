@@ -95,6 +95,16 @@ async def run_paper(
                     )
                     risk.on_fill(symbol, close_side, abs(pos_qty), venue="paper")
                     continue
+                if decision in {"scale_in", "scale_out"}:
+                    target = risk.calc_position_size(trade.get("strength", 1.0), px)
+                    delta_qty = target - abs(pos_qty)
+                    if abs(delta_qty) > risk.rm.min_order_qty:
+                        side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                        await router.execute(
+                            Order(symbol=symbol, side=side, type_="market", qty=abs(delta_qty))
+                        )
+                        risk.on_fill(symbol, side, abs(delta_qty), venue="paper")
+                    continue
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
                 continue

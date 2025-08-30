@@ -168,6 +168,20 @@ async def run_live_binance(
                     log.error("[HALT] motivo=%s", reason)
                     break
                 continue
+            if decision in {"scale_in", "scale_out"}:
+                target = risk.calc_position_size(trade.get("strength", 1.0), px)
+                delta_qty = target - abs(pos_qty)
+                if abs(delta_qty) > risk.rm.min_order_qty:
+                    side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                    prev_rpnl = broker.state.realized_pnl
+                    resp = await broker.place_order(symbol, side, "market", abs(delta_qty))
+                    risk.on_fill(symbol, side, abs(delta_qty), venue="binance")
+                    delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+                    if halted:
+                        log.error("[HALT] motivo=%s", reason)
+                        break
+                continue
 
         # Persistencia opcional: guardar trade crudo
         if pg_engine is not None:

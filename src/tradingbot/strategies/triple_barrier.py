@@ -151,13 +151,15 @@ class TripleBarrier(Strategy):
         last = df["close"].iloc[-1]
         if self.trade and self.risk_service:
             self.risk_service.update_trailing(self.trade, last)
-            decision = self.risk_service.manage_position(
-                {**self.trade, "current_price": last}
-            )
+            trade_state = {**self.trade, "current_price": last}
+            decision = self.risk_service.manage_position(trade_state)
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
                 return Signal(side, 1.0)
+            if decision in {"scale_in", "scale_out"}:
+                self.trade["strength"] = trade_state.get("strength", 1.0)
+                return Signal(self.trade["side"], self.trade["strength"])
             return None
 
         features = self._prepare_features(df)
@@ -189,12 +191,13 @@ class TripleBarrier(Strategy):
             side = "sell"
         else:
             return None
+        strength = 1.0
         if self.risk_service:
-            qty = self.risk_service.calc_position_size(1.0, last)
-            trade = {"side": side, "entry_price": float(last), "qty": qty}
+            qty = self.risk_service.calc_position_size(strength, last)
+            trade = {"side": side, "entry_price": float(last), "qty": qty, "strength": strength}
             atr = bar.get("atr") or bar.get("volatility")
             trade["stop"] = self.risk_service.initial_stop(last, side, atr)
             trade["atr"] = atr
             self.risk_service.update_trailing(trade, float(last))
             self.trade = trade
-        return Signal(side, 1.0)
+        return Signal(side, strength)
