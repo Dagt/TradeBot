@@ -5,6 +5,9 @@ from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
 from tradingbot.strategies.breakout_vol import BreakoutVol
 from tradingbot.core import Account, RiskManager as CoreRiskManager
+from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 import pytest
 from hypothesis import given, strategies as st
 
@@ -32,6 +35,22 @@ def test_breakout_atr_min_edge(breakout_df_buy, breakout_df_sell):
         strat.on_bar({"window": breakout_df_sell, "volatility": 0.0}).side
         == "sell"
     )
+
+
+def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
+    rm = RiskManager(risk_pct=0.02)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    svc = RiskService(rm, guard)
+    svc.account.update_cash(1000.0)
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, risk_service=svc)
+    sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    assert sig and sig.side == "buy"
+    trade = strat.trade
+    assert trade is not None
+    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
+    assert trade["qty"] == pytest.approx(expected_qty)
+    expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"])
+    assert trade["stop"] == pytest.approx(expected_stop)
 
 
 def test_order_flow_signals():
@@ -110,6 +129,23 @@ def test_breakout_vol_min_edge():
     strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=2000)
     sig_sell = strat.on_bar({"window": df_sell, "volatility": 0.0})
     assert sig_sell.side == "sell"
+
+
+def test_breakout_vol_risk_service_handles_stop_and_size():
+    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
+    rm = RiskManager(risk_pct=0.02)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    svc = RiskService(rm, guard)
+    svc.account.update_cash(1000.0)
+    strat = BreakoutVol(lookback=2, mult=0.5, risk_service=svc)
+    sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
+    assert sig and sig.side == "buy"
+    trade = strat.trade
+    assert trade is not None
+    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
+    assert trade["qty"] == pytest.approx(expected_qty)
+    expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade.get("atr"))
+    assert trade["stop"] == pytest.approx(expected_stop)
 
 
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
