@@ -33,6 +33,13 @@ def test_calc_position_size_handles_edge_cases():
     assert rm.calc_position_size(-0.5, 100.0) == 0.0
 
 
+def test_initial_stop_uses_risk_pct():
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account, risk_pct=0.02)
+    assert rm.initial_stop(100.0, "buy") == pytest.approx(98.0)
+    assert rm.initial_stop(100.0, "sell") == pytest.approx(102.0)
+
+
 def test_update_trailing_advances_stop_and_stage():
     account = Account(float("inf"), cash=1000.0)
     rm = CoreRiskManager(account, risk_per_trade=0.1)
@@ -45,13 +52,16 @@ def test_update_trailing_advances_stop_and_stage():
         "qty": 1.0,
     }
     rm.update_trailing(trade, 105.0)
-    assert trade["stop"] == pytest.approx(100.0)
+    assert trade["stop"] == pytest.approx(95.0)
     assert trade["stage"] == 1
-    rm.update_trailing(trade, 112.0)
+    rm.update_trailing(trade, 110.0)
     assert trade["stage"] == 2
+    assert trade["stop"] == pytest.approx(100.0)
+    rm.update_trailing(trade, 112.0)
+    assert trade["stage"] == 3
     assert trade["stop"] == pytest.approx(101.0)
     rm.update_trailing(trade, 120.0)
-    assert trade["stage"] >= 3
+    assert trade["stage"] >= 4
     assert trade["stop"] == pytest.approx(110.0)
 
 
@@ -64,6 +74,17 @@ def test_manage_position_handles_stop_and_signals():
     assert rm.manage_position(trade, {"side": "sell"}) == "close"
     assert rm.manage_position(trade, {"exit": True}) == "close"
     assert rm.manage_position(trade, {"side": "buy"}) == "hold"
+
+
+def test_manage_position_handles_scaling():
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account)
+    trade = {"side": "buy", "stop": 90.0, "current_price": 100.0, "strength": 1.0}
+    assert rm.manage_position(trade, {"side": "buy", "strength": 1.5}) == "scale_in"
+    assert trade["strength"] == pytest.approx(1.5)
+    assert rm.manage_position(trade, {"side": "buy", "strength": 0.5}) == "scale_out"
+    assert trade["strength"] == pytest.approx(0.5)
+    assert rm.manage_position(trade, {"side": "buy", "strength": 0.0}) == "close"
 
 
 def test_check_global_exposure_enforces_limit():
