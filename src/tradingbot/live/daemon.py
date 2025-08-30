@@ -474,12 +474,12 @@ class TradeBotDaemon:
     # ------------------------------------------------------------------
     async def _on_signal(self, evt: dict) -> None:
         """Size and route signals coming from strategies."""
-        signal = evt.get("signal")
+        signal = evt["signal"]
         trade = evt.get("trade")
         symbol = getattr(trade, "symbol", None)
         price = getattr(trade, "price", None)
-        side = getattr(signal, "side", "")
-        strength = getattr(signal, "strength", 1.0)
+        side = signal.side
+        strength = signal.strength
         symbol_vol = 0.0
         if symbol and price is not None:
             hist = self.price_history[symbol]

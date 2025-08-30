@@ -29,12 +29,13 @@ class DummyAgg:
 
 class DummyStrat:
     def on_bar(self, ctx):
-        return SimpleNamespace(side="buy", strength=1.0, reduce_only=False)
+        return SimpleNamespace(side="buy", strength=0.37, reduce_only=False)
 
 
 class DummyRisk:
     def __init__(self, *a, **k):
-        pass
+        self.last_strength: float | None = None
+        self.rm = types.SimpleNamespace(pos=types.SimpleNamespace(qty=0.0), min_order_qty=0.0)
 
     def mark_price(self, symbol, price):
         pass
@@ -43,6 +44,7 @@ class DummyRisk:
         pass
 
     def check_order(self, symbol, side, equity, price, strength=1.0, **_):
+        self.last_strength = strength
         return True, "", 1.0
 
     def on_fill(self, symbol, side, qty, price=None, venue=None):
@@ -61,6 +63,9 @@ class DummyRouter:
 
 
 class DummyBroker:
+    def __init__(self):
+        self.account = object()
+
     def update_last_price(self, symbol, px):
         pass
 
@@ -82,7 +87,8 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
     # Use real RiskManager and PortfolioGuard to satisfy run_paper setup
-    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: DummyRisk())
+    dummy_risk = DummyRisk()
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
     monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
@@ -91,3 +97,4 @@ async def test_run_paper(monkeypatch):
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 
     assert DummyRouter.last_order.symbol == normalize("BTC-USDT")
+    assert dummy_risk.last_strength == pytest.approx(0.37)

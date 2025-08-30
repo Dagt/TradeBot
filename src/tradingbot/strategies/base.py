@@ -41,9 +41,7 @@ class Strategy(ABC):
     # ------------------------------------------------------------------
     def _edge_still_exists(self, order: Order) -> bool:
         last = getattr(self, "_last_signal", {}).get(order.symbol)
-        return bool(
-            last and last.side == order.side and getattr(last, "strength", 0.0) > 0.0
-        )
+        return bool(last and last.side == order.side and last.strength > 0.0)
 
     # ------------------------------------------------------------------
     def on_partial_fill(self, order: Order, res: dict[str, Any]):
