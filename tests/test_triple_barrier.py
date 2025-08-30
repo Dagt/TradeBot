@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+from tradingbot.core import Account, RiskManager as CoreRiskManager
 from tradingbot.strategies.triple_barrier import (
     TripleBarrier,
     apply_meta_labeling,
@@ -74,8 +75,6 @@ def test_triple_barrier_scalping_exit():
         lower_pct=0.02,
         training_window=3,
         meta_model=meta_model,
-        tp_bps=50.0,
-        sl_bps=50.0,
         max_hold_bars=5,
     )
     strat.model = primary_model
@@ -83,7 +82,18 @@ def test_triple_barrier_scalping_exit():
     for i in range(len(prices)):
         signals.append(strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0}))
     assert signals[2] is not None and signals[2].side == "buy"
-    assert signals[3] is not None and signals[3].side == "sell"
+
+    # RiskManager handles position exits
+    trade = {
+        "side": "buy",
+        "entry_price": 97.0,
+        "stop": 96.0,
+        "qty": 1.0,
+        "current_price": 96.0,
+    }
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account)
+    assert rm.manage_position(trade) == "close"
 
 
 def test_triple_barrier_loads_config(tmp_path):
@@ -94,8 +104,6 @@ horizon: 3
 upper_pct: 0.05
 lower_pct: 0.01
 training_window: 50
-tp_bps: 20.0
-sl_bps: 30.0
 max_hold_bars: 7
 """
     )
@@ -104,7 +112,5 @@ max_hold_bars: 7
     assert strat.upper_pct == 0.05
     assert strat.lower_pct == 0.01
     assert strat.training_window == 50
-    assert strat.tp_bps == 20.0
-    assert strat.sl_bps == 30.0
     assert strat.max_hold_bars == 7
 
