@@ -9,9 +9,6 @@ from ..data.features import depth_imbalance
 PARAM_INFO = {
     "window": "Ventana para promediar el desequilibrio",
     "threshold": "Umbral de desequilibrio para operar",
-    "tp": "Take profit como fracción del precio",
-    "sl": "Stop loss como fracción del precio",
-    "max_duration": "Máxima duración de la posición",
 }
 
 
@@ -28,18 +25,13 @@ class DepthImbalance(Strategy):
         self,
         window: int = 3,
         threshold: float = 0.2,
-        tp: float | None = None,
-        sl: float | None = None,
-        max_duration: pd.Timedelta | int | float | str | None = None,
+        *,
+        risk_service=None,
     ):
         self.window = window
         self.threshold = threshold
-        self.tp = tp
-        self.sl = sl
-        self.max_duration = pd.Timedelta(max_duration) if max_duration else None
-        self.pos_side: str | None = None
-        self.entry_price: float | None = None
-        self.entry_time: pd.Timestamp | None = None
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -49,49 +41,37 @@ class DepthImbalance(Strategy):
             return None
 
         price = bar.get("close")
-        now = pd.Timestamp(bar.get("ts") or bar.get("timestamp") or pd.Timestamp.utcnow())
 
-        if self.pos_side and self.entry_price is not None:
-            pnl = (
-                price - self.entry_price
-                if self.pos_side == "buy"
-                else self.entry_price - price
-            ) if price is not None else None
-            pct = pnl / self.entry_price if pnl is not None else None
-            if pct is not None:
-                if self.tp is not None and pct >= self.tp:
-                    side = self.pos_side
-                    self.pos_side = None
-                    self.entry_price = None
-                    self.entry_time = None
-                    return Signal(side, 0.0)
-                if self.sl is not None and pct <= -self.sl:
-                    side = self.pos_side
-                    self.pos_side = None
-                    self.entry_price = None
-                    self.entry_time = None
-                    return Signal(side, 0.0)
-            if (
-                self.max_duration is not None
-                and self.entry_time is not None
-                and now - self.entry_time >= self.max_duration
-            ):
-                side = self.pos_side
-                self.pos_side = None
-                self.entry_price = None
-                self.entry_time = None
-                return Signal(side, 0.0)
+        if self.trade and self.risk_service and price is not None:
+            self.risk_service.update_trailing(self.trade, price)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": price}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
+            return None
 
         di_series = depth_imbalance(df[list(needed)])
         di_mean = di_series.iloc[-self.window :].mean()
+        side = None
         if di_mean > self.threshold:
-            self.pos_side = "buy"
-            self.entry_price = price
-            self.entry_time = now
-            return Signal("buy", 1.0)
-        if di_mean < -self.threshold:
-            self.pos_side = "sell"
-            self.entry_price = price
-            self.entry_time = now
-            return Signal("sell", 1.0)
-        return None
+            side = "buy"
+        elif di_mean < -self.threshold:
+            side = "sell"
+        if side is None:
+            return None
+        strength = 1.0
+        if self.risk_service and price is not None:
+            qty = self.risk_service.calc_position_size(strength, price)
+            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            atr = bar.get("atr") or bar.get("volatility")
+            stop_fn = getattr(self.risk_service, "initial_stop", None)
+            if stop_fn is None and hasattr(self.risk_service, "core"):
+                stop_fn = getattr(self.risk_service.core, "initial_stop", None)
+            if stop_fn is not None:
+                trade["stop"] = stop_fn(price, side, atr)
+            self.risk_service.update_trailing(trade, price)
+            self.trade = trade
+        return Signal(side, strength)

@@ -7,9 +7,6 @@ PARAM_INFO = {
     "window": "Ventana para promediar el OFI",
     "buy_threshold": "Umbral de compra para OFI",
     "sell_threshold": "Umbral de venta para OFI",
-    "tp": "Take profit como fracción",
-    "sl": "Stop loss como fracción",
-    "max_duration": "Duración máxima de la posición",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
@@ -28,21 +25,16 @@ class OrderFlow(Strategy):
         window: int = 3,
         buy_threshold: float = 1.0,
         sell_threshold: float = 1.0,
-        tp: float | None = None,
-        sl: float | None = None,
-        max_duration: pd.Timedelta | int | float | str | None = None,
         min_volatility: float = 0.0,
+        *,
+        risk_service=None,
     ):
         self.window = window
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
-        self.tp = tp
-        self.sl = sl
-        self.max_duration = pd.Timedelta(max_duration) if max_duration else None
         self.min_volatility = min_volatility
-        self.pos_side: str | None = None
-        self.entry_price: float | None = None
-        self.entry_time: pd.Timestamp | None = None
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -51,7 +43,6 @@ class OrderFlow(Strategy):
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
         price = bar.get("close")
-        now = pd.Timestamp(bar.get("ts") or bar.get("timestamp") or pd.Timestamp.utcnow())
 
         vol_bps = float("inf")
         price_col = "close" if "close" in df.columns else None
@@ -67,47 +58,36 @@ class OrderFlow(Strategy):
         if vol_bps < self.min_volatility:
             return None
 
-        if self.pos_side and self.entry_price is not None:
-            pnl = (
-                price - self.entry_price
-                if self.pos_side == "buy"
-                else self.entry_price - price
-            ) if price is not None else None
-            pct = pnl / self.entry_price if pnl is not None else None
-            if pct is not None:
-                if self.tp is not None and pct >= self.tp:
-                    side = self.pos_side
-                    self.pos_side = None
-                    self.entry_price = None
-                    self.entry_time = None
-                    return Signal(side, 0.0)
-                if self.sl is not None and pct <= -self.sl:
-                    side = self.pos_side
-                    self.pos_side = None
-                    self.entry_price = None
-                    self.entry_time = None
-                    return Signal(side, 0.0)
-            if (
-                self.max_duration is not None
-                and self.entry_time is not None
-                and now - self.entry_time >= self.max_duration
-            ):
-                side = self.pos_side
-                self.pos_side = None
-                self.entry_price = None
-                self.entry_time = None
-                return Signal(side, 0.0)
+        if self.trade and self.risk_service and price is not None:
+            self.risk_service.update_trailing(self.trade, price)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": price}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
+            return None
 
         ofi_series = calc_ofi(df[list(needed)])
         ofi_mean = ofi_series.iloc[-self.window:].mean()
+        side = None
         if ofi_mean > self.buy_threshold:
-            self.pos_side = "buy"
-            self.entry_price = price
-            self.entry_time = now
-            return Signal("buy", 1.0)
-        if ofi_mean < -self.sell_threshold:
-            self.pos_side = "sell"
-            self.entry_price = price
-            self.entry_time = now
-            return Signal("sell", 1.0)
-        return None
+            side = "buy"
+        elif ofi_mean < -self.sell_threshold:
+            side = "sell"
+        if side is None:
+            return None
+        strength = 1.0
+        if self.risk_service and price is not None:
+            qty = self.risk_service.calc_position_size(strength, price)
+            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            atr = bar.get("atr") or bar.get("volatility")
+            stop_fn = getattr(self.risk_service, "initial_stop", None)
+            if stop_fn is None and hasattr(self.risk_service, "core"):
+                stop_fn = getattr(self.risk_service.core, "initial_stop", None)
+            if stop_fn is not None:
+                trade["stop"] = stop_fn(price, side, atr)
+            self.risk_service.update_trailing(trade, price)
+            self.trade = trade
+        return Signal(side, strength)

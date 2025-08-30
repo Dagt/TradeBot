@@ -9,9 +9,6 @@ from ..data.features import book_vacuum, liquidity_gap
 PARAM_INFO = {
     "vacuum_threshold": "Umbral para detectar vacíos de liquidez",
     "gap_threshold": "Umbral para detectar gaps de liquidez",
-    "tp_pct": "Take profit porcentual",
-    "sl_pct": "Stop loss porcentual",
-    "max_hold": "Barras máximas en posición",
     "vol_window": "Ventana para calcular la volatilidad",
     "dynamic_thresholds": "Ajustar umbrales según volatilidad",
 }
@@ -37,23 +34,18 @@ class LiquidityEvents(Strategy):
         self,
         vacuum_threshold: float = 0.5,
         gap_threshold: float = 1.0,
-        tp_pct: float = 0.01,
-        sl_pct: float = 0.005,
-        max_hold: int = 30,
         vol_window: int = 20,
         dynamic_thresholds: bool = True,
+        *,
+        risk_service=None,
     ):
         self.vacuum_threshold = vacuum_threshold
         self.gap_threshold = gap_threshold
-        self.tp_pct = tp_pct
-        self.sl_pct = sl_pct
-        self.max_hold = max_hold
         self.vol_window = vol_window
         self.dynamic_thresholds = dynamic_thresholds
+        self.risk_service = risk_service
 
-        self.position: str | None = None
-        self.entry_price: float = 0.0
-        self.bars_in_position: int = 0
+        self.trade: dict | None = None
 
     def _mid_prices(self, df: pd.DataFrame) -> pd.Series:
         bid = df["bid_px"].apply(lambda x: x[0])
@@ -79,51 +71,43 @@ class LiquidityEvents(Strategy):
         mid = self._mid_prices(df)
         last_price = mid.iloc[-1]
 
-        # Handle open positions
-        if self.position == "long":
-            self.bars_in_position += 1
-            if (
-                last_price >= self.entry_price * (1 + self.tp_pct)
-                or last_price <= self.entry_price * (1 - self.sl_pct)
-                or self.bars_in_position >= self.max_hold
-            ):
-                self.position = None
-                return Signal("sell", 1.0, reduce_only=True)
-            return None
-        if self.position == "short":
-            self.bars_in_position += 1
-            if (
-                last_price <= self.entry_price * (1 - self.tp_pct)
-                or last_price >= self.entry_price * (1 + self.sl_pct)
-                or self.bars_in_position >= self.max_hold
-            ):
-                self.position = None
-                return Signal("buy", 1.0, reduce_only=True)
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, float(last_price))
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": float(last_price)}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
             return None
 
         vac_thresh = self._vol_adjust(mid, self.vacuum_threshold)
         vac = book_vacuum(df[["bid_qty", "ask_qty"]], vac_thresh).iloc[-1]
         if vac > 0:
-            self.position = "long"
-            self.entry_price = last_price
-            self.bars_in_position = 0
-            return Signal("buy", 1.0)
-        if vac < 0:
-            self.position = "short"
-            self.entry_price = last_price
-            self.bars_in_position = 0
-            return Signal("sell", 1.0)
-
-        gap_thresh = self._vol_adjust(mid, self.gap_threshold)
-        gap = liquidity_gap(df[["bid_px", "ask_px"]], gap_thresh).iloc[-1]
-        if gap > 0:
-            self.position = "long"
-            self.entry_price = last_price
-            self.bars_in_position = 0
-            return Signal("buy", 1.0)
-        if gap < 0:
-            self.position = "short"
-            self.entry_price = last_price
-            self.bars_in_position = 0
-            return Signal("sell", 1.0)
-        return None
+            side = "buy"
+        elif vac < 0:
+            side = "sell"
+        else:
+            gap_thresh = self._vol_adjust(mid, self.gap_threshold)
+            gap = liquidity_gap(df[["bid_px", "ask_px"]], gap_thresh).iloc[-1]
+            if gap > 0:
+                side = "buy"
+            elif gap < 0:
+                side = "sell"
+            else:
+                return None
+        strength = 1.0
+        if self.risk_service:
+            price = float(last_price)
+            qty = self.risk_service.calc_position_size(strength, price)
+            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            atr = bar.get("atr") or bar.get("volatility")
+            stop_fn = getattr(self.risk_service, "initial_stop", None)
+            if stop_fn is None and hasattr(self.risk_service, "core"):
+                stop_fn = getattr(self.risk_service.core, "initial_stop", None)
+            if stop_fn is not None:
+                trade["stop"] = stop_fn(price, side, atr)
+            self.risk_service.update_trailing(trade, price)
+            self.trade = trade
+        return Signal(side, strength)

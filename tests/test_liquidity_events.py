@@ -55,69 +55,6 @@ def test_liquidity_events_no_signal_returns_none():
     assert sig is None
 
 
-def test_take_profit_exit():
-    df_entry = pd.DataFrame({
-        "bid_qty": [10, 10],
-        "ask_qty": [10, 4],
-        "bid_px": [[100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102]],
-    })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.01, sl_pct=0.01, max_hold=10, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
-
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [102, 101]],
-        "ask_px": [[101, 102], [101, 102], [103, 104]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
-
-
-def test_stop_loss_exit():
-    df_entry = pd.DataFrame({
-        "bid_qty": [10, 10],
-        "ask_qty": [10, 4],
-        "bid_px": [[100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102]],
-    })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.05, sl_pct=0.01, max_hold=10, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
-
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [99, 98]],
-        "ask_px": [[101, 102], [101, 102], [99.8, 100]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
-
-
-def test_time_exit():
-    df_entry = pd.DataFrame({
-        "bid_qty": [10, 10],
-        "ask_qty": [10, 4],
-        "bid_px": [[100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102]],
-    })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.05, sl_pct=0.05, max_hold=1, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
-
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102], [101, 102]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
-
-
 def test_dynamic_thresholds_increase_events():
     df = pd.DataFrame({
         "bid_qty": [10, 10, 10, 10],
