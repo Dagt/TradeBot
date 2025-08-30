@@ -132,8 +132,8 @@ async def _run_symbol(
         venue=venue,
     )
     corr = CorrelationService()
-    risk = RiskService(risk_core, guard, dguard, corr_service=corr)
     broker = PaperAdapter(fee_bps=1.5)
+    risk = RiskService(risk_core, guard, dguard, corr_service=corr, account=broker.account)
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -160,6 +160,30 @@ async def _run_symbol(
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
+        pos_qty = risk.rm.pos.qty
+        if abs(pos_qty) > risk.rm.min_order_qty:
+            trade = {
+                "side": "buy" if pos_qty > 0 else "sell",
+                "current_price": px,
+                "stop": getattr(risk.rm, "_entry_price", None),
+            }
+            decision = risk.manage_position(trade)
+            if decision == "close":
+                close_side = "sell" if pos_qty > 0 else "buy"
+                if dry_run:
+                    resp = await broker.place_order(
+                        cfg.symbol, close_side, "market", abs(pos_qty)
+                    )
+                else:
+                    resp = await exec_adapter.place_order(
+                        cfg.symbol, close_side, "market", abs(pos_qty), mark_price=px
+                    )
+                risk.on_fill(cfg.symbol, close_side, abs(pos_qty), venue=venue if not dry_run else "paper")
+                halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+                if halted:
+                    log.error("[HALT] motivo=%s", reason)
+                    break
+                continue
         closed = agg.on_trade(ts, px, qty)
         if closed is None:
             continue
@@ -190,8 +214,6 @@ async def _run_symbol(
                 side,
                 "market",
                 qty,
-                take_profit=getattr(sig, "take_profit", None),
-                stop_loss=getattr(sig, "stop_loss", None),
             )
         else:
             resp = await exec_adapter.place_order(
@@ -200,8 +222,6 @@ async def _run_symbol(
                 "market",
                 qty,
                 mark_price=closed.c,
-                take_profit=getattr(sig, "take_profit", None),
-                stop_loss=getattr(sig, "stop_loss", None),
             )
         log.info("LIVE FILL %s", resp)
         risk.on_fill(cfg.symbol, side, qty, venue=venue if not dry_run else "paper")

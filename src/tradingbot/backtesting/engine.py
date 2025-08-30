@@ -422,6 +422,19 @@ class EventDrivenBacktestEngine:
                 for svc in self.risk.values():
                     svc.update_correlation(corr_df, 0.8)
                     svc.update_covariance(cov_df, 0.8)
+            for (strat, sym), svc in self.risk.items():
+                arrs = data_arrays[sym]
+                sym_len = data_lengths[sym]
+                if i < sym_len:
+                    price = float(arrs["close"][i])
+                    pos_qty = svc.rm.pos.qty
+                    if abs(pos_qty) > self.min_order_qty:
+                        trade = {
+                            "side": "buy" if pos_qty > 0 else "sell",
+                            "current_price": price,
+                            "stop": getattr(svc.rm, "_entry_price", None),
+                        }
+                        svc.manage_position(trade)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)

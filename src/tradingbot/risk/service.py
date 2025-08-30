@@ -11,6 +11,7 @@ from .exceptions import StopLossExceeded
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
+from ..core import Account as CoreAccount, RiskManager as CoreRiskManager
 from ..storage import timescale
 from ..utils.logging import get_logger
 
@@ -35,12 +36,19 @@ class RiskService:
         corr_service: CorrelationService | None = None,
         *,
         engine=None,
+        account: CoreAccount | None = None,
+        risk_per_trade: float = 0.01,
+        atr_mult: float = 2.0,
     ) -> None:
         self.rm = manager
         self.guard = guard
         self.daily = daily
         self.corr = corr_service
         self.engine = engine
+        self.account = account or CoreAccount(float("inf"))
+        self.core = CoreRiskManager(
+            self.account, risk_per_trade=risk_per_trade, atr_mult=atr_mult
+        )
 
     # ------------------------------------------------------------------
     # Position helpers
@@ -48,15 +56,33 @@ class RiskService:
         """Synchronise position for ``exchange``/``symbol`` across components."""
         self.rm.update_position(exchange, symbol, qty)
         self.guard.set_position(exchange, symbol, qty)
+        cur = self.account.positions.get(symbol, 0.0)
+        self.account.update_position(symbol, qty - cur)
 
     def aggregate_positions(self) -> Dict[str, float]:
         """Return aggregated positions across all venues."""
         return self.rm.aggregate_positions()
 
+    # Delegates to core risk manager
+    def calc_position_size(self, signal_strength: float, price: float) -> float:
+        return self.core.calc_position_size(signal_strength, price)
+
+    def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
+        return self.core.check_global_exposure(symbol, new_alloc)
+
+    def update_trailing(
+        self, trade: dict | object, current_price: float, fees_slip: float = 0.0
+    ) -> None:
+        self.core.update_trailing(trade, current_price, fees_slip)
+
+    def manage_position(self, trade: dict | object, signal: dict | None = None) -> str:
+        return self.core.manage_position(trade, signal)
+
     # ------------------------------------------------------------------
     # Price tracking and risk checks
     def mark_price(self, symbol: str, price: float) -> None:
         self.guard.mark_price(symbol, price)
+        self.account.mark_price(symbol, price)
         if self.corr is not None:
             self.corr.update_price(symbol, price)
 
