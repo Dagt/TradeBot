@@ -46,13 +46,13 @@ class BreakoutVol(Strategy):
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
         if last > upper:
-            expected_edge_bps = (last - upper) / abs(last) * 10000
-            if expected_edge_bps <= self.min_edge_bps:
+            edge_bps = (last - upper) / abs(last) * 10000
+            if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("buy", size, expected_edge_bps=expected_edge_bps)
+            return Signal("buy", size)
         if last < lower:
-            expected_edge_bps = (lower - last) / abs(last) * 10000
-            if expected_edge_bps <= self.min_edge_bps:
+            edge_bps = (lower - last) / abs(last) * 10000
+            if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("sell", size, expected_edge_bps=expected_edge_bps)
+            return Signal("sell", size)
         return None

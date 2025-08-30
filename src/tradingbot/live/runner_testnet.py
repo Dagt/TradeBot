@@ -161,8 +161,6 @@ async def _run_symbol(
                 side,
                 "market",
                 qty,
-                take_profit=getattr(sig, "take_profit", None),
-                stop_loss=getattr(sig, "stop_loss", None),
             )
         else:
             resp = await exec_adapter.place_order(
@@ -171,8 +169,6 @@ async def _run_symbol(
                 "market",
                 qty,
                 mark_price=closed.c,
-                take_profit=getattr(sig, "take_profit", None),
-                stop_loss=getattr(sig, "stop_loss", None),
             )
         log.info("LIVE FILL %s", resp)
         risk.on_fill(cfg.symbol, side, qty, venue=venue if not dry_run else "paper")

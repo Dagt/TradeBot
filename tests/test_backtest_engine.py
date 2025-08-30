@@ -560,65 +560,6 @@ def test_seed_reproducibility(tmp_path, monkeypatch):
         assert abs(eq - base) <= abs(base) * 0.005
 
 
-def test_intrabar_levels_trigger(tmp_path, monkeypatch):
-    rng = pd.date_range("2021-01-01", periods=4, freq="T")
-    df = pd.DataFrame(
-        {
-            "timestamp": rng.view("int64") // 10**9,
-            "open": [100, 100, 100, 100],
-            "high": [101, 102, 110, 106],
-            "low": [99, 98, 90, 99],
-            "close": [100, 100, 100, 100],
-            "volume": 1000,
-        }
-    )
-    path = tmp_path / "data.csv"
-    df.to_csv(path, index=False)
-
-    class BuyHold:
-        def __init__(self):
-            self.done = False
-
-        def on_bar(self, bar):
-            if not self.done:
-                self.done = True
-                return SimpleNamespace(side="buy", strength=1.0, take_profit=105.0, stop_loss=95.0)
-            return None
-
-    monkeypatch.setitem(STRATEGIES, "buyhold", BuyHold)
-    strategies = [("buyhold", "SYM")]
-    data = {"SYM": str(path)}
-    res = run_backtest_csv(
-        data,
-        strategies,
-        latency=1,
-        window=1,
-        exchange_configs={"default": {"maker_fee_bps": 0.0, "taker_fee_bps": 0.0}},
-        verbose_fills=True,
-    )
-    fills = pd.DataFrame(
-        res["fills"],
-        columns=[
-            "timestamp",
-            "reason",
-            "side",
-            "price",
-            "qty",
-            "strategy",
-            "symbol",
-            "exchange",
-            "fee_cost",
-            "slippage_pnl",
-            "realized_pnl",
-            "realized_pnl_total",
-            "equity_after",
-        ],
-    )
-    assert len(fills) == 2
-    assert fills.iloc[1]["price"] == pytest.approx(105.0)
-    assert fills.iloc[1]["timestamp"] == df["timestamp"].iloc[3]
-    assert res["equity"] == pytest.approx(1050.0)
-
 def test_sharpe_is_annualised(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=10, freq="D")
     price = np.linspace(100, 110, num=10)

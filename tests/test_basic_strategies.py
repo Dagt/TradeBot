@@ -56,8 +56,6 @@ def test_arbitrage_backtest():
     base_params = {
         "threshold": 0.0,
         "position_size": 1,
-        "stop_loss": 0.05,
-        "take_profit": 0.1,
     }
     pnl_no_fee = backtest(
         data,
