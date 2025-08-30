@@ -1,6 +1,10 @@
 import pandas as pd
+import pytest
 
 from tradingbot.data.features import book_vacuum, liquidity_gap
+from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 from tradingbot.strategies.liquidity_events import LiquidityEvents
 
 
@@ -55,67 +59,37 @@ def test_liquidity_events_no_signal_returns_none():
     assert sig is None
 
 
-def test_take_profit_exit():
+def test_liquidity_events_risk_service_handles_stop_and_size():
     df_entry = pd.DataFrame({
         "bid_qty": [10, 10],
         "ask_qty": [10, 4],
         "bid_px": [[100, 99], [100, 99]],
         "ask_px": [[101, 102], [101, 102]],
     })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.01, sl_pct=0.01, max_hold=10, dynamic_thresholds=False)
+    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, dynamic_thresholds=False)
     sig = strat.on_bar({"window": df_entry})
     assert sig is not None and sig.side == "buy"
+    price = strat.entry_price
 
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [102, 101]],
-        "ask_px": [[101, 102], [101, 102], [103, 104]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
+    rm = RiskManager(risk_pct=0.02)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    svc = RiskService(rm, guard)
+    svc.account.update_cash(1000.0)
 
+    allowed, reason, delta = svc.check_order(
+        "AAA", sig.side, 1000.0, price, strength=sig.strength
+    )
+    assert allowed and delta > 0
 
-def test_stop_loss_exit():
-    df_entry = pd.DataFrame({
-        "bid_qty": [10, 10],
-        "ask_qty": [10, 4],
-        "bid_px": [[100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102]],
-    })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.05, sl_pct=0.01, max_hold=10, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
+    rm.add_fill(sig.side, delta, price=price)
+    svc.update_position("X", "AAA", delta)
 
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [99, 98]],
-        "ask_px": [[101, 102], [101, 102], [99.8, 100]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
-
-
-def test_time_exit():
-    df_entry = pd.DataFrame({
-        "bid_qty": [10, 10],
-        "ask_qty": [10, 4],
-        "bid_px": [[100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102]],
-    })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, tp_pct=0.05, sl_pct=0.05, max_hold=1, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
-
-    df_exit = pd.DataFrame({
-        "bid_qty": [10, 10, 10],
-        "ask_qty": [10, 4, 10],
-        "bid_px": [[100, 99], [100, 99], [100, 99]],
-        "ask_px": [[101, 102], [101, 102], [101, 102]],
-    })
-    sig_exit = strat.on_bar({"window": df_exit})
-    assert sig_exit is not None and sig_exit.side == "sell" and sig_exit.reduce_only
+    stop_price = price * (1 - rm.risk_pct) - 1
+    allowed, reason, delta_stop = svc.check_order(
+        "AAA", sig.side, 1000.0, stop_price
+    )
+    assert allowed and reason == "stop_loss"
+    assert delta_stop == pytest.approx(-delta)
 
 
 def test_dynamic_thresholds_increase_events():
