@@ -24,25 +24,29 @@ from tradingbot.core.account import Account
 from tradingbot.core.risk_manager import RiskManager
 
 account = Account(max_symbol_exposure=1000.0, cash=1000.0)
-rm = RiskManager(account, risk_per_trade=0.02)
+rm = RiskManager(account, risk_per_trade=0.02)  # equivalente a --risk-pct 2
 
 signal = {"side": "buy", "strength": 0.6, "atr": 5}
-size = rm.calc_position_size(signal["strength"], price=100)
-stop = rm.initial_stop(entry_price=100, side=signal["side"], atr=signal["atr"])
-trade = {
-    "side": "buy",
-    "entry_price": 100,
-    "qty": size,
-    "stop": stop,
-    "atr": signal["atr"],
-}
-
-rm.update_trailing(trade, current_price=112)
+price = 100
+size = rm.calc_position_size(signal["strength"], price)
+if rm.check_global_exposure("BTC/USDT", size * price):
+    stop = rm.initial_stop(price, signal["side"], atr=signal["atr"])
+    trade = {
+        "side": "buy",
+        "entry_price": price,
+        "qty": size,
+        "stop": stop,
+        "atr": signal["atr"],
+    }
+    rm.update_trailing(trade, current_price=112)
+    trade["current_price"] = 112
+    decision = rm.manage_position(trade)
 ```
 
 `signal["strength"]` acepta valores continuos y escala el tamaño de la orden.
 El método `update_trailing` mueve el stop a *break-even*, asegura 1 USD neto y
-luego sigue al precio a `2 × ATR`.
+luego sigue al precio a `2 × ATR`. `manage_position` decide si mantener o cerrar
+la operación y `check_global_exposure` valida el límite global por símbolo.
 
 ## Asignación por señal
 
