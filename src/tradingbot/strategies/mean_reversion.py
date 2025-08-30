@@ -68,6 +68,25 @@ class MeanReversion(Strategy):
         self._entry_price: float | None = None
         self._hold_bars: int = 0
 
+    def _manage_position(self, price: float, last_rsi: float) -> Signal | None:
+        """Handle an open position and return an exit signal if needed."""
+        self._hold_bars += 1
+        assert self._entry_price is not None
+        pnl_bps = (price - self._entry_price) / self._entry_price * 10000
+        if self._pos_side == "sell":
+            pnl_bps = -pnl_bps
+        exit_rsi = self.lower < last_rsi < self.upper
+        exit_tp = pnl_bps >= self.tp_bps
+        exit_sl = pnl_bps <= -self.sl_bps
+        exit_time = self._hold_bars >= self.max_hold_bars
+        if exit_rsi or exit_tp or exit_sl or exit_time:
+            side = "sell" if self._pos_side == "buy" else "buy"
+            self._pos_side = None
+            self._entry_price = None
+            self._hold_bars = 0
+            return Signal(side, 1.0)
+        return None
+
     def _calc_strength(self, side: str, price: float, last_rsi: float) -> float:
         """Return adaptive strength based on PnL or RSI distance."""
         strength = 1.0
@@ -95,6 +114,11 @@ class MeanReversion(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         price_series = df[price_col]
         price = float(price_series.iloc[-1])
+        rsi_series = rsi(df, self.rsi_n)
+        last_rsi = rsi_series.iloc[-1]
+        if self._pos_side is not None:
+            return self._manage_position(price, last_rsi)
+
         returns = price_series.pct_change().dropna()
         vol = (
             returns.rolling(self.rsi_n).std().iloc[-1]
@@ -104,8 +128,6 @@ class MeanReversion(Strategy):
         vol_bps = vol * 10000
         if vol_bps < self.min_volatility:
             return None
-        rsi_series = rsi(df, self.rsi_n)
-        last_rsi = rsi_series.iloc[-1]
 
         trend_dir = 0
         if len(df) >= self.trend_ma:
@@ -126,43 +148,18 @@ class MeanReversion(Strategy):
         upper = self.upper + (self.trend_threshold if trend_dir == 1 else 0)
         lower = self.lower - (self.trend_threshold if trend_dir == -1 else 0)
 
-        if self._pos_side is None:
-            if last_rsi > upper:
-                strength = self._calc_strength("sell", price, last_rsi)
-                self._pos_side = "sell"
-                self._entry_price = price
-                self._hold_bars = 0
-                return Signal("sell", strength)
-            if last_rsi < lower:
-                strength = self._calc_strength("buy", price, last_rsi)
-                self._pos_side = "buy"
-                self._entry_price = price
-                self._hold_bars = 0
-                return Signal("buy", strength)
-            return None
-
-        self._hold_bars += 1
-        assert self._entry_price is not None
-        pnl_bps = (price - self._entry_price) / self._entry_price * 10000
-        if self._pos_side == "sell":
-            pnl_bps = -pnl_bps
-        exit_rsi = self.lower < last_rsi < self.upper
-        exit_tp = pnl_bps >= self.tp_bps
-        exit_sl = pnl_bps <= -self.sl_bps
-        exit_time = self._hold_bars >= self.max_hold_bars
-        if exit_rsi or exit_tp or exit_sl or exit_time:
-            side = "sell" if self._pos_side == "buy" else "buy"
-            self._pos_side = None
-            self._entry_price = None
-            self._hold_bars = 0
-            return Signal(side, 1.0)
-
-        if self._pos_side == "buy" and last_rsi < lower:
-            strength = self._calc_strength("buy", price, last_rsi)
-            return Signal("buy", strength)
-        if self._pos_side == "sell" and last_rsi > upper:
+        if last_rsi > upper:
             strength = self._calc_strength("sell", price, last_rsi)
+            self._pos_side = "sell"
+            self._entry_price = price
+            self._hold_bars = 0
             return Signal("sell", strength)
+        if last_rsi < lower:
+            strength = self._calc_strength("buy", price, last_rsi)
+            self._pos_side = "buy"
+            self._entry_price = price
+            self._hold_bars = 0
+            return Signal("buy", strength)
         return None
 
 

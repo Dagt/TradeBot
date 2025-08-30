@@ -61,57 +61,10 @@ class BreakoutATR(Strategy):
         self.hold_bars: int = 0
         self.trailing_stop: float | None = None
 
-    @record_signal_metrics
-    def on_bar(self, bar: dict) -> Signal | None:
-        # bar should include a small rolling window (as dict of lists)
-        # or a pandas row with context
-        df: pd.DataFrame = bar["window"]
-        # expects columns: open, high, low, close, volume
-        if len(df) < max(self.ema_n, self.atr_n) + 2:
-            return None
-        upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
-        last_close = df["close"].iloc[-1]
-        current_idx = len(df) - 1
-        atr_val = atr(df, self.atr_n).iloc[-1]
-        atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
-
-        if self.pos_side == 0:
-            if atr_val < self.min_atr or atr_bps < self.min_volatility:
-                return None
-            side: str | None = None
-            expected_edge_bps = 0.0
-            trail_stop: float | None = None
-            if last_close > upper.iloc[-1]:
-                expected_edge_bps = (
-                    (last_close - upper.iloc[-1]) / abs(last_close) * 10000
-                )
-                side = "buy"
-                trail_stop = last_close - atr_val * self.trail_atr_mult
-            elif last_close < lower.iloc[-1]:
-                expected_edge_bps = (
-                    (lower.iloc[-1] - last_close) / abs(last_close) * 10000
-                )
-                side = "sell"
-                trail_stop = last_close + atr_val * self.trail_atr_mult
-            if side is None or expected_edge_bps <= self.min_edge_bps:
-                return None
-            if (
-                self._last_trade_idx is not None
-                and self._last_trade_side is not None
-                and side != self._last_trade_side
-                and current_idx - self._last_trade_idx < self.min_bars_between_trades
-            ):
-                return None
-            self.pos_side = 1 if side == "buy" else -1
-            self.entry_price = last_close
-            self.hold_bars = 0
-            self.trailing_stop = trail_stop
-            self._last_trade_idx = current_idx
-            self._last_trade_side = side
-            return Signal(side, 1.0, expected_edge_bps=expected_edge_bps)
-        
-
-        # manage existing position
+    def _manage_position(
+        self, last_close: float, atr_val: float, current_idx: int
+    ) -> Signal | None:
+        """Handle an open position and return an exit signal if needed."""
         self.hold_bars += 1
         assert self.entry_price is not None and self.trailing_stop is not None
         pnl_bps = (
@@ -142,3 +95,54 @@ class BreakoutATR(Strategy):
             self._last_trade_side = side
             return Signal(side, 1.0)
         return None
+
+    @record_signal_metrics
+    def on_bar(self, bar: dict) -> Signal | None:
+        # bar should include a small rolling window (as dict of lists)
+        # or a pandas row with context
+        df: pd.DataFrame = bar["window"]
+        # expects columns: open, high, low, close, volume
+        if len(df) < max(self.ema_n, self.atr_n) + 2:
+            return None
+        upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
+        last_close = df["close"].iloc[-1]
+        current_idx = len(df) - 1
+        atr_val = atr(df, self.atr_n).iloc[-1]
+        atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
+
+        if self.pos_side != 0:
+            return self._manage_position(last_close, atr_val, current_idx)
+
+        if atr_val < self.min_atr or atr_bps < self.min_volatility:
+            return None
+        side: str | None = None
+        expected_edge_bps = 0.0
+        trail_stop: float | None = None
+        if last_close > upper.iloc[-1]:
+            expected_edge_bps = (
+                (last_close - upper.iloc[-1]) / abs(last_close) * 10000
+            )
+            side = "buy"
+            trail_stop = last_close - atr_val * self.trail_atr_mult
+        elif last_close < lower.iloc[-1]:
+            expected_edge_bps = (
+                (lower.iloc[-1] - last_close) / abs(last_close) * 10000
+            )
+            side = "sell"
+            trail_stop = last_close + atr_val * self.trail_atr_mult
+        if side is None or expected_edge_bps <= self.min_edge_bps:
+            return None
+        if (
+            self._last_trade_idx is not None
+            and self._last_trade_side is not None
+            and side != self._last_trade_side
+            and current_idx - self._last_trade_idx < self.min_bars_between_trades
+        ):
+            return None
+        self.pos_side = 1 if side == "buy" else -1
+        self.entry_price = last_close
+        self.hold_bars = 0
+        self.trailing_stop = trail_stop
+        self._last_trade_idx = current_idx
+        self._last_trade_side = side
+        return Signal(side, 1.0, expected_edge_bps=expected_edge_bps)
