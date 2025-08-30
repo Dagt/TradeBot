@@ -9,8 +9,6 @@ from ..data.features import book_vacuum, liquidity_gap
 PARAM_INFO = {
     "vacuum_threshold": "Umbral para detectar vacíos de liquidez",
     "gap_threshold": "Umbral para detectar gaps de liquidez",
-    "tp_pct": "Take profit porcentual",
-    "sl_pct": "Stop loss porcentual",
     "max_hold": "Barras máximas en posición",
     "vol_window": "Ventana para calcular la volatilidad",
     "dynamic_thresholds": "Ajustar umbrales según volatilidad",
@@ -21,14 +19,15 @@ class LiquidityEvents(Strategy):
     """React to liquidity vacuum and gap events.
 
     A wipe on the ask side triggers a buy signal while a wipe on the bid side
-    results in a sell signal.  If no vaciado is detected, the strategy checks
+    results in a sell signal. If no vaciado is detected, the strategy checks
     for large gaps between the first and second level of the book and trades in
     the direction of the gap.
 
-    The strategy maintains an internal state and exits positions based on take
-    profit, stop loss or maximum holding period.  Thresholds for detecting
-    vacuums and gaps can be dynamically adjusted according to recent price
-    volatility to increase the frequency of events during turbulent markets.
+    The strategy maintains an internal state and exits positions automáticamente
+    según umbrales predefinidos y un período máximo de permanencia. Los
+    umbrales para detectar vacíos y gaps pueden ajustarse dinámicamente según
+    la volatilidad reciente del precio para incrementar la frecuencia de eventos
+    durante mercados turbulentos.
     """
 
     name = "liquidity_events"

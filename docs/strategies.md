@@ -11,7 +11,7 @@ adaptativo.
 Ejemplo de señal:
 
 ```python
-signal = {"side": "buy", "strength": 0.75, "atr": 4.2}
+signal = {"side": "buy", "strength": 0.75}
 ```
 
 ### Breakout con ATR (`breakout_atr`)
