@@ -17,9 +17,8 @@ class MeanReversion(Strategy):
     """RSI based mean reversion strategy with adaptive strength.
 
     Generates ``buy`` or ``sell`` signals when the RSI crosses ``lower`` or
-    ``upper`` thresholds.  Signal strength scales with the distance from the
-    threshold.  Risk management (stops, cooldowns, etc.) is expected to be
-    handled externally.
+    ``upper`` thresholds. Signal strength scales with the distance from the
+    threshold.
     """
 
     name = "mean_reversion"

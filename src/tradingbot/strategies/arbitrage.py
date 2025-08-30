@@ -46,8 +46,8 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     data : pd.DataFrame
         Data with ``asset_a`` and ``asset_b`` price columns.
     params : dict
-        Parameters including ``threshold``, ``position_size``, ``stop_loss``,
-        ``take_profit``, ``fee`` and ``slippage``.
+        Parameters including ``threshold``, ``position_size``, ``fee`` y
+        ``slippage``.
 
     Returns
     -------

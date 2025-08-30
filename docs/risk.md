@@ -8,8 +8,8 @@ implementa un gestor de riesgo genérico que opera junto a
 
 - `calc_position_size(signal_strength, price)`: dimensiona la posición según la
   fuerza de la señal y el riesgo por operación.
-- `initial_stop(entry_price, side, atr)`: calcula el stop inicial usando un
-  múltiplo de ATR.
+- `initial_stop(entry_price, side)`: calcula el stop inicial usando
+  `risk_pct`. El valor de ATR sólo se utiliza en el trailing.
 - `update_trailing(trade, current_price, fees_slip=0.0)`: aplica un trailing
   stop adaptativo en tres etapas.
 - `manage_position(trade, signal=None)`: decide si mantener o cerrar una
@@ -26,17 +26,18 @@ from tradingbot.core.risk_manager import RiskManager
 account = Account(max_symbol_exposure=1000.0, cash=1000.0)
 rm = RiskManager(account, risk_per_trade=0.02)  # equivalente a --risk-pct 2
 
-signal = {"side": "buy", "strength": 0.6, "atr": 5}
+signal = {"side": "buy", "strength": 0.6}
 price = 100
 size = rm.calc_position_size(signal["strength"], price)
+atr_value = 5  # ATR sólo se usa para el trailing
 if rm.check_global_exposure("BTC/USDT", size * price):
-    stop = rm.initial_stop(price, signal["side"], atr=signal["atr"])
+    stop = rm.initial_stop(price, signal["side"])
     trade = {
         "side": "buy",
         "entry_price": price,
         "qty": size,
         "stop": stop,
-        "atr": signal["atr"],
+        "atr": atr_value,
     }
     rm.update_trailing(trade, current_price=112)
     trade["current_price"] = 112
@@ -55,7 +56,7 @@ Cada señal trae un `strength` que define el tamaño según la fórmula
 disponible, valores mayores piramidan la posición y menores la reducen.
 Por ejemplo, `strength = 1.5` incrementa la exposición un 50 %, mientras que
 `strength = 0.5` la reduce a la mitad. El campo `risk_pct` establece la pérdida
-máxima permitida y `vol_target` dimensiona la posición según la volatilidad.
+máxima permitida.
 
 El parámetro `risk_pct` debe estar entre 0 y 1. Los valores de 1 a 100 se
 interpretan como porcentajes y se convierten dividiéndolos entre 100 (por
@@ -90,7 +91,6 @@ backtest:
 
 risk:
   risk_pct: 0.02
-  vol_target: 0.01
   total_cap_pct: null
   per_symbol_cap_pct: null
 ```
