@@ -25,6 +25,7 @@ class BreakoutATR(Strategy):
         min_volatility: float = 0.0,
         min_edge_bps: float = 0.0,
         *,
+        risk_service=None,
         config_path: str | None = None,
     ):
         params = load_params(config_path)
@@ -34,6 +35,8 @@ class BreakoutATR(Strategy):
         self.min_atr = float(params.get("min_atr", min_atr))
         self.min_volatility = float(params.get("min_volatility", min_volatility))
         self.min_edge_bps = float(params.get("min_edge_bps", min_edge_bps))
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -41,21 +44,44 @@ class BreakoutATR(Strategy):
         if len(df) < max(self.ema_n, self.atr_n) + 2:
             return None
         upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
-        last_close = df["close"].iloc[-1]
-        atr_val = atr(df, self.atr_n).iloc[-1]
+        last_close = float(df["close"].iloc[-1])
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, last_close)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": last_close}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
+            return None
+        atr_val = float(atr(df, self.atr_n).iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
         if atr_val < self.min_atr or atr_bps < self.min_volatility:
             return None
 
+        side: str | None = None
         if last_close > upper.iloc[-1]:
             edge_bps = (last_close - upper.iloc[-1]) / abs(last_close) * 10000
             if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("buy", 1.0)
-        if last_close < lower.iloc[-1]:
+            side = "buy"
+        elif last_close < lower.iloc[-1]:
             edge_bps = (lower.iloc[-1] - last_close) / abs(last_close) * 10000
             if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("sell", 1.0)
-        return None
+            side = "sell"
+        if side is None:
+            return None
+        strength = 1.0
+        if self.risk_service:
+            qty = self.risk_service.calc_position_size(strength, last_close)
+            trade = {"side": side, "entry_price": last_close, "qty": qty}
+            trade["stop"] = self.risk_service.initial_stop(
+                last_close, side, atr_val
+            )
+            trade["atr"] = atr_val
+            self.risk_service.update_trailing(trade, last_close)
+            self.trade = trade
+        return Signal(side, strength)

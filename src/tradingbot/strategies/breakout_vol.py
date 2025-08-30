@@ -15,12 +15,14 @@ class BreakoutVol(Strategy):
 
     name = "breakout_vol"
 
-    def __init__(self, **kwargs):
+    def __init__(self, risk_service=None, **kwargs):
         self.lookback = kwargs.get("lookback", 10)
         self.mult = kwargs.get("mult", 1.5)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
         self.min_edge_bps = kwargs.get("min_edge_bps", 0.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -30,7 +32,17 @@ class BreakoutVol(Strategy):
         closes = df["close"]
         mean = closes.rolling(self.lookback).mean().iloc[-1]
         std = closes.rolling(self.lookback).std().iloc[-1]
-        last = closes.iloc[-1]
+        last = float(closes.iloc[-1])
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, last)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": last}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
+            return None
         upper = mean + self.mult * std
         lower = mean - self.mult * std
 
@@ -45,14 +57,25 @@ class BreakoutVol(Strategy):
             return None
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
+        side: str | None = None
         if last > upper:
             edge_bps = (last - upper) / abs(last) * 10000
             if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("buy", size)
-        if last < lower:
+            side = "buy"
+        elif last < lower:
             edge_bps = (lower - last) / abs(last) * 10000
             if edge_bps <= self.min_edge_bps:
                 return None
-            return Signal("sell", size)
-        return None
+            side = "sell"
+        if side is None:
+            return None
+        if self.risk_service:
+            qty = self.risk_service.calc_position_size(size, last)
+            trade = {"side": side, "entry_price": last, "qty": qty}
+            atr = bar.get("atr") or bar.get("volatility") or 0.0
+            trade["stop"] = self.risk_service.initial_stop(last, side, atr)
+            trade["atr"] = atr
+            self.risk_service.update_trailing(trade, last)
+            self.trade = trade
+        return Signal(side, size)

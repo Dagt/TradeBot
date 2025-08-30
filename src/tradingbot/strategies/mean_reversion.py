@@ -23,7 +23,7 @@ class MeanReversion(Strategy):
 
     name = "mean_reversion"
 
-    def __init__(self, **kwargs):
+    def __init__(self, risk_service=None, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.upper = kwargs.get("upper", 60.0)
         self.lower = kwargs.get("lower", 40.0)
@@ -31,6 +31,8 @@ class MeanReversion(Strategy):
         self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
         self.trend_threshold = kwargs.get("trend_threshold", 10.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
+        self.risk_service = risk_service
+        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -40,6 +42,16 @@ class MeanReversion(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         price_series = df[price_col]
         price = float(price_series.iloc[-1])
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, price)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": price}
+            )
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
+            return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
 
@@ -73,11 +85,21 @@ class MeanReversion(Strategy):
 
         if last_rsi > upper:
             strength = min(1.0, (last_rsi - upper) / (100 - upper))
-            return Signal("sell", strength)
-        if last_rsi < lower:
+            side = "sell"
+        elif last_rsi < lower:
             strength = min(1.0, (lower - last_rsi) / lower)
-            return Signal("buy", strength)
-        return None
+            side = "buy"
+        else:
+            return None
+        if self.risk_service:
+            qty = self.risk_service.calc_position_size(strength, price)
+            trade = {"side": side, "entry_price": price, "qty": qty}
+            atr = bar.get("atr") or bar.get("volatility") or 0.0
+            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
+            trade["atr"] = atr
+            self.risk_service.update_trailing(trade, price)
+            self.trade = trade
+        return Signal(side, strength)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
