@@ -27,7 +27,16 @@ python -m tradingbot.cli paper-run --symbol BTC/USDT --strategy breakout_atr
 ```
 
 El bot aplica la estrategia de rompimiento con ATR sobre el símbolo elegido y
-expone métricas en `http://localhost:8000/metrics`.
+expone métricas en `http://localhost:8000/metrics`. El
+`RiskManager` universal (`core/risk_manager.py`) junto con `Account`
+(`core/account.py`) dimensiona la posición a partir de un `signal.strength`
+continuo y ajusta un trailing stop adaptativo.
+
+Ejemplo de señal:
+
+```python
+{"side": "buy", "strength": 0.7, "atr": 3.5}
+```
 
 ### 3. Revisar métricas
 

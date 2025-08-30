@@ -1,5 +1,49 @@
 # Gestión de riesgo
 
+## RiskManager universal
+
+El módulo [`core/risk_manager.py`](../src/tradingbot/core/risk_manager.py)
+implementa un gestor de riesgo genérico que opera junto a
+[`core/account.py`](../src/tradingbot/core/account.py). Su interfaz expone:
+
+- `calc_position_size(signal_strength, price)`: dimensiona la posición según la
+  fuerza de la señal y el riesgo por operación.
+- `initial_stop(entry_price, side, atr)`: calcula el stop inicial usando un
+  múltiplo de ATR.
+- `update_trailing(trade, current_price, fees_slip=0.0)`: aplica un trailing
+  stop adaptativo en tres etapas.
+- `manage_position(trade, signal=None)`: decide si mantener o cerrar una
+  posición según el stop y la señal actual.
+- `check_global_exposure(symbol, new_alloc)`: verifica que la nueva exposición
+  no supere el límite global para el símbolo.
+
+### Ejemplo de uso
+
+```python
+from tradingbot.core.account import Account
+from tradingbot.core.risk_manager import RiskManager
+
+account = Account(max_symbol_exposure=1000.0, cash=1000.0)
+rm = RiskManager(account, risk_per_trade=0.02)
+
+signal = {"side": "buy", "strength": 0.6, "atr": 5}
+size = rm.calc_position_size(signal["strength"], price=100)
+stop = rm.initial_stop(entry_price=100, side=signal["side"], atr=signal["atr"])
+trade = {
+    "side": "buy",
+    "entry_price": 100,
+    "qty": size,
+    "stop": stop,
+    "atr": signal["atr"],
+}
+
+rm.update_trailing(trade, current_price=112)
+```
+
+`signal["strength"]` acepta valores continuos y escala el tamaño de la orden.
+El método `update_trailing` mueve el stop a *break-even*, asegura 1 USD neto y
+luego sigue al precio a `2 × ATR`.
+
 ## Asignación por señal
 
 Cada señal trae un `strength` que define el tamaño según la fórmula
