@@ -22,7 +22,7 @@ async def _run_backtest_process() -> asyncio.subprocess.Process:
         '-m',
         'tradingbot.cli',
         'backtest',
-        'data/examples/btcusdt_1m.csv',
+        'data/examples/btcusdt_3m.csv',
         '--symbol',
         'BTC/USDT',
         '--strategy',

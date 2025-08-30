@@ -12,11 +12,11 @@ def test_cli_command_terminates_quickly(tmp_path):
     cfg.write_text(
         """
 backtest:
-  data: data/examples/btcusdt_1m.csv
+  data: data/examples/btcusdt_3m.csv
   symbol: BTC/USDT
   strategy: breakout_atr
 walk_forward:
-  data: data/examples/btcusdt_1m.csv
+  data: data/examples/btcusdt_3m.csv
   symbol: BTC/USDT
   strategy: breakout_atr
   param_grid: {}

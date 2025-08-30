@@ -47,7 +47,7 @@ class SlippageConfig:
 class BacktestConfig:
     """CSV paths and runtime options for the backtest."""
 
-    data: str = "data/examples/btcusdt_1m.csv"
+    data: str = "data/examples/btcusdt_3m.csv"
     symbol: str = "BTC/USDT"
     strategy: str = "breakout_atr"
     latency: int = 1

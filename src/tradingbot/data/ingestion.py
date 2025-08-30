@@ -210,11 +210,11 @@ def persist_bars(bars: Iterable[Bar], *, backend: Backends = "timescale", path: 
     if not batch:
         return
     try:
-        if hasattr(storage, "insert_bars_1m"):
-            storage.insert_bars_1m(engine, batch)
+        if hasattr(storage, "insert_bars"):
+            storage.insert_bars(engine, batch)
         else:
             for b in batch:
-                storage.insert_bar_1m(engine, b.exchange, b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v)
+                storage.insert_bar(engine, b.exchange, b.symbol, b.ts, b.timeframe, b.o, b.h, b.l, b.c, b.v)
     except Exception as exc:  # pragma: no cover - logging only
         log.debug("Bar insert failed: %s", exc)
 
@@ -1200,7 +1200,7 @@ async def poll_basis(
             log.debug("Basis poll failed: %s", exc)
         await asyncio.sleep(interval)
 
-async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "1m", backend: Backends = "timescale", sleep_s: int = 60):
+async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "3m", backend: Backends = "timescale", sleep_s: int = 180):
     """Periodically fetch OHLCV bars and persist them."""
     storage = _get_storage(backend)
     engine = storage.get_engine()
@@ -1210,7 +1210,7 @@ async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "1m", backen
             for ts_ms, o, h, l, c, v in bars:
                 ts = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
                 bar = Bar(ts=ts, timeframe=timeframe, exchange=getattr(adapter, "name", "unknown"), symbol=symbol, o=o, h=h, l=l, c=c, v=v)
-                storage.insert_bar_1m(engine, bar.exchange, bar.symbol, bar.ts, bar.o, bar.h, bar.l, bar.c, bar.v)
+                storage.insert_bar(engine, bar.exchange, bar.symbol, bar.ts, bar.timeframe, bar.o, bar.h, bar.l, bar.c, bar.v)
         except Exception as exc:  # pragma: no cover - logging only
             log.debug("Bar fetch failed: %s", exc)
         await asyncio.sleep(sleep_s)

@@ -32,7 +32,7 @@ async def _download_bars(
     since = int(start.timestamp() * 1000)
     end_ms = int(end.timestamp() * 1000)
     while since < end_ms:
-        ohlcvs = await ex.fetch_ohlcv(symbol, timeframe="1m", since=since, limit=1000)
+        ohlcvs = await ex.fetch_ohlcv(symbol, timeframe="3m", since=since, limit=1000)
         if not ohlcvs:
             break
         bars: list[Bar] = []
@@ -41,7 +41,7 @@ async def _download_bars(
             bars.append(
                 Bar(
                     ts=ts,
-                    timeframe="1m",
+                    timeframe="3m",
                     exchange=exchange,
                     symbol=symbol,
                     o=o,
@@ -52,7 +52,7 @@ async def _download_bars(
                 )
             )
         ingestion.persist_bars(bars, backend=backend)
-        since = ohlcvs[-1][0] + 60_000
+        since = ohlcvs[-1][0] + 180_000
     await ex.close()
 
 

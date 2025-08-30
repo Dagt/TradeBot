@@ -101,7 +101,7 @@ async def run_live_binance(
 ) -> None:
     """
     Pipeline en vivo:
-      WS Binance -> agregador 1m -> strategy -> Risk -> PaperAdapter
+      WS Binance -> agregador 3m -> strategy -> Risk -> PaperAdapter
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
@@ -212,14 +212,14 @@ async def run_live_binance(
             log.error("[HALT] motivo=%s", reason)
             break
 
-        # Persistir barra 1m si quieres (opcional; requiere tabla market.bars creada)
+        # Persistir barra 3m si quieres (opcional; requiere tabla market.bars creada)
         # Puedes descomentar y ampliar con INSERT a bars.
         # if pg_engine is not None:
         #     try:
         #         with pg_engine.begin() as conn:
         #             conn.execute(
         #                 text("""INSERT INTO market.bars (ts,timeframe,exchange,symbol,o,h,l,c,v)
-        #                        VALUES (:ts,'1m','binance',:sym,:o,:h,:l,:c,:v)"""),
+        #                        VALUES (:ts,'3m','binance',:sym,:o,:h,:l,:c,:v)"""),
         #                 dict(ts=closed.ts_open, sym=symbol, o=closed.o, h=closed.h, l=closed.l, c=closed.c, v=closed.v)
         #             )
         #     except Exception as e:

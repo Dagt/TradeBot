@@ -30,10 +30,10 @@ class DummyExchange:
         if self._ohlcv_used:
             return []
         self._ohlcv_used = True
-        # Two bars spaced one minute apart
+        # Two bars spaced three minutes apart
         return [
             [since, 1.0, 2.0, 0.5, 1.5, 10.0],
-            [since + 60_000, 1.1, 2.1, 0.6, 1.6, 11.0],
+            [since + 180_000, 1.1, 2.1, 0.6, 1.6, 11.0],
         ]
 
     async def fetch_trades(self, symbol, since, limit):  # noqa: ANN001

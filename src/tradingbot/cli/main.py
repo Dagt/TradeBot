@@ -1155,7 +1155,7 @@ def backtest_db(
     ),
     start: str = typer.Option(..., help="Start date YYYY-MM-DD"),
     end: str = typer.Option(..., help="End date YYYY-MM-DD"),
-    timeframe: str = typer.Option("1m", help="Bar timeframe"),
+    timeframe: str = typer.Option("3m", help="Bar timeframe"),
     capital: float = typer.Option(0.0, help="Capital inicial"),
     risk_pct: float = typer.Option(
         0.0,
