@@ -194,6 +194,7 @@ class TripleBarrier(Strategy):
             trade = {"side": side, "entry_price": float(last), "qty": qty}
             atr = bar.get("atr") or bar.get("volatility")
             trade["stop"] = self.risk_service.core.initial_stop(last, side, atr)
+            trade["atr"] = atr
             self.risk_service.update_trailing(trade, float(last))
             self.trade = trade
         return Signal(side, 1.0)

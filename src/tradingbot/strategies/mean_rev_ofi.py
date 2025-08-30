@@ -107,6 +107,7 @@ class MeanRevOFI(Strategy):
             trade["stop"] = self.risk_service.core.initial_stop(
                 last_close, side, atr
             )
+            trade["atr"] = atr
             self.risk_service.update_trailing(trade, last_close)
             self.trade = trade
         return Signal(side, strength)

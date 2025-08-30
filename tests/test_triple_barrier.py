@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import pytest
 
 from tradingbot.core import Account, RiskManager as CoreRiskManager
 from tradingbot.strategies.triple_barrier import (
@@ -104,4 +105,19 @@ training_window: 50
     assert strat.upper_pct == 0.05
     assert strat.lower_pct == 0.01
     assert strat.training_window == 50
+
+
+def test_triple_barrier_trailing_stop_uses_atr():
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account)
+    trade = {
+        "side": "buy",
+        "entry_price": 100.0,
+        "qty": 1.0,
+        "stop": 99.0,
+        "atr": 1.0,
+        "stage": 3,
+    }
+    rm.update_trailing(trade, 110.0)
+    assert trade["stop"] == pytest.approx(110.0 - 2 * trade["atr"])
 
