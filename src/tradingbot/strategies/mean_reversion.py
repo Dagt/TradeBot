@@ -11,6 +11,9 @@ PARAM_INFO = {
     "sl_bps": "Stop loss en puntos básicos",
     "max_hold_bars": "Barras máximas en posición",
     "scale_by": "Método para escalar la fuerza de la señal",
+    "trend_ma": "Ventana para la media móvil de tendencia",
+    "trend_rsi_n": "Ventana del RSI para medir tendencia",
+    "trend_threshold": "Umbral para considerar la tendencia fuerte",
 }
 
 class MeanReversion(Strategy):
@@ -55,6 +58,9 @@ class MeanReversion(Strategy):
         self.sl_bps = kwargs.get("sl_bps", 40.0)
         self.max_hold_bars = kwargs.get("max_hold_bars", 15)
         self.scale_by = kwargs.get("scale_by", "pnl")
+        self.trend_ma = kwargs.get("trend_ma", 50)
+        self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
+        self.trend_threshold = kwargs.get("trend_threshold", 10.0)
         # Track current position to adapt strength
         self._pos_side: str | None = None
         self._entry_price: float | None = None
@@ -89,14 +95,33 @@ class MeanReversion(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         price = float(df[price_col].iloc[-1])
 
+        trend_dir = 0
+        if len(df) >= self.trend_ma:
+            ma = df[price_col].rolling(self.trend_ma).mean().iloc[-1]
+            if not pd.isna(ma) and ma != 0:
+                diff_pct = (price - ma) / ma * 100
+                if diff_pct > self.trend_threshold:
+                    trend_dir = 1
+                elif diff_pct < -self.trend_threshold:
+                    trend_dir = -1
+        elif len(df) >= self.trend_rsi_n:
+            trsi = rsi(df, self.trend_rsi_n).iloc[-1]
+            if trsi > 50 + self.trend_threshold:
+                trend_dir = 1
+            elif trsi < 50 - self.trend_threshold:
+                trend_dir = -1
+
+        upper = self.upper + (self.trend_threshold if trend_dir == 1 else 0)
+        lower = self.lower - (self.trend_threshold if trend_dir == -1 else 0)
+
         if self._pos_side is None:
-            if last_rsi > self.upper:
+            if last_rsi > upper:
                 strength = self._calc_strength("sell", price, last_rsi)
                 self._pos_side = "sell"
                 self._entry_price = price
                 self._hold_bars = 0
                 return Signal("sell", strength)
-            if last_rsi < self.lower:
+            if last_rsi < lower:
                 strength = self._calc_strength("buy", price, last_rsi)
                 self._pos_side = "buy"
                 self._entry_price = price
@@ -120,10 +145,10 @@ class MeanReversion(Strategy):
             self._hold_bars = 0
             return Signal(side, 1.0)
 
-        if self._pos_side == "buy" and last_rsi < self.lower:
+        if self._pos_side == "buy" and last_rsi < lower:
             strength = self._calc_strength("buy", price, last_rsi)
             return Signal("buy", strength)
-        if self._pos_side == "sell" and last_rsi > self.upper:
+        if self._pos_side == "sell" and last_rsi > upper:
             strength = self._calc_strength("sell", price, last_rsi)
             return Signal("sell", strength)
         return None

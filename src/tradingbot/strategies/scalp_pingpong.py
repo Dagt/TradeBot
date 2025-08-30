@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from .base import Strategy, Signal, load_params, record_signal_metrics
+from ..data.features import rsi
 
 
 PARAM_INFO = {
@@ -16,6 +17,9 @@ PARAM_INFO = {
     "max_hold_bars": "Barras máximas en posición",
     "trailing_stop_bps": "Trailing stop en puntos básicos",
     "volatility_factor": "Factor de tamaño según volatilidad",
+    "trend_ma": "Ventana para la media móvil de tendencia",
+    "trend_rsi_n": "Ventana del RSI para medir tendencia",
+    "trend_threshold": "Umbral para considerar la tendencia fuerte",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -45,6 +49,14 @@ class ScalpPingPongConfig:
     volatility_factor : float, optional
         Multiplier applied to recent volatility (in bps) to size positions,
         default ``0.02``.
+    trend_ma : int, optional
+        Window for the moving average used to gauge trend, by default ``50``.
+    trend_rsi_n : int, optional
+        Window for the RSI used to gauge trend when MA is unavailable,
+        by default ``50``.
+    trend_threshold : float, optional
+        Threshold (% over MA or RSI points) to treat the trend as strong,
+        by default ``10.0``.
     """
 
     lookback: int = 15
@@ -55,6 +67,9 @@ class ScalpPingPongConfig:
     max_hold_bars: int = 8
     trailing_stop_bps: float | None = 10.0
     volatility_factor: float = 0.02
+    trend_ma: int = 50
+    trend_rsi_n: int = 50
+    trend_threshold: float = 10.0
 
 
 class ScalpPingPong(Strategy):
@@ -101,22 +116,41 @@ class ScalpPingPong(Strategy):
         vol_bps = vol * 10000
         vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor))
 
+        trend_dir = 0
+        if len(closes) >= self.cfg.trend_ma:
+            ma = closes.rolling(self.cfg.trend_ma).mean().iloc[-1]
+            if not pd.isna(ma) and ma != 0:
+                diff_pct = (price - ma) / ma * 100
+                if diff_pct > self.cfg.trend_threshold:
+                    trend_dir = 1
+                elif diff_pct < -self.cfg.trend_threshold:
+                    trend_dir = -1
+        elif len(closes) >= self.cfg.trend_rsi_n:
+            trsi = rsi(df, self.cfg.trend_rsi_n).iloc[-1]
+            if trsi > 50 + self.cfg.trend_threshold:
+                trend_dir = 1
+            elif trsi < 50 - self.cfg.trend_threshold:
+                trend_dir = -1
+
+        z_buy = self.cfg.z_threshold + (self.cfg.trend_threshold / 100 if trend_dir == -1 else 0)
+        z_sell = self.cfg.z_threshold + (self.cfg.trend_threshold / 100 if trend_dir == 1 else 0)
+
         if self.pos_side == 0:
-            if z <= -self.cfg.z_threshold:
+            if z <= -z_buy:
                 self.pos_side = 1
                 self.entry_price = price
                 self.favorable_price = price
                 self.hold_bars = 0
-                strength = min(1.0, abs(z) / self.cfg.z_threshold)
+                strength = min(1.0, abs(z) / z_buy)
                 size = min(1.0, strength * vol_size)
                 if size > 0:
                     return Signal("buy", size)
-            if z >= self.cfg.z_threshold:
+            if z >= z_sell:
                 self.pos_side = -1
                 self.entry_price = price
                 self.favorable_price = price
                 self.hold_bars = 0
-                strength = min(1.0, abs(z) / self.cfg.z_threshold)
+                strength = min(1.0, abs(z) / z_sell)
                 size = min(1.0, strength * vol_size)
                 if size > 0:
                     return Signal("sell", size)
