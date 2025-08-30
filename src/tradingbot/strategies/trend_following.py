@@ -12,25 +12,20 @@ PARAM_INFO = {
 
 
 class TrendFollowing(Strategy):
-    """RSI based trend following strategy with adaptive strength.
+    """RSI based trend following strategy.
 
-    Signals are generated when the RSI crosses extreme levels.  The returned
-    ``strength`` scales up if an existing position is profitable and the new
-    signal aligns with it.  Adverse moves reduce the strength and may turn it
-    negative to indicate that the position should be reduced or flipped.
-    Additionally, the strategy supports basic take-profit/stop-loss/time based
-    exits and requires a minimum volatility to operate.
+    Signals are generated when the RSI crosses extreme levels. Risk management,
+    including position sizing and exits, is delegated to the universal
+    ``RiskManager`` outside this strategy.
     """
 
     name = "trend_following"
 
-    def __init__(self, risk_service=None, **kwargs):
+    def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 60.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
-        self.risk_service = risk_service
-        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -42,16 +37,6 @@ class TrendFollowing(Strategy):
         price = float(prices.iloc[-1])
         returns = prices.pct_change().dropna()
         vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, price)
-            decision = self.risk_service.manage_position(
-                {**self.trade, "current_price": price}
-            )
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                return Signal(side, 1.0)
-            return None
         if pd.isna(vol) or vol < self.min_volatility:
             return None
         rsi_series = rsi(df, self.rsi_n)
@@ -66,14 +51,4 @@ class TrendFollowing(Strategy):
         else:
             return None
         strength = 1.0
-        if self.risk_service:
-            qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty}
-            atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(
-                price, side, atr
-            )
-            trade["atr"] = atr
-            self.risk_service.update_trailing(trade, price)
-            self.trade = trade
         return Signal(side, strength)
