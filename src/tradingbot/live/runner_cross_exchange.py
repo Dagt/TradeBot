@@ -27,6 +27,9 @@ except Exception:  # pragma: no cover
 
 log = logging.getLogger(__name__)
 
+# Exposed for tests to seed venue balances prior to running the loop
+balances: Dict[str, float] = {}
+
 
 async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = None) -> None:
     """Run cross exchange arbitrage using ``ExecutionRouter``.
@@ -68,6 +71,17 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         perp_side = "sell" if edge > 0 else "buy"
         strength = abs(edge)
         equity = broker.equity()
+        if equity <= 0 and balances:
+            eq = 0.0
+            for venue, qty in balances.items():
+                if venue == getattr(cfg.spot, "name", "spot"):
+                    price = last["spot"]
+                elif venue == getattr(cfg.perp, "name", "perp"):
+                    price = last["perp"]
+                else:
+                    continue
+                eq += qty * price
+            equity = eq
         if equity <= 0:
             equity = max(last["spot"], last["perp"])
         ok1, _r1, delta1 = risk.check_order(
