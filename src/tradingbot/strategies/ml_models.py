@@ -32,16 +32,13 @@ class MLStrategy(Strategy):
         model: BaseEstimator | None = None,
         model_path: str | Path | None = None,
         margin: float = 0.1,
-        tp_pct: float = 0.02,
-        sl_pct: float = 0.02,
+        risk_service=None,
     ) -> None:
         self.model: BaseEstimator | None = model
         self.scaler = StandardScaler()
         self.margin = float(margin)
-        self.tp_pct = float(tp_pct)
-        self.sl_pct = float(sl_pct)
-        self.pos_side: int = 0  # 0 flat, +1 long, -1 short
-        self.entry_price: float | None = None
+        self.risk_service = risk_service
+        self.trade: dict | None = None
         if model_path:
             self.load_model(model_path)
 
@@ -94,43 +91,34 @@ class MLStrategy(Strategy):
             return None
         proba = max(0.0, min(1.0, proba))
         price = float(bar.get("close") or bar.get("price") or 0.0)
-
-        if self.pos_side == 0:
-            if proba > 0.5 + self.margin:
-                self.pos_side = 1
-                self.entry_price = price
-                return Signal("buy", proba)
-            if proba < 0.5 - self.margin:
-                self.pos_side = -1
-                self.entry_price = price
-                return Signal("sell", 1 - proba)
+        if self.trade and self.risk_service:
+            self.risk_service.update_trailing(self.trade, price)
+            decision = self.risk_service.manage_position({**self.trade, "current_price": price})
+            if decision == "close":
+                side = "sell" if self.trade["side"] == "buy" else "buy"
+                self.trade = None
+                return Signal(side, 1.0)
             return None
 
-        assert self.entry_price is not None
-        if self.pos_side > 0:
-            tp_price = self.entry_price * (1 + self.tp_pct)
-            sl_price = self.entry_price * (1 - self.sl_pct)
-            if (
-                price >= tp_price
-                or price <= sl_price
-                or proba < 0.5 - self.margin
-            ):
-                self.pos_side = 0
-                self.entry_price = None
-                return Signal("sell", 1.0)
+        if proba > 0.5 + self.margin:
+            side = "buy"
+            strength = proba
+        elif proba < 0.5 - self.margin:
+            side = "sell"
+            strength = 1 - proba
+        else:
             return None
 
-        tp_price = self.entry_price * (1 - self.tp_pct)
-        sl_price = self.entry_price * (1 + self.sl_pct)
-        if (
-            price <= tp_price
-            or price >= sl_price
-            or proba > 0.5 + self.margin
-        ):
-            self.pos_side = 0
-            self.entry_price = None
-            return Signal("buy", 1.0)
-        return None
+        if self.risk_service:
+            qty = self.risk_service.calc_position_size(strength, price)
+            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            atr = bar.get("atr") or bar.get("volatility")
+            trade["stop"] = self.risk_service.core.initial_stop(price, side, atr)
+            if atr is not None:
+                trade["atr"] = atr
+            self.risk_service.update_trailing(trade, price)
+            self.trade = trade
+        return Signal(side, strength)
 
 
 __all__ = ["MLStrategy"]

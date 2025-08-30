@@ -66,30 +66,24 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
         "bid_px": [[100, 99], [100, 99]],
         "ask_px": [[101, 102], [101, 102]],
     })
-    strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, dynamic_thresholds=False)
-    sig = strat.on_bar({"window": df_entry})
-    assert sig is not None and sig.side == "buy"
-    price = strat.entry_price
-
     rm = RiskManager(risk_pct=0.02)
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
     svc = RiskService(rm, guard)
     svc.account.update_cash(1000.0)
-
-    allowed, reason, delta = svc.check_order(
-        "AAA", sig.side, 1000.0, price, strength=sig.strength
+    strat = LiquidityEvents(
+        vacuum_threshold=0.5,
+        gap_threshold=2,
+        dynamic_thresholds=False,
+        risk_service=svc,
     )
-    assert allowed and delta > 0
-
-    rm.add_fill(sig.side, delta, price=price)
-    svc.update_position("X", "AAA", delta)
-
-    stop_price = price * (1 - rm.risk_pct) - 1
-    allowed, reason, delta_stop = svc.check_order(
-        "AAA", sig.side, 1000.0, stop_price
-    )
-    assert allowed and reason == "stop_loss"
-    assert delta_stop == pytest.approx(-delta)
+    sig = strat.on_bar({"window": df_entry})
+    assert sig is not None and sig.side == "buy"
+    trade = strat.trade
+    assert trade is not None
+    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
+    assert trade["qty"] == pytest.approx(expected_qty)
+    expected_stop = svc.core.initial_stop(trade["entry_price"], "buy")
+    assert trade["stop"] == pytest.approx(expected_stop)
 
 
 def test_dynamic_thresholds_increase_events():
