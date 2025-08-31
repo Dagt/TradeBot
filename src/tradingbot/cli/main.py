@@ -469,7 +469,7 @@ def backfill(
         None, "--end", help="End datetime in ISO format"
     ),
     timeframe: str = typer.Option(
-        "3m", "--timeframe", help="1m, 2m, 3m, 5m, 15m, 30m, 1H, 4H, ..."
+        "3m", "--timeframe", help="1m, 2m, 3m, 5m, 15m, 30m, 1h, 4h, ..."
     ),
 ) -> None:
     """Backfill OHLCV and trades for symbols with rate limiting."""
@@ -486,6 +486,7 @@ def backfill(
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
 
+    timeframe = timeframe.lower()
     asyncio.run(
         run_backfill(
             days=days,
@@ -1230,6 +1231,7 @@ def backtest_db(
     from ..config.hydra_conf import load_config
 
     setup_logging()
+    timeframe = timeframe.lower()
     log.info(
         "Iniciando backtest DB: %s %s %s–%s (%s)",
         venue,
