@@ -11,11 +11,14 @@ import pandas as pd
 
 from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
+from ..execution.router import ExecutionRouter
 from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..broker.broker import Broker
+from ..config import settings
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -104,12 +107,19 @@ async def run_live_binance(
     """
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
-    risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    router = ExecutionRouter(
+        [broker],
+        prefer="maker",
+        on_partial_fill=strat.on_partial_fill,
+        on_order_expiry=strat.on_order_expiry,
+    )
+    exec_broker = Broker(router)
+    risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,
@@ -144,6 +154,17 @@ async def run_live_binance(
     agg = BarAggregator()
     fills = 0
 
+    tick = getattr(settings, "tick_size", 0.0)
+
+    def _limit_price(side: str) -> float:
+        book = getattr(broker.state, "order_book", {}).get(symbol, {})
+        bids = book.get("bids") or []
+        asks = book.get("asks") or []
+        last = broker.state.last_px.get(symbol, 0.0)
+        best_bid = bids[0][0] if bids else last
+        best_ask = asks[0][0] if asks else last
+        return (best_ask - tick) if side == "buy" else (best_bid + tick)
+
     async for t in adapter.stream_trades(symbol):
         ts: datetime = t["ts"] or datetime.now(timezone.utc)
         px: float = float(t["price"])
@@ -163,7 +184,15 @@ async def run_live_binance(
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
                 prev_rpnl = broker.state.realized_pnl
-                resp = await broker.place_order(symbol, close_side, "market", abs(pos_qty))
+                price = _limit_price(close_side)
+                resp = await exec_broker.place_limit(
+                    symbol,
+                    close_side,
+                    price,
+                    abs(pos_qty),
+                    on_partial_fill=strat.on_partial_fill,
+                    on_order_expiry=strat.on_order_expiry,
+                )
                 risk.on_fill(symbol, close_side, abs(pos_qty), venue="binance")
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -177,7 +206,15 @@ async def run_live_binance(
                 if abs(delta_qty) > risk.rm.min_order_qty:
                     side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
                     prev_rpnl = broker.state.realized_pnl
-                    resp = await broker.place_order(symbol, side, "market", abs(delta_qty))
+                    price = _limit_price(side)
+                    resp = await exec_broker.place_limit(
+                        symbol,
+                        side,
+                        price,
+                        abs(delta_qty),
+                        on_partial_fill=strat.on_partial_fill,
+                        on_order_expiry=strat.on_order_expiry,
+                    )
                     risk.on_fill(symbol, side, abs(delta_qty), venue="binance")
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -214,12 +251,14 @@ async def run_live_binance(
             continue
 
         eq = broker.equity(mark_prices={symbol: px})
+        pending = getattr(strat, "pending_qty", {}).get(symbol, 0.0)
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
             eq,
             closed.c,
             strength=signal.strength,
+            pending_qty=pending,
         )
         if not allowed or abs(delta) <= 1e-9:
             if not allowed:
@@ -228,11 +267,14 @@ async def run_live_binance(
 
         side = "buy" if delta > 0 else "sell"
         prev_rpnl = broker.state.realized_pnl
-        resp = await broker.place_order(
+        price = _limit_price(side)
+        resp = await exec_broker.place_limit(
             symbol,
             side,
-            "market",
+            price,
             abs(delta),
+            on_partial_fill=strat.on_partial_fill,
+            on_order_expiry=strat.on_order_expiry,
         )
         fills += 1
         log.info("FILL live %s", resp)
