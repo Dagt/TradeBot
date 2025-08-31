@@ -93,20 +93,38 @@ async def run_paper(
                 decision = risk.manage_position(trade)
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"
-                    await router.execute(
+                    prev_rpnl = broker.state.realized_pnl
+                    resp = await router.execute(
                         Order(symbol=symbol, side=close_side, type_="market", qty=abs(pos_qty))
                     )
-                    risk.on_fill(symbol, close_side, abs(pos_qty), venue="paper")
+                    filled_qty = float(resp.get("filled_qty", abs(pos_qty)))
+                    pending_qty = float(resp.get("pending_qty", 0.0))
+                    risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                    risk.on_fill(symbol, close_side, filled_qty, venue="paper")
+                    delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+                    if halted:
+                        log.error("[HALT] motivo=%s", reason)
+                        break
                     continue
                 if decision in {"scale_in", "scale_out"}:
                     target = risk.calc_position_size(trade.get("strength", 1.0), px)
                     delta_qty = target - abs(pos_qty)
                     if abs(delta_qty) > risk.rm.min_order_qty:
                         side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
-                        await router.execute(
+                        prev_rpnl = broker.state.realized_pnl
+                        resp = await router.execute(
                             Order(symbol=symbol, side=side, type_="market", qty=abs(delta_qty))
                         )
-                        risk.on_fill(symbol, side, abs(delta_qty), venue="paper")
+                        filled_qty = float(resp.get("filled_qty", abs(delta_qty)))
+                        pending_qty = float(resp.get("pending_qty", 0.0))
+                        risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                        risk.on_fill(symbol, side, filled_qty, venue="paper")
+                        delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                        halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+                        if halted:
+                            log.error("[HALT] motivo=%s", reason)
+                            break
                     continue
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
@@ -133,8 +151,16 @@ async def run_paper(
                 qty=abs(delta),
                 reduce_only=signal.reduce_only,
             )
-            await router.execute(order)
-            risk.on_fill(symbol, side, abs(delta), venue="paper")
+            prev_rpnl = broker.state.realized_pnl
+            resp = await router.execute(order)
+            filled_qty = float(resp.get("filled_qty", abs(delta)))
+            pending_qty = float(resp.get("pending_qty", 0.0))
+            risk.on_fill(symbol, side, filled_qty, venue="paper")
+            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+            halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+            if halted:
+                log.error("[HALT] motivo=%s", reason)
+                break
     finally:
         server.should_exit = True
 
