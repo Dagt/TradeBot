@@ -81,6 +81,19 @@
         <label for="bt-end">Fin</label>
         <input id="bt-end" type="date"/>
       </div>
+      <div id="field-timeframe">
+        <label for="bt-timeframe">Timeframe</label>
+        <select id="bt-timeframe">
+          <option value="1m">1m</option>
+          <option value="2m">2m</option>
+          <option value="3m">3m</option>
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+          <option value="30m">30m</option>
+          <option value="1H">1H</option>
+          <option value="4H">4H</option>
+        </select>
+      </div>
       <div id="field-risk-pct">
         <label for="bt-risk-pct">Risk %</label>
         <input id="bt-risk-pct" type="number" step="any"/>
@@ -372,6 +385,7 @@ function updateBtFields(){
   document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
+  document.getElementById('field-timeframe').style.display=mode==='db'?'':'none';
   const showRisk = mode!=='walk';
   ['field-risk-pct','field-fee-bps','field-slippage-bps'].forEach(id=>{
     document.getElementById(id).style.display=showRisk?'':'none';
@@ -424,7 +438,8 @@ async function runBacktest(){
     const strat=document.getElementById('bt-strategy').value.trim();
     const start=document.getElementById('bt-start').value;
     const end=document.getElementById('bt-end').value;
-    cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end}`;
+    const tf=document.getElementById('bt-timeframe').value.trim();
+    cmd=`backtest-db --venue ${venue} --symbol ${sym} --strategy ${strat} --start ${start} --end ${end} --timeframe ${tf}`;
   }
   if(capital && mode!=='walk'){
     cmd+=` --capital ${capital}`;
