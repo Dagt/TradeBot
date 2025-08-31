@@ -22,8 +22,12 @@ class Arbitrage(Strategy):
 
     name = "arbitrage"
 
-    def __init__(self, **_: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Accept arbitrary parameters for future extensions."""
+
+        # ``risk_service`` is accepted to keep a uniform signature across
+        # strategies even though this placeholder does not use it.
+        self.risk_service = kwargs.get("risk_service")
 
         # No configuration required for the placeholder implementation.
 

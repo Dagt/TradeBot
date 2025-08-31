@@ -111,6 +111,8 @@ class TriangularArb(Strategy):
         self.taker_fee_bps = kwargs.get("taker_fee_bps", 0.0)
         self.buffer_bps = kwargs.get("buffer_bps", 0.0)
         self.min_edge = kwargs.get("min_edge", 0.0)
+        # Accept optional ``risk_service`` for interface compatibility.
+        self.risk_service = kwargs.get("risk_service")
 
     @record_signal_metrics
     def on_bar(self, bar: Dict[str, Dict[str, float]]) -> Optional[Signal]:

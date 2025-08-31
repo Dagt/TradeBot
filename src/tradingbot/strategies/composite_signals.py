@@ -15,8 +15,23 @@ class CompositeSignals(Strategy):
 
     name = "composite_signals"
 
-    def __init__(self, strategies: Sequence[tuple[Type[Strategy], dict]]):
-        self.sub_strategies = [cls(**params) for cls, params in strategies]
+    def __init__(
+        self,
+        strategies: Sequence[tuple[Type[Strategy], dict]],
+        *,
+        risk_service=None,
+    ):
+        self.risk_service = risk_service
+        self.sub_strategies = []
+        for cls, params in strategies:
+            try:
+                self.sub_strategies.append(
+                    cls(risk_service=risk_service, **params)
+                )
+            except TypeError:
+                # Sub-strategy may not accept ``risk_service``; fall back to
+                # instantiating without it to preserve backward compatibility.
+                self.sub_strategies.append(cls(**params))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:

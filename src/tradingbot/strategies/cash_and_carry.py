@@ -61,6 +61,7 @@ class CashAndCarry(Strategy):
         argumento o, alternativamente, los parámetros vía ``**kwargs``.
         """
 
+        self.risk_service = kwargs.pop("risk_service", None)
         self.cfg = cfg or CashCarryConfig(**kwargs)
         self.engine = get_engine() if (self.cfg.persist_pg and _CAN_PG) else None
 

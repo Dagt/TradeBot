@@ -27,7 +27,7 @@ _RiskManager.complete_order = lambda self: None  # type: ignore
 class DummyStrategy:
     name = "dummy"
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.i = 0
 
     def on_bar(self, bar):
