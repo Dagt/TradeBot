@@ -58,6 +58,7 @@ def insert_trades(engine, trades: Iterable[Any]):
                 """
             INSERT INTO market.trades (ts, exchange, symbol, px, qty, side, trade_id)
             VALUES (:ts, :exchange, :symbol, :px, :qty, :side, :trade_id)
+            ON CONFLICT DO NOTHING
             """
             ),
             payload,
@@ -93,6 +94,7 @@ def insert_bars(engine, bars: Iterable[Any]):
                 """
             INSERT INTO market.bars (ts, timeframe, exchange, symbol, o, h, l, c, v)
             VALUES (:ts, :timeframe, :exchange, :symbol, :o, :h, :l, :c, :v)
+            ON CONFLICT DO NOTHING
             """
             ),
             payload,
