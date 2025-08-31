@@ -57,10 +57,10 @@ class Account:
     def update_open_order(self, symbol: str, delta_qty: float) -> None:
         """Adjust pending quantity for ``symbol`` by ``delta_qty``."""
         qty = self.open_orders.get(symbol, 0.0) + float(delta_qty)
-        if abs(qty) > 0.0:
-            self.open_orders[symbol] = qty
-        else:
+        if abs(qty) < 1e-9:
             self.open_orders.pop(symbol, None)
+        else:
+            self.open_orders[symbol] = qty
 
     def pending_exposure(self, symbol: str) -> float:
         """Return notional exposure tied up in open orders for ``symbol``."""

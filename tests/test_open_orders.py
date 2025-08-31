@@ -16,6 +16,13 @@ def make_service(account: Account) -> RiskService:
     )
 
 
+def test_update_open_order_clears_when_offset():
+    account = Account(float("inf"), cash=0.0)
+    account.update_open_order("BTC", 1.0)
+    account.update_open_order("BTC", -1.0)
+    assert account.open_orders == {}
+
+
 def test_calc_position_size_accounts_for_open_orders():
     account = Account(float("inf"), cash=1000.0)
     account.mark_price("BTC", 100.0)
