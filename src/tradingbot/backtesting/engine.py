@@ -447,6 +447,7 @@ class EventDrivenBacktestEngine:
                             )
                             delta_qty = target - abs(pos_qty)
                             if abs(delta_qty) > self.min_order_qty:
+                                svc.account.update_open_order(sym, abs(delta_qty))
                                 side = (
                                     trade["side"]
                                     if delta_qty > 0
@@ -495,8 +496,10 @@ class EventDrivenBacktestEngine:
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
                         elif decision == "close":
-                            pending_qty = abs(pos_qty)
+                            delta_qty = -pos_qty
+                            pending_qty = abs(delta_qty)
                             if pending_qty > self.min_order_qty:
+                                svc.account.update_open_order(sym, pending_qty)
                                 side = "sell" if pos_qty > 0 else "buy"
                                 exchange = self.strategy_exchange[(strat, sym)]
                                 base_latency = self.exchange_latency.get(
@@ -923,6 +926,7 @@ class EventDrivenBacktestEngine:
                         notional = qty * place_price
                         if not svc.register_order(notional):
                             continue
+                        svc.account.update_open_order(symbol, qty)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
                         delay = max(1, int(base_latency * self.stress.latency))
