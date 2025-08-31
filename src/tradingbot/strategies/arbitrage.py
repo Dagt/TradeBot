@@ -52,7 +52,7 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Data with generated signals and risk management levels.
+        Data with generated signals.
     """
 
     df = data.copy()
@@ -60,8 +60,6 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     position_size = params.get("position_size", 1)
     fee = params.get("fee", 0.0)
     slippage = params.get("slippage", 0.0)
-    sl_pct = params.get("stop_loss", 0.0)
-    tp_pct = params.get("take_profit", 0.0)
 
     spread = df["asset_a"] - df["asset_b"]
     df["signal"] = 0
@@ -69,12 +67,10 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df.loc[spread < -threshold, "signal"] = 1
 
     df["position"] = df["signal"].shift(1).fillna(0) * position_size
-    df["stop_loss"] = df["asset_a"] * (1 - sl_pct)
-    df["take_profit"] = df["asset_a"] * (1 + tp_pct)
     df["fee"] = df["position"].abs() * fee
     df["slippage"] = df["position"].abs() * slippage
 
-    return df[["signal", "position", "stop_loss", "take_profit", "fee", "slippage"]]
+    return df[["signal", "position", "fee", "slippage"]]
 
 
 __all__ = ["Arbitrage", "generate_signals"]

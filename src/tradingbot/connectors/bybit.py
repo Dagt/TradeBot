@@ -89,10 +89,8 @@ class BybitConnector(ExchangeConnector):
         price: float | None = None,
         *,
         post_only: bool = False,
-        time_in_force: str | None = None,
+       time_in_force: str | None = None,
         iceberg_qty: float | None = None,
-        take_profit: float | None = None,
-        stop_loss: float | None = None,
         reduce_only: bool = False,
     ) -> dict:
         """Submit an order through the CCXT Bybit client."""
@@ -102,8 +100,6 @@ class BybitConnector(ExchangeConnector):
             post_only=post_only,
             time_in_force=time_in_force,
             iceberg_qty=iceberg_qty,
-            take_profit=take_profit,
-            stop_loss=stop_loss,
             reduce_only=reduce_only,
         )
 

@@ -47,7 +47,6 @@ async def test_best_venue_selection():
         {"type_": "limit", "price": 100.0, "time_in_force": "IOC"},
         {"type_": "limit", "price": 100.0, "time_in_force": "FOK"},
         {"type_": "limit", "price": 100.0, "iceberg_qty": 0.1},
-        {"type_": "limit", "price": 100.0, "take_profit": 110.0, "stop_loss": 90.0},
         {"type_": "market", "reduce_only": True},
     ],
 )

@@ -158,8 +158,6 @@ class BinanceFuturesAdapter(ExchangeAdapter):
         post_only: bool = False,
         time_in_force: str | None = None,
         iceberg_qty: float | None = None,
-        take_profit: float | None = None,
-        stop_loss: float | None = None,
     ):
         """
         UM Futures: idempotencia + retries + reconciliación.
@@ -178,8 +176,6 @@ class BinanceFuturesAdapter(ExchangeAdapter):
                     post_only=post_only,
                     time_in_force=time_in_force,
                     iceberg_qty=iceberg_qty,
-                    take_profit=take_profit,
-                    stop_loss=stop_loss,
                 )
                 params.update(
                     {
