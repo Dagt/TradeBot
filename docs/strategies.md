@@ -51,8 +51,9 @@ Analiza el flujo de órdenes que llegan al mercado para detectar presiones de
 compra o venta.
 
 ### Triple Barrier (`triple_barrier`)
-Define tres barreras (objetivo, límite de pérdida y tiempo) y cierra la
-posición según cuál se alcance primero.
+Emplea tres barreras (objetivo, límite de pérdida y tiempo) únicamente para
+etiquetar los datos; la gestión de la posición (stops y cierres) la realiza el
+`RiskManager`.
 
 ### Cash and Carry (`cash_and_carry`)
 Aprovecha diferencias de precio entre el mercado spot y los futuros para
