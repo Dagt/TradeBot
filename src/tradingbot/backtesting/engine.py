@@ -387,9 +387,6 @@ class EventDrivenBacktestEngine:
             for sym, df in self.data.items()
         }
         data_lengths = {sym: len(df) for sym, df in self.data.items()}
-        # Rolling volatility arrays (previously stored in ``sym_vols``) have been
-        # removed. Strategies and risk modules should compute any required
-        # volatility metrics internally as needed.
 
         order_seq = 0
 
