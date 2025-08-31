@@ -159,6 +159,10 @@ class RiskService:
         )
         self.trades: Dict[str, dict] = {}
 
+    @property
+    def min_order_qty(self) -> float:
+        return self.rm.min_order_qty
+
     def reset(self) -> None:
         """Reset underlying risk manager state."""
         self.rm.reset()
