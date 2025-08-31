@@ -28,6 +28,7 @@ class Account:
     cash: float = 0.0
     positions: Dict[str, float] = field(default_factory=dict)
     prices: Dict[str, float] = field(default_factory=dict)
+    open_orders: Dict[str, float] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     def update_cash(self, delta: float) -> None:
@@ -46,8 +47,26 @@ class Account:
 
     # ------------------------------------------------------------------
     def get_available_balance(self) -> float:
-        """Return available cash excluding unrealised PnL."""
-        return float(self.cash)
+        """Return cash available after reserving capital for open orders."""
+        reserved = sum(
+            abs(qty) * float(self.prices.get(sym, 0.0))
+            for sym, qty in self.open_orders.items()
+        )
+        return float(self.cash) - reserved
+
+    def update_open_order(self, symbol: str, delta_qty: float) -> None:
+        """Adjust pending quantity for ``symbol`` by ``delta_qty``."""
+        qty = self.open_orders.get(symbol, 0.0) + float(delta_qty)
+        if abs(qty) > 0.0:
+            self.open_orders[symbol] = qty
+        else:
+            self.open_orders.pop(symbol, None)
+
+    def pending_exposure(self, symbol: str) -> float:
+        """Return notional exposure tied up in open orders for ``symbol``."""
+        qty = abs(self.open_orders.get(symbol, 0.0))
+        price = float(self.prices.get(symbol, 0.0))
+        return qty * price
 
     def current_exposure(self, symbol: str) -> tuple[float, float]:
         """Return net quantity and notional exposure for ``symbol``.

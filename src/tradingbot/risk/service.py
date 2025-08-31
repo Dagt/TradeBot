@@ -87,10 +87,22 @@ class RiskService:
 
     # Delegates to core risk manager
     def calc_position_size(self, signal_strength: float, price: float) -> float:
-        return self.core.calc_position_size(signal_strength, price)
+        pending = sum(
+            abs(qty) * self.account.prices.get(sym, 0.0)
+            for sym, qty in self.account.open_orders.items()
+        )
+        balance = self.account.cash - pending
+        alloc = balance * self.core.risk_per_trade * float(signal_strength)
+        if price <= 0:
+            return 0.0
+        size = alloc / float(price)
+        return max(0.0, size)
 
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
-        return self.core.check_global_exposure(symbol, new_alloc)
+        current = self.account.current_exposure(symbol)[1]
+        pending = self.account.pending_exposure(symbol)
+        limit = float(self.account.max_symbol_exposure)
+        return current + pending + abs(float(new_alloc)) <= limit
 
     def initial_stop(
         self, entry_price: float, side: str, atr: float | None = None
@@ -184,6 +196,7 @@ class RiskService:
             return False, reason, delta
         if action == "soft_allow":
             self._persist("INFO", symbol, reason, metrics)
+        self.account.update_open_order(symbol, qty)
         return True, reason, delta
 
     # ------------------------------------------------------------------
@@ -273,6 +286,7 @@ class RiskService:
         """Update internal position books after a fill."""
         self.rm.add_fill(side, qty, price=price)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
+        self.account.update_open_order(symbol, -abs(qty))
         delta = qty if side == "buy" else -qty
         self.account.update_position(symbol, delta, price=price)
         if venue is not None:
