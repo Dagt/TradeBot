@@ -243,6 +243,8 @@ def get_supported_kinds(adapter_cls: type[adapters.ExchangeAdapter]) -> list[str
     if "futures" not in name:
         kinds.discard("funding")
         kinds.discard("open_interest")
+    if not name.endswith("_ws"):
+        kinds.add("bars")
     return sorted(kinds)
 
 
@@ -266,10 +268,13 @@ def ingest(
     kind: str = typer.Option(
         "orderbook",
         "--kind",
-        help="Data kind: trades,trades_multi,orderbook,bba,delta,funding,oi",
+        help="Data kind: trades,trades_multi,orderbook,bba,delta,funding,oi,bars",
     ),
     persist: bool = typer.Option(False, "--persist", help="Persist data"),
     backend: str = typer.Option("timescale", "--backend"),
+    timeframe: str = typer.Option(
+        "3m", "--timeframe", help="Bar timeframe like 1m, 3m, 5m (kind=bars only)"
+    ),
 ) -> None:
     """Stream market data from a venue and optionally persist it."""
 
@@ -412,6 +417,14 @@ def ingest(
                             ing.persist_open_interest([data], backend=backend)
 
                 tasks.append(asyncio.create_task(_oi(sym)))
+            elif kind == "bars":
+                tasks.append(
+                    asyncio.create_task(
+                        ing.fetch_bars(
+                            adapter, sym, timeframe=timeframe, backend=backend
+                        )
+                    )
+                )
             else:  # pragma: no cover - CLI validation
                 raise typer.BadParameter("invalid kind")
 

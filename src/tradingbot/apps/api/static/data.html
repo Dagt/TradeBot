@@ -184,7 +184,8 @@ const kindDescriptions={
   trades_multi:"Trades multi: agrupa transacciones de varios símbolos en una sola conexión.",
   orderbook:"Order book: niveles completos de posturas de compra y venta hasta la profundidad solicitada.",
   delta:"Book delta: cambios recientes en las mejores posturas de compra y venta.",
-  book_delta:"Book delta: cambios recientes en las mejores posturas de compra y venta."
+  book_delta:"Book delta: cambios recientes en las mejores posturas de compra y venta.",
+  bars:"Barras OHLCV: vela más reciente según el timeframe especificado."
 };
 
 function showWorking() {
@@ -235,7 +236,8 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   document.getElementById('field-start').style.display=showRange?'':'none';
   document.getElementById('field-end').style.display=showRange?'':'none';
   document.getElementById('field-exchange-name').style.display=act==='backfill'?'':'none';
-  document.getElementById('field-timeframe').style.display=act==='backfill'?'':'none';
+  const showTf = act==='backfill' || (act==='ingest' && kind==='bars');
+  document.getElementById('field-timeframe').style.display=showTf?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
@@ -269,7 +271,10 @@ async function runData(){
     const kind=document.getElementById('dm-kind').value;
     const persist=document.getElementById('dm-persist').checked;
     const backend=document.getElementById('dm-backend').value;
-    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind} --backend ${backend}`+(persist?' --persist':'');
+    const tf=document.getElementById('dm-timeframe').value.toLowerCase();
+    cmd=`ingest --venue ${venue} ${symbols.map(s=>`--symbol ${s}`).join(' ')} --depth ${depth} --kind ${kind}`;
+    if(kind==='bars') cmd+=` --timeframe ${tf}`;
+    cmd+=` --backend ${backend}`+(persist?' --persist':'');
   }else if(act==='backfill'){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;

@@ -8,6 +8,7 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
+        "bars",
     },
     "binance_futures": {
         "trades",
@@ -16,6 +17,7 @@ EXPECTED_KINDS = {
         "delta",
         "funding",
         "open_interest",
+        "bars",
     },
     "binance_spot_ws": {"trades", "trades_multi", "orderbook", "bba", "delta"},
     "binance_futures_ws": {
@@ -31,6 +33,7 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
+        "bars",
     },
     "bybit_futures": {
         "trades",
@@ -39,6 +42,7 @@ EXPECTED_KINDS = {
         "delta",
         "funding",
         "open_interest",
+        "bars",
     },
     "bybit_futures_ws": {
         "trades",
@@ -51,6 +55,7 @@ EXPECTED_KINDS = {
         "orderbook",
         "bba",
         "delta",
+        "bars",
     },
     "okx_futures": {
         "trades",
@@ -59,6 +64,7 @@ EXPECTED_KINDS = {
         "delta",
         "funding",
         "open_interest",
+        "bars",
     },
     "okx_futures_ws": {
         "trades",
@@ -68,7 +74,7 @@ EXPECTED_KINDS = {
         "funding",
         "open_interest",
     },
-    "deribit_futures": {"trades", "funding"},
+    "deribit_futures": {"trades", "funding", "bars"},
     "deribit_futures_ws": {
         "trades",
         "orderbook",
