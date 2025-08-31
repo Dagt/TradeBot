@@ -87,7 +87,10 @@ async def test_backfill_persists_data(monkeypatch, setup_db, input_symbol):
     monkeypatch.setattr(job_backfill.ccxt, "binance", lambda *_, **__: DummyExchange())
 
     await job_backfill.backfill(
-        days=1, symbols=[input_symbol], exchange_name="binance_spot"
+        days=1,
+        symbols=[input_symbol],
+        exchange_name="binance_spot",
+        timeframe="3m",
     )
 
     from tradingbot.storage.async_timescale import AsyncTimescaleClient
@@ -131,6 +134,7 @@ async def test_backfill_overlapping_range(monkeypatch, setup_db, input_symbol):
         start=start1,
         end=end1,
         exchange_name="binance_spot",
+        timeframe="3m",
     )
 
     start2 = start1 + timedelta(minutes=1)
@@ -141,6 +145,7 @@ async def test_backfill_overlapping_range(monkeypatch, setup_db, input_symbol):
         start=start2,
         end=end2,
         exchange_name="binance_spot",
+        timeframe="3m",
     )
 
     from tradingbot.storage.async_timescale import AsyncTimescaleClient

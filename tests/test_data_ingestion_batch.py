@@ -206,6 +206,9 @@ async def test_backfill_applies_rate_limit(monkeypatch):
     class DummyExchange:
         rateLimit = 1200
 
+        async def load_markets(self):
+            self.symbols = ["BTC/USDT", "ETH/USDT"]
+
         async def fetch_ohlcv(self, symbol, timeframe, since, limit):
             calls.append(symbol)
             return []
@@ -246,6 +249,7 @@ async def test_backfill_applies_rate_limit(monkeypatch):
         1,
         ["BTC/USDT", "ETH/USDT"],
         exchange_name="binance_spot",
+        timeframe="3m",
     )
 
     assert calls == ["BTC/USDT", "ETH/USDT"]

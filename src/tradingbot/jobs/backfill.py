@@ -58,13 +58,15 @@ async def backfill(
     exchange_name: str = "binance_spot",
     start: datetime | None = None,
     end: datetime | None = None,
+    timeframe: str = "3m",
 ) -> None:
     """Backfill OHLCV bars and trades for *symbols*.
 
     ``exchange_name`` must match the identifiers used by the ingestion
     command (``binance_spot``, ``binance_futures``, etc.).  If *start* or *end*
     are not provided, the range defaults to the past ``days`` days ending at
-    ``datetime.now(timezone.utc)``.
+    ``datetime.now(timezone.utc)``.  ``timeframe`` controls the interval used
+    when requesting OHLCV candles.
     """
 
     if end is None:
@@ -106,6 +108,8 @@ async def backfill(
     end_ms = int(end_dt.timestamp() * 1000)
     start_ms = int(start_dt.timestamp() * 1000)
 
+    step_ms = ccxt.Exchange.parse_timeframe(timeframe) * 1000
+
     try:
         for symbol in symbols:
             logger.info("Procesando %s", symbol)
@@ -126,7 +130,7 @@ async def backfill(
                 ohlcvs = await _retry(
                     ex.fetch_ohlcv,
                     ccxt_symbol,
-                    "3m",
+                    timeframe,
                     since,
                     1000,
                 )
@@ -138,7 +142,7 @@ async def backfill(
                         "market.bars",
                         {
                             "ts": datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc),
-                            "timeframe": "3m",
+                            "timeframe": timeframe,
                             "exchange": ex.id,
                             "symbol": db_symbol,
                             "o": o,
@@ -148,7 +152,7 @@ async def backfill(
                             "v": v,
                         },
                     )
-                since = ohlcvs[-1][0] + 180_000
+                since = ohlcvs[-1][0] + step_ms
 
             # --- Trades backfill -----------------------------------------------
             since = start_ms
