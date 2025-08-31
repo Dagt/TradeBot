@@ -73,9 +73,10 @@ Recibe datos de mercado en vivo y opcionalmente los almacena.
 - `--venue`: intercambio a utilizar (ej. `binance_spot`, `binance_futures_ws`, `bybit_futures_ws`, `okx_futures_ws`). Los nombres siguen el patrón `<exchange>_<market>` para REST y `<exchange>_<market>_ws` para WebSocket; se añade `_testnet` automáticamente cuando se usa el entorno de prueba.
 - `--symbol`: puede repetirse para varios pares (por defecto `BTC/USDT`).
 - `--depth`: profundidad del libro de órdenes (10).
-- `--kind`: tipo de dato: `trades`, `trades_multi`, `orderbook`, `bba`, `delta`, `funding`, `oi`.
+- `--kind`: tipo de dato: `trades`, `trades_multi`, `orderbook`, `bba`, `delta`, `funding`, `oi`, `bars`.
 - `--persist`: si se indica, guarda los datos en la base de datos.
 - `--backend`: backend de almacenamiento (`timescale` o `csv`).
+- `--timeframe`: intervalo de las velas (por defecto `3m`) cuando se usa `--kind bars`.
 
 Nota: Bybit no provee streams de `funding` ni `open_interest` vía WebSocket;
 para esos datos utilice el adaptador REST (`bybit_futures`).
