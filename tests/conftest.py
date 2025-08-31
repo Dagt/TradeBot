@@ -113,19 +113,20 @@ def equity_data():
 
 
 @pytest.fixture
-def risk_manager(equity_data):
-    from tradingbot.risk.manager import RiskManager
+def risk_service(equity_data):
+    from tradingbot.core import Account
+    from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+    from tradingbot.risk.service import RiskService
 
-    risk_pct = 0.02      # arriesgar 2% del notional
     price = 100.0
-
-    rm = RiskManager(risk_pct=risk_pct)
-    # Atributos auxiliares para las pruebas
-    rm.price = price
-    rm.equity = float(equity_data.iloc[-1])
-    rm.risk_pct = risk_pct
-    rm.equity_history = equity_data
-    return rm
+    equity = float(equity_data.iloc[-1])
+    account = Account(float("inf"), cash=equity)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="test")
+    )
+    svc = RiskService(guard, account=account, risk_pct=0.0, risk_per_trade=1.0)
+    svc.mark_price("SYM", price)
+    return svc
 
 
 @pytest.fixture

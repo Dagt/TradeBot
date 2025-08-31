@@ -2,7 +2,9 @@ import importlib
 
 from fastapi.testclient import TestClient
 from tradingbot.bus import EventBus
-from tradingbot.risk.manager import RiskManager
+from tradingbot.core import Account
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.service import RiskService
 
 
 def get_app():
@@ -33,7 +35,9 @@ def test_risk_reset_resets_and_auth(monkeypatch):
     monkeypatch.setenv("API_USER", "u")
     monkeypatch.setenv("API_PASS", "p")
     app = get_app()
-    rm = RiskManager()
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    rs = RiskService(guard, account=Account(float("inf")))
+    rm = rs.rm
     rm.enabled = False
     rm.last_kill_reason = "dd"
     app.state.risk_manager = rm
