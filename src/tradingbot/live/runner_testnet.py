@@ -9,6 +9,7 @@ import pandas as pd
 
 from .runner import BarAggregator
 from ..strategies import STRATEGIES
+from ..strategies.breakout_atr import BreakoutATR  # re-export for tests
 from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -61,7 +62,7 @@ async def _run_symbol(
     daily_max_loss_pct: float,
     daily_max_drawdown_pct: float,
     corr_threshold: float,
-    strategy_name: str,
+    strategy_name: str = "breakout_atr",
     params: dict | None = None,
     config_path: str | None = None,
 ) -> None:
@@ -157,19 +158,34 @@ async def _run_symbol(
             continue
         side = "buy" if delta > 0 else "sell"
         qty = abs(delta)
+        price = getattr(sig, "limit_price", None)
+        if price is None:
+            src = getattr(exec_adapter, "state", None) or getattr(ws, "state", None)
+            book = src.order_book.get(cfg.symbol) if src else None
+            if book:
+                bids = book.get("bids", [])
+                asks = book.get("asks", [])
+                best_bid = bids[0][0] if bids else closed.c
+                best_ask = asks[0][0] if asks else closed.c
+            else:
+                best_bid = best_ask = closed.c
+            tick = getattr(exec_adapter, "tick_size", 0.0) or getattr(ws, "tick_size", 0.0) or 0.0
+            price = best_ask + tick if side == "buy" else best_bid - tick
         if market == "futures" and dry_run:
             resp = await broker.place_order(
                 cfg.symbol,
                 side,
-                "market",
+                "limit",
                 qty,
+                price=price,
             )
         else:
             resp = await exec_adapter.place_order(
                 cfg.symbol,
                 side,
-                "market",
+                "limit",
                 qty,
+                price=price,
                 mark_price=closed.c,
             )
         log.info("LIVE FILL %s", resp)

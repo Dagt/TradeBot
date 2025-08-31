@@ -227,16 +227,30 @@ async def run_live_binance(
             continue
 
         side = "buy" if delta > 0 else "sell"
+        qty = abs(delta)
+        price = signal.limit_price
+        if price is None:
+            book = adapter.state.order_book.get(symbol)
+            if book:
+                bid = book.get("bids", [])
+                ask = book.get("asks", [])
+                best_bid = bid[0][0] if bid else closed.c
+                best_ask = ask[0][0] if ask else closed.c
+            else:
+                best_bid = best_ask = closed.c
+            tick = getattr(adapter, "tick_size", 0.0) or 0.0
+            price = best_ask + tick if side == "buy" else best_bid - tick
         prev_rpnl = broker.state.realized_pnl
         resp = await broker.place_order(
             symbol,
             side,
-            "market",
-            abs(delta),
+            "limit",
+            qty,
+            price=price,
         )
         fills += 1
         log.info("FILL live %s", resp)
-        risk.on_fill(symbol, side, abs(delta), venue="binance")
+        risk.on_fill(symbol, side, qty, venue="binance")
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:

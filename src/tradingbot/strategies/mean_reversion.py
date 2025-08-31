@@ -101,7 +101,7 @@ class MeanReversion(Strategy):
             trade["atr"] = atr
             self.risk_service.update_trailing(trade, price)
             self.trade = trade
-        return Signal(side, strength)
+        return Signal(side, strength, limit_price=price)
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:

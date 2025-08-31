@@ -69,11 +69,13 @@ class BreakoutATR(Strategy):
             if edge_bps <= self.min_edge_bps:
                 return None
             side = "buy"
+            price_level = float(upper.iloc[-1])
         elif last_close < lower.iloc[-1]:
             edge_bps = (lower.iloc[-1] - last_close) / abs(last_close) * 10000
             if edge_bps <= self.min_edge_bps:
                 return None
             side = "sell"
+            price_level = float(lower.iloc[-1])
         if side is None:
             return None
         strength = 1.0
@@ -86,4 +88,4 @@ class BreakoutATR(Strategy):
             trade["atr"] = atr_val
             self.risk_service.update_trailing(trade, last_close)
             self.trade = trade
-        return Signal(side, strength)
+        return Signal(side, strength, limit_price=price_level)

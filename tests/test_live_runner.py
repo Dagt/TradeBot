@@ -28,17 +28,19 @@ class DummyAgg:
 
 class DummyStrat:
     def on_bar(self, ctx):
-        return SimpleNamespace(side="buy", strength=1.0)
+        return SimpleNamespace(side="buy", strength=1.0, limit_price=None)
 
 
 class DummyRisk:
+    min_order_qty = 0.0
+
     def size(self, side, price, equity, strength, **kwargs):
         return 1.0
 
     def check_limits(self, price):
         return True
 
-    def add_fill(self, side, qty):
+    def add_fill(self, side, qty, price=None):
         pass
 
     def update_correlation(self, pairs, threshold):
@@ -79,7 +81,14 @@ class DummyDG:
 
 class DummyBroker:
     def __init__(self, fee_bps=0):
-        pass
+        class _Acc:
+            def mark_price(self, *a, **k):
+                pass
+
+            def current_exposure(self, *a, **k):
+                return (0.0, 0.0)
+
+        self.account = _Acc()
 
     def update_last_price(self, symbol, px):
         pass
@@ -97,15 +106,15 @@ class DummyExec:
         self.orders = []
         DummyExec.last_instance = self
 
-    async def place_order(self, symbol, side, type_, qty, mark_price=None):
-        self.orders.append((symbol, side, type_, qty))
+    async def place_order(self, symbol, side, type_, qty, price=None, mark_price=None):
+        self.orders.append((symbol, side, type_, qty, price))
         return {"status": "ok"}
 
 
 @pytest.mark.asyncio
 async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
-    monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
+    monkeypatch.setitem(rt.STRATEGIES, "breakout_atr", lambda *a, **k: DummyStrat())
     monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
@@ -144,7 +153,7 @@ async def test_bybit_futures_order(monkeypatch):
     inst = DummyExec.last_instance
     assert inst.leverage == 5
     assert inst.testnet is True
-    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
+    assert inst.orders[0] == (normalize("BTC-USDT"), "buy", "limit", 1.0, 100.0)
 
 
 class DummyExecReal:
@@ -157,8 +166,8 @@ class DummyExecReal:
         self.orders = []
         DummyExecReal.last_instance = self
 
-    async def place_order(self, symbol, side, type_, qty, mark_price=None):
-        self.orders.append((symbol, side, type_, qty))
+    async def place_order(self, symbol, side, type_, qty, price=None, mark_price=None):
+        self.orders.append((symbol, side, type_, qty, price))
         return {"status": "ok"}
 
 
@@ -173,7 +182,7 @@ async def test_run_real(monkeypatch):
     import tradingbot.live.runner_real as rr
     rr = importlib.reload(rr)
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
-    monkeypatch.setattr(rr, "BreakoutATR", lambda config_path=None: DummyStrat())
+    monkeypatch.setitem(rr.STRATEGIES, "breakout_atr", lambda *a, **k: DummyStrat())
     monkeypatch.setattr(rr, "RiskManager", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
@@ -210,7 +219,7 @@ async def test_run_real(monkeypatch):
 
     inst = DummyExecReal.last_instance
     assert inst.api_key == "k"
-    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
+    assert inst.orders[0] == (normalize("BTC-USDT"), "buy", "limit", 1.0, 100.0)
 
 
 @pytest.mark.asyncio
@@ -273,4 +282,4 @@ async def test_okx_futures_order(monkeypatch):
     inst = DummyExec2.last_instance
     assert inst.leverage == 7
     assert inst.testnet is True
-    assert inst.orders[0][:4] == (normalize("BTC-USDT"), "buy", "market", 1.0)
+    assert inst.orders[0] == (normalize("BTC-USDT"), "buy", "limit", 1.0, 100.0)
