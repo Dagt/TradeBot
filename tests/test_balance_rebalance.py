@@ -69,8 +69,8 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
     assert args[2] is ex_b
 
     # Risk manager updated
-    assert risk.rm.positions_multi["A"]["USDT"] == pytest.approx(50.0)
-    assert risk.rm.positions_multi["B"]["USDT"] == pytest.approx(50.0)
+    assert risk.positions_multi["A"]["USDT"] == pytest.approx(50.0)
+    assert risk.positions_multi["B"]["USDT"] == pytest.approx(50.0)
 
     # Snapshots recorded
     venues_recorded = {c[0] for c in calls}
@@ -129,8 +129,8 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     await task
 
     ex_a.transfer.assert_called_once()
-    assert risk.rm.positions_multi["A"]["USDT"] == pytest.approx(50.0)
-    assert risk.rm.positions_multi["B"]["USDT"] == pytest.approx(50.0)
+    assert risk.positions_multi["A"]["USDT"] == pytest.approx(50.0)
+    assert risk.positions_multi["B"]["USDT"] == pytest.approx(50.0)
     venues_recorded = {c[0] for c in calls}
     assert venues_recorded == {"A", "B"}
     assert prices_used and prices_used[0] == 2.0

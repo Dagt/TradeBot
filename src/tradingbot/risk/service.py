@@ -119,6 +119,12 @@ class _RiskManager:
         self.positions_multi.clear()
         self._reset_price_trackers()
 
+    def register_order(self, notional: float) -> bool:
+        return True
+
+    def complete_order(self) -> None:
+        return None
+
 
 
 class RiskService:
@@ -162,6 +168,34 @@ class RiskService:
     @property
     def min_order_qty(self) -> float:
         return self.rm.min_order_qty
+
+    @property
+    def allow_short(self) -> bool:
+        """Whether short positions are permitted."""
+        return self.rm.allow_short
+
+    @allow_short.setter
+    def allow_short(self, value: bool) -> None:
+        self.rm.allow_short = bool(value)
+
+    @property
+    def pos(self) -> Position:
+        """Current aggregate position."""
+        return self.rm.pos
+
+    @property
+    def positions_multi(self) -> Dict[str, Dict[str, float]]:
+        """Per-venue positions bookkeeping."""
+        return self.rm.positions_multi
+
+    def register_order(self, notional: float) -> bool:
+        return self.rm.register_order(notional)
+
+    def complete_order(self) -> None:
+        self.rm.complete_order()
+
+    def set_position(self, qty: float) -> None:
+        self.rm.pos.qty = float(qty)
 
     def reset(self) -> None:
         """Reset underlying risk manager state."""

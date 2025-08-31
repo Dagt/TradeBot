@@ -61,7 +61,7 @@ async def test_daemon_processes_trades():
     await asyncio.sleep(0.3)
     daemon._stop.set()
     await task
-    assert risk.rm.pos.qty >= 0
+    assert risk.pos.qty >= 0
 
 
 @pytest.mark.asyncio

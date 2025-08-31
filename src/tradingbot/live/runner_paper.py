@@ -59,7 +59,7 @@ async def run_paper(
         account=broker.account,
         risk_pct=risk_pct,
     )
-    risk.rm.allow_short = False
+    risk.allow_short = False
     engine = get_engine() if _CAN_PG else None
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)

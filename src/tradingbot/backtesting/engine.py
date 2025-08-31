@@ -639,7 +639,7 @@ class EventDrivenBacktestEngine:
                 if order.remaining_qty <= 1e-9:
                     if order.latency is None:
                         order.latency = i - order.place_index
-                    svc.rm.complete_order()
+                    svc.complete_order()
 
                 mtm_after = 0.0
                 for (strat_s, sym_s), svc_s in self.risk.items():
@@ -822,7 +822,7 @@ class EventDrivenBacktestEngine:
                     side = "buy" if delta > 0 else "sell"
                     qty = abs(delta)
                     notional = qty * place_price
-                    if not svc.rm.register_order(notional):
+                    if not svc.register_order(notional):
                         continue
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     base_latency = self.exchange_latency.get(exchange, self.latency)
@@ -951,7 +951,7 @@ class EventDrivenBacktestEngine:
                 cash += pos * last_price
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 svc.update_position(exchange, symbol, 0.0)
-                svc.rm.set_position(0.0)
+                svc.set_position(0.0)
 
         equity = cash
         # Update final equity in the curve without duplicating the last value

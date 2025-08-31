@@ -33,4 +33,4 @@ def test_rehydrate_state():
     pos_map = load_positions(engine, "paper")
     for sym, data in pos_map.items():
         risk.update_position("paper", sym, data["qty"])
-    assert risk.rm.positions_multi["paper"]["BTCUSDT"] == pytest.approx(1.5)
+    assert risk.positions_multi["paper"]["BTCUSDT"] == pytest.approx(1.5)

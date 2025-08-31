@@ -145,7 +145,7 @@ async def _run_symbol(
         account=broker.account,
         risk_pct=cfg.risk_pct,
     )
-    risk.rm.allow_short = market != "spot"
+    risk.allow_short = market != "spot"
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
