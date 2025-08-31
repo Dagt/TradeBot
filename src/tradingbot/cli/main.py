@@ -421,7 +421,11 @@ def ingest(
                 tasks.append(
                     asyncio.create_task(
                         ing.fetch_bars(
-                            adapter, sym, timeframe=timeframe, backend=backend
+                            adapter,
+                            sym,
+                            timeframe=timeframe,
+                            backend=backend,
+                            persist=persist,
                         )
                     )
                 )

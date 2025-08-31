@@ -105,6 +105,88 @@ async def test_run_orderbook_stream_no_persist(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fetch_bars_respects_persist(monkeypatch):
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_ohlcv(self, symbol, timeframe="3m", limit=1):
+            return [[1672531200000, 1.0, 2.0, 0.5, 1.5, 100.0]]
+
+    inserted: list[tuple] = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_bar(
+            self,
+            engine,
+            exchange,
+            symbol,
+            ts,
+            timeframe,
+            o,
+            h,
+            l,
+            c,
+            v,
+        ):
+            inserted.append((exchange, symbol, ts, timeframe, o, h, l, c, v))
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(
+            DummyAdapter(),
+            "BTC/USDT",
+            timeframe="1m",
+            sleep_s=0,
+            persist=True,
+        )
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert inserted
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_no_persist(monkeypatch):
+    class DummyAdapter:
+        async def fetch_ohlcv(self, symbol, timeframe="3m", limit=1):
+            return [[1672531200000, 1.0, 2.0, 0.5, 1.5, 100.0]]
+
+    called = False
+
+    def _get_storage(backend):
+        nonlocal called
+        called = True
+        class DummyStorage:
+            def get_engine(self):
+                return "engine"
+        return DummyStorage()
+
+    monkeypatch.setattr(ingestion, "_get_storage", _get_storage)
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(
+            DummyAdapter(),
+            "BTC/USDT",
+            sleep_s=0,
+            persist=False,
+        )
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not called
+
+
+@pytest.mark.asyncio
 async def test_run_orderbook_stream_persists_bba(monkeypatch):
     ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
     snapshot = {
