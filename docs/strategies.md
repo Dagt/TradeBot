@@ -4,15 +4,20 @@ Las estrategias definen cómo se toman decisiones de compra o venta. A
 continuación se presenta un resumen en lenguaje sencillo.
 
 Todas las señales incluyen un campo `strength` continuo que dimensiona las
-órdenes mediante `notional = equity * strength`. El `RiskManager` universal
-utiliza este valor para calcular el tamaño y aplicar un trailing stop
-adaptativo.
+órdenes mediante `notional = equity * strength`. Opcionalmente pueden definir
+`limit_price` para cotizar órdenes *limit* a través del broker. El
+`RiskManager` universal utiliza estos valores para calcular el tamaño y aplicar
+un trailing stop adaptativo.
 
 Ejemplo de señal:
 
 ```python
-signal = {"side": "buy", "strength": 0.75}
+signal = {"side": "buy", "strength": 0.75, "limit_price": 100.5}
 ```
+
+Las estrategias pueden implementar callbacks `on_partial_fill` y
+`on_order_expiry` para decidir si re‑cotizar, cancelar o convertir el remanente
+en una orden de mercado cuando la ventaja desaparece.
 
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador

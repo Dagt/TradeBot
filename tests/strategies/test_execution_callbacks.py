@@ -95,3 +95,23 @@ async def test_order_expiry_cancel_when_edge_gone():
     assert res["status"] == "expired"
     assert strat.pending_qty["XYZ"] == pytest.approx(10.0)
     assert len(adapter.calls) == 1
+
+
+class FallbackStrategy(DummyStrategy):
+    def on_partial_fill(self, order: Order, res: dict):
+        action = super().on_partial_fill(order, res)
+        return action or "taker"
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_market_when_edge_gone():
+    strat = FallbackStrategy()
+    # record opposite last signal to indicate edge vanished
+    strat.on_bar({"symbol": "XYZ", "exchange": "ex", "close": 100.0, "side": "sell"})
+    adapter = PartialAdapter()
+    router = ExecutionRouter(adapter, on_partial_fill=strat.on_partial_fill)
+    order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
+    res = await router.execute(order)
+    assert res["status"] == "filled"
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]["type_"] == "market"

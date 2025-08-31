@@ -20,12 +20,19 @@ class TimedPaperAdapter(PaperAdapter):
 
 
 @pytest.mark.asyncio
-async def test_paper_adapter_execution(paper_adapter, mock_order):
-    paper_adapter.update_last_price(mock_order["symbol"], 100.0)
+async def test_paper_adapter_execution(paper_adapter):
+    order = {
+        "symbol": "BTCUSDT",
+        "side": "buy",
+        "type_": "limit",
+        "qty": 1.0,
+        "price": 100.0,
+    }
+    paper_adapter.update_last_price(order["symbol"], 100.0)
 
-    res = await paper_adapter.place_order(**mock_order)
+    res = await paper_adapter.place_order(**order)
     assert res["status"] == "filled"
-    assert paper_adapter.state.pos[mock_order["symbol"]].qty == mock_order["qty"]
+    assert paper_adapter.state.pos[order["symbol"]].qty == order["qty"]
 
     cancel = await paper_adapter.cancel_order(res["order_id"])
     assert cancel["status"] == "canceled"
@@ -44,7 +51,7 @@ async def test_paper_stream_updates_price(paper_adapter):
     assert first["price"] == 100.0
     assert paper_adapter.state.last_px["BTCUSDT"] == 100.0
 
-    res = await paper_adapter.place_order("BTCUSDT", "buy", "market", 0.5)
+    res = await paper_adapter.place_order("BTCUSDT", "buy", "limit", 0.5, price=100.0)
     assert res["status"] == "filled"
     assert res["price"] == 100.0
 
@@ -62,7 +69,7 @@ async def test_twap_splits_orders():
     adapter = TimedPaperAdapter()
     adapter.update_last_price("BTCUSDT", 100.0)
     router = ExecutionRouter(adapter)
-    order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=4.0)
+    order = Order(symbol="BTCUSDT", side="buy", type_="limit", qty=4.0, price=100.0)
     res = await router.execute(order, algo="twap", slices=4, delay=0.01)
     assert len(res) == 4
     assert [r["qty"] for r in res] == [pytest.approx(1.0)] * 4
@@ -76,7 +83,7 @@ async def test_vwap_distribution():
     adapter = TimedPaperAdapter()
     adapter.update_last_price("BTCUSDT", 100.0)
     router = ExecutionRouter(adapter)
-    order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=6.0)
+    order = Order(symbol="BTCUSDT", side="buy", type_="limit", qty=6.0, price=100.0)
     res = await router.execute(order, algo="vwap", volumes=[1, 2, 3], delay=0.01)
     assert len(res) == 3
     assert [r["qty"] for r in res] == [pytest.approx(1.0), pytest.approx(2.0), pytest.approx(3.0)]
@@ -90,7 +97,7 @@ async def test_pov_participates():
     adapter = TimedPaperAdapter()
     adapter.update_last_price("BTCUSDT", 100.0)
     router = ExecutionRouter(adapter)
-    order = Order(symbol="BTCUSDT", side="buy", type_="market", qty=5.0)
+    order = Order(symbol="BTCUSDT", side="buy", type_="limit", qty=5.0, price=100.0)
 
     trades = [{"ts": 0, "price": 100.0, "qty": q, "side": "buy"} for q in [4.0, 4.0, 4.0]]
 
