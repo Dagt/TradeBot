@@ -32,19 +32,31 @@ class DummyStrat:
 
 
 class DummyRisk:
-    def size(self, side, price, equity, strength, **kwargs):
-        return 1.0
+    def __init__(self):
+        from types import SimpleNamespace
 
-    def check_limits(self, price):
-        return True
+        self.rm = SimpleNamespace(allow_short=True)
 
-    def add_fill(self, side, qty):
+    def check_order(self, symbol, side, price, strength=1.0, **kwargs):
+        delta = 1.0 if side == "buy" else -1.0
+        return True, "", delta
+
+    def update_position(self, exchange, symbol, qty, entry_price=None):
         pass
 
-    def update_correlation(self, pairs, threshold):
+    def add_fill(self, side, qty, price=None):
+        pass
+
+    def update_correlation(self, corr_df, threshold):
         return []
 
-    def update_position(self, exchange, symbol, qty):
+    def mark_price(self, symbol, px):
+        pass
+
+    def daily_mark(self, broker, symbol, price, delta_rpnl):
+        return False, ""
+
+    def on_fill(self, *a, **k):
         pass
 
 
@@ -106,7 +118,7 @@ class DummyExec:
 async def test_bybit_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
+    monkeypatch.setattr(rt, "RiskService", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)
@@ -174,7 +186,7 @@ async def test_run_real(monkeypatch):
     rr = importlib.reload(rr)
     monkeypatch.setattr(rr, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rr, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rr, "RiskManager", lambda *a, **k: DummyRisk())
+    monkeypatch.setattr(rr, "RiskService", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rr, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rr, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rr, "PaperAdapter", DummyBroker)
@@ -235,7 +247,7 @@ class DummyExec2(DummyExec):
 async def test_okx_futures_order(monkeypatch):
     monkeypatch.setattr(rt, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rt, "BreakoutATR", lambda config_path=None: DummyStrat())
-    monkeypatch.setattr(rt, "RiskManager", lambda *a, **k: DummyRisk())
+    monkeypatch.setattr(rt, "RiskService", lambda *a, **k: DummyRisk())
     monkeypatch.setattr(rt, "PortfolioGuard", lambda config: DummyPG())
     monkeypatch.setattr(rt, "DailyGuard", lambda limits, venue: DummyDG())
     monkeypatch.setattr(rt, "PaperAdapter", DummyBroker)

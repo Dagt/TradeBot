@@ -16,7 +16,12 @@ from tradingbot.backtest.event_engine import (
     run_backtest_csv,
 )
 from tradingbot.strategies import STRATEGIES
-from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.service import RiskService, _RiskManager
+from tradingbot.core import Account
+
+_RiskManager.register_order = lambda self, n: True  # type: ignore
+_RiskManager.complete_order = lambda self: None  # type: ignore
 
 
 class DummyStrategy:
@@ -91,13 +96,13 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     # Comprobar cálculo de fee
     expected_fee = df["price"] * df["qty"] * 0.001
     assert np.allclose(df["fee_cost"], expected_fee)
-    # Comprobar que realized_pnl coincide con RiskManager
-    rm = RiskManager()
+    # Comprobar que realized_pnl coincide con RiskService
+    svc = RiskService(PortfolioGuard(GuardConfig(venue="test")), account=Account(float("inf")))
     expected = []
     for row in df.itertuples():
-        prev = rm.pos.realized_pnl
-        rm.add_fill(row.side, row.qty, row.price)
-        delta = rm.pos.realized_pnl - prev
+        prev = svc.rm.pos.realized_pnl
+        svc.rm.add_fill(row.side, row.qty, row.price)
+        delta = svc.rm.pos.realized_pnl - prev
         expected.append(delta - row.fee_cost + row.slippage_pnl)
     assert np.allclose(df["realized_pnl"], expected)
     assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])

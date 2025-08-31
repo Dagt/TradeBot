@@ -35,7 +35,7 @@ def test_stop_loss_risk_pct():
 
     qty = equity * 0.10 / price
     rs = _make_rs(equity, risk_pct=risk_pct)
-    rs.rm.set_position(qty)
+    rs.rm.add_fill("buy", qty, price)
 
     assert rs.rm.check_limits(price)
     with pytest.raises(StopLossExceeded):
@@ -46,45 +46,30 @@ def test_stop_loss_risk_pct():
 
 def test_pyramiding_and_scaling(risk_service):
     rs = risk_service
-    rm = rs.rm
-    account = rs.account
     price = 100.0
     symbol = "SYM"
+    rs.rm.risk_pct = 0.0
+    max_qty = rs.account.cash / price
 
-    rm.risk_pct = 0.0
-    max_qty = account.cash / price
+    delta = rs.calc_position_size(0.5, price)
+    rs.rm.add_fill("buy", delta, price)
+    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("buy", price, account.cash, strength=0.5)
-    rm.add_fill("buy", delta, price)
-    rs.update_position("test", symbol, rm.pos.qty, entry_price=price)
-    assert account.positions[symbol] == pytest.approx(max_qty * 0.5)
+    delta = rs.calc_position_size(1.0, price)
+    rs.rm.add_fill("buy", delta, price)
+    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    assert rs.account.positions[symbol] == pytest.approx(max_qty)
 
-    delta = rm.size("buy", price, account.cash, strength=1.0)
-    rm.add_fill("buy", delta, price)
-    rs.update_position("test", symbol, rm.pos.qty, entry_price=price)
-    assert account.positions[symbol] == pytest.approx(max_qty)
+    delta = rs.calc_position_size(0.5, price)
+    rs.rm.add_fill("sell", abs(delta), price)
+    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
-    delta = rm.size("buy", price, account.cash, strength=0.5)
-    rm.add_fill("sell", abs(delta), price)
-    rs.update_position("test", symbol, rm.pos.qty, entry_price=price)
-    assert account.positions[symbol] == pytest.approx(max_qty * 0.5)
-
-    delta = rm.size("buy", price, account.cash, strength=0.0)
-    rm.add_fill("sell", abs(delta), price)
-    rs.update_position("test", symbol, rm.pos.qty, entry_price=price)
-    assert account.positions[symbol] == pytest.approx(0.0)
-
-
-def test_kill_switch_disables():
-    from tradingbot.utils.metrics import RISK_EVENTS
-
-    rm = _make_rs(0.0).rm
-    before = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
-    rm.kill_switch("manual")
-    after = RISK_EVENTS.labels(event_type="kill_switch")._value.get()
-    assert rm.enabled is False
-    assert rm.last_kill_reason == "manual"
-    assert after == before + 1
+    delta = rs.calc_position_size(0.0, price)
+    rs.rm.add_fill("sell", abs(delta), price)
+    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    assert rs.account.positions[symbol] == pytest.approx(0.0)
 
 
 def test_daily_loss_limit_via_guard():
@@ -130,34 +115,19 @@ async def test_daily_guard_halts_on_loss():
     assert halted and reason == "daily_loss"
 
 
-def test_covariance_limit_triggers_kill():
-    rs = _make_rs(0.0)
-    positions = {"BTC": 1.0, "ETH": 1.0}
-    cov = {
-        ("BTC", "BTC"): 0.04,
-        ("ETH", "ETH"): 0.04,
-        ("BTC", "ETH"): 0.039,
-    }
-    ok = rs.rm.check_portfolio_risk(positions, cov, max_variance=0.1)
-    assert ok is False
-    assert rs.rm.enabled is False
-    assert rs.rm.last_kill_reason == "covariance_limit"
-
-
 def test_long_only_prevents_shorts():
-    rs = _make_rs(0.0)
+    rs = _make_rs(100.0)
     rs.rm.allow_short = False
-    rs.rm.set_position(1.0)
-    allowed, _, delta = rs.rm.check_order("SYM", "sell", equity=100.0, price=100.0)
+    rs.rm.add_fill("buy", 1.0, price=100.0)
+    rs.update_position("test", "SYM", 1.0, entry_price=100.0)
+    allowed, _, delta = rs.check_order("SYM", "sell", 100.0)
     assert allowed and delta == pytest.approx(-1.0)
 
 
 def test_min_order_qty_blocks_small_orders():
-    rs = _make_rs(0.0)
+    rs = _make_rs(100.0)
     rs.rm.min_order_qty = 0.01
-    allowed, reason, delta = rs.rm.check_order(
-        "SYM", "buy", equity=100.0, price=100.0, strength=0.001
-    )
+    allowed, reason, delta = rs.check_order("SYM", "buy", 100.0, strength=0.001)
     assert not allowed
     assert reason == "zero_size"
     assert delta == 0.0

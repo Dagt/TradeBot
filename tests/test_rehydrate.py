@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
 from tradingbot.core import Account
-from tradingbot.risk.manager import load_positions
+from tradingbot.storage.timescale import load_positions
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 
