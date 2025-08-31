@@ -91,6 +91,19 @@
           <option value="deribit_futures">deribit_futures</option>
         </select>
       </div>
+      <div id="field-timeframe">
+        <label for="dm-timeframe">Timeframe</label>
+        <select id="dm-timeframe">
+          <option value="1m">1m</option>
+          <option value="2m">2m</option>
+          <option value="3m">3m</option>
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+          <option value="30m">30m</option>
+          <option value="1H">1H</option>
+          <option value="4H">4H</option>
+        </select>
+      </div>
       <div id="field-source">
         <label for="dm-source">Fuente</label>
         <select id="dm-source">
@@ -222,6 +235,7 @@ desc.innerHTML = raw.replace(/^([^:]+:)/, '<span class="desc-lead">$1</span>');
   document.getElementById('field-start').style.display=showRange?'':'none';
   document.getElementById('field-end').style.display=showRange?'':'none';
   document.getElementById('field-exchange-name').style.display=act==='backfill'?'':'none';
+  document.getElementById('field-timeframe').style.display=act==='backfill'?'':'none';
   const hist=act==='ingest-historical';
   document.getElementById('field-source').style.display=hist?'':'none';
   document.getElementById('field-exchange').style.display=hist && document.getElementById('dm-source').value==='kaiko'?'':'none';
@@ -260,6 +274,7 @@ async function runData(){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;
     const exchange=document.getElementById('dm-exchange-name').value;
+    const tf=document.getElementById('dm-timeframe').value;
     if(start && end){
       const s=new Date(start);
       const e=new Date(end);
@@ -270,10 +285,10 @@ async function runData(){
         runBtn.textContent='Ejecutar';
         return;
       }
-      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
+      cmd=`backfill --start ${s.toISOString()} --end ${e.toISOString()} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange} --timeframe ${tf}`;
     }else{
       const days=document.getElementById('dm-days').value;
-      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange}`;
+      cmd=`backfill --days ${days} ${symbols.map(s=>`--symbols ${s}`).join(' ')} --venue ${exchange} --timeframe ${tf}`;
     }
   }else{
     const src=document.getElementById('dm-source').value;
