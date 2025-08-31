@@ -108,7 +108,11 @@ async def backfill(
     end_ms = int(end_dt.timestamp() * 1000)
     start_ms = int(start_dt.timestamp() * 1000)
 
-    step_ms = ccxt.Exchange.parse_timeframe(timeframe) * 1000
+    # Determine the interval duration in milliseconds according to the
+    # requested timeframe. ``ccxt.Exchange.parse_timeframe`` returns the
+    # duration in seconds, so multiply by 1000 and cast to ``int`` to obtain
+    # a precise millisecond step for advancing the cursor.
+    step_ms = int(ccxt.Exchange.parse_timeframe(timeframe) * 1000)
 
     try:
         for symbol in symbols:
