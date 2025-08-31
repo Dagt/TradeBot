@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS market.trades (
   px numeric NOT NULL,
   qty numeric NOT NULL,
   side text,        -- buy/sell if available
-  trade_id text
+  trade_id text,
+  UNIQUE (ts, exchange, symbol)
 );
 SELECT create_hypertable('market.trades', by_range('ts'), if_not_exists => TRUE);
 
@@ -56,7 +57,8 @@ CREATE TABLE IF NOT EXISTS market.bars (
   timeframe text NOT NULL,   -- e.g. 1s,3m,5m
   exchange text NOT NULL,
   symbol text NOT NULL,
-  o numeric, h numeric, l numeric, c numeric, v numeric
+  o numeric, h numeric, l numeric, c numeric, v numeric,
+  UNIQUE (ts, timeframe, exchange, symbol)
 );
 SELECT create_hypertable('market.bars', by_range('ts'), if_not_exists => TRUE);
 
