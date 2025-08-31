@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     maker_fee_bps: float = 7.5
     passive_rebate_bps: float = 0.0
 
+    # Limit order execution
+    limit_offset_ticks: float = 1.0
+    limit_expiry_sec: float = 1.0
+    requote_attempts: int = 5
+
     # Risk manager defaults
     risk_pct: float = 0.0
     max_symbol_exposure: float | None = None

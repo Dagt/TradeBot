@@ -23,6 +23,7 @@ import pandas as pd
 
 from .runner import BarAggregator
 from ..config import settings
+from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
 from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
@@ -30,6 +31,7 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
 from ..risk.service import RiskService
 from ..execution.paper import PaperAdapter
+from ..broker.broker import Broker
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
@@ -106,6 +108,8 @@ async def _run_symbol(
         exec_kwargs["leverage"] = leverage
     ws = ws_cls()
     exec_adapter = exec_cls(**exec_kwargs)
+    cfg_app = load_config()
+    tick_size = float(cfg_app.exchange_configs.get(venue, {}).get("tick_size", 0.0))
     agg = BarAggregator()
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
@@ -132,6 +136,9 @@ async def _run_symbol(
     )
     corr = CorrelationService()
     broker = PaperAdapter(fee_bps=1.5)
+    exec_broker = Broker(exec_adapter if not dry_run else broker)
+    limit_offset = settings.limit_offset_ticks * tick_size
+    tif = f"GTD:{settings.limit_expiry_sec}|PO"
     risk = RiskService(
         risk_core,
         guard,
@@ -170,15 +177,24 @@ async def _run_symbol(
             decision = risk.manage_position(trade)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
-                if dry_run:
-                    resp = await broker.place_order(
-                        cfg.symbol, close_side, "market", abs(pos_qty)
-                    )
-                else:
-                    resp = await exec_adapter.place_order(
-                        cfg.symbol, close_side, "market", abs(pos_qty), mark_price=px
-                    )
-                risk.on_fill(cfg.symbol, close_side, abs(pos_qty), venue=venue if not dry_run else "paper")
+                price = (
+                    px - limit_offset if close_side == "buy" else px + limit_offset
+                )
+                resp = await exec_broker.place_limit(
+                    cfg.symbol,
+                    close_side,
+                    price,
+                    abs(pos_qty),
+                    tif=tif,
+                    on_partial_fill=lambda *_: "re_quote",
+                    on_order_expiry=lambda *_: "re_quote",
+                )
+                risk.on_fill(
+                    cfg.symbol,
+                    close_side,
+                    abs(pos_qty),
+                    venue=venue if not dry_run else "paper",
+                )
                 halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
                 if halted:
                     log.error("[HALT] motivo=%s", reason)
@@ -188,14 +204,27 @@ async def _run_symbol(
                 target = risk.calc_position_size(trade.get("strength", 1.0), px)
                 delta_qty = target - abs(pos_qty)
                 if abs(delta_qty) > risk.rm.min_order_qty:
-                    side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
-                    if dry_run:
-                        resp = await broker.place_order(cfg.symbol, side, "market", abs(delta_qty))
-                    else:
-                        resp = await exec_adapter.place_order(
-                            cfg.symbol, side, "market", abs(delta_qty), mark_price=px
-                        )
-                    risk.on_fill(cfg.symbol, side, abs(delta_qty), venue=venue if not dry_run else "paper")
+                    side = trade["side"] if delta_qty > 0 else (
+                        "sell" if trade["side"] == "buy" else "buy"
+                    )
+                    price = (
+                        px - limit_offset if side == "buy" else px + limit_offset
+                    )
+                    resp = await exec_broker.place_limit(
+                        cfg.symbol,
+                        side,
+                        price,
+                        abs(delta_qty),
+                        tif=tif,
+                        on_partial_fill=lambda *_: "re_quote",
+                        on_order_expiry=lambda *_: "re_quote",
+                    )
+                    risk.on_fill(
+                        cfg.symbol,
+                        side,
+                        abs(delta_qty),
+                        venue=venue if not dry_run else "paper",
+                    )
                     halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
                     if halted:
                         log.error("[HALT] motivo=%s", reason)
@@ -224,23 +253,22 @@ async def _run_symbol(
             continue
         side = "buy" if delta > 0 else "sell"
         qty = abs(delta)
-        if dry_run:
-            resp = await broker.place_order(
-                cfg.symbol,
-                side,
-                "market",
-                qty,
-            )
-        else:
-            resp = await exec_adapter.place_order(
-                cfg.symbol,
-                side,
-                "market",
-                qty,
-                mark_price=closed.c,
-            )
+        price = (
+            closed.c - limit_offset if side == "buy" else closed.c + limit_offset
+        )
+        resp = await exec_broker.place_limit(
+            cfg.symbol,
+            side,
+            price,
+            qty,
+            tif=tif,
+            on_partial_fill=lambda *_: "re_quote",
+            on_order_expiry=lambda *_: "re_quote",
+        )
         log.info("LIVE FILL %s", resp)
-        risk.on_fill(cfg.symbol, side, qty, venue=venue if not dry_run else "paper")
+        risk.on_fill(
+            cfg.symbol, side, qty, venue=venue if not dry_run else "paper"
+        )
 
 
 async def run_live_real(
