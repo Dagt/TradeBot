@@ -277,6 +277,9 @@ class RiskService:
 
         Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
         based solely on ``signal_strength`` and ``price``.
+        ``pending_qty`` represents quantity already reserved by open orders and
+        is subtracted from ``delta`` so subsequent orders account for any
+        outstanding amounts.
         """
 
         # refresh caps based on current account cash

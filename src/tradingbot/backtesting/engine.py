@@ -855,6 +855,7 @@ class EventDrivenBacktestEngine:
                         sig.side,
                         place_price,
                         strength=sig.strength,
+                        pending_qty=svc.account.open_orders.get(symbol, 0.0),
                     )
                     if not allowed or abs(delta) < self.min_order_qty:
                         continue
