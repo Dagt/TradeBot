@@ -25,6 +25,7 @@ class Signal:
     side: str  # 'buy' | 'sell' | 'flat'
     strength: float = 1.0  # fraction of the base equity allocation
     reduce_only: bool = False
+    limit_price: float | None = None
 
 class Strategy(ABC):
     name: str
