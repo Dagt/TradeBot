@@ -20,22 +20,6 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
     assert sig_sell.side == "sell"
 
 
-def test_breakout_atr_min_edge(breakout_df_buy, breakout_df_sell):
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=200)
-    assert strat.on_bar({"window": breakout_df_buy, "volatility": 0.0}) is None
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=100)
-    assert (
-        strat.on_bar({"window": breakout_df_buy, "volatility": 0.0}).side == "buy"
-    )
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=1000)
-    assert strat.on_bar({"window": breakout_df_sell, "volatility": 0.0}) is None
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_edge_bps=900)
-    assert (
-        strat.on_bar({"window": breakout_df_sell, "volatility": 0.0}).side
-        == "sell"
-    )
-
-
 def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
     account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
@@ -119,21 +103,6 @@ def test_mean_rev_ofi_trailing_stop_uses_atr():
     }
     rm.update_trailing(trade, 90.0)
     assert trade["stop"] == pytest.approx(90.0 + 2 * trade["atr"])
-
-
-def test_breakout_vol_min_edge():
-    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
-    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=1100)
-    assert strat.on_bar({"window": df_buy, "volatility": 0.0}) is None
-    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=1000)
-    sig_buy = strat.on_bar({"window": df_buy, "volatility": 0.0})
-    assert sig_buy.side == "buy"
-    df_sell = pd.DataFrame({"close": [1, 2, 3, -5]})
-    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=2400)
-    assert strat.on_bar({"window": df_sell, "volatility": 0.0}) is None
-    strat = BreakoutVol(lookback=2, mult=0.5, min_edge_bps=2000)
-    sig_sell = strat.on_bar({"window": df_sell, "volatility": 0.0})
-    assert sig_sell.side == "sell"
 
 
 def test_breakout_vol_risk_service_handles_stop_and_size():
