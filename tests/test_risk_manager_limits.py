@@ -77,6 +77,7 @@ def test_risk_service_stop_loss_triggers_close():
         atr_mult=2.0,
         risk_pct=0.05,
     )
+    svc.account.cash = 100.0
     svc.rm.add_fill("buy", 1.0, price=100.0)
     svc.update_position("X", "BTC", 1.0, entry_price=100.0)
     allowed, reason, delta = svc.check_order("BTC", "buy", 94.0)

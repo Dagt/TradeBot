@@ -220,8 +220,8 @@ class RiskService:
         trade.update({"side": side, "qty": abs(qty)})
         if entry_price is not None:
             trade["entry_price"] = entry_price
-            trade.setdefault("stop", entry_price)
-        trade.setdefault("stage", 0)
+            trade.setdefault("stop", self.initial_stop(entry_price, side))
+        trade["stage"] = 0
         self.trades[symbol] = trade
 
     def aggregate_positions(self) -> Dict[str, float]:

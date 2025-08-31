@@ -56,20 +56,44 @@ def test_pyramiding_and_scaling(risk_service):
     rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
-    delta = rs.calc_position_size(1.0, price)
-    rs.rm.add_fill("buy", delta, price)
+    target = rs.calc_position_size(1.0, price)
+    rs.rm.add_fill("buy", target - rs.rm.pos.qty, price)
     rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty)
 
-    delta = rs.calc_position_size(0.5, price)
-    rs.rm.add_fill("sell", abs(delta), price)
+    target = rs.calc_position_size(0.5, price)
+    rs.rm.add_fill("sell", rs.rm.pos.qty - target, price)
     rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
-    delta = rs.calc_position_size(0.0, price)
-    rs.rm.add_fill("sell", abs(delta), price)
+    target = rs.calc_position_size(0.0, price)
+    rs.rm.add_fill("sell", rs.rm.pos.qty - target, price)
     rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(0.0)
+
+
+def test_update_position_sets_initial_stop_and_trailing():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(guard, account=Account(float("inf")), risk_pct=0.02, risk_per_trade=1.0)
+    price = 100.0
+    rs.update_position("X", "BTC", 1.0, entry_price=price)
+    trade = rs.get_trade("BTC")
+    assert trade["stop"] == pytest.approx(98.0)
+    assert trade["stage"] == 0
+
+    trade["atr"] = 5.0
+    rs.update_trailing(trade, 101.0)
+    assert trade["stop"] == pytest.approx(99.0)
+    assert trade["stage"] == 1
+    rs.update_trailing(trade, 102.0)
+    assert trade["stop"] == pytest.approx(100.0)
+    assert trade["stage"] == 2
+    rs.update_trailing(trade, 103.0)
+    assert trade["stop"] == pytest.approx(101.0)
+    assert trade["stage"] == 3
+    rs.update_trailing(trade, 112.0)
+    assert trade["stop"] == pytest.approx(102.0)
+    assert trade["stage"] >= 4
 
 
 def test_daily_loss_limit_via_guard():
