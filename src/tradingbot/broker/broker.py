@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from typing import Callable, Optional
 
 from ..config import settings
@@ -52,10 +51,19 @@ class Broker:
             replace the remaining quantity after the given number of seconds.
         on_partial_fill: callable, optional
             Callback executed when an order is partially filled. Should return
-            ``"re_quote"`` to place the remaining quantity again.
+            ``"re_quote"`` to place the remaining quantity again or ``"taker"``
+            to immediately execute the remainder as a market order.
         on_order_expiry: callable, optional
             Callback executed when an order expires (``GTD``). Should return
-            ``"re_quote"`` to place the remaining quantity again.
+            ``"re_quote"`` to place the remaining quantity again or ``"taker"``
+            to fall back to a market order.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys ``status``, ``filled_qty``, ``pending_qty``,
+            ``order_id`` and ``price`` describing the final state of the order
+            or fallback order.
         """
 
         time_in_force = "GTC"
@@ -75,7 +83,6 @@ class Broker:
                     expiry = None
 
         filled = 0.0
-        total_time = 0.0
         remaining = qty
         attempts = 0
         max_attempts = 5
@@ -93,7 +100,6 @@ class Broker:
 
         while remaining > 0 and attempts < max_attempts:
             attempts += 1
-            start = datetime.utcnow()
             res = await self.adapter.place_order(
                 symbol,
                 side,
@@ -109,8 +115,6 @@ class Broker:
             filled += qty_filled
             remaining = max(remaining - qty_filled, 0.0)
             order.pending_qty = remaining
-            end = datetime.utcnow()
-            total_time += (end - start).total_seconds()
             res.setdefault("filled_qty", qty_filled)
             res.setdefault("pending_qty", remaining)
             last_res = res
@@ -125,12 +129,27 @@ class Broker:
                 action = on_partial_fill(order, res) if on_partial_fill else None
                 if action in {"re_quote", "requote", "re-quote"}:
                     continue
+                if action == "taker":
+                    mkt_res = await self.adapter.place_order(
+                        symbol, side, "market", remaining, None
+                    )
+                    mkt_qty = float(
+                        mkt_res.get("qty")
+                        or mkt_res.get("filled")
+                        or mkt_res.get("filled_qty")
+                        or 0.0
+                    )
+                    filled += mkt_qty
+                    remaining = max(remaining - mkt_qty, 0.0)
+                    order.pending_qty = remaining
+                    mkt_res.setdefault("filled_qty", mkt_qty)
+                    mkt_res.setdefault("pending_qty", remaining)
+                    last_res = mkt_res
                 break
 
             # Handle expiry/re-quote
             if expiry is not None and status not in {"canceled", "rejected"}:
                 await asyncio.sleep(expiry)
-                total_time += expiry
                 try:
                     await self.adapter.cancel_order(res.get("order_id"), symbol)
                 except Exception:
@@ -138,12 +157,31 @@ class Broker:
                 action = on_order_expiry(order, res) if on_order_expiry else "re_quote"
                 if action in {"re_quote", "requote", "re-quote"}:
                     continue
+                if action == "taker" and remaining > 0:
+                    mkt_res = await self.adapter.place_order(
+                        symbol, side, "market", remaining, None
+                    )
+                    mkt_qty = float(
+                        mkt_res.get("qty")
+                        or mkt_res.get("filled")
+                        or mkt_res.get("filled_qty")
+                        or 0.0
+                    )
+                    filled += mkt_qty
+                    remaining = max(remaining - mkt_qty, 0.0)
+                    order.pending_qty = remaining
+                    mkt_res.setdefault("filled_qty", mkt_qty)
+                    mkt_res.setdefault("pending_qty", remaining)
+                    last_res = mkt_res
                 break
 
             # Nothing else to do (no expiry and not fully filled)
             break
 
-        last_res.setdefault("filled_qty", filled)
-        last_res.setdefault("time_in_book", total_time)
-        last_res.setdefault("pending_qty", remaining)
-        return last_res
+        return {
+            "status": last_res.get("status"),
+            "filled_qty": filled,
+            "pending_qty": remaining,
+            "order_id": last_res.get("order_id"),
+            "price": last_res.get("price", price),
+        }
