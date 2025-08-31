@@ -67,7 +67,6 @@ tests/test_risk_daily_guard.py
 tests/test_risk_manager_extra.py
 tests/test_risk_manager_limits.py
 tests/test_risk_service_correlation.py
-tests/test_risk_vol_sizing.py
 tests/test_router_orders.py
 tests/test_secrets_manager.py
 tests/test_smoke.py
