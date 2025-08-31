@@ -372,6 +372,12 @@ class EventDrivenBacktestEngine:
 
         cash = self.initial_equity
         equity = cash
+
+        def sync_cash() -> None:
+            for svc in self.risk.values():
+                svc.account.cash = cash
+
+        sync_cash()
         collect_fills = bool(fills_csv or self.verbose_fills)
         fills: List[tuple] = [] if collect_fills else []
         order_queue: List[Order] = []
@@ -670,6 +676,7 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee_cost
                 else:
                     cash += trade_value - fee_cost
+                sync_cash()
                 prev_qty = svc.account.current_exposure(order.symbol)[0]
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
@@ -814,6 +821,7 @@ class EventDrivenBacktestEngine:
                         cash += trade_value - fee_cost
                     else:
                         cash -= trade_value + fee_cost
+                    sync_cash()
                     prev_qty = svc.account.current_exposure(symbol)[0]
                     svc.on_fill(symbol, side, exit_qty, exit_price)
                     new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
@@ -894,8 +902,6 @@ class EventDrivenBacktestEngine:
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
-                    equity_for_order = max(equity, 1.0)
-                    svc.account.cash = equity_for_order
                     if trade:
                         decision = svc.manage_position(trade, sig)
                         if decision == "close":
@@ -1018,6 +1024,7 @@ class EventDrivenBacktestEngine:
                     funding_cash = pos * price * rate
                     cash -= funding_cash
                     funding_total += funding_cash
+                    sync_cash()
 
             # Re-check risk limits after funding adjustments
             for (strat_name, symbol), svc in self.risk.items():
@@ -1108,6 +1115,7 @@ class EventDrivenBacktestEngine:
                     cash += trade_value - fee_cost
                 else:
                     cash -= trade_value + fee_cost
+                sync_cash()
                 fill_count += 1
                 if collect_fills:
                     timestamp = (
