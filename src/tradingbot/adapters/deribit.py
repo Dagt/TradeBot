@@ -41,7 +41,7 @@ class DeribitAdapter(ExchangeAdapter):
     """
 
     name = "deribit_futures"
-    supported_kinds = ["trades", "funding"]  # ``open_interest`` no disponible
+    supported_kinds = ["trades", "funding", "bars"]  # ``open_interest`` no disponible
 
     # Deribit listaba originalmente únicamente perpetuos de BTC y ETH pero ha
     # ampliado su oferta con varios altcoins.  Este mapa traduce símbolos
