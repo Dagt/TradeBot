@@ -331,7 +331,6 @@ class EventDrivenBacktestEngine:
             if strat_cls is None:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
-            self.strategies[key] = strat_cls()
             allow_short = self.exchange_mode.get(exchange, "perp") != "spot"
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             account = CoreAccount(float("inf"), cash=self.initial_equity)
@@ -345,6 +344,7 @@ class EventDrivenBacktestEngine:
             svc.rm.min_order_qty = self.min_order_qty
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
+            self.strategies[key] = strat_cls(risk_service=svc)
 
         # Internal flag to avoid repeated on_bar calls per bar index
         self._last_on_bar_i: int = -1
