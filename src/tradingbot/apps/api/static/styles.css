@@ -179,7 +179,6 @@ nav a:hover{
 }
 
 /* === Switches de opciones === */
-#field-verbose-fills,
 #field-toggle-params {
   display: flex;
   align-items: center;
@@ -189,7 +188,6 @@ nav a:hover{
   color: var(--text);
 }
 
-#field-verbose-fills .switch,
 #field-toggle-params .switch {
   margin-left: 6px;
 }
