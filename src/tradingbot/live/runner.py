@@ -16,7 +16,6 @@ from ..risk.manager import RiskManager, load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
-from ..risk.oco import OcoBook, load_active_oco
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -133,15 +132,12 @@ async def run_live_binance(
         risk_pct=risk_pct,
     )
     guard.refresh_usd_caps(broker.equity({}))
-    oco_book = OcoBook()
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)
         for sym, data in pos_map.items():
             risk.update_position(
                 guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
             )
-        oco_items = load_active_oco(pg_engine, venue=guard.cfg.venue, symbols=[symbol])
-        oco_book.preload(oco_items)
     if persist_pg and not _CAN_PG:
         log.warning("Persistencia Timescale no disponible (sqlalchemy/psycopg2 no cargados).")
 

@@ -15,7 +15,6 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
 from ..risk.service import RiskService
 from ..execution.paper import PaperAdapter
-from ..risk.oco import OcoBook, load_active_oco
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
@@ -116,16 +115,12 @@ async def _run_symbol(
     except Exception:
         guard.refresh_usd_caps(0.0)
     engine = get_engine() if _CAN_PG else None
-    oco_book = OcoBook()
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
             risk.update_position(
                 guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
             )
-        oco_book.preload(
-            load_active_oco(engine, venue=guard.cfg.venue, symbols=[cfg.symbol])
-        )
 
     async for t in ws.stream_trades(cfg.symbol):
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)

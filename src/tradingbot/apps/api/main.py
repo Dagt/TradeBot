@@ -370,18 +370,6 @@ def pnl_intraday(
     net = sum(p.get("net", 0.0) for p in points)
     return {"venue": venue, "symbol": symbol, "net": net, "points": points}
 
-@app.get("/oco/active")
-def oco_active(venue: str, symbols: str):
-    """
-    symbols: CSV "BTC/USDT,ETH/USDT"
-    """
-    if not _CAN_PG:
-        return {}
-    from ...storage.timescale import load_active_oco_by_symbols
-    lst = [normalize_symbol(s.strip()) for s in symbols.split(",") if s.strip()]
-    return load_active_oco_by_symbols(_ENGINE, venue=venue, symbols=lst)
-
-
 # --- Strategy control endpoints -------------------------------------------------
 _strategies_state: dict[str, str] = {}
 _strategy_params: dict[str, dict] = {}
