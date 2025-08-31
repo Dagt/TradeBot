@@ -139,7 +139,7 @@ async def run_live_binance(
         account=broker.account,
         risk_pct=risk_pct,
     )
-    risk.rm.allow_short = False
+    risk.allow_short = False
     guard.refresh_usd_caps(broker.equity({}))
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)

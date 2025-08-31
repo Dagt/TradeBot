@@ -115,7 +115,7 @@ async def _run_symbol(
         account=broker.account,
         risk_pct=cfg.risk_pct,
     )
-    risk.rm.allow_short = market != "spot"
+    risk.allow_short = market != "spot"
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     try:
