@@ -442,6 +442,7 @@ class EventDrivenBacktestEngine:
                     trade = svc.get_trade(sym)
                     if trade and abs(pos_qty) > self.min_order_qty:
                         svc.update_trailing(trade, price)
+                        trade["current_price"] = price
                         decision = svc.manage_position(trade)
                         if decision in {"scale_in", "scale_out"}:
                             target = svc.calc_position_size(
@@ -907,6 +908,7 @@ class EventDrivenBacktestEngine:
                     if equity < 0:
                         continue
                     if trade:
+                        trade["current_price"] = place_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
                         if decision == "close":

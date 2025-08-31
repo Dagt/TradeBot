@@ -3,7 +3,6 @@ import pytest
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.strategies import STRATEGIES
-from tradingbot.risk.service import RiskService
 
 
 def test_stop_triggers_close(monkeypatch):
@@ -27,25 +26,19 @@ def test_stop_triggers_close(monkeypatch):
     engine = EventDrivenBacktestEngine(
         {"SYM": data},
         [("noop", "SYM")],
-        latency=1,
+        latency=0,
         window=1,
+        verbose_fills=True,
     )
 
     svc = engine.risk[("noop", "SYM")]
     svc.update_position("default", "SYM", 1.0, entry_price=100.0)
     trade = svc.get_trade("SYM")
     trade["stop"] = 95.0
-    trade["current_price"] = 100.0
-
-    orig_update_trailing = RiskService.update_trailing
-
-    def patched_update_trailing(self, trade, current_price, fees_slip=0.0):
-        trade["current_price"] = current_price
-        return orig_update_trailing(self, trade, current_price, fees_slip)
-
-    monkeypatch.setattr(RiskService, "update_trailing", patched_update_trailing)
     monkeypatch.setattr(svc.rm, "check_limits", lambda price: None)
 
     res = engine.run()
     assert res["orders"][0]["side"] == "sell"
     assert res["orders"][0]["qty"] == pytest.approx(1.0)
+    assert len(res["fills"]) == 1
+    assert res["fills"][0][0] == 1
