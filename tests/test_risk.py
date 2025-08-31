@@ -96,6 +96,35 @@ def test_update_position_sets_initial_stop_and_trailing():
     assert trade["stage"] >= 4
 
 
+@pytest.mark.parametrize("qty", [1.0, -1.0])
+def test_update_position_uses_risk_pct_for_stop(qty):
+    """Initial stop should be placed at ``risk_pct`` distance from entry."""
+    risk_pct = 0.02
+    price = 100.0
+    expected = price * (1 - risk_pct) if qty > 0 else price * (1 + risk_pct)
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(
+        guard, account=Account(float("inf")), risk_pct=risk_pct, risk_per_trade=1.0
+    )
+    rs.update_position("X", "BTC", qty, entry_price=price)
+    trade = rs.get_trade("BTC")
+    assert trade["stop"] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_on_fill_sets_initial_stop(side):
+    risk_pct = 0.02
+    price = 100.0
+    expected = price * (1 - risk_pct) if side == "buy" else price * (1 + risk_pct)
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(
+        guard, account=Account(float("inf")), risk_pct=risk_pct, risk_per_trade=1.0
+    )
+    rs.on_fill("BTC", side, 1.0, price=price, venue="X")
+    trade = rs.get_trade("BTC")
+    assert trade["stop"] == pytest.approx(expected)
+
+
 def test_daily_loss_limit_via_guard():
     from datetime import datetime, timezone
     from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
