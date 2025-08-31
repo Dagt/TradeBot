@@ -2,7 +2,8 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
-from tradingbot.risk.manager import RiskManager, load_positions
+from tradingbot.core import Account
+from tradingbot.risk.manager import load_positions
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 
@@ -17,10 +18,16 @@ def test_rehydrate_state():
         conn.execute(text('CREATE TABLE "market.positions" (venue TEXT, symbol TEXT, qty REAL, avg_price REAL, realized_pnl REAL, fees_paid REAL);'))
         conn.execute(text('INSERT INTO "market.positions" (venue, symbol, qty, avg_price, realized_pnl, fees_paid) VALUES ("paper", "BTCUSDT", 1.5, 10000, 0, 0);'))
 
-    rm = RiskManager()
+    account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="paper"))
     guard.refresh_usd_caps(1e6)
-    risk = RiskService(rm, guard, risk_pct=0.0)
+    risk = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=0.0,
+    )
 
     # Rehydrate
     pos_map = load_positions(engine, "paper")

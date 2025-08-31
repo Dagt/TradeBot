@@ -1,11 +1,11 @@
 import pytest
 
+from tradingbot.core import Account
 from tradingbot.live.runner_cross_exchange import run_cross_exchange
 from tradingbot.strategies.cross_exchange_arbitrage import (
     CrossArbConfig,
     run_cross_exchange_arbitrage,
 )
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.service import RiskService
 
@@ -76,9 +76,13 @@ async def test_cross_exchange_updates_risk_positions(monkeypatch):
     spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
     cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    account = Account(float("inf"))
     risk = RiskService(
-        RiskManager(),
-        PortfolioGuard(GuardConfig(venue="test")),
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
         risk_pct=0.0,
     )
     monkeypatch.setattr(

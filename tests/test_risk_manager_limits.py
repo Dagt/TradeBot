@@ -17,6 +17,7 @@ from tradingbot.risk.service import RiskService
 from tradingbot.storage import timescale
 from tradingbot.utils.metrics import KILL_SWITCH_ACTIVE
 from tradingbot.risk.limits import RiskLimits
+from tradingbot.core import Account
 
 
 def test_stop_loss_sets_reason():
@@ -92,7 +93,16 @@ def test_risk_service_updates_and_persists(monkeypatch):
     monkeypatch.setattr(
         timescale, "insert_risk_event", lambda engine, **kw: events.append(kw)
     )
-    svc = RiskService(guard, daily, engine=object(), risk_pct=1.0)
+    account = Account(float("inf"))
+    svc = RiskService(
+        guard,
+        daily,
+        engine=object(),
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=1.0,
+    )
     svc.account.cash = 100.0
     svc.rm.kill_switch("manual")
     allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, strength=1.0)
@@ -102,7 +112,14 @@ def test_risk_service_updates_and_persists(monkeypatch):
 
 def test_risk_service_stop_loss_triggers_close():
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(guard, risk_pct=0.05)
+    account = Account(float("inf"))
+    svc = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=0.05,
+    )
     svc.rm.set_position(1.0)
     svc.update_position("X", "BTC", 1.0)
     svc.rm.check_limits(100.0)

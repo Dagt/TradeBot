@@ -105,15 +105,18 @@ def test_sell_order_exceeding_position_triggers_assert(monkeypatch):
         risk_pct=1.0,
     )
     svc = engine.risk[("sell_once", "SYM")]
-    svc.rm.set_position(1.0)
-    engine.risk[("sell_once", "SYM")] = CheatingRiskService(
-        svc.rm,
+    cheat = CheatingRiskService(
         svc.guard,
         svc.daily,
         svc.corr,
         engine=engine,
+        account=svc.account,
+        risk_per_trade=svc.core.risk_per_trade,
+        atr_mult=svc.core.atr_mult,
         risk_pct=svc.core.risk_pct,
     )
+    cheat.rm.set_position(1.0)
+    engine.risk[("sell_once", "SYM")] = cheat
     with pytest.raises(AssertionError, match="position went negative"):
         engine.run()
 

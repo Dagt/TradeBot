@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from tradingbot.risk.manager import RiskManager
+from tradingbot.core import Account
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.correlation_service import CorrelationService
 from tradingbot.risk.service import RiskService
@@ -26,13 +26,20 @@ async def test_risk_service_correlation_limits_and_sizing():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(bus=bus)
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=50.0, per_symbol_cap_pct=50.0, venue="test")
     )
     guard.refresh_usd_caps(200.0)
     corr = CorrelationService()
-    svc = RiskService(guard, corr_service=corr, risk_pct=1.0)
+    account = Account(float("inf"))
+    svc = RiskService(
+        guard,
+        corr_service=corr,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=1.0,
+    )
     svc.rm.bus = bus
     svc.account.cash = 1000.0
 
@@ -55,11 +62,18 @@ async def test_risk_service_covariance_limit():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    rm = RiskManager(bus=bus)
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=50.0, per_symbol_cap_pct=50.0, venue="test")
     )
-    svc = RiskService(rm, guard, risk_pct=1.0)
+    account = Account(float("inf"))
+    svc = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=1.0,
+    )
+    svc.rm.bus = bus
     cov_df = pd.DataFrame(
         [[0.04, 0.039], [0.039, 0.04]], index=["AAA", "BBB"], columns=["AAA", "BBB"]
     )

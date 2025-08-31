@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
+from tradingbot.core import Account
 from tradingbot.data.features import book_vacuum, liquidity_gap
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 from tradingbot.strategies.liquidity_events import LiquidityEvents
@@ -66,9 +66,15 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
         "bid_px": [[100, 99], [100, 99]],
         "ask_px": [[101, 102], [101, 102]],
     })
-    rm = RiskManager(risk_pct=0.02)
+    account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    svc = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=0.02,
+    )
     svc.account.update_cash(1000.0)
     strat = LiquidityEvents(
         vacuum_threshold=0.5,

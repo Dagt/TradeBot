@@ -2,7 +2,7 @@ import numpy as np
 
 import pytest
 
-from tradingbot.risk.manager import RiskManager
+from tradingbot.core import Account
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 from tradingbot.strategies.ml_models import MLStrategy
@@ -35,9 +35,15 @@ def test_ml_strategy_margin_and_entry():
 
 def test_ml_strategy_risk_service_handles_stop_and_size():
     stub = StubModel(0.7)
-    rm = RiskManager(risk_pct=0.02)
+    account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    svc = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.01,
+        atr_mult=2.0,
+        risk_pct=0.02,
+    )
     svc.account.update_cash(1000.0)
     strat = MLStrategy(model=stub, margin=0.1, risk_service=svc)
     strat.scaler.fit([[0.0]])
