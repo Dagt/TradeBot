@@ -372,10 +372,6 @@ function updateBtFields(){
   document.getElementById('bt-venue').style.display=mode==='db'?'':'none';
   document.getElementById('field-start').style.display=mode==='db'?'':'none';
   document.getElementById('field-end').style.display=mode==='db'?'':'none';
-  const showRisk = mode!=='walk';
-  ['field-risk-pct','field-fee-bps','field-slippage-bps'].forEach(id=>{
-    document.getElementById(id).style.display=showRisk?'':'none';
-  });
   document.getElementById('bt-strategy-params').style.display=(mode==='csv'||mode==='db')?'':'none';
 }
 
@@ -429,14 +425,12 @@ async function runBacktest(){
   if(capital && mode!=='walk'){
     cmd+=` --capital ${capital}`;
   }
-  if(mode!=='walk'){
-    const sl=document.getElementById('bt-risk-pct').value.trim();
-    if(sl) cmd+=` --risk-pct ${sl}`;
-    const fee=document.getElementById('bt-fee-bps').value.trim();
-    if(fee) cmd+=` --fee-bps ${fee}`;
-    const sb=document.getElementById('bt-slippage-bps').value.trim();
-    if(sb) cmd+=` --slippage-bps ${sb}`;
-  }
+  const sl=document.getElementById('bt-risk-pct').value.trim();
+  if(sl) cmd+=` --risk-pct ${sl}`;
+  const fee=document.getElementById('bt-fee-bps').value.trim();
+  if(fee) cmd+=` --fee-bps ${fee}`;
+  const sb=document.getElementById('bt-slippage-bps').value.trim();
+  if(sb) cmd+=` --slippage-bps ${sb}`;
   const stratCfg=document.getElementById('bt-strategy-config').value.trim();
   if(stratCfg) cmd+=` --config ${stratCfg}`;
   const paramEls=document.querySelectorAll('#bt-strategy-params input');
