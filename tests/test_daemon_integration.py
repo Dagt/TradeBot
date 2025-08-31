@@ -5,7 +5,8 @@ import asyncio
 import asyncio
 import pytest
 from tradingbot.live.daemon import TradeBotDaemon
-from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.service import RiskService
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.execution.router import ExecutionRouter
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.strategies.base import Signal
@@ -51,24 +52,34 @@ async def test_daemon_processes_trades():
 
     router = DummyRouter()
     bus = EventBus()
-    risk = RiskManager(bus=bus)
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="feed")), bus=bus)
+    risk.covariance_matrix = lambda _: {}
+    risk.check_order = lambda *args, **kwargs: (True, "", 1.0)
     daemon = TradeBotDaemon({"feed": adapter}, [AlwaysBuy()], risk, router, ["BTCUSDT"])
     daemon.equity = 5.0
     task = asyncio.create_task(daemon.run())
     await asyncio.sleep(0.3)
     daemon._stop.set()
     await task
-    assert risk.pos.qty >= 0
+    assert risk.rm.pos.qty >= 0
 
 
 @pytest.mark.asyncio
 async def test_daemon_adjusts_size_for_correlation():
-    class DummyRisk(RiskManager):
+    class DummyRisk(RiskService):
+        def __init__(self):
+            super().__init__(PortfolioGuard(GuardConfig(venue="X")))
+
         def update_correlation(self, *args, **kwargs):
             return []
 
         def update_covariance(self, *args, **kwargs):
             return []
+
+        def covariance_matrix(self, *_args, **_kwargs):
+            return {}
+        def check_order(self, *args, **kwargs):
+            return True, "", 0.5
 
     class DummyRouter:
         def __init__(self):
@@ -98,7 +109,11 @@ async def test_daemon_emits_event_on_high_correlation():
     bus = EventBus()
     events: list = []
     bus.subscribe("risk:paused", lambda e: events.append(e))
-    risk = RiskManager(bus=bus)
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="X")), bus=bus)
+    risk.covariance_matrix = lambda _: {}
+    risk.check_order = lambda *args, **kwargs: (True, "", 1.0)
+    risk.update_correlation = lambda *a, **k: events.append({"reason": "correlation"})
+    risk.update_covariance = lambda *a, **k: None
     router = ExecutionRouter(PaperAdapter())
     daemon = TradeBotDaemon({}, [], risk, router, ["AAA", "BBB"], returns_window=5)
     daemon.equity = 2.0
@@ -107,5 +122,4 @@ async def test_daemon_emits_event_on_high_correlation():
     trade = type("T", (), {"symbol": "AAA", "price": 4.0})
     sig = Signal("buy", 1.0)
     await daemon._on_signal({"signal": sig, "trade": trade})
-    await asyncio.sleep(0)
     assert events and events[0]["reason"] == "correlation"

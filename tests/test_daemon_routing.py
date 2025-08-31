@@ -5,7 +5,8 @@ import pytest
 from tradingbot.bus import EventBus
 from tradingbot.live.daemon import TradeBotDaemon
 from tradingbot.execution.router import ExecutionRouter
-from tradingbot.risk.manager import RiskManager
+from tradingbot.risk.service import RiskService
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 
 
 class DummyAdapter:
@@ -31,7 +32,7 @@ class DummyStrategy:
 @pytest.mark.asyncio
 async def test_daemon_routes_funding_and_basis():
     bus = EventBus()
-    risk = RiskManager(bus=bus)
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="d")), bus=bus)
     router = ExecutionRouter([])
     strat = DummyStrategy()
     daemon = TradeBotDaemon({"d": DummyAdapter()}, [strat], risk, router, symbols=["BTCUSDT"])

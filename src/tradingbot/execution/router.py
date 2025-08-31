@@ -42,7 +42,7 @@ class ExecutionRouter:
         adapters: Iterable,
         storage_engine=None,
         prefer: str | None = None,
-        risk: "RiskService | None" = None,
+        risk_service: "RiskService | None" = None,
         on_partial_fill=None,
         on_order_expiry=None,
     ):
@@ -68,7 +68,7 @@ class ExecutionRouter:
         self._engine = storage_engine
         self._prefer = prefer
         self._last_maker = False
-        self.risk = risk
+        self.risk_service = risk_service
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
 
@@ -158,7 +158,7 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
-        if self.risk is not None and not self.risk.rm.enabled:
+        if self.risk_service is not None and not self.risk_service.rm.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
             return {"status": "rejected", "reason": "risk_disabled"}
 
@@ -294,6 +294,20 @@ class ExecutionRouter:
                 order.pending_qty = res2.get("pending_qty", order.pending_qty)
                 return res2
             res.setdefault("venue", venue)
+            if self.risk_service is not None:
+                self.risk_service.account.update_open_order(
+                    order.symbol, float(res.get("pending_qty", 0.0))
+                )
+                if filled:
+                    book = self.risk_service.rm.positions_multi.get(venue, {})
+                    cur_qty = book.get(order.symbol, 0.0)
+                    delta = filled if order.side == "buy" else -filled
+                    self.risk_service.update_position(
+                        venue,
+                        order.symbol,
+                        cur_qty + delta,
+                        entry_price=res.get("price"),
+                    )
             return res
         if res.get("status") == "filled":
             fill_price = res.get("price")
@@ -364,12 +378,26 @@ class ExecutionRouter:
         # Propagate venue so downstream components can track positions per exchange
         res.setdefault("venue", venue)
         log.info(
-            "Order executed venue=%s oid=%s tid=%s reason=%s", 
+            "Order executed venue=%s oid=%s tid=%s reason=%s",
             venue,
             res.get("order_id"),
             res.get("trade_id"),
             res.get("reason"),
         )
+        if self.risk_service is not None:
+            filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
+            pending = float(res.get("pending_qty", 0.0))
+            self.risk_service.account.update_open_order(order.symbol, pending)
+            if filled:
+                book = self.risk_service.rm.positions_multi.get(venue, {})
+                cur_qty = book.get(order.symbol, 0.0)
+                delta = filled if order.side == "buy" else -filled
+                self.risk_service.update_position(
+                    venue,
+                    order.symbol,
+                    cur_qty + delta,
+                    entry_price=res.get("price"),
+                )
         return res
 
 
