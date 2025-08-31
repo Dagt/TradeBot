@@ -1314,6 +1314,12 @@ def walk_forward_cfg(
     fills_csv: str | None = typer.Option(
         None, "--fills-csv", help="Export fills to CSV"
     ),
+    risk_pct: float = typer.Option(
+        0.0,
+        "--risk-pct",
+        callback=_parse_risk_pct,
+        help="Risk manager loss percentage (0-1 or 0-100)",
+    ),
 ) -> None:
     """Run walk-forward optimization from a Hydra configuration."""
 
@@ -1363,6 +1369,7 @@ def walk_forward_cfg(
             exchange_configs=exchange_cfg,
             min_fill_qty=min_fill_qty,
             slippage=slippage,
+            risk_pct=risk_pct,
         )
 
         reports_dir = Path("reports")
