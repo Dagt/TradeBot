@@ -7,9 +7,10 @@ import uvicorn
 
 from .runner import BarAggregator
 from ..adapters.binance_ws import BinanceWSAdapter
-from ..execution.order_types import Order
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
+from ..broker.broker import Broker
+from ..config import settings
 from ..risk.service import load_positions
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
@@ -48,7 +49,6 @@ async def run_paper(
 
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
-    router = ExecutionRouter([broker])
 
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
     guard.refresh_usd_caps(1000.0)
@@ -74,9 +74,27 @@ async def run_paper(
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
 
+    router = ExecutionRouter(
+        [broker],
+        prefer="maker",
+        on_partial_fill=strat.on_partial_fill,
+        on_order_expiry=strat.on_order_expiry,
+    )
+    exec_broker = Broker(router)
+
     server = await _start_metrics(metrics_port)
 
     agg = BarAggregator()
+    tick = getattr(settings, "tick_size", 0.0)
+
+    def _limit_price(side: str) -> float:
+        book = getattr(broker.state, "order_book", {}).get(symbol, {})
+        bids = book.get("bids") or []
+        asks = book.get("asks") or []
+        last = broker.state.last_px.get(symbol, 0.0)
+        best_bid = bids[0][0] if bids else last
+        best_ask = asks[0][0] if asks else last
+        return (best_ask - tick) if side == "buy" else (best_bid + tick)
     try:
         async for t in adapter.stream_trades(symbol):
             ts = t.get("ts") or datetime.now(timezone.utc)
@@ -93,10 +111,16 @@ async def run_paper(
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"
                     prev_rpnl = broker.state.realized_pnl
-                    resp = await router.execute(
-                        Order(symbol=symbol, side=close_side, type_="market", qty=abs(pos_qty))
+                    price = _limit_price(close_side)
+                    resp = await exec_broker.place_limit(
+                        symbol,
+                        close_side,
+                        price,
+                        abs(pos_qty),
+                        on_partial_fill=strat.on_partial_fill,
+                        on_order_expiry=strat.on_order_expiry,
                     )
-                    filled_qty = float(resp.get("filled_qty", abs(pos_qty)))
+                    filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     risk.account.update_open_order(symbol, filled_qty + pending_qty)
                     risk.on_fill(symbol, close_side, filled_qty, venue="paper")
@@ -112,10 +136,16 @@ async def run_paper(
                     if abs(delta_qty) > risk.min_order_qty:
                         side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
                         prev_rpnl = broker.state.realized_pnl
-                        resp = await router.execute(
-                            Order(symbol=symbol, side=side, type_="market", qty=abs(delta_qty))
+                        price = _limit_price(side)
+                        resp = await exec_broker.place_limit(
+                            symbol,
+                            side,
+                            price,
+                            abs(delta_qty),
+                            on_partial_fill=strat.on_partial_fill,
+                            on_order_expiry=strat.on_order_expiry,
                         )
-                        filled_qty = float(resp.get("filled_qty", abs(delta_qty)))
+                        filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         risk.account.update_open_order(symbol, filled_qty + pending_qty)
                         risk.on_fill(symbol, side, filled_qty, venue="paper")
@@ -143,17 +173,20 @@ async def run_paper(
             if not allowed or abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
-            order = Order(
-                symbol=symbol,
-                side=side,
-                type_="market",
-                qty=abs(delta),
-                reduce_only=signal.reduce_only,
-            )
             prev_rpnl = broker.state.realized_pnl
-            resp = await router.execute(order)
-            filled_qty = float(resp.get("filled_qty", abs(delta)))
+            price = getattr(signal, "limit_price", None)
+            price = price if price is not None else _limit_price(side)
+            resp = await exec_broker.place_limit(
+                symbol,
+                side,
+                price,
+                abs(delta),
+                on_partial_fill=strat.on_partial_fill,
+                on_order_expiry=strat.on_order_expiry,
+            )
+            filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
+            risk.account.update_open_order(symbol, filled_qty + pending_qty)
             risk.on_fill(symbol, side, filled_qty, venue="paper")
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
