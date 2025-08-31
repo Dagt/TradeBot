@@ -66,7 +66,7 @@ from ..adapters import (
 )
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
-from tradingbot.core.symbols import normalize
+from tradingbot.core import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
 from ..exchanges import SUPPORTED_EXCHANGES
 
@@ -1217,6 +1217,7 @@ def backtest_db(
     from ..config.hydra_conf import load_config
 
     setup_logging()
+    symbol = normalize(symbol)
     log.info(
         "Iniciando backtest DB: %s %s %s–%s (%s)",
         venue,
