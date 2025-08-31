@@ -123,16 +123,8 @@ class SlippageModel:
         bar: Mapping[str, float] | pd.Series,
     ) -> float:
         if self.source == "bba":
-            bid = (
-                bar.get("bid")
-                or bar.get("bid_px")
-                or bar.get("bid_price")
-            )
-            ask = (
-                bar.get("ask")
-                or bar.get("ask_px")
-                or bar.get("ask_price")
-            )
+            bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
+            ask = bar.get("ask") or bar.get("ask_px") or bar.get("ask_price")
             if bid is not None and ask is not None:
                 bid = float(bid)
                 ask = float(ask)
@@ -153,7 +145,10 @@ class SlippageModel:
         elif {"bid_qty", "ask_qty"}.issubset(getattr(bar, "keys", lambda: [])()):
             ofi_val = float(
                 calc_ofi(
-                    pd.DataFrame([[bar["bid_qty"], bar["ask_qty"]]], columns=["bid_qty", "ask_qty"])
+                    pd.DataFrame(
+                        [[bar["bid_qty"], bar["ask_qty"]]],
+                        columns=["bid_qty", "ask_qty"],
+                    )
                 ).iloc[-1]
             )
         slip = spread / 2 + impact + self.ofi_impact * ofi_val + price * self.pct
@@ -231,8 +226,8 @@ class EventDrivenBacktestEngine:
         latency: int = 1,
         window: int = 120,
         slippage: SlippageModel | None = None,
-        fee_bps: float = 5.0,
-        slippage_bps: float = 1.0,
+        fee_bps: float = 10.0,
+        slippage_bps: float = 0.0,
         exchange_configs: Dict[str, Dict[str, float]] | None = None,
         use_l2: bool = False,
         partial_fills: bool = True,
@@ -252,7 +247,9 @@ class EventDrivenBacktestEngine:
         self.fee_bps = float(fee_bps)
         self.slippage_bps = float(slippage_bps)
         if self.slippage is None:
-            self.slippage = SlippageModel(pct=self.slippage_bps / 10000.0)
+            self.slippage = SlippageModel(
+                volume_impact=0.0, pct=self.slippage_bps / 10000.0
+            )
         else:
             self.slippage.pct = self.slippage_bps / 10000.0
         self.use_l2 = bool(use_l2)
@@ -289,11 +286,15 @@ class EventDrivenBacktestEngine:
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             maker_bps = float(cfg.get("maker_fee_bps", default_maker_bps))
-            taker_bps = float(cfg.get("taker_fee_bps", cfg.get("maker_fee_bps", default_taker_bps)))
+            taker_bps = float(
+                cfg.get("taker_fee_bps", cfg.get("maker_fee_bps", default_taker_bps))
+            )
             self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
-            self.exchange_min_fill_qty[exch] = float(cfg.get("min_fill_qty", self.min_fill_qty))
+            self.exchange_min_fill_qty[exch] = float(
+                cfg.get("min_fill_qty", self.min_fill_qty)
+            )
             market_type = cfg.get("market_type")
             if market_type is None:
                 if exch.endswith("_spot"):
@@ -435,20 +436,36 @@ class EventDrivenBacktestEngine:
                         svc.update_trailing(trade, price)
                         decision = svc.manage_position(trade)
                         if decision in {"scale_in", "scale_out"}:
-                            target = svc.calc_position_size(trade.get("strength", 1.0), price)
+                            target = svc.calc_position_size(
+                                trade.get("strength", 1.0), price
+                            )
                             delta_qty = target - abs(pos_qty)
                             if abs(delta_qty) > self.min_order_qty:
-                                side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                                side = (
+                                    trade["side"]
+                                    if delta_qty > 0
+                                    else ("sell" if trade["side"] == "buy" else "buy")
+                                )
                                 exchange = self.strategy_exchange[(strat, sym)]
-                                base_latency = self.exchange_latency.get(exchange, self.latency)
+                                base_latency = self.exchange_latency.get(
+                                    exchange, self.latency
+                                )
                                 delay = max(1, int(base_latency * self.stress.latency))
                                 exec_index = i + delay
                                 queue_pos = 0.0
                                 if self.use_l2:
-                                    vol_key = "ask_size" if side == "buy" else "bid_size"
-                                    depth = self.exchange_depth.get(exchange, self.default_depth)
+                                    vol_key = (
+                                        "ask_size" if side == "buy" else "bid_size"
+                                    )
+                                    depth = self.exchange_depth.get(
+                                        exchange, self.default_depth
+                                    )
                                     vol_arr = arrs.get(vol_key)
-                                    avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                                    avail = (
+                                        float(vol_arr[i])
+                                        if vol_arr is not None
+                                        else 0.0
+                                    )
                                     queue_pos = min(avail, depth)
                                 order_seq += 1
                                 order = Order(
@@ -480,12 +497,16 @@ class EventDrivenBacktestEngine:
                     continue
                 vol_key = "ask_size" if order.side == "buy" else "bid_size"
                 vol_arr = arrs.get(vol_key)
-                avail = float(vol_arr[i]) if vol_arr is not None else order.remaining_qty
+                avail = (
+                    float(vol_arr[i]) if vol_arr is not None else order.remaining_qty
+                )
                 if self.use_l2:
                     depth = self.exchange_depth.get(order.exchange, self.default_depth)
                     order.queue_pos = min(order.queue_pos + avail, depth)
                 if "bid" in arrs and "ask" in arrs:
-                    price = float(arrs["ask"][i] if order.side == "buy" else arrs["bid"][i])
+                    price = float(
+                        arrs["ask"][i] if order.side == "buy" else arrs["bid"][i]
+                    )
                 else:
                     price = float(arrs["close"][i])
 
@@ -531,12 +552,18 @@ class EventDrivenBacktestEngine:
 
                 if mode == "spot":
                     if order.side == "sell":
-                        avail_base = max(0.0, svc.account.current_exposure(order.symbol)[0])
+                        avail_base = max(
+                            0.0, svc.account.current_exposure(order.symbol)[0]
+                        )
                         fill_qty = min(fill_qty, avail_base)
                     else:
-                        fee_model_tmp = self.exchange_fees.get(order.exchange, self.default_fee)
+                        fee_model_tmp = self.exchange_fees.get(
+                            order.exchange, self.default_fee
+                        )
                         rate = (
-                            fee_model_tmp.maker_fee if order.post_only else fee_model_tmp.taker_fee
+                            fee_model_tmp.maker_fee
+                            if order.post_only
+                            else fee_model_tmp.taker_fee
                         )
                         max_affordable = cash / (price * (1 + rate))
                         fill_qty = min(fill_qty, max_affordable)
@@ -621,9 +648,13 @@ class EventDrivenBacktestEngine:
                             state["trail_pct"] = order.trailing_pct
                         if state.get("trail_pct") is not None:
                             if new_sign > 0:
-                                state["best_price"] = max(state.get("best_price", price), price)
+                                state["best_price"] = max(
+                                    state.get("best_price", price), price
+                                )
                             else:
-                                state["best_price"] = min(state.get("best_price", price), price)
+                                state["best_price"] = min(
+                                    state.get("best_price", price), price
+                                )
                 if mode == "spot":
                     if cash < -1e-9:
                         raise AssertionError(
@@ -646,7 +677,11 @@ class EventDrivenBacktestEngine:
                     arrs_s = data_arrays[sym_s]
                     sym_len_s = data_lengths[sym_s]
                     idx_px = i if i < sym_len_s else sym_len_s - 1
-                    mark = price if sym_s == order.symbol else float(arrs_s["close"][idx_px])
+                    mark = (
+                        price
+                        if sym_s == order.symbol
+                        else float(arrs_s["close"][idx_px])
+                    )
                     mtm_after += svc_s.account.current_exposure(sym_s)[0] * mark
                 equity_after = cash + mtm_after
 
@@ -743,11 +778,17 @@ class EventDrivenBacktestEngine:
                         arrs_s = data_arrays[sym_s]
                         sym_len_s = data_lengths[sym_s]
                         idx_px = i if i < sym_len_s else sym_len_s - 1
-                        mark = exit_price if sym_s == symbol else float(arrs_s["close"][idx_px])
+                        mark = (
+                            exit_price
+                            if sym_s == symbol
+                            else float(arrs_s["close"][idx_px])
+                        )
                         mtm_after += svc_s.account.current_exposure(sym_s)[0] * mark
                     equity_after = cash + mtm_after
                     if collect_fills:
-                        timestamp = arrs.get("timestamp")[i] if "timestamp" in arrs else i
+                        timestamp = (
+                            arrs.get("timestamp")[i] if "timestamp" in arrs else i
+                        )
                         fills.append(
                             (
                                 timestamp,
@@ -774,9 +815,7 @@ class EventDrivenBacktestEngine:
             )
             equity = cash + mtm
             if equity < 0:
-                log.warning(
-                    "Equity depleted at bar %d; stopping backtest", i
-                )
+                log.warning("Equity depleted at bar %d; stopping backtest", i)
                 equity_curve.append(equity)
                 last_index = i
                 break
@@ -931,9 +970,7 @@ class EventDrivenBacktestEngine:
             equity_curve.append(equity)
 
             if equity <= 0 and i > 0 and not order_queue:
-                log.warning(
-                    "Equity depleted at bar %d; stopping backtest", i
-                )
+                log.warning("Equity depleted at bar %d; stopping backtest", i)
                 last_index = i
                 break
 
@@ -948,10 +985,57 @@ class EventDrivenBacktestEngine:
                 arrs = data_arrays[symbol]
                 price_idx = min(last_index, data_lengths[symbol] - 1)
                 last_price = float(arrs["close"][price_idx])
-                cash += pos * last_price
+                qty = abs(pos)
+                side = "sell" if pos > 0 else "buy"
                 exchange = self.strategy_exchange[(strat_name, symbol)]
-                svc.update_position(exchange, symbol, 0.0)
-                svc.set_position(0.0)
+                fee_model = self.exchange_fees.get(exchange, self.default_fee)
+                trade_value = qty * last_price
+                fee_cost = fee_model.calculate(trade_value, maker=False)
+                prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                svc.on_fill(symbol, side, qty, last_price)
+                new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                slippage_pnl = 0.0
+                realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
+                realized_pnl_total += realized_pnl
+                svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
+                if side == "sell":
+                    cash += trade_value - fee_cost
+                else:
+                    cash -= trade_value + fee_cost
+                fill_count += 1
+                if collect_fills:
+                    timestamp = (
+                        arrs.get("timestamp")[price_idx]
+                        if "timestamp" in arrs
+                        else price_idx
+                    )
+                    mtm_after = sum(
+                        svc_s.account.current_exposure(sym_s)[0]
+                        * float(
+                            data_arrays[sym_s]["close"][
+                                min(last_index, data_lengths[sym_s] - 1)
+                            ]
+                        )
+                        for (strat_s, sym_s), svc_s in self.risk.items()
+                    )
+                    equity_after = cash + mtm_after
+                    fills.append(
+                        (
+                            timestamp,
+                            "liquidation",
+                            side,
+                            last_price,
+                            qty,
+                            strat_name,
+                            symbol,
+                            exchange,
+                            fee_cost,
+                            slippage_pnl,
+                            realized_pnl,
+                            realized_pnl_total,
+                            equity_after,
+                        )
+                    )
 
         equity = cash
         # Update final equity in the curve without duplicating the last value
@@ -1302,7 +1386,10 @@ def walk_forward_optimize(
 
             strat = strat_cls(**(best_params or {}))
             engine = EventDrivenBacktestEngine(
-                {symbol: test_df}, [(strategy_name, symbol)], latency=latency, window=window
+                {symbol: test_df},
+                [(strategy_name, symbol)],
+                latency=latency,
+                window=window,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             test_res = engine.run()
@@ -1323,13 +1410,17 @@ def walk_forward_optimize(
         return results
 
     if train_size is None or test_size is None:
-        raise ValueError("train_size and test_size must be provided when splits is None")
+        raise ValueError(
+            "train_size and test_size must be provided when splits is None"
+        )
 
     start = 0
     split = 0
     while start + train_size + test_size <= len(df):
         train_df = df.iloc[start : start + train_size].reset_index(drop=True)
-        test_df = df.iloc[start + train_size : start + train_size + test_size].reset_index(drop=True)
+        test_df = df.iloc[
+            start + train_size : start + train_size + test_size
+        ].reset_index(drop=True)
 
         best_params: Dict[str, Any] | None = None
         best_equity = -float("inf")
@@ -1337,7 +1428,10 @@ def walk_forward_optimize(
         for params in param_grid:
             strat = strat_cls(**params)
             engine = EventDrivenBacktestEngine(
-                {symbol: train_df}, [(strategy_name, symbol)], latency=latency, window=window
+                {symbol: train_df},
+                [(strategy_name, symbol)],
+                latency=latency,
+                window=window,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -1372,5 +1466,3 @@ def walk_forward_optimize(
         split += 1
 
     return results
-
-
