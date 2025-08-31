@@ -156,10 +156,10 @@ class RiskService:
             elif delta < 0:
                 delta = min(delta + pending_qty, 0.0)
 
-        alloc = abs(delta) * price
+        qty = abs(delta)
+        alloc = qty * price
         if not self.check_global_exposure(symbol, alloc):
             return False, "symbol_exposure", 0.0
-        qty = abs(delta)
 
         if qty < self.rm.min_order_qty:
             return False, "zero_size", 0.0
