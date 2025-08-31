@@ -19,11 +19,8 @@ def test_risk_manager_caps_position_via_risk_pct():
         GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="test")
     )
     rs = RiskService(guard, account=account, risk_pct=0.1, risk_per_trade=1.0)
-    rs.rm.set_position(5.0)
     rs.update_position("test", "BTC", 5.0, entry_price=10.0)
-    allowed, reason, delta = rs.rm.check_order(
-        "BTC", "buy", equity=1000.0, price=10.0, strength=1.0
-    )
+    allowed, reason, delta = rs.check_order("BTC", "buy", 10.0, strength=1.0)
     assert allowed
     assert reason == ""
     assert delta == pytest.approx(5.0)

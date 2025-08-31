@@ -7,8 +7,7 @@ from tradingbot.risk.daily_guard import DailyGuard, GuardLimits
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.storage import timescale
 from tradingbot.bus import EventBus
-from tradingbot.risk.manager import RiskManager
-from tradingbot.risk.limits import RiskLimits
+from tradingbot.risk.limits import RiskLimits, LimitTracker
 
 
 @pytest.mark.asyncio
@@ -53,15 +52,11 @@ async def test_daily_dd_limit_blocks_risk_manager():
     events: list = []
     bus.subscribe("risk:blocked", lambda e: events.append(e))
 
-    rm = RiskManager(bus=bus, limits=RiskLimits(daily_dd_limit=50))
-    rm.set_position(1.0)
-
-    rm.update_pnl(100)
-    rm.update_pnl(-160)
+    tracker = LimitTracker(RiskLimits(daily_dd_limit=50), bus=bus)
+    tracker.update_pnl(100)
+    tracker.update_pnl(-160)
 
     await asyncio.sleep(0)
 
     assert events and events[0]["reason"] == "daily_dd_limit"
-    assert rm.enabled is False
-    assert rm.pos.qty == 0.0
-    assert rm.limits and rm.limits.blocked
+    assert tracker.blocked is True

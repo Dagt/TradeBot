@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
 from tradingbot.core import Account
-from tradingbot.risk.manager import load_positions
+from tradingbot.storage import timescale
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 
@@ -30,7 +30,7 @@ def test_rehydrate_state():
     )
 
     # Rehydrate
-    pos_map = load_positions(engine, "paper")
+    pos_map = timescale.load_positions(engine, "paper")
     for sym, data in pos_map.items():
         risk.update_position("paper", sym, data["qty"])
     assert risk.rm.positions_multi["paper"]["BTCUSDT"] == pytest.approx(1.5)

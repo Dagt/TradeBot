@@ -16,7 +16,9 @@ from tradingbot.backtest.event_engine import (
     run_backtest_csv,
 )
 from tradingbot.strategies import STRATEGIES
-from tradingbot.risk.manager import RiskManager
+from tradingbot.core import Account
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.service import RiskService
 
 
 class DummyStrategy:
@@ -92,7 +94,10 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     expected_fee = df["price"] * df["qty"] * 0.001
     assert np.allclose(df["fee_cost"], expected_fee)
     # Comprobar que realized_pnl coincide con RiskManager
-    rm = RiskManager()
+    svc = RiskService(
+        PortfolioGuard(GuardConfig(venue="test")), account=Account(float("inf"))
+    )
+    rm = svc.rm
     expected = []
     for row in df.itertuples():
         prev = rm.pos.realized_pnl
