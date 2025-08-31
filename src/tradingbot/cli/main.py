@@ -691,6 +691,12 @@ def run_bot(
 
     setup_logging()
     params = _parse_params(param) if isinstance(param, list) else {}
+    from ..core.account import Account
+    from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+    from ..risk.service import RiskService
+
+    _guard = PortfolioGuard(GuardConfig(venue=venue))
+    RiskService(_guard, account=Account(float("inf")), risk_pct=risk_pct)
     if testnet:
         from ..live.runner_testnet import run_live_testnet
 
@@ -747,6 +753,13 @@ def paper_run(
     setup_logging()
     from ..live.runner_paper import run_paper
 
+    from ..core.account import Account
+    from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+    from ..risk.service import RiskService
+
+    _guard = PortfolioGuard(GuardConfig(venue="paper"))
+    RiskService(_guard, account=Account(float("inf")), risk_pct=risk_pct)
+
     params = _parse_params(param)
 
     asyncio.run(
@@ -798,7 +811,14 @@ def real_run(
     setup_logging()
     from ..live.runner_real import run_live_real
 
+    from ..core.account import Account
+    from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+    from ..risk.service import RiskService
+
     exchange, market = venue.split("_", 1)
+
+    _guard = PortfolioGuard(GuardConfig(venue=venue))
+    RiskService(_guard, account=Account(float("inf")), risk_pct=risk_pct)
 
     asyncio.run(
         run_live_real(

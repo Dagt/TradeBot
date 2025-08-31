@@ -64,38 +64,39 @@ entorno real de Binance Futures.
 
 ## Gestión de riesgo
 
-El módulo [`core/risk_manager.py`](src/tradingbot/core/risk_manager.py) provee
-un `RiskManager` universal que trabaja junto a
-[`core/account.py`](src/tradingbot/core/account.py). Las señales incluyen un
-parámetro `strength` continuo que dimensiona la orden según
-`notional = equity * strength`. El gestor aplica un trailing stop adaptativo
-basado en la volatilidad (ATR) y verifica la exposición global.
+`RiskService` centraliza la gestión combinando el `CoreRiskManager`,
+`PortfolioGuard` y `DailyGuard`. Se inicializa junto a una
+[`Account`](src/tradingbot/core/account.py) que lleva el registro de la
+exposición. Las estrategias emiten señales con un campo `strength` continuo
+(`notional = equity * strength`) y el servicio dimensiona la orden y aplica un
+trailing stop adaptativo basado en la volatilidad (ATR).
 
-El riesgo por operación se controla con `risk_per_trade` (equivalente a
-`--risk-pct` en el CLI). Para limitar la exposición global pueden usarse los
-parámetros `total_cap_pct` y `per_symbol_cap_pct` de `PortfolioGuard`.
+El riesgo por operación se controla mediante `risk_pct` (equivalente a
+`--risk-pct` en la CLI). Para limitar la exposición global pueden utilizarse
+los parámetros `total_cap_pct` y `per_symbol_cap_pct` de `PortfolioGuard`.
 
 ### Ejemplo
 
 ```python
 from tradingbot.core.account import Account
-from tradingbot.core.risk_manager import RiskManager
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 
-account = Account(max_symbol_exposure=1000.0, cash=1000.0)
-rm = RiskManager(account, risk_per_trade=0.02)  # --risk-pct 2 en la CLI
+account = Account(cash=1000.0)
+guard = PortfolioGuard(GuardConfig(venue="demo"))
+risk = RiskService(guard, account=account, risk_pct=0.02)  # --risk-pct 2 en la CLI
 
-signal = {"side": "buy", "strength": 0.5, "atr": 6}
+signal = {"side": "buy", "strength": 0.5}
 price = 100
-size = rm.calc_position_size(signal["strength"], price)
-if rm.check_global_exposure("BTC/USDT", size * price):
-    stop = rm.initial_stop(price, "buy", atr=signal["atr"])
-    trade = {"side": "buy", "entry_price": price, "qty": size, "stop": stop, "atr": signal["atr"]}
-    rm.update_trailing(trade, current_price=108)
-    trade["current_price"] = 108
-    decision = rm.manage_position(trade)
+allowed, _reason, delta = risk.check_order(
+    "BTC/USDT", signal["side"], price, strength=signal["strength"]
+)
+if allowed and delta > 0:
+    # enviar orden usando delta como cantidad
+    pass
 ```
 
-El parámetro `risk_per_trade` debe indicarse como una fracción entre 0 y 1.
+El parámetro `risk_pct` debe indicarse como una fracción entre 0 y 1.
 Si se provee un valor de 1 a 100 se interpreta como porcentaje y se divide
 entre 100 (por ejemplo, `--risk-pct 1` equivale a `0.01`). Valores negativos
 o superiores a 100 generan un error.

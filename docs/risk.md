@@ -1,53 +1,47 @@
 # Gestión de riesgo
 
-## RiskManager universal
+## RiskService y Account
 
-El módulo [`core/risk_manager.py`](../src/tradingbot/core/risk_manager.py)
-implementa un gestor de riesgo genérico que opera junto a
-[`core/account.py`](../src/tradingbot/core/account.py). Su interfaz expone:
+`RiskService` combina el `CoreRiskManager`, `PortfolioGuard` y `DailyGuard`
+para manejar posiciones y validar órdenes. Trabaja junto a una
+[`Account`](../src/tradingbot/core/account.py) que lleva la exposición por
+símbolo. Su API expone:
 
-- `calc_position_size(signal_strength, price)`: dimensiona la posición según la
-  fuerza de la señal y el riesgo por operación.
-- `initial_stop(entry_price, side)`: calcula el stop inicial usando
-  `risk_pct`. El valor de ATR sólo se utiliza en el trailing.
+- `check_order(symbol, side, price, strength)`: valida la orden y devuelve la
+  cantidad recomendada.
+- `calc_position_size(strength, price)`: dimensiona la posición según la fuerza
+  de la señal y el riesgo configurado.
 - `update_trailing(trade, current_price, fees_slip=0.0)`: aplica un trailing
   stop adaptativo en tres etapas.
 - `manage_position(trade, signal=None)`: decide si mantener o cerrar una
   posición según el stop y la señal actual.
-- `check_global_exposure(symbol, new_alloc)`: verifica que la nueva exposición
-  no supere el límite global para el símbolo.
+- `aggregate_positions()`: consolida la exposición entre distintos venues.
 
 ### Ejemplo de uso
 
 ```python
 from tradingbot.core.account import Account
-from tradingbot.core.risk_manager import RiskManager
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 
-account = Account(max_symbol_exposure=1000.0, cash=1000.0)
-rm = RiskManager(account, risk_per_trade=0.02)  # equivalente a --risk-pct 2
+account = Account(cash=1000.0)
+guard = PortfolioGuard(GuardConfig(venue="demo"))
+risk = RiskService(guard, account=account, risk_pct=0.02)
 
-signal = {"side": "buy", "strength": 0.6, "limit_price": 100.0}
+signal = {"side": "buy", "strength": 0.6}
 price = 100
-size = rm.calc_position_size(signal["strength"], price)
-atr_value = 5  # ATR sólo se usa para el trailing
-if rm.check_global_exposure("BTC/USDT", size * price):
-    stop = rm.initial_stop(price, signal["side"])
-    trade = {
-        "side": "buy",
-        "entry_price": price,
-        "qty": size,
-        "stop": stop,
-        "atr": atr_value,
-    }
-    rm.update_trailing(trade, current_price=112)
-    trade["current_price"] = 112
-    decision = rm.manage_position(trade)
+allowed, _reason, delta = risk.check_order(
+    "BTC/USDT", signal["side"], price, strength=signal["strength"]
+)
+if allowed and delta > 0:
+    # enviar orden con cantidad = delta
+    pass
 ```
 
 `signal["strength"]` acepta valores continuos y escala el tamaño de la orden.
 El método `update_trailing` mueve el stop a *break-even*, asegura 1 USD neto y
 luego sigue al precio a `2 × ATR`. `manage_position` decide si mantener o cerrar
-la operación y `check_global_exposure` valida el límite global por símbolo.
+la operación y `check_order` valida el límite global por símbolo.
 
 Para enviar órdenes *limit* puede utilizarse `broker.place_limit`, que admite
 parámetros de *quoting* como `tif` (``GTC``, ``IOC``, ``FOK`` o ``GTD``) y la
