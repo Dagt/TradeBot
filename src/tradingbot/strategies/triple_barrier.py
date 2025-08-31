@@ -112,7 +112,7 @@ class TripleBarrier(Strategy):
         meta_model: ClassifierMixin | None = None,
         *,
         config_path: str | None = None,
-        risk_service=None,
+        **kwargs,
     ) -> None:
         params = load_params(config_path)
         horizon = params.get("horizon", horizon)
@@ -129,7 +129,7 @@ class TripleBarrier(Strategy):
         self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
         self.meta_fitted = False
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:

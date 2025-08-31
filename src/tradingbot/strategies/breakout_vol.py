@@ -14,12 +14,12 @@ class BreakoutVol(Strategy):
 
     name = "breakout_vol"
 
-    def __init__(self, risk_service=None, **kwargs):
+    def __init__(self, **kwargs):
         self.lookback = kwargs.get("lookback", 10)
         self.mult = kwargs.get("mult", 1.5)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

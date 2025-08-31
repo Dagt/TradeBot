@@ -27,13 +27,13 @@ class OrderFlow(Strategy):
         buy_threshold: float = 1.0,
         sell_threshold: float = 1.0,
         min_volatility: float = 0.0,
-        risk_service=None,
+        **kwargs,
     ):
         self.window = window
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
         self.min_volatility = min_volatility
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

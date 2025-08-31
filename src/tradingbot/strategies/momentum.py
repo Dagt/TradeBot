@@ -28,14 +28,14 @@ class Momentum(Strategy):
 
     name = "momentum"
 
-    def __init__(self, risk_service=None, **kwargs):
+    def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 55.0)
         # Optional market activity filters
         self.min_volume = kwargs.get("min_volume")
         self.min_volatility = kwargs.get("min_volatility")
         self.vol_window = kwargs.get("vol_window", 20)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

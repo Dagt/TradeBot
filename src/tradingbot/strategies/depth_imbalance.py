@@ -25,11 +25,11 @@ class DepthImbalance(Strategy):
         self,
         window: int = 3,
         threshold: float = 0.2,
-        risk_service=None,
+        **kwargs,
     ):
         self.window = window
         self.threshold = threshold
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

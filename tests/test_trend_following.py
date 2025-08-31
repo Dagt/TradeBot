@@ -34,7 +34,7 @@ def test_trend_following_risk_service_handles_stop_and_size():
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = TrendFollowing(risk_service=svc, rsi_n=2)
+    strat = TrendFollowing(rsi_n=2, **{"risk_service": svc})
     sig = strat.on_bar({"window": df, "atr": 1.0, "volatility": 0.0})
     assert sig and sig.side == "buy"
     trade = strat.trade

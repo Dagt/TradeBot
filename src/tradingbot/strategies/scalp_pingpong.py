@@ -64,12 +64,12 @@ class ScalpPingPong(Strategy):
         cfg: ScalpPingPongConfig | None = None,
         *,
         config_path: str | None = None,
-        risk_service=None,
         **kwargs,
     ):
         params = {**load_params(config_path), **kwargs}
+        params.pop("risk_service", None)
         self.cfg = cfg or ScalpPingPongConfig(**params)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     def _calc_zscore(self, closes: pd.Series) -> float:

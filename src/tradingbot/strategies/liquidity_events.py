@@ -37,13 +37,13 @@ class LiquidityEvents(Strategy):
         gap_threshold: float = 1.0,
         vol_window: int = 20,
         dynamic_thresholds: bool = True,
-        risk_service=None,
+        **kwargs,
     ):
         self.vacuum_threshold = vacuum_threshold
         self.gap_threshold = gap_threshold
         self.vol_window = vol_window
         self.dynamic_thresholds = dynamic_thresholds
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     def _mid_prices(self, df: pd.DataFrame) -> pd.Series:
