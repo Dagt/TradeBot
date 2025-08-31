@@ -21,6 +21,7 @@ def test_service_calc_position_size_passes_strength():
         guard,
         account=account,
         risk_per_trade=0.1,
+        atr_mult=2.0,
         risk_pct=0.01,
     )
     price = 100.0

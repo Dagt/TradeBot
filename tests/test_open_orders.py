@@ -1,15 +1,19 @@
 import pytest
 
 from tradingbot.core import Account
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 
 
 def make_service(account: Account) -> RiskService:
-    rm = RiskManager()
     guard = PortfolioGuard(GuardConfig(venue="test"))
-    return RiskService(rm, guard, account=account, risk_per_trade=0.1)
+    return RiskService(
+        guard,
+        account=account,
+        risk_per_trade=0.1,
+        atr_mult=2.0,
+        risk_pct=0.01,
+    )
 
 
 def test_calc_position_size_accounts_for_open_orders():
