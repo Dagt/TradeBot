@@ -66,7 +66,7 @@ from ..adapters import (
 )
 from ..logging_conf import setup_logging
 from tradingbot.analysis.backtest_report import generate_report
-from tradingbot.core.symbols import normalize
+from tradingbot.core import normalize
 from tradingbot.utils.time_sync import check_ntp_offset
 from ..exchanges import SUPPORTED_EXCHANGES
 
@@ -1231,6 +1231,7 @@ def backtest_db(
     from ..config.hydra_conf import load_config
 
     setup_logging()
+    symbol = normalize(symbol)
     timeframe = timeframe.lower()
     log.info(
         "Iniciando backtest DB: %s %s %s–%s (%s)",
@@ -1253,7 +1254,7 @@ def backtest_db(
             timeframe=timeframe,
         )
         if not rows:
-            typer.echo("no data")
+            typer.echo(f"no data for {symbol}")
             raise typer.Exit()
         df = (
             pd.DataFrame(rows)
