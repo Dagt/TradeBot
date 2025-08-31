@@ -106,13 +106,8 @@
         <label for="bt-slippage-bps">Slippage (bps)</label>
         <input id="bt-slippage-bps" type="number" step="any" placeholder="1"/>
       </div>
-      <div id="field-fills-mode">
-        <label for="bt-fills-mode">Fills</label>
-        <select id="bt-fills-mode">
-          <option value="none">Ninguno</option>
-          <option value="verbose">Verbose fills</option>
-          <option value="csv">Exportar fills (CSV)</option>
-        </select>
+      <div id="field-fills-csv" style="display:flex;align-items:center;gap:4px">
+        <label><input type="checkbox" id="bt-fills-csv"> Exportar fills a CSV</label>
       </div>
 
       <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
@@ -461,9 +456,8 @@ async function runBacktest(){
     else if(t.includes('float')||t.includes('number')) v=parseFloat(v);
     cmd+=` --param ${el.dataset.name}=${v}`;
   });
-  const fillsMode=document.getElementById('bt-fills-mode').value;
-  if(fillsMode==='verbose') cmd+=' --verbose-fills';
-  else if(fillsMode==='csv') cmd+=' --fills-csv fills.csv';
+  const exportCsv=document.getElementById('bt-fills-csv').checked;
+  if(exportCsv) cmd+=' --fills-csv fills.csv';
   try{
     const r=await fetch(api('/cli/start'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
     const j=await r.json();
