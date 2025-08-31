@@ -35,7 +35,8 @@ class DummyStrat:
 class DummyRisk:
     def __init__(self, *a, **k):
         self.last_strength: float | None = None
-        self.rm = types.SimpleNamespace(min_order_qty=0.0)
+        self.min_order_qty = 0.0
+        self.rm = types.SimpleNamespace(allow_short=True)
         self.account = types.SimpleNamespace(current_exposure=lambda symbol: (0.0, 0.0))
         self.trades: dict = {}
 
@@ -61,6 +62,9 @@ class DummyRisk:
     def on_fill(self, symbol, side, qty, price=None, venue=None):
         pass
 
+    def daily_mark(self, broker, symbol, price, delta_rpnl):
+        return False, ""
+
 
 class DummyRouter:
     last_order = None
@@ -76,9 +80,10 @@ class DummyRouter:
 class DummyBroker:
     def __init__(self):
         self.account = object()
+        self.state = SimpleNamespace(realized_pnl=0.0, last_px={}, order_book={})
 
     def update_last_price(self, symbol, px):
-        pass
+        self.state.last_px[symbol] = px
 
     def equity(self, mark_prices):
         return 1000.0

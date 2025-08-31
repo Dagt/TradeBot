@@ -177,7 +177,7 @@ async def run_live_binance(
 
         pos_qty, _ = risk.account.current_exposure(symbol)
         trade = risk.get_trade(symbol)
-        if trade and abs(pos_qty) > risk.rm.min_order_qty:
+        if trade and abs(pos_qty) > risk.min_order_qty:
             risk.update_trailing(trade, px)
             decision = risk.manage_position(trade)
             if decision == "close":
@@ -205,7 +205,7 @@ async def run_live_binance(
             if decision in {"scale_in", "scale_out"}:
                 target = risk.calc_position_size(trade.get("strength", 1.0), px)
                 delta_qty = target - abs(pos_qty)
-                if abs(delta_qty) > risk.rm.min_order_qty:
+                if abs(delta_qty) > risk.min_order_qty:
                     side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(side)
