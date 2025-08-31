@@ -122,6 +122,7 @@ class RiskService:
         strength: float = 1.0,
         *,
         corr_threshold: float = 0.0,
+        pending_qty: float = 0.0,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
@@ -144,6 +145,12 @@ class RiskService:
             correlations=corr_pairs,
             threshold=corr_threshold,
         )
+
+        if pending_qty > 0:
+            if delta > 0:
+                delta = max(delta - pending_qty, 0.0)
+            elif delta < 0:
+                delta = min(delta + pending_qty, 0.0)
 
         alloc = abs(delta) * price
         if not self.check_global_exposure(symbol, alloc):
