@@ -489,3 +489,97 @@ def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
     )
     assert result.exit_code == 0
     assert (tmp_path / "db" / "orderbook.csv").exists()
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_no_persist(monkeypatch):
+    ts_ms = 1_672_569_600_000  # 2023-01-01T00:00:00Z
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int):
+            return [[ts_ms, 1.0, 2.0, 0.5, 1.5, 10.0]]
+
+    called = False
+
+    def fake_get_storage(backend):
+        nonlocal called
+        called = True
+
+        class DummyStorage:
+            def get_engine(self):
+                return "engine"
+
+            def insert_bar(self, *a, **k):
+                raise AssertionError("should not insert when persist=False")
+
+        return DummyStorage()
+
+    monkeypatch.setattr(ingestion, "_get_storage", fake_get_storage)
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(DummyAdapter(), "BTC/USDT", sleep_s=999, persist=False)
+    )
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not called
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_persist(monkeypatch):
+    ts_ms = 1_672_569_600_000  # 2023-01-01T00:00:00Z
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int):
+            return [[ts_ms, 1.0, 2.0, 0.5, 1.5, 10.0]]
+
+    inserted: list[dict] = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_bar(
+            self,
+            engine,
+            exchange,
+            symbol,
+            ts,
+            timeframe,
+            o,
+            h,
+            l,
+            c,
+            v,
+        ):
+            inserted.append(
+                dict(
+                    exchange=exchange,
+                    symbol=symbol,
+                    ts=ts,
+                    timeframe=timeframe,
+                    o=o,
+                    h=h,
+                    l=l,
+                    c=c,
+                    v=v,
+                )
+            )
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(DummyAdapter(), "BTC/USDT", sleep_s=999, persist=True)
+    )
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(inserted) == 1
