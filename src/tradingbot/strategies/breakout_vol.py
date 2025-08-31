@@ -5,7 +5,6 @@ PARAM_INFO = {
     "lookback": "Ventana para medias y desviación estándar",
     "mult": "Multiplicador aplicado a la desviación",
     "volatility_factor": "Factor para dimensionar según volatilidad",
-    "min_edge_bps": "Edge mínimo en puntos básicos para operar",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
@@ -19,7 +18,6 @@ class BreakoutVol(Strategy):
         self.lookback = kwargs.get("lookback", 10)
         self.mult = kwargs.get("mult", 1.5)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
-        self.min_edge_bps = kwargs.get("min_edge_bps", 0.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.risk_service = risk_service
         self.trade: dict | None = None
@@ -61,14 +59,8 @@ class BreakoutVol(Strategy):
 
         side: str | None = None
         if last > upper:
-            edge_bps = (last - upper) / abs(last) * 10000
-            if edge_bps <= self.min_edge_bps:
-                return None
             side = "buy"
         elif last < lower:
-            edge_bps = (lower - last) / abs(last) * 10000
-            if edge_bps <= self.min_edge_bps:
-                return None
             side = "sell"
         if side is None:
             return None

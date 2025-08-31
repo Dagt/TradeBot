@@ -8,7 +8,6 @@ PARAM_INFO = {
     "mult": "Multiplicador aplicado al ATR",
     "min_atr": "ATR mínimo para operar",
     "min_volatility": "Volatilidad mínima reciente en bps",
-    "min_edge_bps": "Edge mínimo en puntos básicos para operar",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -23,7 +22,6 @@ class BreakoutATR(Strategy):
         mult: float = 1.0,
         min_atr: float = 0.0,
         min_volatility: float = 0.0,
-        min_edge_bps: float = 0.0,
         *,
         risk_service=None,
         config_path: str | None = None,
@@ -34,7 +32,6 @@ class BreakoutATR(Strategy):
         self.mult = float(params.get("mult", mult))
         self.min_atr = float(params.get("min_atr", min_atr))
         self.min_volatility = float(params.get("min_volatility", min_volatility))
-        self.min_edge_bps = float(params.get("min_edge_bps", min_edge_bps))
         self.risk_service = risk_service
         self.trade: dict | None = None
 
@@ -65,14 +62,8 @@ class BreakoutATR(Strategy):
 
         side: str | None = None
         if last_close > upper.iloc[-1]:
-            edge_bps = (last_close - upper.iloc[-1]) / abs(last_close) * 10000
-            if edge_bps <= self.min_edge_bps:
-                return None
             side = "buy"
         elif last_close < lower.iloc[-1]:
-            edge_bps = (lower.iloc[-1] - last_close) / abs(last_close) * 10000
-            if edge_bps <= self.min_edge_bps:
-                return None
             side = "sell"
         if side is None:
             return None
