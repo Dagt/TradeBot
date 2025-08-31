@@ -69,6 +69,8 @@ async def backfill(
     when requesting OHLCV candles.
     """
 
+    timeframe = timeframe.lower()
+
     if end is None:
         end_dt = datetime.now(timezone.utc)
     else:

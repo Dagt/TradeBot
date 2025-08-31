@@ -107,6 +107,40 @@ async def test_backfill_persists_data(monkeypatch, setup_db, input_symbol):
 
 
 @pytest.mark.asyncio
+async def test_backfill_normalizes_timeframe(monkeypatch, setup_db):
+    dsn = "postgresql+asyncpg://postgres:postgres@localhost/tradebot_test"
+    eng = create_async_engine(dsn, echo=False)
+    async with eng.begin() as conn:
+        await conn.execute(text("TRUNCATE market.bars"))
+        await conn.execute(text("TRUNCATE market.trades"))
+    await eng.dispose()
+
+    monkeypatch.setenv("PG_HOST", "localhost")
+    monkeypatch.setenv("PG_USER", "postgres")
+    monkeypatch.setenv("PG_PASSWORD", "postgres")
+    monkeypatch.setenv("PG_DB", "tradebot_test")
+
+    from tradingbot.jobs import backfill as job_backfill
+
+    monkeypatch.setattr(job_backfill.ccxt, "binance", lambda *_, **__: DummyExchange())
+
+    await job_backfill.backfill(
+        days=1,
+        symbols=["BTC/USDT"],
+        exchange_name="binance_spot",
+        timeframe="1H",
+    )
+
+    from tradingbot.storage.async_timescale import AsyncTimescaleClient
+
+    client = AsyncTimescaleClient(dsn=dsn)
+    rows = await client.fetch("SELECT timeframe FROM market.bars")
+    await client.close()
+
+    assert rows and rows[0]["timeframe"] == "1h"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("input_symbol", ["BTC/USDT", "BTC-USDT"])
 async def test_backfill_overlapping_range(monkeypatch, setup_db, input_symbol):
     # Ensure database is empty
