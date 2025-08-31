@@ -32,6 +32,7 @@ def test_service_calc_position_size_passes_strength():
         "BTC", "buy", account.cash, price, strength=0.37
     )
     assert allowed is True
+    assert reason == "caps desactivados"
     assert delta == pytest.approx(partial)
 
 
