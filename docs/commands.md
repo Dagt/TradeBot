@@ -114,6 +114,7 @@ Descarga datos históricos con límites de velocidad.
 - `--venue`: nombre del venue (`binance_spot`, `binance_futures`, etc.).
 - `--start`: fecha inicial en formato ISO.
 - `--end`: fecha final en formato ISO.
+- `--timeframe`: intervalo de las velas (3m por defecto).
 
 ## `ingest-historical`
 Obtiene datos históricos de Kaiko o CoinAPI.
