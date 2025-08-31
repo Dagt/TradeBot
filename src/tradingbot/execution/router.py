@@ -303,28 +303,6 @@ class ExecutionRouter:
                 mid = (bid + ask) / 2.0
                 spread = ask - bid
                 fill_price = mid + spread / 2.0 if order.side == "buy" else mid - spread / 2.0
-            elif fill_mode == "hl_intrabar" and state is not None:
-                bar = None
-                last_bar = getattr(state, "last_bar", None)
-                if isinstance(last_bar, dict):
-                    bar = last_bar.get(order.symbol)
-                if bar is None:
-                    bars = getattr(state, "bars", None)
-                    if isinstance(bars, dict):
-                        bar = bars.get(order.symbol)
-                if bar:
-                    high = bar.get("high") or bar.get("h")
-                    low = bar.get("low") or bar.get("l")
-                    if order.side == "sell":
-                        if order.stop_loss is not None and low is not None and low <= order.stop_loss:
-                            fill_price = low
-                        elif order.take_profit is not None and high is not None and high >= order.take_profit:
-                            fill_price = high
-                    elif order.side == "buy":
-                        if order.stop_loss is not None and high is not None and high >= order.stop_loss:
-                            fill_price = high
-                        elif order.take_profit is not None and low is not None and low <= order.take_profit:
-                            fill_price = low
             if fill_price is not None and slip_bps:
                 slip_mult = slip_bps / 10000.0
                 if order.side == "buy":

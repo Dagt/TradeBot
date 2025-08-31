@@ -67,8 +67,6 @@ class Order:
     queue_pos: float = field(default=0.0, compare=False)
     latency: int | None = field(default=None, compare=False)
     post_only: bool = field(default=False, compare=False)
-    take_profit: float | None = field(default=None, compare=False)
-    stop_loss: float | None = field(default=None, compare=False)
     trailing_pct: float | None = field(default=None, compare=False)
 
 
@@ -471,8 +469,6 @@ class EventDrivenBacktestEngine:
                                     None,
                                     False,
                                     None,
-                                    None,
-                                    None,
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
@@ -615,8 +611,6 @@ class EventDrivenBacktestEngine:
                 elif prev_sign == 0 or prev_sign != new_sign:
                     position_levels[key] = {
                         "entry_i": i,
-                        "take_profit": order.take_profit,
-                        "stop_loss": order.stop_loss,
                         "trail_pct": order.trailing_pct,
                         "best_price": price,
                     }
@@ -624,10 +618,6 @@ class EventDrivenBacktestEngine:
                     state = position_levels.get(key)
                     if state is not None:
                         state["entry_i"] = i
-                        if order.take_profit is not None:
-                            state["take_profit"] = order.take_profit
-                        if order.stop_loss is not None:
-                            state["stop_loss"] = order.stop_loss
                         if order.trailing_pct is not None:
                             state["trail_pct"] = order.trailing_pct
                         if state.get("trail_pct") is not None:
@@ -711,43 +701,25 @@ class EventDrivenBacktestEngine:
                 low = float(arrs.get("low", arrs["close"])[i])
                 exit_price = None
                 side = None
-                tp = state.get("take_profit")
-                sl = state.get("stop_loss")
                 trail = state.get("trail_pct")
                 best = state.get("best_price", float(arrs["close"][i]))
                 reason = ""
-                if qty > 0:
-                    if trail is not None:
-                        best = max(best, high)
-                        state["best_price"] = best
-                        tr_stop = best * (1 - trail)
-                        if sl is None or tr_stop > sl:
-                            sl = tr_stop
-                            state["stop_loss"] = sl
-                    if sl is not None and low <= sl:
-                        exit_price = sl
+                if qty > 0 and trail is not None:
+                    best = max(best, high)
+                    state["best_price"] = best
+                    tr_stop = best * (1 - trail)
+                    if low <= tr_stop:
+                        exit_price = tr_stop
                         side = "sell"
-                        reason = "trailing_stop" if trail is not None else "stop_loss"
-                    elif tp is not None and high >= tp:
-                        exit_price = tp
-                        side = "sell"
-                        reason = "take_profit"
-                elif qty < 0:
-                    if trail is not None:
-                        best = min(best, low)
-                        state["best_price"] = best
-                        tr_stop = best * (1 + trail)
-                        if sl is None or tr_stop < sl:
-                            sl = tr_stop
-                            state["stop_loss"] = sl
-                    if sl is not None and high >= sl:
-                        exit_price = sl
+                        reason = "trailing_stop"
+                elif qty < 0 and trail is not None:
+                    best = min(best, low)
+                    state["best_price"] = best
+                    tr_stop = best * (1 + trail)
+                    if high >= tr_stop:
+                        exit_price = tr_stop
                         side = "buy"
-                        reason = "trailing_stop" if trail is not None else "stop_loss"
-                    elif tp is not None and low <= tp:
-                        exit_price = tp
-                        side = "buy"
-                        reason = "take_profit"
+                        reason = "trailing_stop"
                 if exit_price is not None:
                     exit_qty = abs(qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
@@ -883,8 +855,6 @@ class EventDrivenBacktestEngine:
                         None,
                         post_only,
                         None,
-                        None,
-                        None,
                     )
                     orders.append(order)
                     heapq.heappush(order_queue, order)
@@ -947,8 +917,6 @@ class EventDrivenBacktestEngine:
                             0.0,
                             None,
                             False,
-                            None,
-                            None,
                             None,
                         )
                         orders.append(order)
