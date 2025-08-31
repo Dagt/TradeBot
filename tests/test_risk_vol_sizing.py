@@ -1,77 +1,22 @@
 import pytest
-import numpy as np
 
 from tradingbot.risk.manager import RiskManager
-import numpy as np
-import pytest
-
-from tradingbot.risk.manager import RiskManager
-from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
-from tradingbot.risk.service import RiskService
-from tradingbot.risk.position_sizing import vol_target
+from tradingbot.risk.position_sizing import delta_from_strength
 
 
-def test_risk_vol_sizing(synthetic_volatility):
-    equity = 1.0
-    rm = RiskManager(vol_target=0.02)
-    price = 1.0
-    base = rm.size("buy", price, equity, strength=0.1)
-    delta = rm.size(
-        "buy",
-        price,
-        equity,
-        strength=0.1,
-        symbol="BTC",
-        symbol_vol=synthetic_volatility,
+def test_delta_from_strength_respects_risk_pct():
+    delta = delta_from_strength(
+        2.0, equity=1000.0, price=10.0, current_qty=0.0, risk_pct=0.1
     )
-    expected = base + rm.size_with_volatility(synthetic_volatility, price, equity)
-    assert delta == pytest.approx(expected)
+    assert delta == pytest.approx(10.0)
 
 
-def test_vol_target_basic():
-    assert vol_target(atr=2.0, equity=10.0, vol_target=1.0) == pytest.approx(5.0)
-
-
-def test_vol_target_scales_linearly():
-    assert vol_target(atr=1.0, equity=20.0, vol_target=0.5) == pytest.approx(10.0)
-
-
-def test_risk_vol_sizing_with_correlation(synthetic_volatility):
-    equity = 1.0
-    rm = RiskManager(vol_target=0.02)
-    corr = {("BTC", "ETH"): 0.9}
-    price = 1.0
-    base = rm.size(
-        "buy",
-        price,
-        equity,
-        strength=0.1,
-        symbol="BTC",
-        symbol_vol=synthetic_volatility,
+def test_risk_manager_caps_position_via_risk_pct():
+    rm = RiskManager(risk_pct=0.1)
+    rm.set_position(5.0)
+    allowed, reason, delta = rm.check_order(
+        "BTC", "buy", equity=1000.0, price=10.0, strength=1.0
     )
-    delta = rm.size(
-        "buy",
-        price,
-        equity,
-        strength=0.1,
-        symbol="BTC",
-        symbol_vol=synthetic_volatility,
-        correlations=corr,
-        threshold=0.8,
-    )
-    assert delta == pytest.approx(base * 0.5)
-
-
-def test_risk_service_uses_guard_volatility():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
-    rm = RiskManager(vol_target=0.02)
-    rm_guard_equity = 1.0
-    guard.refresh_usd_caps(rm_guard_equity)
-    svc = RiskService(rm, guard, risk_pct=0.0)
-    guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
-    base = rm.size(
-        "buy", 1.0, 1.0, strength=0.1, symbol="BTC", symbol_vol=guard.volatility("BTC")
-    )
-    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, 1.0, strength=0.1)
     assert allowed
-    assert delta == pytest.approx(base)
+    assert reason == ""
+    assert delta == pytest.approx(5.0)

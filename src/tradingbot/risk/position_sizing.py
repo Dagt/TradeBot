@@ -1,43 +1,12 @@
-"""Helpers for position sizing based on volatility targets.
+"""Helpers for position sizing.
 
-This module also provides utilities to translate signal strength into actual
-position deltas via ``notional = equity * strength``, ensuring consistent
-pyramiding and reduction across strategies. Local stop‑losses use ``risk_pct``
-as ``notional * risk_pct``.
+This module translates signal strength into actual position deltas via
+``notional = equity * strength`` ensuring consistent pyramiding and reduction
+across strategies. Local stop‑losses use ``risk_pct`` as ``notional *
+risk_pct``.
 """
 
 from __future__ import annotations
-
-
-def vol_target(atr: float, equity: float, vol_target: float) -> float:
-    """Return target position size given a volatility estimate.
-
-    Parameters
-    ----------
-    atr:
-        Average true range or volatility estimate of the asset.
-    equity:
-        Current account equity.
-    vol_target:
-        Fraction of equity to risk on a move of ``atr``. For example,
-        ``0.02`` risks 2% of equity if price moves by one ATR.
-
-    Returns
-    -------
-    float
-        Desired absolute position size.  If any argument is non-positive,
-        ``0.0`` is returned.
-
-    Examples
-    --------
-    >>> vol_target(atr=2.0, equity=10.0, vol_target=1.0)
-    5.0
-    """
-    if atr <= 0 or vol_target <= 0 or equity <= 0:
-        return 0.0
-
-    budget = equity * vol_target
-    return budget / atr
 
 
 def delta_from_strength(

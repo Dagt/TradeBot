@@ -4,7 +4,6 @@ This module started as a very small utility to gate orders based on
 simple stop loss and drawdown thresholds.  The exercises for this kata
 require extending it with a few extra features:
 
-* sizing based on a target volatility
 * daily loss / drawdown stops ("kill-switch")
 * correlation limits derived from a covariance matrix
 * integration with strategies and execution through an :class:`EventBus`
@@ -26,7 +25,7 @@ import numpy as np
 from tradingbot.utils.metrics import RISK_EVENTS, KILL_SWITCH_ACTIVE
 from ..bus import EventBus
 from .limits import RiskLimits, LimitTracker
-from .position_sizing import vol_target, delta_from_strength
+from .position_sizing import delta_from_strength
 from .exceptions import StopLossExceeded
 from sqlalchemy import text
 
@@ -51,7 +50,6 @@ class RiskManager:
     def __init__(
         self,
         risk_pct: float = 0.0,
-        vol_target: float = 0.0,
         *,
         allow_short: bool = True,
         daily_loss_limit: float = 0.0,
@@ -69,8 +67,6 @@ class RiskManager:
         """
 
         self.risk_pct = abs(risk_pct)
-        self.vol_target = abs(vol_target)
-        self._base_vol_target = self.vol_target
         self.allow_short = bool(allow_short)
 
         self.daily_loss_limit = abs(daily_loss_limit)
@@ -271,7 +267,6 @@ class RiskManager:
         strength: float = 1.0,
         *,
         symbol: str | None = None,
-        symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
         threshold: float = 0.0,
     ) -> float:
@@ -288,9 +283,6 @@ class RiskManager:
             signed_strength, equity, price, self.pos.qty, self.risk_pct
         )
 
-        if symbol_vol > 0:
-            delta += self.size_with_volatility(symbol_vol, price, equity)
-
         if correlations:
             if symbol is None:
                 raise ValueError("symbol requerido para aplicar correlaciones")
@@ -306,7 +298,6 @@ class RiskManager:
         price: float,
         *,
         strength: float = 1.0,
-        symbol_vol: float = 0.0,
         correlations: Dict[Tuple[str, str], float] | None = None,
         threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
@@ -318,7 +309,6 @@ class RiskManager:
             equity=equity,
             price=price,
             symbol=symbol,
-            symbol_vol=symbol_vol,
             correlations=correlations,
             threshold=threshold,
         )
@@ -349,49 +339,19 @@ class RiskManager:
             return False, "stop_loss", 0.0
         return True, "", delta
 
-    def size_with_volatility(self, symbol_vol: float, price: float, equity: float) -> float:
-        """Dimensiona la posición basada en un objetivo de volatilidad.
-
-        Devuelve el delta necesario para alcanzar el objetivo usando
-        :func:`delta_from_strength` para mantener piramidado consistente. El
-        delta resultante puede exceder el 100 % del equity si ``vol_target`` lo
-        requiere.
-        """
-        if self.vol_target <= 0 or symbol_vol <= 0:
-            return 0.0
-
-        target_abs = vol_target(symbol_vol, equity, self.vol_target)
-        sign = 1 if self.pos.qty >= 0 else -1
-        target = sign * target_abs
-        if equity <= 0 or self.vol_target <= 0 or price <= 0:
-            strength = 0.0
-        else:
-            strength = target * price / equity
-        RISK_EVENTS.labels(event_type="volatility_sizing").inc()
-        return delta_from_strength(
-            strength, equity, price, self.pos.qty, self.risk_pct
-        )
-
     def update_correlation(
         self, symbol_pairs: dict[tuple[str, str], float], threshold: float
     ) -> list[tuple[str, str]]:
-        """Limita exposición conjunta reduciendo ``vol_target`` si se supera el umbral.
+        """Aplicar un límite de correlación.
 
-        Los símbolos con correlaciones que exceden ``threshold`` se agrupan
-        mediante :mod:`correlation_guard` y ``vol_target`` se reduce en proporción
-        al tamaño del grupo más grande.  Se devuelve la lista de pares que
-        superaron el umbral.
+        Se devuelve la lista de pares cuya correlación absoluta excede
+        ``threshold``. Si algún par supera el umbral se emite un evento en el
+        bus, de estar disponible.
         """
-
-        from .correlation_guard import group_correlated, global_cap
 
         exceeded: list[tuple[str, str]] = [
             pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold
         ]
-
-        groups = group_correlated(symbol_pairs, threshold)
-        self.vol_target = global_cap(groups, self._base_vol_target)
-
         if exceeded:
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
@@ -409,7 +369,8 @@ class RiskManager:
 
         Se calcula la correlación \rho_{i,j} = cov_{i,j} / (\sigma_i \sigma_j)
         para cada par ``(i, j)``.  Si el valor absoluto excede ``threshold`` se
-        recorta ``vol_target`` a la mitad y se retornan los pares involucrados.
+        devuelve la lista de pares involucrados y se emite un evento en el bus
+        si está disponible.
         """
 
         exceeded: list[tuple[str, str]] = []
@@ -427,7 +388,6 @@ class RiskManager:
                 if abs(corr) >= threshold:
                     exceeded.append((a, b))
         if exceeded:
-            self.vol_target *= 0.5
             RISK_EVENTS.labels(event_type="correlation_limit").inc()
             if self.bus is not None:
                 asyncio.create_task(
@@ -465,6 +425,7 @@ class RiskManager:
             for j in range(n):
                 var += positions[syms[i]] * mat[i][j] * positions[syms[j]]
         if var > max_variance:
+            self.enabled = False
             self.last_kill_reason = "covariance_limit"
             return False
         return True
