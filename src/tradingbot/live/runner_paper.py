@@ -118,10 +118,10 @@ async def run_paper(
             if signal is None:
                 continue
             eq = broker.equity(mark_prices={symbol: closed.c})
+            risk.account.cash = eq
             allowed, _reason, delta = risk.check_order(
                 symbol,
                 signal.side,
-                eq,
                 closed.c,
                 strength=signal.strength,
             )

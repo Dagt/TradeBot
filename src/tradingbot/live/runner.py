@@ -251,11 +251,11 @@ async def run_live_binance(
             continue
 
         eq = broker.equity(mark_prices={symbol: px})
+        risk.account.cash = eq
         pending = getattr(strat, "pending_qty", {}).get(symbol, 0.0)
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
-            eq,
             closed.c,
             strength=signal.strength,
             pending_qty=pending,

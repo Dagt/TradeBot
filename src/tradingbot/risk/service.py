@@ -129,7 +129,6 @@ class RiskService:
         self,
         symbol: str,
         side: str,
-        equity: float,
         price: float,
         strength: float = 1.0,
         *,
@@ -142,32 +141,22 @@ class RiskService:
         based solely on ``signal_strength`` and ``price``.
         """
 
+        equity = self.account.cash + sum(
+            qty * self.account.prices.get(sym, 0.0)
+            for sym, qty in self.account.positions.items()
+        )
         self.guard.refresh_usd_caps(equity)
 
-        corr_pairs: Dict[tuple[str, str], float] = {}
-        if self.corr is not None:
-            corr_pairs = self.corr.get_correlations()
-
-        delta = self.rm.size(
-            side,
-            price,
-            equity,
-            strength=strength,
-            symbol=symbol,
-            correlations=corr_pairs,
-            threshold=corr_threshold,
-        )
+        qty = self.calc_position_size(strength, price)
 
         if pending_qty > 0:
-            if delta > 0:
-                delta = max(delta - pending_qty, 0.0)
-            elif delta < 0:
-                delta = min(delta + pending_qty, 0.0)
+            qty = max(qty - pending_qty, 0.0)
 
-        alloc = abs(delta) * price
+        alloc = qty * price
         if not self.check_global_exposure(symbol, alloc):
             return False, "symbol_exposure", 0.0
-        qty = abs(delta)
+
+        delta = qty if side == "buy" else -qty
 
         if qty < self.rm.min_order_qty:
             return False, "zero_size", 0.0

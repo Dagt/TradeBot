@@ -842,10 +842,10 @@ class EventDrivenBacktestEngine:
                     if equity < 0:
                         continue
                     equity_for_order = max(equity, 1.0)
+                    svc.account.cash = equity_for_order
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
-                        equity_for_order,
                         place_price,
                         strength=sig.strength,
                     )

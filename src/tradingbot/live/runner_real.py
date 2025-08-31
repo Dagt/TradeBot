@@ -240,10 +240,10 @@ async def _run_symbol(
         if sig is None:
             continue
         eq = broker.equity(mark_prices={cfg.symbol: px})
+        risk.account.cash = eq
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
-            eq,
             closed.c,
             strength=sig.strength,
         )

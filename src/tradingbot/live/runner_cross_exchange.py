@@ -82,17 +82,16 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             equity = eq
         if equity <= 0:
             equity = max(last["spot"], last["perp"])
+        risk.account.cash = equity
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
-            equity,
             last["spot"],
             strength=strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
-            equity,
             last["perp"],
             strength=strength,
         )

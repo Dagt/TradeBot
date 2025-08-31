@@ -32,7 +32,8 @@ async def test_risk_service_correlation_limits_and_sizing():
     )
     guard.refresh_usd_caps(200.0)
     corr = CorrelationService()
-    svc = RiskService(rm, guard, corr_service=corr, risk_pct=1.0)
+    svc = RiskService(rm, guard, corr_service=corr, risk_pct=1.0, risk_per_trade=0.5)
+    svc.account.update_cash(200.0)
 
     _feed_correlated_prices(corr)
     corr_df = corr._returns.corr()
@@ -42,7 +43,7 @@ async def test_risk_service_correlation_limits_and_sizing():
     assert events and events[0]["reason"] == "correlation"
 
     allowed, reason, delta = svc.check_order(
-        "AAA", "buy", 200.0, 100.0, corr_threshold=0.8, strength=0.5
+        "AAA", "buy", 100.0, corr_threshold=0.8, strength=0.5
     )
     assert allowed
     assert delta == pytest.approx(0.5)
