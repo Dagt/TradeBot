@@ -275,11 +275,18 @@ class RiskService:
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
-        Returns ``(allowed, reason, delta)`` where ``delta`` is the signed size
-        based solely on ``signal_strength`` and ``price``.
-        ``pending_qty`` represents quantity already reserved by open orders and
-        is subtracted from ``delta`` so subsequent orders account for any
-        outstanding amounts.
+        Parameters
+        ----------
+        pending_qty:
+            Quantity already reserved by open orders for ``symbol``.  This
+            amount is subtracted from the computed ``delta`` so that subsequent
+            orders account for outstanding amounts.
+
+        Returns
+        -------
+        tuple[bool, str, float]
+            ``(allowed, reason, delta)`` where ``delta`` is the signed size
+            based solely on ``signal_strength`` and ``price``.
         """
 
         # refresh caps based on current account cash
