@@ -122,7 +122,7 @@ class PartialFillAdapter:
 
 
 @pytest.mark.asyncio
-async def test_partial_fill_triggers_taker_completion():
+async def test_partial_fill_fallback_to_market():
     adapter = PartialFillAdapter()
     def on_pf(order, res):
         return "taker"
@@ -134,6 +134,20 @@ async def test_partial_fill_triggers_taker_completion():
     assert adapter.calls[1]["type_"] == "market"
     assert adapter.calls[1]["qty"] == pytest.approx(5.0)
     assert order.pending_qty == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_partial_fill_requotes_remaining_qty():
+    adapter = PartialFillAdapter()
+    def on_pf(order, res):
+        return "re_quote"
+    router = ExecutionRouter(adapter, on_partial_fill=on_pf)
+    order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
+    res = await router.execute(order)
+    assert res["status"] == "filled"
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]["type_"] == "limit"
+    assert adapter.calls[1]["qty"] == pytest.approx(5.0)
 
 
 class ExpiringAdapter:

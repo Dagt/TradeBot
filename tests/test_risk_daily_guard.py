@@ -26,7 +26,7 @@ async def test_daily_guard_close_and_persist(monkeypatch):
 
     # initialize day with current equity
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 100.0}))
-    await broker.place_order(symbol, "buy", "market", 1)
+    await broker.place_order(symbol, "buy", "limit", 1, price=100.0)
 
     broker.update_last_price(symbol, 50.0)
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 50.0}))

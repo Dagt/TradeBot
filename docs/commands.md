@@ -13,10 +13,12 @@ backtests muy largos se recomienda establecer un `timeout` alto o `null`
 para deshabilitar el límite.
 
 A continuación se describen los comandos disponibles. Todas las estrategias
-emiten señales con un campo `strength`. El `RiskService` utiliza esa señal para
-dimensionar automáticamente la posición (`notional = equity * strength`).
-Valores mayores a `1.0` piramidan la exposición, menores la desescalan. El
-parámetro `risk_pct` establece la pérdida máxima permitida.
+emiten señales con un campo `strength` y opcionalmente `limit_price`. El
+`RiskService` utiliza esas señales para dimensionar automáticamente la posición
+(`notional = equity * strength`) y, cuando se proporciona `limit_price`, envía la
+orden mediante `broker.place_limit`. Valores mayores a `1.0` piramidan la
+exposición, menores la desescalan. El parámetro `risk_pct` establece la pérdida
+máxima permitida.
 
 Ejemplo de configuración de riesgo:
 
@@ -26,6 +28,14 @@ risk:
   total_cap_pct: null
   per_symbol_cap_pct: null
 ```
+
+Ejemplo de uso de `place_limit` en código:
+
+```python
+await broker.place_limit("BTC/USDT", "buy", 100.0, 1.0, tif="GTC|PO")
+```
+Los callbacks `on_partial_fill` y `on_order_expiry` pueden usarse para
+re‑cotizar, cancelar o ejecutar al mercado cuando el edge desaparece.
 
 ## `exchange_configs`
 

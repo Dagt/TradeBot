@@ -26,7 +26,7 @@ from tradingbot.core.risk_manager import RiskManager
 account = Account(max_symbol_exposure=1000.0, cash=1000.0)
 rm = RiskManager(account, risk_per_trade=0.02)  # equivalente a --risk-pct 2
 
-signal = {"side": "buy", "strength": 0.6}
+signal = {"side": "buy", "strength": 0.6, "limit_price": 100.0}
 price = 100
 size = rm.calc_position_size(signal["strength"], price)
 atr_value = 5  # ATR sólo se usa para el trailing
@@ -48,6 +48,12 @@ if rm.check_global_exposure("BTC/USDT", size * price):
 El método `update_trailing` mueve el stop a *break-even*, asegura 1 USD neto y
 luego sigue al precio a `2 × ATR`. `manage_position` decide si mantener o cerrar
 la operación y `check_global_exposure` valida el límite global por símbolo.
+
+Para enviar órdenes *limit* puede utilizarse `broker.place_limit`, que admite
+parámetros de *quoting* como `tif` (``GTC``, ``IOC``, ``FOK`` o ``GTD``) y la
+bandera `PO` para post-only. Este método también acepta callbacks
+`on_partial_fill` y `on_order_expiry` que permiten re‑cotizar el remanente,
+cancelar la orden o caer a *market* cuando la ventaja desaparece.
 
 ## Asignación por señal
 

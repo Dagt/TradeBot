@@ -99,11 +99,11 @@ async def test_daily_guard_halts_on_loss():
 
     broker.update_last_price(symbol, 100.0)
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 100.0}))
-    buy = await broker.place_order(symbol, "buy", "market", 1)
+    buy = await broker.place_order(symbol, "buy", "limit", 1, price=100.0)
 
     broker.update_last_price(symbol, 90.0)
     guard.on_mark(datetime.now(timezone.utc), equity_now=broker.equity(mark_prices={symbol: 90.0}))
-    sell = await broker.place_order(symbol, "sell", "market", 1)
+    sell = await broker.place_order(symbol, "sell", "limit", 1, price=90.0)
     delta = (sell["price"] - buy["price"]) * 1
     guard.on_realized_delta(delta)
     halted, reason = guard.check_halt()

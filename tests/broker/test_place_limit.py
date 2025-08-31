@@ -66,6 +66,7 @@ class ExpiringAdapter:
     def __init__(self):
         self.calls = []
         self.maker_fee_bps = 0.0
+        self.cancel_calls = 0
 
     async def place_order(self, *args, **kwargs):
         qty = args[3] if len(args) > 3 else kwargs.get("qty", 0.0)
@@ -75,6 +76,7 @@ class ExpiringAdapter:
         return {"status": "filled", "qty": qty, "order_id": 2}
 
     async def cancel_order(self, *args, **kwargs):
+        self.cancel_calls += 1
         return {"status": "canceled"}
 
 
@@ -124,4 +126,22 @@ async def test_place_limit_expiry_respects_callback():
         on_order_expiry=strat.on_order_expiry,
     )
     assert len(adapter.calls) == 2
+    assert strat.pending_qty["BTC/USDT"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_place_limit_expiry_cancels_on_edge_gone():
+    strat = setup_strategy("sell")
+    adapter = ExpiringAdapter()
+    broker = Broker(adapter)
+    await broker.place_limit(
+        "BTC/USDT",
+        "buy",
+        90.0,
+        1.0,
+        tif="GTD:0.01",
+        on_order_expiry=strat.on_order_expiry,
+    )
+    assert len(adapter.calls) == 1
+    assert adapter.cancel_calls == 1
     assert strat.pending_qty["BTC/USDT"] == pytest.approx(1.0)
