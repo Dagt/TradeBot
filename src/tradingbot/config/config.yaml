@@ -37,6 +37,11 @@ filters:
   min_volume: 1000.0
   max_volatility: 0.05
 
+execution:
+  limit_offset_ticks: 1.0
+  limit_expiry_sec: 1.0
+  requote_attempts: 5
+
 ingestion:
   funding:
     binance_futures:

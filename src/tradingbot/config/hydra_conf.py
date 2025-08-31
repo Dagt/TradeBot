@@ -107,6 +107,15 @@ class FiltersConfig:
 
 
 @dataclass
+class ExecutionConfig:
+    """Parameters controlling limit order execution."""
+
+    limit_offset_ticks: float = 1.0
+    limit_expiry_sec: float = 1.0
+    requote_attempts: int = 5
+
+
+@dataclass
 class AppConfig:
     """Top level application configuration."""
 
@@ -117,6 +126,7 @@ class AppConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     balance: BalanceConfig = field(default_factory=BalanceConfig)
     filters: FiltersConfig = field(default_factory=FiltersConfig)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     exchange_configs: Dict[str, ExchangeVenueConfig] = field(default_factory=dict)
 
 

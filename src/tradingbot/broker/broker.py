@@ -85,7 +85,7 @@ class Broker:
         filled = 0.0
         remaining = qty
         attempts = 0
-        max_attempts = 5
+        max_attempts = int(getattr(settings, "requote_attempts", 5))
         last_res: dict = {}
 
         order = Order(
