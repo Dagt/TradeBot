@@ -24,6 +24,25 @@ async def test_limit_order_partial_fill():
 
 
 @pytest.mark.asyncio
+async def test_manual_requote_after_partial_fill():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+
+    # place initial order and receive partial fill
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 1.0, price=90.0)
+    assert res["status"] == "new"
+    adapter.update_last_price("BTC/USDT", 89.0, qty=0.4)
+
+    # re-quote remaining quantity at better price
+    res2 = await adapter.place_order("BTC/USDT", "buy", "limit", 0.6, price=88.0)
+    assert res2["status"] == "new"
+    fills = adapter.update_last_price("BTC/USDT", 87.0, qty=1.0)
+    assert fills[0]["status"] == "filled"
+    assert fills[0]["qty"] == pytest.approx(0.6)
+
+
+@pytest.mark.asyncio
 async def test_cancel_pending_order_reports_metrics():
     adapter = PaperAdapter(latency=0.01)
     adapter.state.cash = 1000.0

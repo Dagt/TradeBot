@@ -29,7 +29,13 @@ class DummyAgg:
 
 class DummyStrat:
     def on_bar(self, ctx):
-        return SimpleNamespace(side="buy", strength=0.37, reduce_only=False)
+        return SimpleNamespace(side="buy", strength=0.37, reduce_only=False, limit_price=None)
+
+    def on_partial_fill(self, order, res):  # pragma: no cover - simple stub
+        pass
+
+    def on_order_expiry(self, order, res):  # pragma: no cover - simple stub
+        pass
 
 
 class DummyRisk:
@@ -37,7 +43,10 @@ class DummyRisk:
         self.last_strength: float | None = None
         self.min_order_qty = 0.0
         self.rm = types.SimpleNamespace(allow_short=True)
-        self.account = types.SimpleNamespace(current_exposure=lambda symbol: (0.0, 0.0))
+        self.account = types.SimpleNamespace(
+            current_exposure=lambda symbol: (0.0, 0.0),
+            update_open_order=lambda symbol, qty: None,
+        )
         self.trades: dict = {}
 
     def mark_price(self, symbol, price):
@@ -67,14 +76,28 @@ class DummyRisk:
 
 
 class DummyRouter:
-    last_order = None
+    def __init__(self, adapters, **kwargs):
+        self.adapters = adapters
 
-    def __init__(self, adapters):
-        self.adapters = {"paper": DummyBroker()}
 
-    async def execute(self, order, algo=None, **kwargs):
-        DummyRouter.last_order = order
-        return {"status": "ok"}
+class DummyExecBroker:
+    last_args = None
+
+    def __init__(self, adapter):
+        self.adapter = adapter
+
+    async def place_limit(
+        self,
+        symbol,
+        side,
+        price,
+        qty,
+        on_partial_fill=None,
+        on_order_expiry=None,
+        **_,
+    ):
+        DummyExecBroker.last_args = (symbol, side, price, qty, on_partial_fill, on_order_expiry)
+        return {"filled_qty": qty, "pending_qty": 0.0, "realized_pnl": 0.0}
 
 
 class DummyBroker:
@@ -106,11 +129,17 @@ async def test_run_paper(monkeypatch):
     dummy_risk = DummyRisk()
     monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
     monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    monkeypatch.setattr(rp, "Broker", DummyExecBroker)
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
     monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(rp, "settings", types.SimpleNamespace(tick_size=0.1))
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 
-    assert DummyRouter.last_order.symbol == normalize("BTC-USDT")
+    sym, side, price, qty, pfill, oexp = DummyExecBroker.last_args
+    assert sym == normalize("BTC-USDT")
+    assert side == "buy"
+    assert price == pytest.approx(99.9)
+    assert pfill is not None and oexp is not None
     assert dummy_risk.last_strength == pytest.approx(0.37)
