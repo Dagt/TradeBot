@@ -353,6 +353,10 @@ class EventDrivenBacktestEngine:
     def run(self, fills_csv: str | None = None) -> dict:
         """Execute the backtest and return summary results.
 
+        Volatility per symbol is no longer precomputed; any strategy or risk
+        component requiring it should derive the necessary metrics from price
+        data directly.
+
         Notes
         -----
         The reported Sharpe ratio is annualised assuming daily bars
@@ -383,10 +387,9 @@ class EventDrivenBacktestEngine:
             for sym, df in self.data.items()
         }
         data_lengths = {sym: len(df) for sym, df in self.data.items()}
-        sym_vols = {
-            sym: returns(df).rolling(self.window).std().to_numpy()
-            for sym, df in self.data.items()
-        }
+        # Rolling volatility arrays (previously stored in ``sym_vols``) have been
+        # removed. Strategies and risk modules should compute any required
+        # volatility metrics internally as needed.
 
         order_seq = 0
 
