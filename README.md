@@ -64,43 +64,46 @@ entorno real de Binance Futures.
 
 ## Gestión de riesgo
 
-El módulo [`core/risk_manager.py`](src/tradingbot/core/risk_manager.py) provee
-un `RiskManager` universal que trabaja junto a
-[`core/account.py`](src/tradingbot/core/account.py). Las señales incluyen un
-parámetro `strength` continuo que dimensiona la orden según
-`notional = equity * strength`. El gestor aplica un trailing stop adaptativo
-basado en la volatilidad (ATR) y verifica la exposición global.
+El servicio de riesgo combina un `RiskManager` basado en eventos con el
+`CoreRiskManager` y una cuenta (`Account`) que lleva el registro de la
+exposición. Las señales incluyen un parámetro `strength` continuo que escala
+las órdenes mediante `notional = equity * strength`. Un `PortfolioGuard`
+opcional limita el uso de capital y el servicio aplica un *trailing stop*
+adaptativo según la volatilidad (ATR).
 
-El riesgo por operación se controla con `risk_per_trade` (equivalente a
-`--risk-pct` en el CLI). Para limitar la exposición global pueden usarse los
-parámetros `total_cap_pct` y `per_symbol_cap_pct` de `PortfolioGuard`.
+El parámetro `risk_pct` controla la pérdida máxima permitida por operación y
+equivale al flag `--risk-pct` en la CLI.
 
 ### Ejemplo
 
 ```python
-from tradingbot.core.account import Account
-from tradingbot.core.risk_manager import RiskManager
+from tradingbot.core import Account
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 
 account = Account(max_symbol_exposure=1000.0, cash=1000.0)
-rm = RiskManager(account, risk_per_trade=0.02)  # --risk-pct 2 en la CLI
+risk = RiskService(
+    PortfolioGuard(GuardConfig(venue="demo")),
+    account=account,
+    risk_pct=0.02,
+)
 
 signal = {"side": "buy", "strength": 0.5, "atr": 6}
 price = 100
-size = rm.calc_position_size(signal["strength"], price)
-if rm.check_global_exposure("BTC/USDT", size * price):
-    stop = rm.initial_stop(price, "buy", atr=signal["atr"])
-    trade = {"side": "buy", "entry_price": price, "qty": size, "stop": stop, "atr": signal["atr"]}
-    rm.update_trailing(trade, current_price=108)
-    trade["current_price"] = 108
-    decision = rm.manage_position(trade)
+ok, reason, delta = risk.check_order("BTC/USDT", signal["side"], price, strength=signal["strength"])
+if ok and delta > 0:
+    stop = risk.initial_stop(price, signal["side"], atr=signal["atr"])
+    trade = {"side": signal["side"], "qty": delta, "entry_price": price, "stop": stop, "atr": signal["atr"]}
+    risk.update_trailing(trade, current_price=108)
+    decision = risk.manage_position(trade)
 ```
 
-El parámetro `risk_per_trade` debe indicarse como una fracción entre 0 y 1.
-Si se provee un valor de 1 a 100 se interpreta como porcentaje y se divide
-entre 100 (por ejemplo, `--risk-pct 1` equivale a `0.01`). Valores negativos
-o superiores a 100 generan un error.
+El parámetro `risk_pct` debe indicarse como una fracción entre 0 y 1. Valores
+entre 1 y 100 se interpretan como porcentaje y se normalizan dividiéndolos entre
+100 (por ejemplo, `--risk-pct 1` equivale a `0.01`). Valores negativos o
+superiores a 100 generan un error.
 
-`DailyGuard` supervisa las pérdidas intradía y el drawdown global. Si se
+`DailyGuard` supervisa las pérdidas intradía y el *drawdown* global. Si se
 superan los límites configurados, detiene el bot o cierra las posiciones
 abiertas.
 

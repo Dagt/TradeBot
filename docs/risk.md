@@ -1,47 +1,40 @@
 # Gestión de riesgo
 
-## RiskManager universal
+## RiskService
 
-El módulo [`core/risk_manager.py`](../src/tradingbot/core/risk_manager.py)
-implementa un gestor de riesgo genérico que opera junto a
-[`core/account.py`](../src/tradingbot/core/account.py). Su interfaz expone:
-
-- `calc_position_size(signal_strength, price)`: dimensiona la posición según la
-  fuerza de la señal y el riesgo por operación.
-- `initial_stop(entry_price, side)`: calcula el stop inicial usando
-  `risk_pct`. El valor de ATR sólo se utiliza en el trailing.
-- `update_trailing(trade, current_price, fees_slip=0.0)`: aplica un trailing
-  stop adaptativo en tres etapas.
-- `manage_position(trade, signal=None)`: decide si mantener o cerrar una
-  posición según el stop y la señal actual.
-- `check_global_exposure(symbol, new_alloc)`: verifica que la nueva exposición
-  no supere el límite global para el símbolo.
+[`risk/service.py`](../src/tradingbot/risk/service.py) expone un servicio que
+combina `RiskManager`, `CoreRiskManager` y un `Account` para mantener la
+exposición bajo control. Además puede integrar un `PortfolioGuard` y un
+`DailyGuard` para limitar el uso de capital y las pérdidas intradía.
 
 ### Ejemplo de uso
 
 ```python
-from tradingbot.core.account import Account
-from tradingbot.core.risk_manager import RiskManager
+from tradingbot.core import Account
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 
 account = Account(max_symbol_exposure=1000.0, cash=1000.0)
-rm = RiskManager(account, risk_per_trade=0.02)  # equivalente a --risk-pct 2
+risk = RiskService(
+    PortfolioGuard(GuardConfig(venue="demo")),
+    account=account,
+    risk_pct=0.02,
+)
 
 signal = {"side": "buy", "strength": 0.6, "limit_price": 100.0}
 price = 100
-size = rm.calc_position_size(signal["strength"], price)
-atr_value = 5  # ATR sólo se usa para el trailing
-if rm.check_global_exposure("BTC/USDT", size * price):
-    stop = rm.initial_stop(price, signal["side"])
+ok, reason, delta = risk.check_order("BTC/USDT", signal["side"], price, strength=signal["strength"])
+if ok and delta > 0:
+    stop = risk.initial_stop(price, signal["side"])
     trade = {
-        "side": "buy",
+        "side": signal["side"],
         "entry_price": price,
-        "qty": size,
+        "qty": delta,
         "stop": stop,
-        "atr": atr_value,
+        "atr": 5,
     }
-    rm.update_trailing(trade, current_price=112)
-    trade["current_price"] = 112
-    decision = rm.manage_position(trade)
+    risk.update_trailing(trade, current_price=112)
+    decision = risk.manage_position(trade)
 ```
 
 `signal["strength"]` acepta valores continuos y escala el tamaño de la orden.

@@ -6,8 +6,8 @@ continuación se presenta un resumen en lenguaje sencillo.
 Todas las señales incluyen un campo `strength` continuo que dimensiona las
 órdenes mediante `notional = equity * strength`. Opcionalmente pueden definir
 `limit_price` para cotizar órdenes *limit* a través del broker. El
-`RiskManager` universal utiliza estos valores para calcular el tamaño y aplicar
-un trailing stop adaptativo.
+`RiskService` combina `RiskManager` y `CoreRiskManager` para calcular el tamaño
+y aplicar un trailing stop adaptativo.
 
 Ejemplo de señal:
 
@@ -53,7 +53,7 @@ compra o venta.
 ### Triple Barrier (`triple_barrier`)
 Emplea tres barreras (objetivo, límite de pérdida y tiempo) únicamente para
 etiquetar los datos; la gestión de la posición (stops y cierres) la realiza el
-`RiskManager`.
+`RiskService`.
 
 ### Cash and Carry (`cash_and_carry`)
 Aprovecha diferencias de precio entre el mercado spot y los futuros para

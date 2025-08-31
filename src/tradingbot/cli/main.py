@@ -837,13 +837,19 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
         from ..bus import EventBus
         from ..live.daemon import TradeBotDaemon
-        from ..risk.manager import RiskManager
+        from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
+        from ..risk.service import RiskService
         from ..strategies.breakout_atr import BreakoutATR
         from ..execution.router import ExecutionRouter
+        from ..core import Account
 
         adapter = BinanceSpotWSAdapter()
         bus = EventBus()
-        risk = RiskManager(risk_pct=0.0, bus=bus)
+        risk_service = RiskService(
+            PortfolioGuard(GuardConfig(venue="binance")),
+            account=Account(float("inf")),
+            risk_pct=0.0,
+        )
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 
@@ -858,7 +864,7 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         bot = TradeBotDaemon(
             {"binance": adapter},
             [strat],
-            risk,
+            risk_service.rm,
             router,
             [cfg.backtest.symbol],
             correlation_threshold=corr_thr,
@@ -1418,6 +1424,8 @@ def tri_arb(
     setup_logging()
     from ..live.runner_triangular import TriConfig, run_triangular_binance
     from ..strategies.arbitrage_triangular import TriRoute
+    from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
+    from ..risk.service import RiskService
 
     try:
         base, mid, quote = route.split("-")
@@ -1425,7 +1433,8 @@ def tri_arb(
         raise typer.BadParameter("Formato de ruta inválido, usa BASE-MID-QUOTE") from exc
 
     cfg = TriConfig(route=TriRoute(base, mid, quote))
-    asyncio.run(run_triangular_binance(cfg))
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="binance")), risk_pct=0.0)
+    asyncio.run(run_triangular_binance(cfg, risk))
 
 
 @app.command("cross-arb")
@@ -1501,6 +1510,8 @@ def run_cross_arb(
     )
     from ..strategies.cross_exchange_arbitrage import CrossArbConfig
     from ..live.runner_cross_exchange import run_cross_exchange
+    from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
+    from ..risk.service import RiskService
 
     adapters = {
         "binance_spot": BinanceSpotAdapter,
@@ -1521,7 +1532,8 @@ def run_cross_arb(
         perp=adapters[perp](),
         threshold=threshold,
     )
-    asyncio.run(run_cross_exchange(cfg))
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="cross")), risk_pct=0.0)
+    asyncio.run(run_cross_exchange(cfg, risk))
 
 
 def main() -> int:
