@@ -438,6 +438,91 @@ async def test_download_order_book_connector(monkeypatch):
     assert captured[0].ask_qty == [2.0]
 
 
+@pytest.mark.asyncio
+async def test_fetch_bars_no_persist(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    ts_ms = int(ts.timestamp() * 1000)
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int):
+            return [(ts_ms, 1.0, 2.0, 0.5, 1.5, 100.0)]
+
+    called = False
+    inserted: list[dict] = []
+
+    def fake_get_storage(backend):
+        nonlocal called
+        called = True
+
+        class DummyStorage:
+            def get_engine(self):
+                return "engine"
+
+            def insert_bar(self, *args, **kwargs):
+                inserted.append(kwargs)
+
+        return DummyStorage()
+
+    monkeypatch.setattr(ingestion, "_get_storage", fake_get_storage)
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(
+            DummyAdapter(),
+            "BTC/USDT",
+            persist=False,
+            sleep_s=999,
+            log=False,
+        )
+    )
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not called
+    assert inserted == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_bars_persist_inserts(monkeypatch):
+    ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    ts_ms = int(ts.timestamp() * 1000)
+
+    class DummyAdapter:
+        name = "dummy"
+
+        async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int):
+            return [(ts_ms, 1.0, 2.0, 0.5, 1.5, 100.0)]
+
+    inserted: list[tuple] = []
+
+    class DummyStorage:
+        def get_engine(self):
+            return "engine"
+
+        def insert_bar(self, *args):
+            inserted.append(args)
+
+    monkeypatch.setattr(ingestion, "_get_storage", lambda backend: DummyStorage())
+
+    task = asyncio.create_task(
+        ingestion.fetch_bars(
+            DummyAdapter(),
+            "BTC/USDT",
+            persist=True,
+            sleep_s=999,
+            log=False,
+        )
+    )
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(inserted) == 1
+
 def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
     """Running the ingest CLI with CSV backend should create a CSV file."""
 
