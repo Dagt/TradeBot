@@ -882,8 +882,7 @@ class EventDrivenBacktestEngine:
                         continue
                     svc = self.risk[(strat_name, symbol)]
                     pos_qty, _ = svc.account.current_exposure(symbol)
-                    if abs(pos_qty) > self.min_order_qty:
-                        continue
+                    trade = svc.get_trade(symbol)
                     start_idx = i - self.window
                     if getattr(strat, "needs_window_df", True):
                         window_df = df.iloc[start_idx:i]
@@ -891,14 +890,71 @@ class EventDrivenBacktestEngine:
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
-                    if sig is None or sig.side == "flat":
-                        continue
                     place_price = float(arrs["close"][i])
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
                     equity_for_order = max(equity, 1.0)
                     svc.account.cash = equity_for_order
+                    if trade:
+                        decision = svc.manage_position(trade, sig)
+                        if decision == "close":
+                            delta_qty = -pos_qty
+                        elif decision in {"scale_in", "scale_out"}:
+                            target = svc.calc_position_size(sig.strength, place_price)
+                            delta_qty = target - abs(pos_qty)
+                        else:
+                            continue
+                        if abs(delta_qty) < self.min_order_qty:
+                            continue
+                        if decision == "close":
+                            side = "buy" if delta_qty > 0 else "sell"
+                        else:
+                            side = (
+                                trade["side"]
+                                if delta_qty > 0
+                                else ("sell" if trade["side"] == "buy" else "buy")
+                            )
+                        qty = abs(delta_qty)
+                        notional = qty * place_price
+                        if not svc.register_order(notional):
+                            continue
+                        exchange = self.strategy_exchange[(strat_name, symbol)]
+                        base_latency = self.exchange_latency.get(exchange, self.latency)
+                        delay = max(1, int(base_latency * self.stress.latency))
+                        exec_index = i + delay
+                        queue_pos = 0.0
+                        if self.use_l2:
+                            vol_key = "ask_size" if side == "buy" else "bid_size"
+                            depth = self.exchange_depth.get(exchange, self.default_depth)
+                            vol_arr = arrs.get(vol_key)
+                            avail = float(vol_arr[i]) if vol_arr is not None else 0.0
+                            queue_pos = min(avail, depth)
+                        post_only = bool(getattr(sig, "post_only", False))
+                        order_seq += 1
+                        order = Order(
+                            exec_index,
+                            order_seq,
+                            i,
+                            strat_name,
+                            symbol,
+                            side,
+                            qty,
+                            exchange,
+                            place_price,
+                            qty,
+                            0.0,
+                            0.0,
+                            queue_pos,
+                            None,
+                            post_only,
+                            None,
+                        )
+                        orders.append(order)
+                        heapq.heappush(order_queue, order)
+                        continue
+                    if sig is None or sig.side == "flat":
+                        continue
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
