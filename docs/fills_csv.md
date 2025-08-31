@@ -6,7 +6,7 @@ Cada fila representa una operación ejecutada e incluye la siguiente informació
 | Columna | Descripción |
 | --- | --- |
 | `timestamp` | Marca de tiempo del bar donde se ejecutó el fill |
-| `reason` | Motivo del fill. Valores posibles: `order` (ejecución de la orden), `take_profit`, `stop_loss`, `trailing_stop` o `exit` (cierre manual u otros motivos) |
+| `reason` | Motivo del fill. Valores posibles: `order` (ejecución de la orden), `stop_loss`, `trailing_stop` o `exit` (cierre manual u otros motivos) |
 | `side` | `buy` o `sell` |
 | `price` | Precio de ejecución |
 | `qty` | Cantidad ejecutada |
