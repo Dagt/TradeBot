@@ -83,7 +83,6 @@ def test_daily_loss_limit_triggers_kill_switch():
 
 
 def test_risk_service_updates_and_persists(monkeypatch):
-    rm = RiskManager()
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=0.5, per_symbol_cap_pct=0.5, venue="X")
     )
@@ -93,21 +92,22 @@ def test_risk_service_updates_and_persists(monkeypatch):
     monkeypatch.setattr(
         timescale, "insert_risk_event", lambda engine, **kw: events.append(kw)
     )
-    svc = RiskService(rm, guard, daily, engine=object(), risk_pct=1.0)
-    allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, 1.0, strength=1.0)
+    svc = RiskService(guard, daily, engine=object(), risk_pct=1.0)
+    svc.account.cash = 100.0
+    svc.rm.kill_switch("manual")
+    allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, strength=1.0)
     assert not allowed
     assert events and events[0]["kind"] == "VIOLATION"
 
 
 def test_risk_service_stop_loss_triggers_close():
-    rm = RiskManager(risk_pct=0.05)
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.05)
-    rm.set_position(1.0)
+    svc = RiskService(guard, risk_pct=0.05)
+    svc.rm.set_position(1.0)
     svc.update_position("X", "BTC", 1.0)
-    rm.check_limits(100.0)
+    svc.rm.check_limits(100.0)
 
-    allowed, reason, delta = svc.check_order("BTC", "buy", 10_000.0, 94.0)
+    allowed, reason, delta = svc.check_order("BTC", "buy", 94.0)
     assert allowed is True
     assert reason == "stop_loss"
     assert delta == pytest.approx(-1.0)

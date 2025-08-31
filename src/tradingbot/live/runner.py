@@ -119,7 +119,6 @@ async def run_live_binance(
         on_order_expiry=strat.on_order_expiry,
     )
     exec_broker = Broker(router)
-    risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,
@@ -134,13 +133,13 @@ async def run_live_binance(
     ), venue="binance")
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
     risk = RiskService(
-        risk_core,
         guard,
         dguard,
         engine=pg_engine,
         account=broker.account,
         risk_pct=risk_pct,
     )
+    risk.rm.allow_short = False
     guard.refresh_usd_caps(broker.equity({}))
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)
@@ -250,12 +249,10 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        eq = broker.equity(mark_prices={symbol: px})
         pending = getattr(strat, "pending_qty", {}).get(symbol, 0.0)
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
-            eq,
             closed.c,
             strength=signal.strength,
             pending_qty=pending,

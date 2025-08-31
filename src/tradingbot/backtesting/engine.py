@@ -335,20 +335,17 @@ class EventDrivenBacktestEngine:
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
             allow_short = self.exchange_mode.get(exchange, "perp") != "spot"
-            rm = RiskManager(
-                risk_pct=self._risk_pct,
-                allow_short=allow_short,
-                min_order_qty=self.min_order_qty,
-            )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             account = CoreAccount(float("inf"), cash=self.initial_equity)
-            self.risk[key] = RiskService(
-                rm,
+            svc = RiskService(
                 guard,
                 account=account,
                 risk_per_trade=1.0,
                 risk_pct=self._risk_pct,
             )
+            svc.rm.allow_short = allow_short
+            svc.rm.min_order_qty = self.min_order_qty
+            self.risk[key] = svc
             self.strategy_exchange[key] = exchange
 
         # Internal flag to avoid repeated on_bar calls per bar index
@@ -842,10 +839,10 @@ class EventDrivenBacktestEngine:
                     if equity < 0:
                         continue
                     equity_for_order = max(equity, 1.0)
+                    svc.account.cash = equity_for_order
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
-                        equity_for_order,
                         place_price,
                         strength=sig.strength,
                     )

@@ -28,9 +28,7 @@ def test_service_calc_position_size_passes_strength():
     partial = svc.calc_position_size(0.37, price)
     assert partial == pytest.approx(full * 0.37)
 
-    allowed, reason, delta = svc.check_order(
-        "BTC", "buy", account.cash, price, strength=0.37
-    )
+    allowed, reason, delta = svc.check_order("BTC", "buy", price, strength=0.37)
     assert allowed is True
     assert delta == pytest.approx(partial)
 
