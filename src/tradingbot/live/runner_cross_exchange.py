@@ -14,7 +14,7 @@ from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
-from ..risk.manager import RiskManager, load_positions
+from ..risk.service import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 

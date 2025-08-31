@@ -19,7 +19,7 @@ from ..bus import EventBus
 from ..connectors.base import ExchangeConnector
 from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
-from ..risk.manager import RiskManager, load_positions
+from ..risk.service import RiskService, load_positions
 from ..risk.portfolio_guard import PortfolioGuard
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
@@ -102,8 +102,8 @@ class TradeBotDaemon:
         Iterable of strategy instances.  Strategies are expected to expose
         ``on_trade`` returning an optional signal with ``side`` and
         ``strength`` attributes.
-    risk_manager:
-        Instance of :class:`RiskManager` used to gate orders.
+    risk_service:
+        Instance of :class:`RiskService` used to gate orders.
     router:
         Execution router responsible for sending orders to the venues.
     symbols:
@@ -116,7 +116,7 @@ class TradeBotDaemon:
         self,
         adapters: Dict[str, ExchangeConnector],
         strategies: Iterable | None,
-        risk_manager: RiskManager,
+        risk_service: RiskService,
         router: ExecutionRouter,
         symbols: Iterable[str],
         accounts: Optional[Dict[str, ExchangeConnector]] = None,
@@ -143,7 +143,7 @@ class TradeBotDaemon:
                 self.strategies.append(cls())
             except Exception as exc:
                 log.warning("strategy_load_error", extra={"path": path, "err": str(exc)})
-        self.risk = risk_manager
+        self.risk = risk_service
         self.router = router
         # ensure router knows about all adapters (paper/live)
         for name, ad in adapters.items():
@@ -177,9 +177,9 @@ class TradeBotDaemon:
                     self.guard.set_position(venue, sym, 0.0)
 
         # Event bus used across components
-        self.bus = risk_manager.bus or EventBus()
-        if risk_manager.bus is None:
-            risk_manager.bus = self.bus
+        self.bus = risk_service.bus or EventBus()
+        if risk_service.bus is None:
+            risk_service.bus = self.bus
 
         self._tasks: List[asyncio.Task] = []
         self._stop = asyncio.Event()

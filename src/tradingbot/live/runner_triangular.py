@@ -13,7 +13,7 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge
 )
-from ..risk.manager import RiskManager, load_positions
+from ..risk.service import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 
@@ -48,11 +48,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     last: Dict[str, float] = {"bq": None, "mq": None, "mb": None}
     fills = 0
     if risk is None:
-        risk = RiskService(
-            RiskManager(risk_pct=0.0),
-            PortfolioGuard(GuardConfig(venue="binance")),
-            risk_pct=0.0,
-        )
+        risk = RiskService(PortfolioGuard(GuardConfig(venue="binance")), risk_pct=0.0)
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if engine is not None:
