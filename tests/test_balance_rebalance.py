@@ -56,7 +56,7 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
         "USDT",
         price=px,
         venues={"A": ex_a, "B": ex_b},
-        risk=risk.rm,
+        risk=risk,
         engine=engine,
         threshold=1.0,
     )
@@ -110,7 +110,7 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     daemon = TradeBotDaemon(
         {"A": ex_a, "B": ex_b},
         [],
-        risk.rm,
+        risk,
         router,
         symbols=[],
         accounts={"A": ex_a, "B": ex_b},

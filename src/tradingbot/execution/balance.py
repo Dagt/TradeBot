@@ -58,8 +58,9 @@ async def rebalance_between_exchanges(
     asset: str,
     price: float,
     venues: Mapping[str, Any],
-    risk: RiskService, account: Account,
+    risk: RiskService,
     engine,
+    account: Account | None = None,
     *,
     threshold: float = 0.0,
 ) -> None:
@@ -78,6 +79,8 @@ async def rebalance_between_exchanges(
         Risk service instance whose ``positions_multi`` will be updated.
     engine: Any
         SQLAlchemy engine for persistence through ``insert_portfolio_snapshot``.
+    account: Account | None, optional
+        Account instance to sync with balances. Defaults to ``risk.account``.
     threshold: float, optional
         Minimum balance difference required to trigger a transfer.
     """
@@ -87,6 +90,9 @@ async def rebalance_between_exchanges(
     for name, client in venues.items():
         bal = await __to_thread(client.fetch_balance)
         balances[name] = float((bal.get(asset) or {}).get("free") or 0.0)
+
+    if account is None:
+        account = risk.account
 
     if len(balances) < 2:
         return
@@ -98,8 +104,8 @@ async def rebalance_between_exchanges(
         # No action required
         for venue, bal in balances.items():
             risk.update_position(venue, asset, bal)
-        cur = account.positions.get(asset, 0.0)
-        account.update_position(asset, bal - cur, price=price)
+            cur = account.positions.get(asset, 0.0)
+            account.update_position(asset, bal - cur, price=price)
         return
 
     amount = diff / 2

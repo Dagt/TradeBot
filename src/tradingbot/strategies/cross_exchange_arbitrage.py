@@ -282,14 +282,14 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                     else:
                         price_ref = last["spot"]
                     try:
-                        await rebalance_between_exchanges(
-                            asset,
-                            price=float(price_ref),
-                            venues=venues,
-                            risk=risk.rm,
-                            engine=engine,
-                            threshold=cfg.rebalance_threshold,
-                        )
+                            await rebalance_between_exchanges(
+                                asset,
+                                price=float(price_ref),
+                                venues=venues,
+                                risk=risk,
+                                engine=engine,
+                                threshold=cfg.rebalance_threshold,
+                            )
                     except Exception as e:  # pragma: no cover - logging only
                         log.debug("No se pudo rebalancear %s: %s", asset, e)
 
