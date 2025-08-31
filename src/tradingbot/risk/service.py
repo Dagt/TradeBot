@@ -86,16 +86,7 @@ class RiskService:
 
     # Delegates to core risk manager
     def calc_position_size(self, signal_strength: float, price: float) -> float:
-        pending = sum(
-            abs(qty) * self.account.prices.get(sym, 0.0)
-            for sym, qty in self.account.open_orders.items()
-        )
-        balance = self.account.cash - pending
-        alloc = balance * self.core.risk_per_trade * float(signal_strength)
-        if price <= 0:
-            return 0.0
-        size = alloc / float(price)
-        return max(0.0, size)
+        return self.core.calc_position_size(signal_strength, price)
 
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
         current = self.account.current_exposure(symbol)[1]
