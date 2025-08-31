@@ -491,6 +491,52 @@ class EventDrivenBacktestEngine:
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
+                        elif decision == "close":
+                            pending_qty = abs(pos_qty)
+                            if pending_qty > self.min_order_qty:
+                                side = "sell" if pos_qty > 0 else "buy"
+                                exchange = self.strategy_exchange[(strat, sym)]
+                                base_latency = self.exchange_latency.get(
+                                    exchange, self.latency
+                                )
+                                delay = max(1, int(base_latency * self.stress.latency))
+                                exec_index = i + delay
+                                queue_pos = 0.0
+                                if self.use_l2:
+                                    vol_key = (
+                                        "ask_size" if side == "buy" else "bid_size"
+                                    )
+                                    depth = self.exchange_depth.get(
+                                        exchange, self.default_depth
+                                    )
+                                    vol_arr = arrs.get(vol_key)
+                                    avail = (
+                                        float(vol_arr[i])
+                                        if vol_arr is not None
+                                        else 0.0
+                                    )
+                                    queue_pos = min(avail, depth)
+                                order_seq += 1
+                                order = Order(
+                                    exec_index,
+                                    order_seq,
+                                    i,
+                                    strat,
+                                    sym,
+                                    side,
+                                    pending_qty,
+                                    exchange,
+                                    price,
+                                    pending_qty,
+                                    0.0,
+                                    0.0,
+                                    queue_pos,
+                                    None,
+                                    False,
+                                    None,
+                                )
+                                orders.append(order)
+                                heapq.heappush(order_queue, order)
             # Execute queued orders for this index
             while order_queue and order_queue[0].execute_index <= i:
                 order = heapq.heappop(order_queue)
