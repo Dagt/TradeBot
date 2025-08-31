@@ -47,4 +47,5 @@ def test_stop_triggers_close(monkeypatch):
     monkeypatch.setattr(svc.rm, "check_limits", lambda price: None)
 
     res = engine.run()
-    assert any(o["side"] == "sell" and pytest.approx(o["qty"]) == 1.0 for o in res["orders"])
+    assert res["orders"][0]["side"] == "sell"
+    assert res["orders"][0]["qty"] == pytest.approx(1.0)
