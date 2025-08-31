@@ -17,7 +17,6 @@ from ..data.basis import poll_basis
 from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
-from ..risk.oco import OcoBook, load_active_oco
 
 try:
     from ..storage.timescale import get_engine
@@ -52,13 +51,11 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         )
 
     engine = get_engine() if _CAN_PG else None
-    oco_book = OcoBook()
     if engine is not None:
         venue = risk.guard.cfg.venue if getattr(risk, "guard", None) else "cross"
         pos_map = load_positions(engine, venue)
         for sym, data in pos_map.items():
             risk.update_position(venue, sym, data.get("qty", 0.0))
-        oco_book.preload(load_active_oco(engine, venue=venue, symbols=[cfg.symbol]))
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
 

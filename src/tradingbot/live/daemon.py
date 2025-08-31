@@ -21,7 +21,6 @@ from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
 from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import PortfolioGuard
-from ..risk.oco import OcoBook, load_active_oco
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
@@ -190,8 +189,6 @@ class TradeBotDaemon:
         )
         # Últimos precios conocidos por símbolo/asset
         self.last_prices: Dict[str, float] = {}
-        self.oco_book = OcoBook()
-
         # Bus subscriptions
         self.bus.subscribe("trade", self._dispatch_trade)
         self.bus.subscribe("signal", self._on_signal)
@@ -261,7 +258,7 @@ class TradeBotDaemon:
 
     # ------------------------------------------------------------------
     def _rehydrate_state(self) -> None:
-        """Cargar posiciones y órdenes OCO activas desde la base de datos."""
+        """Cargar posiciones desde la base de datos."""
         if not _CAN_PG:
             return
         try:
@@ -274,8 +271,6 @@ class TradeBotDaemon:
             self.risk.update_position(venue, sym, data.get("qty", 0.0))
             if self.guard:
                 self.guard.set_position(venue, sym, data.get("qty", 0.0))
-        symbols = list(self.symbols)
-        self.oco_book.preload(load_active_oco(engine, venue=venue, symbols=symbols))
 
     # ------------------------------------------------------------------
     async def _balance_worker(self) -> None:

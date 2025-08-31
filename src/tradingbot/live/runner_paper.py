@@ -14,7 +14,6 @@ from ..risk.manager import RiskManager, load_positions
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
 from ..risk.correlation_service import CorrelationService
-from ..risk.oco import OcoBook, load_active_oco
 from ..strategies import STRATEGIES
 from monitoring import panel
 
@@ -63,14 +62,12 @@ async def run_paper(
         risk_pct=risk_pct,
     )
     engine = get_engine() if _CAN_PG else None
-    oco_book = OcoBook()
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
             risk.update_position(
                 guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
             )
-        oco_book.preload(load_active_oco(engine, venue=guard.cfg.venue, symbols=[symbol]))
 
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
