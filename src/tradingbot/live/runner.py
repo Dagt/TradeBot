@@ -192,7 +192,10 @@ async def run_live_binance(
                     on_partial_fill=strat.on_partial_fill,
                     on_order_expiry=strat.on_order_expiry,
                 )
-                risk.on_fill(symbol, close_side, abs(pos_qty), venue="binance")
+                filled_qty = float(resp.get("filled_qty", 0.0))
+                pending_qty = float(resp.get("pending_qty", 0.0))
+                risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                risk.on_fill(symbol, close_side, filled_qty, venue="binance")
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                 if halted:
@@ -214,7 +217,10 @@ async def run_live_binance(
                         on_partial_fill=strat.on_partial_fill,
                         on_order_expiry=strat.on_order_expiry,
                     )
-                    risk.on_fill(symbol, side, abs(delta_qty), venue="binance")
+                    filled_qty = float(resp.get("filled_qty", 0.0))
+                    pending_qty = float(resp.get("pending_qty", 0.0))
+                    risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                    risk.on_fill(symbol, side, filled_qty, venue="binance")
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
@@ -275,7 +281,9 @@ async def run_live_binance(
         )
         fills += 1
         log.info("FILL live %s", resp)
-        risk.on_fill(symbol, side, abs(delta), venue="binance")
+        filled_qty = float(resp.get("filled_qty", 0.0))
+        pending_qty = float(resp.get("pending_qty", 0.0))
+        risk.on_fill(symbol, side, filled_qty, venue="binance")
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:

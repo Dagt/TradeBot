@@ -179,6 +179,7 @@ async def _run_symbol(
                 price = (
                     px - limit_offset if close_side == "buy" else px + limit_offset
                 )
+                prev_rpnl = broker.state.realized_pnl
                 resp = await exec_broker.place_limit(
                     cfg.symbol,
                     close_side,
@@ -188,13 +189,17 @@ async def _run_symbol(
                     on_partial_fill=lambda *_: "re_quote",
                     on_order_expiry=lambda *_: "re_quote",
                 )
+                filled_qty = float(resp.get("filled_qty", 0.0))
+                pending_qty = float(resp.get("pending_qty", 0.0))
+                risk.account.update_open_order(cfg.symbol, filled_qty + pending_qty)
                 risk.on_fill(
                     cfg.symbol,
                     close_side,
-                    abs(pos_qty),
+                    filled_qty,
                     venue=venue if not dry_run else "paper",
                 )
-                halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+                delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
                 if halted:
                     log.error("[HALT] motivo=%s", reason)
                     break
@@ -209,6 +214,7 @@ async def _run_symbol(
                     price = (
                         px - limit_offset if side == "buy" else px + limit_offset
                     )
+                    prev_rpnl = broker.state.realized_pnl
                     resp = await exec_broker.place_limit(
                         cfg.symbol,
                         side,
@@ -218,13 +224,17 @@ async def _run_symbol(
                         on_partial_fill=lambda *_: "re_quote",
                         on_order_expiry=lambda *_: "re_quote",
                     )
+                    filled_qty = float(resp.get("filled_qty", 0.0))
+                    pending_qty = float(resp.get("pending_qty", 0.0))
+                    risk.account.update_open_order(cfg.symbol, filled_qty + pending_qty)
                     risk.on_fill(
                         cfg.symbol,
                         side,
-                        abs(delta_qty),
+                        filled_qty,
                         venue=venue if not dry_run else "paper",
                     )
-                    halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+                    delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
                     if halted:
                         log.error("[HALT] motivo=%s", reason)
                         break
@@ -255,6 +265,7 @@ async def _run_symbol(
             if sig.limit_price is not None
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
+        prev_rpnl = broker.state.realized_pnl
         resp = await exec_broker.place_limit(
             cfg.symbol,
             side,
@@ -265,9 +276,16 @@ async def _run_symbol(
             on_order_expiry=lambda *_: "re_quote",
         )
         log.info("LIVE FILL %s", resp)
+        filled_qty = float(resp.get("filled_qty", 0.0))
+        pending_qty = float(resp.get("pending_qty", 0.0))
         risk.on_fill(
-            cfg.symbol, side, qty, venue=venue if not dry_run else "paper"
+            cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
+        delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+        halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
+        if halted:
+            log.error("[HALT] motivo=%s", reason)
+            break
 
 
 async def run_live_real(
