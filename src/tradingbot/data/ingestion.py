@@ -13,6 +13,7 @@ from ..connectors.coinapi import CoinAPIConnector
 from ..storage import timescale as ts_storage
 from ..storage import quest as qs_storage
 import inspect
+import typer
 from ..utils.metrics import ORDERBOOK_INSERT_FAILURES
 from ..core.symbols import normalize
 from ..exchanges import SUPPORTED_EXCHANGES
@@ -1239,7 +1240,7 @@ async def fetch_bars(
                     v=v,
                 )
                 if log:
-                    print(bar)
+                    typer.echo(str(bar))
                 if persist and storage:
                     storage.insert_bar(
                         engine,
