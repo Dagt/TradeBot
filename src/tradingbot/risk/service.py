@@ -438,7 +438,12 @@ class RiskService:
                 "entry_price": getattr(self.rm, "_entry_price", None),
             }
         )
-        trade.setdefault("stop", trade["entry_price"])
+        entry_price = trade.get("entry_price")
+        if entry_price is not None:
+            trade.setdefault(
+                "stop",
+                self.initial_stop(entry_price, trade["side"]),
+            )
         trade.setdefault("stage", 0)
         self.trades[symbol] = trade
 
