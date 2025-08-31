@@ -1,7 +1,6 @@
 import pytest
 
 from tradingbot.core import Account, RiskManager as CoreRiskManager
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 
@@ -17,10 +16,8 @@ def test_core_calc_position_size_scales_with_strength():
 
 def test_service_calc_position_size_passes_strength():
     account = Account(float("inf"), cash=1000.0)
-    rm = RiskManager()
     guard = PortfolioGuard(GuardConfig(venue="test"))
     svc = RiskService(
-        rm,
         guard,
         account=account,
         risk_per_trade=0.1,
@@ -30,6 +27,12 @@ def test_service_calc_position_size_passes_strength():
     full = svc.calc_position_size(1.0, price)
     partial = svc.calc_position_size(0.37, price)
     assert partial == pytest.approx(full * 0.37)
+
+    allowed, reason, delta = svc.check_order(
+        "BTC", "buy", account.cash, price, strength=0.37
+    )
+    assert allowed is True
+    assert delta == pytest.approx(partial)
 
 
 def test_calc_position_size_handles_edge_cases():
