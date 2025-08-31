@@ -1200,19 +1200,61 @@ async def poll_basis(
             log.debug("Basis poll failed: %s", exc)
         await asyncio.sleep(interval)
 
-async def fetch_bars(adapter: Any, symbol: str, *, timeframe: str = "3m", backend: Backends = "timescale", sleep_s: int = 180):
-    """Periodically fetch OHLCV bars and persist them."""
-    storage = _get_storage(backend)
-    engine = storage.get_engine()
+async def fetch_bars(
+    adapter: Any,
+    symbol: str,
+    *,
+    timeframe: str = "3m",
+    backend: Backends = "timescale",
+    sleep_s: int = 180,
+    persist: bool = False,
+    log: bool = True,
+) -> None:
+    """Periodically fetch OHLCV bars.
+
+    Parameters
+    ----------
+    persist:
+        When ``True`` the bar is stored using the configured backend.
+    log:
+        If ``True`` the bar is printed/logged.
+    """
+    storage = _get_storage(backend) if persist else None
+    engine = storage.get_engine() if storage else None
+    logger = logging.getLogger(__name__)
     while True:
         try:
             bars = await adapter.fetch_ohlcv(symbol, timeframe=timeframe, limit=1)
             for ts_ms, o, h, l, c, v in bars:
                 ts = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
-                bar = Bar(ts=ts, timeframe=timeframe, exchange=getattr(adapter, "name", "unknown"), symbol=symbol, o=o, h=h, l=l, c=c, v=v)
-                storage.insert_bar(engine, bar.exchange, bar.symbol, bar.ts, bar.timeframe, bar.o, bar.h, bar.l, bar.c, bar.v)
+                bar = Bar(
+                    ts=ts,
+                    timeframe=timeframe,
+                    exchange=getattr(adapter, "name", "unknown"),
+                    symbol=symbol,
+                    o=o,
+                    h=h,
+                    l=l,
+                    c=c,
+                    v=v,
+                )
+                if log:
+                    print(bar)
+                if persist and storage:
+                    storage.insert_bar(
+                        engine,
+                        bar.exchange,
+                        bar.symbol,
+                        bar.ts,
+                        bar.timeframe,
+                        bar.o,
+                        bar.h,
+                        bar.l,
+                        bar.c,
+                        bar.v,
+                    )
         except Exception as exc:  # pragma: no cover - logging only
-            log.debug("Bar fetch failed: %s", exc)
+            logger.debug("Bar fetch failed: %s", exc)
         await asyncio.sleep(sleep_s)
 
 
