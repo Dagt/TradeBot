@@ -29,6 +29,7 @@ import sys
 import inspect
 import ast
 import textwrap
+import functools
 from typing import Any, List
 
 import click
@@ -37,10 +38,12 @@ import typer
 # Typer's ``Option`` uses ``click_type`` for custom parameter types. To allow
 # the more intuitive ``type=`` keyword (which mirrors ``click.Option``), we
 # monkey-patch ``typer.Option`` so any provided ``type`` argument is forwarded
-# as ``click_type``.
-_original_option = typer.Option
+# as ``click_type``.  The wrapper is reload-safe thanks to ``functools.wraps``
+# which preserves the original ``Option`` in ``__wrapped__``.
+_original_option = getattr(typer.Option, "__wrapped__", typer.Option)
 
 
+@functools.wraps(_original_option)
 def _option(*args, **kwargs):
     if "type" in kwargs:
         kwargs["click_type"] = kwargs.pop("type")
@@ -421,7 +424,11 @@ def ingest(
                 tasks.append(
                     asyncio.create_task(
                         ing.fetch_bars(
-                            adapter, sym, timeframe=timeframe, backend=backend
+                            adapter,
+                            sym,
+                            timeframe=timeframe,
+                            backend=backend,
+                            persist=persist,
                         )
                     )
                 )
