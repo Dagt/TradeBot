@@ -455,6 +455,9 @@ def backfill(
     end: str | None = typer.Option(
         None, "--end", help="End datetime in ISO format"
     ),
+    timeframe: str = typer.Option(
+        "3m", "--timeframe", help="1m, 2m, 3m, 5m, 15m, 30m, 1H, 4H, ..."
+    ),
 ) -> None:
     """Backfill OHLCV and trades for symbols with rate limiting."""
 
@@ -477,6 +480,7 @@ def backfill(
             exchange_name=exchange,
             start=_parse(start),
             end=_parse(end),
+            timeframe=timeframe,
         )
     )
 
