@@ -100,8 +100,8 @@
           <option value="5m">5m</option>
           <option value="15m">15m</option>
           <option value="30m">30m</option>
-          <option value="1H">1H</option>
-          <option value="4H">4H</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
         </select>
       </div>
       <div id="field-source">
@@ -274,7 +274,7 @@ async function runData(){
     const start=document.getElementById('dm-start').value;
     const end=document.getElementById('dm-end').value;
     const exchange=document.getElementById('dm-exchange-name').value;
-    const tf=document.getElementById('dm-timeframe').value;
+    const tf=document.getElementById('dm-timeframe').value.toLowerCase();
     if(start && end){
       const s=new Date(start);
       const e=new Date(end);
