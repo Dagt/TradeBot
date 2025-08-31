@@ -100,28 +100,3 @@ async def test_fok_orders(venue):
     assert adapter.orders == {}
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "venue,expected",
-    [
-        ("binance_futures_testnet", {"tpPrice": 110.0, "stopPrice": 90.0}),
-        ("bybit_testnet", {"takeProfit": 110.0, "stopLoss": 90.0}),
-        ("okx_testnet", {"takeProfit": 110.0, "stopLoss": 90.0}),
-    ],
-)
-async def test_oco_orders(venue, expected):
-    adapter = DummyTestnetAdapter(venue)
-    res = await adapter.place_order(
-        "BTC/USDT",
-        "buy",
-        "limit",
-        1,
-        price=100,
-        take_profit=110.0,
-        stop_loss=90.0,
-    )
-    assert res["status"] == "open"
-    assert res["params"] == expected
-    cancel = await adapter.cancel_order(res["order_id"])
-    assert cancel["status"] == "canceled"
-    assert adapter.orders == {}

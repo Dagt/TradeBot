@@ -15,10 +15,6 @@ Currently the translator understands the following flags:
     requested the maker flag takes precedence.
 ``iceberg_qty``
     Quantity for iceberg orders.  The parameter name differs per exchange.
-``take_profit`` and ``stop_loss``
-    Prices for one-cancels-the-other (OCO) orders.  Exchanges use different
-    names for these fields (``tpPrice``/``stopPrice`` on Binance vs
-    ``takeProfit``/``stopLoss`` on Bybit/OKX).
 ``reduce_only``
     Ensure an order only decreases an existing position.  Typically maps to a
     ``reduceOnly`` parameter on derivative venues.
@@ -34,8 +30,6 @@ def translate_order_flags(
     post_only: bool = False,
     time_in_force: Optional[str] = None,
     iceberg_qty: Optional[float] = None,
-    take_profit: Optional[float] = None,
-    stop_loss: Optional[float] = None,
     reduce_only: bool = False,
 ) -> Dict[str, Any]:
     """Translate generic order flags into venue specific ``params``.
@@ -52,9 +46,6 @@ def translate_order_flags(
         that use the ``GTX`` encoding.
     iceberg_qty:
         Visible portion for iceberg orders.
-    take_profit, stop_loss:
-        Optional prices for OCO style orders.  If only one of them is provided
-        a simple TP or SL order is produced.
     reduce_only:
         For derivative venues this flag ensures the order only reduces an
         existing position.  Many venues share the same ``reduceOnly`` parameter
@@ -77,10 +68,6 @@ def translate_order_flags(
             params["timeInForce"] = time_in_force
         if iceberg_qty is not None:
             params["icebergQty"] = float(iceberg_qty)
-        if take_profit is not None:
-            params["tpPrice"] = float(take_profit)
-        if stop_loss is not None:
-            params["stopPrice"] = float(stop_loss)
         if reduce_only:
             params["reduceOnly"] = True
         return params
@@ -93,10 +80,6 @@ def translate_order_flags(
             params["postOnly"] = True
         if iceberg_qty is not None:
             params["iceberg"] = float(iceberg_qty)
-        if take_profit is not None:
-            params["takeProfit"] = float(take_profit)
-        if stop_loss is not None:
-            params["stopLoss"] = float(stop_loss)
         if reduce_only:
             params["reduceOnly"] = True
         return params
@@ -108,10 +91,6 @@ def translate_order_flags(
         params["postOnly"] = True
     if iceberg_qty is not None:
         params["icebergQty"] = float(iceberg_qty)
-    if take_profit is not None:
-        params["takeProfit"] = float(take_profit)
-    if stop_loss is not None:
-        params["stopLoss"] = float(stop_loss)
     if reduce_only:
         params["reduceOnly"] = True
     return params

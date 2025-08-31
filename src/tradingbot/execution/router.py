@@ -234,10 +234,6 @@ class ExecutionRouter:
                 or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
             ):
                 kwargs["iceberg_qty"] = order.iceberg_qty
-        if order.take_profit is not None:
-            kwargs["take_profit"] = order.take_profit
-        if order.stop_loss is not None:
-            kwargs["stop_loss"] = order.stop_loss
 
         try:
             res = await adapter.place_order(**kwargs)
