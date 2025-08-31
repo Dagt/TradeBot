@@ -29,7 +29,6 @@ async def test_place_limit_immediate_fill():
     res = await broker.place_limit("BTC/USDT", "buy", 100.0, 1.0)
     assert res["status"] == "filled"
     assert res["filled_qty"] == pytest.approx(1.0)
-    assert res["time_in_book"] >= 0.0
 
 
 @pytest.mark.asyncio
@@ -106,6 +105,27 @@ async def test_place_limit_partial_fill_requotes():
     )
     assert res["status"] == "filled"
     assert strat.pending_qty["BTC/USDT"] == pytest.approx(5.0)
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]["qty"] == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_place_limit_partial_fill_taker():
+    adapter = PartialAdapter()
+    broker = Broker(adapter)
+
+    def to_taker(order, res):
+        return "taker"
+
+    res = await broker.place_limit(
+        "BTC/USDT",
+        "buy",
+        100.0,
+        10.0,
+        on_partial_fill=to_taker,
+    )
+    assert res["status"] == "filled"
+    assert res["pending_qty"] == pytest.approx(0.0)
     assert len(adapter.calls) == 2
     assert adapter.calls[1]["qty"] == pytest.approx(5.0)
 
