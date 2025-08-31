@@ -473,6 +473,7 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
+                                svc.account.update_open_order(sym, abs(delta_qty))
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
@@ -519,6 +520,7 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
+                                svc.account.update_open_order(sym, pending_qty)
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
