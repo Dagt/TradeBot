@@ -894,7 +894,8 @@ class EventDrivenBacktestEngine:
                     equity_for_order = max(equity, 1.0)
                     svc.account.cash = equity_for_order
                     if trade:
-                        decision = svc.manage_position(trade, sig)
+                        sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
+                        decision = svc.manage_position(trade, sig_obj)
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
@@ -952,12 +953,13 @@ class EventDrivenBacktestEngine:
                         continue
                     if sig is None or sig.side == "flat":
                         continue
+                    pending = svc.account.open_orders.get(symbol, 0.0)
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
                         place_price,
                         strength=sig.strength,
-                        pending_qty=svc.account.open_orders.get(symbol, 0.0),
+                        pending_qty=pending,
                     )
                     if not allowed or abs(delta) < self.min_order_qty:
                         continue
