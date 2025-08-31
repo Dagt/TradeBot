@@ -25,7 +25,7 @@ from .runner import BarAggregator
 from ..config import settings
 from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
-from ..risk.manager import RiskManager, load_positions
+from ..risk.service import load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService

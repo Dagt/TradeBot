@@ -4,8 +4,9 @@ from dataclasses import dataclass
 
 from typing import Dict, Mapping, Any
 
-from ..risk.manager import RiskManager
+from ..risk.service import RiskService
 from ..storage.timescale import insert_portfolio_snapshot
+from ..core.account import Account
 
 @dataclass
 class SpotBalances:
@@ -57,7 +58,7 @@ async def rebalance_between_exchanges(
     asset: str,
     price: float,
     venues: Mapping[str, Any],
-    risk: RiskManager,
+    risk: RiskService, account: Account,
     engine,
     *,
     threshold: float = 0.0,
@@ -73,8 +74,8 @@ async def rebalance_between_exchanges(
     venues: Mapping[str, Any]
         Mapping of venue name to a connector exposing ``fetch_balance`` and
         ``transfer`` methods (synchronous).
-    risk: RiskManager
-        Risk manager instance whose ``positions_multi`` will be updated.
+    risk: RiskService
+        Risk service instance whose ``positions_multi`` will be updated.
     engine: Any
         SQLAlchemy engine for persistence through ``insert_portfolio_snapshot``.
     threshold: float, optional
@@ -97,6 +98,8 @@ async def rebalance_between_exchanges(
         # No action required
         for venue, bal in balances.items():
             risk.update_position(venue, asset, bal)
+        cur = account.positions.get(asset, 0.0)
+        account.update_position(asset, bal - cur, price=price)
         return
 
     amount = diff / 2
@@ -111,6 +114,8 @@ async def rebalance_between_exchanges(
     # Update risk manager and persist snapshots
     for venue, bal in balances.items():
         risk.update_position(venue, asset, bal)
+        cur = account.positions.get(asset, 0.0)
+        account.update_position(asset, bal - cur, price=price)
         insert_portfolio_snapshot(
             engine,
             venue=venue,

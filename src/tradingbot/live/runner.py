@@ -13,7 +13,7 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..strategies import STRATEGIES
-from ..risk.manager import RiskManager, load_positions
+from ..risk.service import load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService

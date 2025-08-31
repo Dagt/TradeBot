@@ -837,13 +837,15 @@ def run_daemon(config: str = "config/config.yaml") -> None:
         from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
         from ..bus import EventBus
         from ..live.daemon import TradeBotDaemon
-        from ..risk.manager import RiskManager
+        from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
+        from ..core.account import Account
+        from ..risk.service import RiskService
         from ..strategies.breakout_atr import BreakoutATR
         from ..execution.router import ExecutionRouter
 
         adapter = BinanceSpotWSAdapter()
         bus = EventBus()
-        risk = RiskManager(risk_pct=0.0, bus=bus)
+        risk = RiskService(PortfolioGuard(GuardConfig(venue="cli")), account=Account(float("inf")), bus=bus, risk_pct=0.0)
         strat = BreakoutATR()
         router = ExecutionRouter(adapters=[adapter])
 

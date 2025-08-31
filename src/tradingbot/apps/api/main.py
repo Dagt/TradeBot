@@ -266,7 +266,7 @@ class HaltRequest(BaseModel):
 async def risk_halt(payload: HaltRequest):
     bus = getattr(app.state, "bus", None)
     if bus is None:
-        rm = getattr(app.state, "risk_manager", None)
+        rm = getattr(app.state, "risk_service", None)
         bus = getattr(rm, "bus", None) if rm else None
     if bus is None:
         raise HTTPException(status_code=500, detail="bus not configured")
@@ -276,7 +276,7 @@ async def risk_halt(payload: HaltRequest):
 
 @app.post("/risk/reset")
 def risk_reset():
-    rm = getattr(app.state, "risk_manager", None)
+    rm = getattr(app.state, "risk_service", None)
     if rm is None:
         raise HTTPException(status_code=500, detail="risk manager not configured")
     rm.reset()

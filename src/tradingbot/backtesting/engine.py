@@ -14,7 +14,6 @@ import pandas as pd
 import random
 import math
 
-from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..core.account import Account as CoreAccount

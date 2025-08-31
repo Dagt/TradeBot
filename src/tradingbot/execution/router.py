@@ -23,7 +23,7 @@ from ..utils.logging import get_logger
 from ..config import settings
 
 if TYPE_CHECKING:
-    from ..risk.manager import RiskManager
+    from ..risk.service import RiskService
 
 log = get_logger(__name__)
 
@@ -42,7 +42,7 @@ class ExecutionRouter:
         adapters: Iterable,
         storage_engine=None,
         prefer: str | None = None,
-        risk_manager: "RiskManager | None" = None,
+        risk: "RiskService | None" = None,
         on_partial_fill=None,
         on_order_expiry=None,
     ):
@@ -68,7 +68,7 @@ class ExecutionRouter:
         self._engine = storage_engine
         self._prefer = prefer
         self._last_maker = False
-        self.risk_manager = risk_manager
+        self.risk = risk
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
 
@@ -158,7 +158,7 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
-        if self.risk_manager is not None and not self.risk_manager.enabled:
+        if self.risk is not None and not self.risk.rm.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
             return {"status": "rejected", "reason": "risk_disabled"}
 

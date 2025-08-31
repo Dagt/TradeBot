@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from collections import defaultdict
 
 import pandas as pd
 import numpy as np
 
-from .manager import RiskManager
 from .exceptions import StopLossExceeded
 from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
@@ -16,6 +17,108 @@ from ..storage import timescale
 from ..utils.logging import get_logger
 
 log = get_logger(__name__)
+
+@dataclass
+class Position:
+    qty: float = 0.0
+    realized_pnl: float = 0.0
+
+class _RiskManager:
+    def __init__(self, risk_pct: float = 0.0, *, allow_short: bool = True, min_order_qty: float = 1e-9):
+        self.risk_pct = abs(risk_pct)
+        self.allow_short = bool(allow_short)
+        self.min_order_qty = float(min_order_qty)
+        self.enabled = True
+        self.last_kill_reason: str | None = None
+        self.pos = Position()
+        self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
+        self._entry_price: float | None = None
+
+    def update_position(self, exchange: str, symbol: str, qty: float) -> None:
+        book = self.positions_multi.setdefault(exchange, {})
+        book[symbol] = float(qty)
+
+    def aggregate_positions(self) -> Dict[str, float]:
+        agg: Dict[str, float] = {}
+        for book in self.positions_multi.values():
+            for sym, qty in book.items():
+                agg[sym] = agg.get(sym, 0.0) + float(qty)
+        return agg
+
+    def _reset_price_trackers(self) -> None:
+        self._entry_price = None
+
+    def add_fill(self, side: str, qty: float, price: float | None = None) -> None:
+        signed = float(qty) if side == 'buy' else -float(qty)
+        prev = self.pos.qty
+        if prev * signed < 0 and price is not None and self._entry_price is not None:
+            closed = min(abs(prev), abs(signed))
+            pnl = (float(price) - self._entry_price) * closed
+            if prev < 0:
+                pnl = -pnl
+            self.pos.realized_pnl += pnl
+        self.pos.qty += signed
+        new = self.pos.qty
+        if prev == 0 or prev * new <= 0:
+            self._reset_price_trackers()
+            if price is not None and abs(new) > 0:
+                self._entry_price = float(price)
+            return
+        if prev * signed < 0:
+            return
+        if price is not None:
+            abs_prev = abs(prev)
+            abs_new = abs(signed)
+            if self._entry_price is None:
+                self._entry_price = float(price)
+            else:
+                self._entry_price = (self._entry_price * abs_prev + float(price) * abs_new) / (abs_prev + abs_new)
+
+    def check_limits(self, price: float) -> bool:
+        if not self.enabled:
+            return False
+        qty = self.pos.qty
+        if abs(qty) < 1e-12:
+            self._reset_price_trackers()
+            return True
+        px = float(price)
+        if self._entry_price is None:
+            self._entry_price = px
+            return True
+        notional = abs(qty) * self._entry_price
+        pnl = (px - self._entry_price) * qty
+        if self.risk_pct > 0 and pnl < -notional * self.risk_pct:
+            self.last_kill_reason = 'stop_loss'
+            raise StopLossExceeded('stop_loss')
+        return True
+
+    def update_correlation(self, symbol_pairs: Dict[Tuple[str, str], float], threshold: float) -> List[Tuple[str, str]]:
+        return [pair for pair, corr in symbol_pairs.items() if abs(corr) >= threshold]
+
+    def update_covariance(self, cov_matrix: Dict[Tuple[str, str], float], threshold: float) -> List[Tuple[str, str]]:
+        exceeded: List[Tuple[str, str]] = []
+        vars: Dict[str, float] = {}
+        for (a, b), cov in cov_matrix.items():
+            if a == b:
+                vars[a] = abs(cov)
+        for (a, b), cov in cov_matrix.items():
+            if a == b:
+                continue
+            va = vars.get(a)
+            vb = vars.get(b)
+            if va and vb and va > 0 and vb > 0:
+                corr = cov / ((va ** 0.5) * (vb ** 0.5))
+                if abs(corr) >= threshold:
+                    exceeded.append((a, b))
+        return exceeded
+
+    def reset(self) -> None:
+        self.enabled = True
+        self.last_kill_reason = None
+        self.pos.qty = 0.0
+        self.positions_multi.clear()
+        self._reset_price_trackers()
+
 
 
 class RiskService:
@@ -34,17 +137,19 @@ class RiskService:
         daily: DailyGuard | None = None,
         corr_service: CorrelationService | None = None,
         *,
+        bus=None,
         engine=None,
         account: CoreAccount | None = None,
         risk_per_trade: float = 0.01,
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
     ) -> None:
-        self.rm = RiskManager(risk_pct=risk_pct)
+        self.rm = _RiskManager(risk_pct=risk_pct)
         self.guard = guard
         self.daily = daily
         self.corr = corr_service
         self.engine = engine
+        self.bus = bus
         self.account = account or CoreAccount(float("inf"))
         self.core = CoreRiskManager(
             self.account,
@@ -53,6 +158,11 @@ class RiskService:
             risk_pct=risk_pct,
         )
         self.trades: Dict[str, dict] = {}
+
+    def reset(self) -> None:
+        """Reset underlying risk manager state."""
+        self.rm.reset()
+
 
     # ------------------------------------------------------------------
     # Position helpers
@@ -319,3 +429,37 @@ class RiskService:
             )
         except Exception:  # pragma: no cover - persistence shouldn't break tests
             log.exception("Persist failure: risk_event %s", kind)
+
+
+# ---------------------------------------------------------------------------
+# Rehydration helpers
+
+
+def load_positions(engine, venue: str) -> dict:
+    """Load persisted positions for ``venue`` from storage."""
+    if engine is None:
+        return {}
+    try:
+        from ..storage.timescale import load_positions as _load  # type: ignore
+        return _load(engine, venue)
+    except Exception:
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(
+                    text(
+                        'SELECT venue, symbol, qty, avg_price, realized_pnl, fees_paid '
+                        'FROM "market.positions" WHERE venue = :venue'
+                    ),
+                    {"venue": venue},
+                ).mappings().all()
+            out = {}
+            for r in rows:
+                out[r["symbol"]] = {
+                    "qty": float(r["qty"]),
+                    "avg_price": float(r["avg_price"]),
+                    "realized_pnl": float(r["realized_pnl"]),
+                    "fees_paid": float(r["fees_paid"]),
+                }
+            return out
+        except Exception:
+            return {}
