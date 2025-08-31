@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from typing import Dict, Mapping, Any
 
-from ..risk.manager import RiskManager
+from ..risk.service import RiskService
 from ..storage.timescale import insert_portfolio_snapshot
 
 @dataclass
@@ -57,7 +57,7 @@ async def rebalance_between_exchanges(
     asset: str,
     price: float,
     venues: Mapping[str, Any],
-    risk: RiskManager,
+    risk: RiskService,
     engine,
     *,
     threshold: float = 0.0,
@@ -73,8 +73,8 @@ async def rebalance_between_exchanges(
     venues: Mapping[str, Any]
         Mapping of venue name to a connector exposing ``fetch_balance`` and
         ``transfer`` methods (synchronous).
-    risk: RiskManager
-        Risk manager instance whose ``positions_multi`` will be updated.
+    risk: RiskService
+        Risk service instance whose positions will be synchronised.
     engine: Any
         SQLAlchemy engine for persistence through ``insert_portfolio_snapshot``.
     threshold: float, optional

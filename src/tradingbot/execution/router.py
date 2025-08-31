@@ -23,7 +23,7 @@ from ..utils.logging import get_logger
 from ..config import settings
 
 if TYPE_CHECKING:
-    from ..risk.manager import RiskManager
+    from ..risk.service import RiskService
 
 log = get_logger(__name__)
 
@@ -42,7 +42,7 @@ class ExecutionRouter:
         adapters: Iterable,
         storage_engine=None,
         prefer: str | None = None,
-        risk_manager: "RiskManager | None" = None,
+        risk_service: "RiskService | None" = None,
         on_partial_fill=None,
         on_order_expiry=None,
     ):
@@ -68,7 +68,7 @@ class ExecutionRouter:
         self._engine = storage_engine
         self._prefer = prefer
         self._last_maker = False
-        self.risk_manager = risk_manager
+        self.risk_service = risk_service
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
 
@@ -158,7 +158,7 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
-        if self.risk_manager is not None and not self.risk_manager.enabled:
+        if self.risk_service is not None and not self.risk_service.rm.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
             return {"status": "rejected", "reason": "risk_disabled"}
 
@@ -361,10 +361,21 @@ class ExecutionRouter:
         taker_c = self._taker_counts[venue]
         ratio = maker_c / taker_c if taker_c else float(maker_c)
         MAKER_TAKER_RATIO.labels(venue=venue).set(ratio)
+        if self.risk_service is not None:
+            filled_qty = float(res.get("qty") or res.get("filled_qty") or 0.0)
+            cur_open = self.risk_service.account.open_orders.get(order.symbol, 0.0)
+            if cur_open > 0:
+                self.risk_service.account.update_open_order(
+                    order.symbol, -min(filled_qty, cur_open)
+                )
+            pos_qty = getattr(getattr(adapter, "account", None), "positions", {}).get(
+                order.symbol, 0.0
+            )
+            self.risk_service.update_position(venue, order.symbol, pos_qty)
         # Propagate venue so downstream components can track positions per exchange
         res.setdefault("venue", venue)
         log.info(
-            "Order executed venue=%s oid=%s tid=%s reason=%s", 
+            "Order executed venue=%s oid=%s tid=%s reason=%s",
             venue,
             res.get("order_id"),
             res.get("trade_id"),
