@@ -10,8 +10,6 @@ class Order:
     post_only: bool = False
     time_in_force: str | None = None
     iceberg_qty: float | None = None
-    take_profit: float | None = None
-    stop_loss: float | None = None
     reduce_only: bool = False
     reason: str | None = None
     slip_bps: float | None = None
