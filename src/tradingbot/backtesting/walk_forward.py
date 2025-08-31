@@ -48,6 +48,7 @@ def walk_forward_backtest(
     exchange_configs: Dict[str, Dict[str, float]] | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
     slippage: SlippageModel | None = None,
+    risk_pct: float = 0.0,
 ) -> pd.DataFrame:
     """Run a basic walk-forward analysis and return metrics for each split."""
 
@@ -80,6 +81,7 @@ def walk_forward_backtest(
                 slippage=slippage,
                 fee_bps=fee_bps,
                 slippage_bps=slippage_bps,
+                risk_pct=risk_pct,
             )
             engine.strategies[(strategy_name, symbol)] = strat
             res = engine.run()
@@ -100,6 +102,7 @@ def walk_forward_backtest(
             slippage=slippage,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
+            risk_pct=risk_pct,
         )
         engine.strategies[(strategy_name, symbol)] = strat
         test_res = engine.run(fills_csv=fills_csv)
