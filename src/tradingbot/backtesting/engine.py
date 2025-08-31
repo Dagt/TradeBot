@@ -14,7 +14,6 @@ import pandas as pd
 import random
 import math
 
-from ..risk.manager import RiskManager
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..core.account import Account as CoreAccount
@@ -335,15 +334,9 @@ class EventDrivenBacktestEngine:
             key = (strat_name, symbol)
             self.strategies[key] = strat_cls()
             allow_short = self.exchange_mode.get(exchange, "perp") != "spot"
-            rm = RiskManager(
-                risk_pct=self._risk_pct,
-                allow_short=allow_short,
-                min_order_qty=self.min_order_qty,
-            )
             guard = PortfolioGuard(GuardConfig(venue=exchange))
             account = CoreAccount(float("inf"), cash=self.initial_equity)
             self.risk[key] = RiskService(
-                rm,
                 guard,
                 account=account,
                 risk_per_trade=1.0,
@@ -841,11 +834,9 @@ class EventDrivenBacktestEngine:
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
-                    equity_for_order = max(equity, 1.0)
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
-                        equity_for_order,
                         place_price,
                         strength=sig.strength,
                     )

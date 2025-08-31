@@ -67,8 +67,10 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
         "ask_px": [[101, 102], [101, 102]],
     })
     rm = RiskManager(risk_pct=0.02)
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(guard, risk_pct=0.02)
     svc.account.update_cash(1000.0)
     strat = LiquidityEvents(
         vacuum_threshold=0.5,

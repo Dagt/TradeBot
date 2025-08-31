@@ -14,7 +14,7 @@ from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 
@@ -44,9 +44,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     broker = PaperAdapter()
     if risk is None:
         risk = RiskService(
-            RiskManager(risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="cross")),
-            daily=None,
             risk_pct=0.0,
         )
 
@@ -85,14 +83,12 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
-            equity,
             last["spot"],
             strength=strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
-            equity,
             last["perp"],
             strength=strength,
         )

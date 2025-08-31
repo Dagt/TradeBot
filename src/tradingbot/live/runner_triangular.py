@@ -13,7 +13,7 @@ from ..execution.paper import PaperAdapter
 from ..strategies.arbitrage_triangular import (
     TriRoute, make_symbols, compute_edge
 )
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 
@@ -49,7 +49,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     fills = 0
     if risk is None:
         risk = RiskService(
-            RiskManager(risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="binance")),
             risk_pct=0.0,
         )
@@ -111,7 +110,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok1, _, d1 = risk.check_order(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "buy",
-                            eq,
                             last["bq"],
                             strength=strength,
                         )
@@ -123,7 +121,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok2, _, d2 = risk.check_order(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "buy",
-                            eq,
                             last["mb"],
                             strength=s2,
                         )
@@ -135,7 +132,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok3, _, d3 = risk.check_order(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "sell",
-                            eq,
                             last["mq"],
                             strength=s3,
                         )
@@ -171,7 +167,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok1, _, d1 = risk.check_order(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "buy",
-                            eq,
                             last["mq"],
                             strength=strength,
                         )
@@ -183,7 +178,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok2, _, d2 = risk.check_order(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "sell",
-                            eq,
                             last["mb"],
                             strength=s2,
                         )
@@ -195,7 +189,6 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ok3, _, d3 = risk.check_order(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "sell",
-                            eq,
                             last["bq"],
                             strength=s3,
                         )

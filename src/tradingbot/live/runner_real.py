@@ -25,7 +25,7 @@ from .runner import BarAggregator
 from ..config import settings
 from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.correlation_service import CorrelationService
@@ -116,7 +116,6 @@ async def _run_symbol(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
-    risk_core = RiskManager(risk_pct=cfg.risk_pct, allow_short=(market != "spot"))
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -140,7 +139,6 @@ async def _run_symbol(
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     risk = RiskService(
-        risk_core,
         guard,
         dguard,
         corr_service=corr,
@@ -239,11 +237,10 @@ async def _run_symbol(
         sig = strat.on_bar({"window": df})
         if sig is None:
             continue
-        eq = broker.equity(mark_prices={cfg.symbol: px})
+        broker.equity(mark_prices={cfg.symbol: px})
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
-            eq,
             closed.c,
             strength=sig.strength,
         )

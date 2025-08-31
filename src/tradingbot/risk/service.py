@@ -12,6 +12,7 @@ from .portfolio_guard import PortfolioGuard
 from .daily_guard import DailyGuard
 from .correlation_service import CorrelationService
 from ..core import Account as CoreAccount, RiskManager as CoreRiskManager
+from ..bus import EventBus
 from ..storage import timescale
 from ..utils.logging import get_logger
 
@@ -39,8 +40,9 @@ class RiskService:
         risk_per_trade: float = 0.01,
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
+        bus: EventBus | None = None,
     ) -> None:
-        self.rm = RiskManager(risk_pct=risk_pct)
+        self.rm = RiskManager(risk_pct=risk_pct, bus=bus)
         self.guard = guard
         self.daily = daily
         self.corr = corr_service
@@ -128,7 +130,6 @@ class RiskService:
         self,
         symbol: str,
         side: str,
-        equity: float,
         price: float,
         strength: float = 1.0,
         *,
@@ -141,6 +142,7 @@ class RiskService:
         based solely on ``signal_strength`` and ``price``.
         """
 
+        equity = self.account.get_available_balance()
         self.guard.refresh_usd_caps(equity)
 
         corr_pairs: Dict[tuple[str, str], float] = {}
@@ -161,9 +163,6 @@ class RiskService:
             return False, "symbol_exposure", 0.0
         qty = abs(delta)
 
-        if qty < self.rm.min_order_qty:
-            return False, "zero_size", 0.0
-
         try:
             limits_ok = self.rm.check_limits(price)
         except StopLossExceeded:
@@ -176,6 +175,9 @@ class RiskService:
             if abs(cur) > 0:
                 return True, "stop_loss", -cur
             return False, "stop_loss", 0.0
+
+        if qty < self.rm.min_order_qty:
+            return False, "zero_size", 0.0
 
         if not limits_ok:
             reason = self.rm.last_kill_reason or "kill_switch"

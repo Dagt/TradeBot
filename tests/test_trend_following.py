@@ -2,7 +2,6 @@ import pandas as pd
 import pytest
 
 from tradingbot.core import Account, RiskManager as CoreRiskManager
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 from tradingbot.strategies.trend_following import TrendFollowing
@@ -25,9 +24,10 @@ def test_trend_following_trailing_stop_uses_atr():
 
 def test_trend_following_risk_service_handles_stop_and_size():
     df = pd.DataFrame({"close": [1, 2, 3]})
-    rm = RiskManager(risk_pct=0.02)
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(guard, risk_pct=0.02)
     svc.account.update_cash(1000.0)
     strat = TrendFollowing(risk_service=svc, rsi_n=2)
     sig = strat.on_bar({"window": df, "atr": 1.0, "volatility": 0.0})

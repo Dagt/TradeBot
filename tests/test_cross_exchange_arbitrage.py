@@ -77,7 +77,6 @@ async def test_cross_exchange_updates_risk_positions(monkeypatch):
     perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
     cfg = CrossArbConfig(symbol="BTC/USDT", spot=spot, perp=perp, threshold=0.001)
     risk = RiskService(
-        RiskManager(),
         PortfolioGuard(GuardConfig(venue="test")),
         risk_pct=0.0,
     )

@@ -13,7 +13,7 @@ from ..adapters.binance_ws import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..strategies import STRATEGIES
-from ..risk.manager import RiskManager, load_positions
+from ..risk.manager import load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
@@ -119,7 +119,6 @@ async def run_live_binance(
         on_order_expiry=strat.on_order_expiry,
     )
     exec_broker = Broker(router)
-    risk_core = RiskManager(risk_pct=risk_pct, allow_short=False)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,
@@ -127,14 +126,16 @@ async def run_live_binance(
         soft_cap_pct=soft_cap_pct,
         soft_cap_grace_sec=soft_cap_grace_sec,
     ))
-    dguard = DailyGuard(GuardLimits(
-        daily_max_loss_pct=daily_max_loss_pct,
-        daily_max_drawdown_pct=daily_max_drawdown_pct,
-        halt_action="close_all",
-    ), venue="binance")
+    dguard = DailyGuard(
+        GuardLimits(
+            daily_max_loss_pct=daily_max_loss_pct,
+            daily_max_drawdown_pct=daily_max_drawdown_pct,
+            halt_action="close_all",
+        ),
+        venue="binance",
+    )
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
     risk = RiskService(
-        risk_core,
         guard,
         dguard,
         engine=pg_engine,
@@ -250,12 +251,11 @@ async def run_live_binance(
         if signal is None:
             continue
 
-        eq = broker.equity(mark_prices={symbol: px})
+        broker.equity(mark_prices={symbol: px})
         pending = getattr(strat, "pending_qty", {}).get(symbol, 0.0)
         allowed, reason, delta = risk.check_order(
             symbol,
             signal.side,
-            eq,
             closed.c,
             strength=signal.strength,
             pending_qty=pending,

@@ -5,7 +5,6 @@ from tradingbot.strategies.order_flow import OrderFlow
 from tradingbot.strategies.mean_rev_ofi import MeanRevOFI
 from tradingbot.strategies.breakout_vol import BreakoutVol
 from tradingbot.core import Account, RiskManager as CoreRiskManager
-from tradingbot.risk.manager import RiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 import pytest
@@ -38,9 +37,10 @@ def test_breakout_atr_min_edge(breakout_df_buy, breakout_df_sell):
 
 
 def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
-    rm = RiskManager(risk_pct=0.02)
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(guard, risk_pct=0.02)
     svc.account.update_cash(1000.0)
     strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, risk_service=svc)
     sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
@@ -133,9 +133,10 @@ def test_breakout_vol_min_edge():
 
 def test_breakout_vol_risk_service_handles_stop_and_size():
     df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
-    rm = RiskManager(risk_pct=0.02)
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(guard, risk_pct=0.02)
     svc.account.update_cash(1000.0)
     strat = BreakoutVol(lookback=2, mult=0.5, risk_service=svc)
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})

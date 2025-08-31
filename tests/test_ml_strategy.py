@@ -36,8 +36,10 @@ def test_ml_strategy_margin_and_entry():
 def test_ml_strategy_risk_service_handles_stop_and_size():
     stub = StubModel(0.7)
     rm = RiskManager(risk_pct=0.02)
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
-    svc = RiskService(rm, guard, risk_pct=0.02)
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
+    svc = RiskService(guard, risk_pct=0.02)
     svc.account.update_cash(1000.0)
     strat = MLStrategy(model=stub, margin=0.1, risk_service=svc)
     strat.scaler.fit([[0.0]])

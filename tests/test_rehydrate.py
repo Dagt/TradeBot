@@ -18,9 +18,11 @@ def test_rehydrate_state():
         conn.execute(text('INSERT INTO "market.positions" (venue, symbol, qty, avg_price, realized_pnl, fees_paid) VALUES ("paper", "BTCUSDT", 1.5, 10000, 0, 0);'))
 
     rm = RiskManager()
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="paper"))
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="paper")
+    )
     guard.refresh_usd_caps(1e6)
-    risk = RiskService(rm, guard, risk_pct=0.0)
+    risk = RiskService(guard, risk_pct=0.0)
 
     # Rehydrate
     pos_map = load_positions(engine, "paper")
