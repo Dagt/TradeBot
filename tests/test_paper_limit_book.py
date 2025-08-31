@@ -1,0 +1,36 @@
+import asyncio
+
+import pytest
+
+from tradingbot.execution.paper import PaperAdapter
+
+
+@pytest.mark.asyncio
+async def test_limit_order_partial_fill():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 1.0, price=90.0)
+    assert res["status"] == "new"
+    assert res["pending_qty"] == pytest.approx(1.0)
+
+    fills = adapter.update_last_price("BTC/USDT", 89.0, qty=0.4)
+    assert fills[0]["status"] == "partial"
+    assert fills[0]["pending_qty"] == pytest.approx(0.6)
+
+    fills = adapter.update_last_price("BTC/USDT", 88.0, qty=1.0)
+    assert fills[0]["status"] == "filled"
+    assert fills[0]["pending_qty"] == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_cancel_pending_order_reports_metrics():
+    adapter = PaperAdapter(latency=0.01)
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 1.0, price=90.0)
+    await asyncio.sleep(0.02)
+    cancel = await adapter.cancel_order(res["order_id"])
+    assert cancel["status"] == "canceled"
+    assert cancel["time_in_book"] >= 0.02
+    assert cancel["latency"] >= 0.01
