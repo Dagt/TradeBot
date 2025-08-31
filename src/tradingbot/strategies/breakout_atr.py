@@ -86,4 +86,7 @@ class BreakoutATR(Strategy):
             trade["atr"] = atr_val
             self.risk_service.update_trailing(trade, last_close)
             self.trade = trade
-        return Signal(side, strength)
+        sig = Signal(side, strength)
+        level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
+        sig.limit_price = level
+        return sig

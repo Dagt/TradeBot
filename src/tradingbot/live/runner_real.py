@@ -254,7 +254,9 @@ async def _run_symbol(
         side = "buy" if delta > 0 else "sell"
         qty = abs(delta)
         price = (
-            closed.c - limit_offset if side == "buy" else closed.c + limit_offset
+            sig.limit_price
+            if sig.limit_price is not None
+            else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
         resp = await exec_broker.place_limit(
             cfg.symbol,

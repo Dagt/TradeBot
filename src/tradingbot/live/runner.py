@@ -267,7 +267,7 @@ async def run_live_binance(
 
         side = "buy" if delta > 0 else "sell"
         prev_rpnl = broker.state.realized_pnl
-        price = _limit_price(side)
+        price = signal.limit_price if signal.limit_price is not None else _limit_price(side)
         resp = await exec_broker.place_limit(
             symbol,
             side,
