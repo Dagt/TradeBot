@@ -22,6 +22,6 @@ Cada fila representa una operación ejecutada e incluye la siguiente informació
 Estas columnas permiten auditar el resultado de la simulación y analizar el
 impacto de costes y deslizamientos en cada operación.
 
-El campo `realized_pnl_total` coincide con el valor acumulado expuesto por
-`RiskManager.pos.realized_pnl`, que incluye las comisiones y el efecto del
+El campo `realized_pnl_total` coincide con la métrica acumulada expuesta por
+`Account.realized_pnl_total`, que incluye las comisiones y el efecto del
 slippage.
