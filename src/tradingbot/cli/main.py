@@ -449,6 +449,9 @@ def backfill(
             f"{', '.join(BACKFILL_EXCHANGES)}"
         ),
     ),
+    timeframe: str = typer.Option(
+        "3m", "--timeframe", help="1m, 2m, 3m, 5m, 15m, 30m, 1H, 4H, ..."
+    ),
     start: str | None = typer.Option(
         None, "--start", help="Start datetime in ISO format"
     ),
@@ -475,6 +478,7 @@ def backfill(
             days=days,
             symbols=symbols,
             exchange_name=exchange,
+            timeframe=timeframe,
             start=_parse(start),
             end=_parse(end),
         )

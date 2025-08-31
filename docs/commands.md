@@ -112,6 +112,7 @@ Descarga datos históricos con límites de velocidad.
 - `--days`: número de días hacia atrás (1 por defecto).
 - `--symbols`: lista de símbolos a descargar.
 - `--venue`: nombre del venue (`binance_spot`, `binance_futures`, etc.).
+- `--timeframe`: intervalo de cada vela OHLCV (por defecto `3m`, e.g. `1m`, `2m`, `3m`, `5m`, `15m`, `30m`, `1H`, `4H`, ...).
 - `--start`: fecha inicial en formato ISO.
 - `--end`: fecha final en formato ISO.
 
