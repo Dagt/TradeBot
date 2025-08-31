@@ -51,29 +51,48 @@ class RiskManager:
     account:
         Instance of :class:`Account` used to query balances and exposures.
     risk_per_trade:
-        Fraction of available balance to risk per trade.  A value of ``0.01``
-        corresponds to risking 1% of cash on each trade.
+        Fraction of available balance to risk per trade.  A value of ``0.1``
+        corresponds to risking 10% of cash on each trade.  This value can be
+        overridden per trade when calling :meth:`calc_position_size`.
     atr_mult:
         Multiplier applied to the ATR when calculating stops.
     """
 
     account: Account
-    risk_per_trade: float = 0.01
+    risk_per_trade: float = 0.1
     atr_mult: float = 2.0
     risk_pct: float = 0.01
 
     # ------------------------------------------------------------------
     # Position sizing
-    def calc_position_size(self, signal_strength: float, price: float) -> float:
+    def calc_position_size(
+        self,
+        signal_strength: float,
+        price: float,
+        risk_per_trade: float | None = None,
+    ) -> float:
         """Return position size given ``signal_strength`` and ``price``.
 
-        ``signal_strength`` is expected to be in the ``[0, 1]`` range and simply
-        scales the base risk per trade.  The method does **not** clamp the
+        ``signal_strength`` is expected to be in the ``[0, 1]`` range and
+        linearly scales the capital fraction used.  A ``signal_strength`` of
+        ``1`` risks the full ``risk_per_trade`` portion of available balance,
+        while ``0.5`` uses half of it.  The method does **not** clamp the
         signal so callers can experiment with their own conventions.
+
+        Parameters
+        ----------
+        signal_strength:
+            Trade conviction in the ``[0, 1]`` range.
+        price:
+            Current asset price.
+        risk_per_trade:
+            Optional override for the fraction of balance to risk.  If ``None``
+            (default) the manager's ``risk_per_trade`` attribute is used.
         """
 
         balance = float(self.account.get_available_balance())
-        alloc = balance * self.risk_per_trade * float(signal_strength)
+        rpt = self.risk_per_trade if risk_per_trade is None else float(risk_per_trade)
+        alloc = balance * rpt * float(signal_strength)
         if price <= 0:
             return 0.0
         size = alloc / float(price)

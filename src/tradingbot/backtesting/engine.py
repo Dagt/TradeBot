@@ -236,6 +236,7 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 1000.0,
         risk_pct: float = 0.0,
+        risk_per_trade: float = 0.1,
         verbose_fills: bool = False,
         min_fill_qty: float = MIN_FILL_QTY,
         min_order_qty: float = MIN_ORDER_QTY,
@@ -272,6 +273,7 @@ class EventDrivenBacktestEngine:
 
         self.initial_equity = float(initial_equity)
         self._risk_pct = _validate_risk_pct(risk_pct)
+        self.risk_per_trade = float(risk_per_trade)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -338,7 +340,7 @@ class EventDrivenBacktestEngine:
             svc = RiskService(
                 guard,
                 account=account,
-                risk_per_trade=1.0,
+                risk_per_trade=self.risk_per_trade,
                 risk_pct=self._risk_pct,
             )
             svc.rm.allow_short = allow_short
