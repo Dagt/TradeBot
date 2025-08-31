@@ -54,7 +54,7 @@ class DummyRisk:
     def manage_position(self, trade):
         return "hold"
 
-    def check_order(self, symbol, side, equity, price, strength=1.0, **_):
+    def check_order(self, symbol, side, price, strength=1.0, **_):
         self.last_strength = strength
         return True, "", 1.0
 

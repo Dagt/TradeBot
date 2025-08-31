@@ -128,7 +128,6 @@ class RiskService:
         self,
         symbol: str,
         side: str,
-        equity: float,
         price: float,
         strength: float = 1.0,
         *,
@@ -141,7 +140,8 @@ class RiskService:
         based solely on ``signal_strength`` and ``price``.
         """
 
-        self.guard.refresh_usd_caps(equity)
+        # refresh caps based on current account cash
+        self.guard.refresh_usd_caps(self.account.cash)
 
         corr_pairs: Dict[tuple[str, str], float] = {}
         if self.corr is not None:

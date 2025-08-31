@@ -44,9 +44,8 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
     broker = PaperAdapter()
     if risk is None:
         risk = RiskService(
-            RiskManager(risk_pct=0.0),
             PortfolioGuard(GuardConfig(venue="cross")),
-            daily=None,
+            account=broker.account,
             risk_pct=0.0,
         )
 
@@ -82,17 +81,16 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             equity = eq
         if equity <= 0:
             equity = max(last["spot"], last["perp"])
+        risk.account.cash = equity
         ok1, _r1, delta1 = risk.check_order(
             cfg.symbol,
             spot_side,
-            equity,
             last["spot"],
             strength=strength,
         )
         ok2, _r2, delta2 = risk.check_order(
             cfg.symbol,
             perp_side,
-            equity,
             last["perp"],
             strength=strength,
         )

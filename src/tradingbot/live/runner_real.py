@@ -116,7 +116,6 @@ async def _run_symbol(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
-    risk_core = RiskManager(risk_pct=cfg.risk_pct, allow_short=(market != "spot"))
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -140,13 +139,13 @@ async def _run_symbol(
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     risk = RiskService(
-        risk_core,
         guard,
         dguard,
         corr_service=corr,
         account=broker.account,
         risk_pct=cfg.risk_pct,
     )
+    risk.rm.allow_short = market != "spot"
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -239,11 +238,9 @@ async def _run_symbol(
         sig = strat.on_bar({"window": df})
         if sig is None:
             continue
-        eq = broker.equity(mark_prices={cfg.symbol: px})
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
-            eq,
             closed.c,
             strength=sig.strength,
         )
