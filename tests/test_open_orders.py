@@ -88,3 +88,13 @@ def test_check_order_pending_qty_handles_partial_fill():
     )
     assert allowed2
     assert delta2 == pytest.approx(base - pending)
+
+
+def test_available_balance_decreases_with_pending_order():
+    account = Account(float("inf"), cash=1000.0)
+    account.mark_price("BTC", 100.0)
+    svc = make_service(account)
+    allowed, _, delta = svc.check_order("BTC", "buy", 100.0, strength=1.0)
+    assert allowed
+    assert account.cash == pytest.approx(1000.0)
+    assert account.get_available_balance() == pytest.approx(900.0)

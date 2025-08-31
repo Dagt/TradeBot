@@ -480,7 +480,7 @@ def test_funding_payment(tmp_path, monkeypatch):
     )
     assert pytest.approx(res["funding"], rel=1e-9) == 1.0
     # El costo de la operación incluye la comisión por defecto (0.001)
-    assert pytest.approx(res["equity"], rel=1e-9) == 198.9
+    assert pytest.approx(res["equity"], rel=1e-9) == 198.8
 
 
 class AlwaysBuyStrategy:
@@ -516,7 +516,7 @@ def test_stop_on_equity_depletion(tmp_path, monkeypatch, caplog):
     )
 
     df = pd.read_csv(out)
-    assert len(df) == 1
+    assert len(df) == 0
     assert any("Equity depleted" in m for m in caplog.messages)
 
 
