@@ -44,16 +44,16 @@ class MeanRevOFI(Strategy):
         vol_threshold: float = 0.01,
         min_volatility: float = 0.0,
         *,
-        risk_service=None,
         config_path: str | None = None,
+        **kwargs,
     ) -> None:
-        params = load_params(config_path)
+        params = {**load_params(config_path), **kwargs}
+        self.risk_service = params.pop("risk_service", None)
         self.ofi_window = int(params.get("ofi_window", ofi_window))
         self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
         self.vol_window = int(params.get("vol_window", vol_window))
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
         self.min_volatility = float(params.get("min_volatility", min_volatility))
-        self.risk_service = risk_service
         self.trade: dict | None = None
 
     @record_signal_metrics

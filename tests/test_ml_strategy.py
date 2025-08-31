@@ -45,7 +45,7 @@ def test_ml_strategy_risk_service_handles_stop_and_size():
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = MLStrategy(model=stub, margin=0.1, risk_service=svc)
+    strat = MLStrategy(model=stub, margin=0.1, **{"risk_service": svc})
     strat.scaler.fit([[0.0]])
     bar_open = {"features": [0.0], "close": 100.0}
     sig = strat.on_bar(bar_open)

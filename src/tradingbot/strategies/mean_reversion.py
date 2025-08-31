@@ -23,7 +23,7 @@ class MeanReversion(Strategy):
 
     name = "mean_reversion"
 
-    def __init__(self, risk_service=None, **kwargs):
+    def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.upper = kwargs.get("upper", 60.0)
         self.lower = kwargs.get("lower", 40.0)
@@ -31,7 +31,7 @@ class MeanReversion(Strategy):
         self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
         self.trend_threshold = kwargs.get("trend_threshold", 10.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

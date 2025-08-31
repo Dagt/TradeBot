@@ -32,12 +32,12 @@ class MLStrategy(Strategy):
         model: BaseEstimator | None = None,
         model_path: str | Path | None = None,
         margin: float = 0.1,
-        risk_service=None,
+        **kwargs,
     ) -> None:
         self.model: BaseEstimator | None = model
         self.scaler = StandardScaler()
         self.margin = float(margin)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
         if model_path:
             self.load_model(model_path)

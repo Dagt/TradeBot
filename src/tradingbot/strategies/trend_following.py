@@ -21,12 +21,12 @@ class TrendFollowing(Strategy):
 
     name = "trend_following"
 
-    def __init__(self, risk_service=None, **kwargs):
+    def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.threshold = kwargs.get("rsi_threshold", 60.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
-        self.risk_service = risk_service
+        self.risk_service = kwargs.get("risk_service")
         self.trade: dict | None = None
 
     @record_signal_metrics

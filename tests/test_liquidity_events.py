@@ -80,7 +80,7 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
         vacuum_threshold=0.5,
         gap_threshold=2,
         dynamic_thresholds=False,
-        risk_service=svc,
+        **{"risk_service": svc},
     )
     sig = strat.on_bar({"window": df_entry})
     assert sig is not None and sig.side == "buy"

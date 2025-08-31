@@ -31,7 +31,7 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, risk_service=svc)
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, **{"risk_service": svc})
     sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
     trade = strat.trade
@@ -117,7 +117,7 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = BreakoutVol(lookback=2, mult=0.5, risk_service=svc)
+    strat = BreakoutVol(lookback=2, mult=0.5, **{"risk_service": svc})
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
     trade = strat.trade

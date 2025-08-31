@@ -23,16 +23,16 @@ class BreakoutATR(Strategy):
         min_atr: float = 0.0,
         min_volatility: float = 0.0,
         *,
-        risk_service=None,
         config_path: str | None = None,
+        **kwargs,
     ):
-        params = load_params(config_path)
+        params = {**load_params(config_path), **kwargs}
+        self.risk_service = params.pop("risk_service", None)
         self.ema_n = int(params.get("ema_n", ema_n))
         self.atr_n = int(params.get("atr_n", atr_n))
         self.mult = float(params.get("mult", mult))
         self.min_atr = float(params.get("min_atr", min_atr))
         self.min_volatility = float(params.get("min_volatility", min_volatility))
-        self.risk_service = risk_service
         self.trade: dict | None = None
 
     @record_signal_metrics
