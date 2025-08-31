@@ -30,7 +30,6 @@ class RiskService:
 
     def __init__(
         self,
-        manager: RiskManager,
         guard: PortfolioGuard,
         daily: DailyGuard | None = None,
         corr_service: CorrelationService | None = None,
@@ -41,7 +40,7 @@ class RiskService:
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
     ) -> None:
-        self.rm = manager
+        self.rm = RiskManager(risk_pct=risk_pct)
         self.guard = guard
         self.daily = daily
         self.corr = corr_service
@@ -148,15 +147,8 @@ class RiskService:
         if self.corr is not None:
             corr_pairs = self.corr.get_correlations()
 
-        delta = self.rm.size(
-            side,
-            price,
-            equity,
-            strength=strength,
-            symbol=symbol,
-            correlations=corr_pairs,
-            threshold=corr_threshold,
-        )
+        unsigned = self.calc_position_size(strength, price)
+        delta = unsigned if side.lower() == "buy" else -unsigned
 
         if pending_qty > 0:
             if delta > 0:
