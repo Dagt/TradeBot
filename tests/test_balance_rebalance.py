@@ -6,14 +6,17 @@ from unittest.mock import Mock
 import pytest
 
 from tradingbot.execution.balance import rebalance_between_exchanges
-from tradingbot.risk.manager import RiskManager
 from tradingbot.execution.router import ExecutionRouter
 from tradingbot.live.daemon import TradeBotDaemon
+from tradingbot.core import Account
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.service import RiskService
 
 
 class DummyExchange:
-    def __init__(self, bal):
+    def __init__(self, bal, name):
         self.bal = bal
+        self.name = name
         from types import SimpleNamespace
 
         def _transfer(asset, amt, dest):
@@ -33,9 +36,10 @@ class DummyExchange:
 
 @pytest.mark.asyncio
 async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
-    risk = RiskManager()
-    ex_a = DummyExchange(100.0)
-    ex_b = DummyExchange(0.0)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    risk = RiskService(guard, account=Account(float("inf")))
+    ex_a = DummyExchange(100.0, "A")
+    ex_b = DummyExchange(0.0, "B")
     engine = object()
 
     calls = []
@@ -52,7 +56,7 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
         "USDT",
         price=px,
         venues={"A": ex_a, "B": ex_b},
-        risk=risk,
+        risk=risk.rm,
         engine=engine,
         threshold=1.0,
     )
@@ -65,8 +69,8 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
     assert args[2] is ex_b
 
     # Risk manager updated
-    assert risk.positions_multi["A"]["USDT"] == pytest.approx(50.0)
-    assert risk.positions_multi["B"]["USDT"] == pytest.approx(50.0)
+    assert risk.rm.positions_multi["A"]["USDT"] == pytest.approx(50.0)
+    assert risk.rm.positions_multi["B"]["USDT"] == pytest.approx(50.0)
 
     # Snapshots recorded
     venues_recorded = {c[0] for c in calls}
@@ -78,9 +82,10 @@ async def test_rebalance_moves_funds_and_records_snapshot(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_daemon_periodic_rebalance(monkeypatch):
-    risk = RiskManager()
-    ex_a = DummyExchange(100.0)
-    ex_b = DummyExchange(0.0)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    risk = RiskService(guard, account=Account(float("inf")))
+    ex_a = DummyExchange(100.0, "A")
+    ex_b = DummyExchange(0.0, "B")
     router = ExecutionRouter(adapters={"A": ex_a, "B": ex_b})
 
     calls = []
@@ -105,7 +110,7 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     daemon = TradeBotDaemon(
         {"A": ex_a, "B": ex_b},
         [],
-        risk,
+        risk.rm,
         router,
         symbols=[],
         accounts={"A": ex_a, "B": ex_b},
@@ -124,8 +129,8 @@ async def test_daemon_periodic_rebalance(monkeypatch):
     await task
 
     ex_a.transfer.assert_called_once()
-    assert risk.positions_multi["A"]["USDT"] == pytest.approx(50.0)
-    assert risk.positions_multi["B"]["USDT"] == pytest.approx(50.0)
+    assert risk.rm.positions_multi["A"]["USDT"] == pytest.approx(50.0)
+    assert risk.rm.positions_multi["B"]["USDT"] == pytest.approx(50.0)
     venues_recorded = {c[0] for c in calls}
     assert venues_recorded == {"A", "B"}
     assert prices_used and prices_used[0] == 2.0
