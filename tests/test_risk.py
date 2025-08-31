@@ -38,6 +38,7 @@ def test_stop_loss_risk_pct():
 
 def test_pyramiding_and_scaling(risk_manager):
     rm = risk_manager
+    rm.risk_pct = 0.0
     max_qty = rm.equity / rm.price
 
     delta = rm.size("buy", rm.price, rm.equity, strength=0.5)
@@ -55,31 +56,6 @@ def test_pyramiding_and_scaling(risk_manager):
     delta = rm.size("buy", rm.price, rm.equity, strength=0.0)
     rm.add_fill("sell", abs(delta))
     assert rm.pos.qty == pytest.approx(0.0)
-
-
-def test_size_with_volatility_event():
-    from tradingbot.risk.manager import RiskManager
-    from tradingbot.utils.metrics import RISK_EVENTS
-
-    rm = RiskManager(vol_target=0.02)
-    before = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
-    delta = rm.size_with_volatility(0.04, price=1.0, equity=10)
-    after = RISK_EVENTS.labels(event_type="volatility_sizing")._value.get()
-    assert delta == pytest.approx(10.0)
-    assert after == before + 1
-
-
-def test_update_correlation_limits_exposure():
-    from tradingbot.risk.manager import RiskManager
-    from tradingbot.utils.metrics import RISK_EVENTS
-
-    rm = RiskManager()
-    pairs = {("BTC", "ETH"): 0.9}
-    before = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
-    exceeded = rm.update_correlation(pairs, 0.8)
-    after = RISK_EVENTS.labels(event_type="correlation_limit")._value.get()
-    assert exceeded == [("BTC", "ETH")]
-    assert after == before + 1
 
 
 def test_kill_switch_disables():

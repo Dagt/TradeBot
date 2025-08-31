@@ -121,7 +121,6 @@ class RiskService:
         price: float,
         strength: float = 1.0,
         *,
-        symbol_vol: float | None = None,
         corr_threshold: float = 0.0,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
@@ -132,8 +131,19 @@ class RiskService:
 
         self.guard.refresh_usd_caps(equity)
 
-        qty = self.calc_position_size(strength, price)
-        delta = qty if side == "buy" else -qty
+        corr_pairs: Dict[tuple[str, str], float] = {}
+        if self.corr is not None:
+            corr_pairs = self.corr.get_correlations()
+
+        delta = self.rm.size(
+            side,
+            price,
+            equity,
+            strength=strength,
+            symbol=symbol,
+            correlations=corr_pairs,
+            threshold=corr_threshold,
+        )
 
         alloc = abs(delta) * price
         if not self.check_global_exposure(symbol, alloc):
@@ -147,7 +157,11 @@ class RiskService:
             limits_ok = self.rm.check_limits(price)
         except StopLossExceeded:
             self._persist("VIOLATION", symbol, "stop_loss", {})
-            cur = self.guard.st.positions.get(symbol, 0.0)
+            cur = (
+                self.guard.st.positions.get(symbol, self.rm.pos.qty)
+                if self.guard is not None
+                else self.rm.pos.qty
+            )
             if abs(cur) > 0:
                 return True, "stop_loss", -cur
             return False, "stop_loss", 0.0

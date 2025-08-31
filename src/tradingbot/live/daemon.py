@@ -475,14 +475,9 @@ class TradeBotDaemon:
         price = getattr(trade, "price", None)
         side = signal.side
         strength = signal.strength
-        symbol_vol = 0.0
         if symbol and price is not None:
             hist = self.price_history[symbol]
             hist.append(float(price))
-            if len(hist) >= 2:
-                df_hist = pd.DataFrame({"close": list(hist)})
-                rets = returns(df_hist).dropna()
-                symbol_vol = float(rets.std()) if not rets.empty else 0.0
         returns_dict: Dict[str, List[float]] = {}
         for sym, hist in self.price_history.items():
             if len(hist) >= 2:
@@ -513,7 +508,6 @@ class TradeBotDaemon:
             equity,
             price or 0.0,
             strength=strength,
-            symbol_vol=symbol_vol,
             correlations=corr_pairs,
             threshold=self.corr_threshold,
         )

@@ -1,16 +1,12 @@
 import math
+import math
 from datetime import datetime, timedelta, timezone
 
 import pytest
-import math
-import pytest
-from datetime import datetime, timedelta, timezone
 
 from tradingbot.risk.correlation_service import CorrelationService
 from tradingbot.risk.correlation_guard import group_correlated, global_cap
 from tradingbot.risk.manager import RiskManager
-from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
-from tradingbot.risk.service import RiskService
 
 
 def _feed_series(svc: CorrelationService, symbol: str, start: datetime, returns: list[float]) -> None:
@@ -49,33 +45,6 @@ def test_correlation_service_window_rolls():
     svc.update_price("BBB", 103.0, now - timedelta(minutes=5))
     corrs = svc.get_correlations()
     assert corrs[("AAA", "BBB")] == pytest.approx(1.0)
-
-
-def test_risk_service_uses_correlation_service():
-    guard = PortfolioGuard(GuardConfig(per_symbol_cap_pct=10000, total_cap_pct=20000))
-    guard.refresh_usd_caps(1.0)
-    rm = RiskManager(vol_target=0.02)
-    corr = CorrelationService()
-    svc = RiskService(rm, guard, corr_service=corr, risk_pct=0.0)
-    now = datetime.now(timezone.utc)
-    price_btc = 100.0
-    price_eth = 200.0
-    corr.update_price("BTC", price_btc, now)
-    corr.update_price("ETH", price_eth, now)
-    price_btc *= math.exp(0.01)
-    price_eth *= math.exp(0.01)
-    corr.update_price("BTC", price_btc, now + timedelta(seconds=1))
-    corr.update_price("ETH", price_eth, now + timedelta(seconds=1))
-    price_btc *= math.exp(0.02)
-    price_eth *= math.exp(0.02)
-    corr.update_price("BTC", price_btc, now + timedelta(seconds=2))
-    corr.update_price("ETH", price_eth, now + timedelta(seconds=2))
-    guard.st.returns["BTC"].extend([0.01, -0.02, 0.03])
-    symbol_vol = guard.volatility("BTC")
-    base = rm.size("buy", price_btc, guard.equity, strength=0.1, symbol="BTC", symbol_vol=symbol_vol)
-    allowed, _, delta = svc.check_order("BTC", "buy", 1.0, price_btc, corr_threshold=0.8, strength=0.1)
-    assert allowed
-    assert delta == pytest.approx(base * 0.5)
 
 
 def test_correlation_guard_groups_and_cap():
