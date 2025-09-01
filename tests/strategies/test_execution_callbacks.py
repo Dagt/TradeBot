@@ -104,7 +104,7 @@ class FallbackStrategy(DummyStrategy):
 
 
 @pytest.mark.asyncio
-async def test_fallback_to_market_when_edge_gone():
+async def test_partial_fill_no_fallback_when_edge_gone():
     strat = FallbackStrategy()
     # record opposite last signal to indicate edge vanished
     strat.on_bar({"symbol": "XYZ", "exchange": "ex", "close": 100.0, "side": "sell"})
@@ -112,6 +112,5 @@ async def test_fallback_to_market_when_edge_gone():
     router = ExecutionRouter(adapter, on_partial_fill=strat.on_partial_fill)
     order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
     res = await router.execute(order)
-    assert res["status"] == "filled"
-    assert len(adapter.calls) == 2
-    assert adapter.calls[1]["type_"] == "market"
+    assert res["status"] == "partial"
+    assert len(adapter.calls) == 1

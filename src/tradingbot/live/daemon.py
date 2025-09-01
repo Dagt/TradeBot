@@ -331,33 +331,73 @@ class TradeBotDaemon:
                 spot_side, perp_side = (
                     ("buy", "sell") if edge > 0 else ("sell", "buy")
                 )
-                equity = max(last["spot"], last["perp"])
-                delta_s = self.risk.size(spot_side, last["spot"], equity, strength)
-                delta_p = self.risk.size(perp_side, last["perp"], equity, strength)
+                allowed_s, _, delta_s = self.risk.check_order(
+                    cfg.symbol, spot_side, last["spot"], strength=strength
+                )
+                allowed_p, _, delta_p = self.risk.check_order(
+                    cfg.symbol, perp_side, last["perp"], strength=strength
+                )
+                if not (allowed_s and allowed_p):
+                    return
                 qty = min(abs(delta_s), abs(delta_p))
                 if qty <= 0:
                     return
+                price_s = last["spot"] * (1.001 if spot_side == "buy" else 0.999)
+                price_p = last["perp"] * (1.001 if perp_side == "buy" else 0.999)
                 resp_spot, resp_perp = await asyncio.gather(
-                    cfg.spot.place_order(cfg.symbol, spot_side, "market", qty),
-                    cfg.perp.place_order(cfg.symbol, perp_side, "market", qty),
+                    cfg.spot.place_order(
+                        cfg.symbol,
+                        spot_side,
+                        "limit",
+                        qty,
+                        price_s,
+                        time_in_force="IOC",
+                    ),
+                    cfg.perp.place_order(
+                        cfg.symbol,
+                        perp_side,
+                        "limit",
+                        qty,
+                        price_p,
+                        time_in_force="IOC",
+                    ),
                 )
-                balances[cfg.spot.name] += qty if spot_side == "buy" else -qty
-                balances[cfg.perp.name] += qty if perp_side == "buy" else -qty
-                self.risk.update_position(cfg.spot.name, cfg.symbol, balances[cfg.spot.name])
-                self.risk.update_position(cfg.perp.name, cfg.symbol, balances[cfg.perp.name])
-                if self.guard:
-                    self.guard.update_position_on_order(cfg.symbol, spot_side, qty, cfg.spot.name)
-                    self.guard.update_position_on_order(cfg.symbol, perp_side, qty, cfg.perp.name)
-                pnl = (resp_perp.get("price", 0.0) - resp_spot.get("price", 0.0)) * qty
+                filled_s = float(resp_spot.get("filled_qty") or resp_spot.get("qty") or 0.0)
+                filled_p = float(resp_perp.get("filled_qty") or resp_perp.get("qty") or 0.0)
+                if filled_s <= 0 and filled_p <= 0:
+                    return
+                balances[cfg.spot.name] += filled_s if spot_side == "buy" else -filled_s
+                balances[cfg.perp.name] += filled_p if perp_side == "buy" else -filled_p
+                self.risk.on_fill(
+                    cfg.symbol, spot_side, filled_s, price=resp_spot.get("price"), venue=cfg.spot.name
+                )
+                self.risk.on_fill(
+                    cfg.symbol, perp_side, filled_p, price=resp_perp.get("price"), venue=cfg.perp.name
+                )
+                pnl = (resp_perp.get("price", 0.0) - resp_spot.get("price", 0.0)) * min(
+                    filled_s, filled_p
+                )
                 self.risk.update_pnl(pnl, venue=cfg.perp.name)
                 self.risk.update_pnl(-pnl, venue=cfg.spot.name)
                 await self.bus.publish(
                     "fill",
-                    {"symbol": cfg.symbol, "side": spot_side, "qty": qty, "venue": cfg.spot.name, **resp_spot},
+                    {
+                        "symbol": cfg.symbol,
+                        "side": spot_side,
+                        "qty": filled_s,
+                        "venue": cfg.spot.name,
+                        **resp_spot,
+                    },
                 )
                 await self.bus.publish(
                     "fill",
-                    {"symbol": cfg.symbol, "side": perp_side, "qty": qty, "venue": cfg.perp.name, **resp_perp},
+                    {
+                        "symbol": cfg.symbol,
+                        "side": perp_side,
+                        "qty": filled_p,
+                        "venue": cfg.perp.name,
+                        **resp_perp,
+                    },
                 )
                 log.info(
                     "CROSS ARB edge=%.4f%% spot=%.2f perp=%.2f qty=%.6f pos_spot=%.6f pos_perp=%.6f",
@@ -501,15 +541,14 @@ class TradeBotDaemon:
             self.risk.update_correlation(corr_pairs, self.corr_threshold)
             self.risk.update_covariance(cov_matrix, self.corr_threshold)
 
-        equity = self.guard.equity if self.guard else self.equity
+        if price is None:
+            return
         allowed, reason, delta = self.risk.check_order(
             symbol,
             side,
-            equity,
-            price or 0.0,
+            price,
             strength=strength,
-            correlations=corr_pairs,
-            threshold=self.corr_threshold,
+            pending_qty=getattr(trade, "pending_qty", 0.0),
         )
         if not allowed or abs(delta) <= 0:
             if not allowed:
@@ -518,15 +557,28 @@ class TradeBotDaemon:
         order = Order(
             symbol=symbol,
             side="buy" if delta > 0 else "sell",
-            type_="market",
+            type_="limit",
             qty=abs(delta),
+            price=price,
+            time_in_force="IOC",
             reduce_only=getattr(signal, "reduce_only", False),
         )
         res = await self.router.execute(order)
         venue = res.get("venue")
-        await self.bus.publish("fill", {"symbol": symbol, "side": order.side, "qty": order.qty, "venue": venue, **res})
-        if venue and self.guard:
-            self.guard.update_position_on_order(symbol, order.side, order.qty, venue)
+        filled = float(res.get("filled_qty", 0.0))
+        self.risk.on_fill(
+            symbol, order.side, filled, price=res.get("price"), venue=venue
+        )
+        await self.bus.publish(
+            "fill",
+            {
+                "symbol": symbol,
+                "side": order.side,
+                "qty": filled,
+                "venue": venue,
+                **res,
+            },
+        )
 
     # ------------------------------------------------------------------
     async def _on_external_halt(self, evt: dict) -> None:

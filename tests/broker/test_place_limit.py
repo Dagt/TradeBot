@@ -112,24 +112,23 @@ async def test_place_limit_partial_fill_requotes():
 
 
 @pytest.mark.asyncio
-async def test_place_limit_partial_fill_taker():
+async def test_place_limit_partial_fill_no_fallback():
     adapter = PartialAdapter()
     broker = Broker(adapter)
 
-    def to_taker(order, res):
-        return "taker"
+    def ignore(order, res):
+        return "taker"  # any non re_quote value
 
     res = await broker.place_limit(
         "BTC/USDT",
         "buy",
         100.0,
         10.0,
-        on_partial_fill=to_taker,
+        on_partial_fill=ignore,
     )
-    assert res["status"] == "filled"
-    assert res["pending_qty"] == pytest.approx(0.0)
-    assert len(adapter.calls) == 2
-    assert adapter.calls[1]["qty"] == pytest.approx(5.0)
+    assert res["status"] == "partial"
+    assert res["pending_qty"] == pytest.approx(5.0)
+    assert len(adapter.calls) == 1
 
 
 @pytest.mark.asyncio
