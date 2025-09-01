@@ -7,6 +7,7 @@ import asyncio
 
 from ..utils.metrics import RISK_EVENTS
 from ..storage import timescale
+from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -71,12 +72,20 @@ class DailyGuard:
             place = getattr(broker, "place_order", None)
             if not pos_book or place is None:
                 return
+            tick = getattr(settings, "tick_size", 0.0)
             for sym, p in list(pos_book.items()):
                 qty = getattr(p, "qty", 0.0)
                 if abs(qty) <= 0:
                     continue
                 side = "sell" if qty > 0 else "buy"
-                asyncio.create_task(place(sym, side, "market", abs(qty)))
+                last_px = getattr(getattr(broker, "state", object()), "last_px", {}).get(sym)
+                if last_px is None:
+                    continue
+                price = last_px - tick if side == "sell" else last_px + tick
+                place_limit = getattr(broker, "place_limit", None)
+                if place_limit is None:
+                    continue
+                asyncio.create_task(place_limit(sym, side, price, abs(qty), tif="IOC"))
         except Exception:  # pragma: no cover - safety guard
             log.exception("[DG] apply_halt_action failed")
 

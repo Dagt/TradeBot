@@ -16,6 +16,8 @@ from ..strategies.arbitrage_triangular import (
 from ..risk.service import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from ..broker.broker import Broker
+from ..config import settings
 
 # Persistencia opcional
 try:
@@ -44,7 +46,8 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     streams = [_stream_name(syms.bq), _stream_name(syms.mq), _stream_name(syms.mb)]
     url = BINANCE_WS + "/".join(streams)
 
-    broker = PaperAdapter(fee_bps=cfg.taker_fee_bps)
+    adapter = PaperAdapter(fee_bps=cfg.taker_fee_bps)
+    broker = Broker(adapter)
     last: Dict[str, float] = {"bq": None, "mq": None, "mb": None}
     fills = 0
     if risk is None:
@@ -138,23 +141,30 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         mid_qty = min(mid_qty, abs(d3))
                         base_qty = mid_qty * last["mb"]
                         notional = base_qty * last["bq"]
-                        resp1 = await broker.place_order(
+                        tick = getattr(settings, "tick_size", 0.0)
+                        price1 = last["bq"] + tick
+                        price2 = last["mb"] + tick
+                        price3 = last["mq"] - tick
+                        resp1 = await broker.place_limit(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "buy",
-                            "market",
+                            price1,
                             base_qty,
+                            tif="IOC",
                         )
-                        resp2 = await broker.place_order(
+                        resp2 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "buy",
-                            "market",
+                            price2,
                             mid_qty,
+                            tif="IOC",
                         )
-                        resp3 = await broker.place_order(
+                        resp3 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "sell",
-                            "market",
+                            price3,
                             mid_qty,
+                            tif="IOC",
                         )
                         legs = [
                             ("buy", f"{cfg.route.base}/{cfg.route.quote}", base_qty, resp1),
@@ -195,23 +205,30 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         base_qty = min(base_qty, abs(d3))
                         mid_qty = base_qty * last["mb"]
                         notional = mid_qty * last["mq"]
-                        resp1 = await broker.place_order(
+                        tick = getattr(settings, "tick_size", 0.0)
+                        price1 = last["mq"] + tick
+                        price2 = last["mb"] - tick
+                        price3 = last["bq"] - tick
+                        resp1 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "buy",
-                            "market",
+                            price1,
                             mid_qty,
+                            tif="IOC",
                         )
-                        resp2 = await broker.place_order(
+                        resp2 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.base}",
                             "sell",
-                            "market",
+                            price2,
                             mid_qty,
+                            tif="IOC",
                         )
-                        resp3 = await broker.place_order(
+                        resp3 = await broker.place_limit(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "sell",
-                            "market",
+                            price3,
                             base_qty,
+                            tif="IOC",
                         )
                         legs = [
                             ("buy", f"{cfg.route.mid}/{cfg.route.quote}", mid_qty, resp1),
@@ -234,7 +251,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                                     exchange="binance",
                                     symbol=symbol,
                                     side=side,
-                                    type_="market",
+                                    type_="limit",
                                     qty=float(qty),
                                     px=float(r.get("price")) if r.get("price") is not None else None,
                                     status=r.get("status", "filled"),

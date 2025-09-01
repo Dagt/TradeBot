@@ -40,7 +40,6 @@ class MLStrategy(Strategy):
         self.scaler = StandardScaler()
         self.margin = float(margin)
         self.risk_service = kwargs.get("risk_service")
-        self.trade: dict | None = None
         if model_path:
             self.load_model(model_path)
 
@@ -101,22 +100,6 @@ class MLStrategy(Strategy):
                 price = None
         if price is None or np.isnan(price):
             return None
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, price)
-            trade_state = {**self.trade, "current_price": price}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = price
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = price
-                return sig
-            return None
 
         if proba > 0.5 + self.margin:
             side = "buy"
@@ -127,23 +110,8 @@ class MLStrategy(Strategy):
         else:
             return None
 
-        if self.risk_service:
-            qty = self.risk_service.calc_position_size(strength, price)
-            trade = {
-                "side": side,
-                "entry_price": price,
-                "qty": qty,
-                "strength": strength,
-            }
-            atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
-            if atr is not None:
-                trade["atr"] = atr
-            self.risk_service.update_trailing(trade, price)
-            self.trade = trade
         sig = Signal(side, strength)
-        sig.limit_price = price
-        return sig
+        return self.finalize_signal(bar, price, sig)
 
 
 __all__ = ["MLStrategy"]

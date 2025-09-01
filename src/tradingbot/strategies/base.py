@@ -73,6 +73,52 @@ class Strategy(ABC):
             return None
         return "re_quote" if self._edge_still_exists(order) else None
 
+    # ------------------------------------------------------------------
+    def finalize_signal(
+        self,
+        bar: dict[str, Any],
+        price: float,
+        signal: Signal | None,
+    ) -> Signal | None:
+        """Attach limit prices and coordinate risk management.
+
+        Strategies should call this helper at the end of ``on_bar`` passing the
+        generated ``signal`` (which may be ``None``).  The function consults the
+        shared ``RiskService`` to update trailing stops, evaluate opposite or
+        stronger signals and decide whether the current trade should be closed
+        or scaled.  When no ``RiskService`` is configured it simply attaches the
+        ``limit_price`` and returns the signal unchanged.
+        """
+
+        if signal is not None:
+            signal.limit_price = price
+        rs = getattr(self, "risk_service", None)
+        if rs is None:
+            return signal
+
+        symbol = bar.get("symbol")
+        trade = rs.get_trade(symbol) if symbol else None
+        if trade:
+            atr = bar.get("atr") or bar.get("volatility")
+            if atr is not None:
+                trade["atr"] = atr
+            rs.update_trailing(trade, price)
+            sig_dict = None
+            if signal is not None:
+                sig_dict = {"side": signal.side, "strength": signal.strength}
+            decision = rs.manage_position({**trade, "current_price": price}, sig_dict)
+            if decision == "close":
+                side = "sell" if trade.get("side") == "buy" else "buy"
+                close = Signal(side, 1.0)
+                close.limit_price = price
+                return close
+            if decision in {"scale_in", "scale_out"} and signal is not None:
+                return signal
+            if decision == "hold" and signal is not None:
+                return signal
+            return None
+        return signal
+
 
 def load_params(path: str | None) -> dict[str, Any]:
     """Load strategy parameters from a YAML file.

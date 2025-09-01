@@ -70,7 +70,6 @@ class ScalpPingPong(Strategy):
         params.pop("risk_service", None)
         self.cfg = cfg or ScalpPingPongConfig(**params)
         self.risk_service = kwargs.get("risk_service")
-        self.trade: dict | None = None
 
     def _calc_zscore(self, closes: pd.Series) -> float:
         returns = closes.pct_change().dropna()
@@ -92,22 +91,6 @@ class ScalpPingPong(Strategy):
         returns = closes.pct_change().dropna()
         z = self._calc_zscore(closes)
         price = float(closes.iloc[-1])
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, price)
-            trade_state = {**self.trade, "current_price": price}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = price
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = price
-                return sig
-            return None
 
         vol = (
             returns.rolling(self.cfg.lookback).std().iloc[-1]
@@ -152,15 +135,6 @@ class ScalpPingPong(Strategy):
             return None
         size = min(1.0, strength * vol_size)
         if size <= 0:
-            return None
-        if self.risk_service:
-            qty = self.risk_service.calc_position_size(size, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": size}
-            atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
-            trade["atr"] = atr
-            self.risk_service.update_trailing(trade, price)
-            self.trade = trade
+            return self.finalize_signal(bar, price, None)
         sig = Signal(side, size)
-        sig.limit_price = price
-        return sig
+        return self.finalize_signal(bar, price, sig)

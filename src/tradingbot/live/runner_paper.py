@@ -73,6 +73,7 @@ async def run_paper(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    strat.risk_service = risk
 
     router = ExecutionRouter(
         [broker],
@@ -161,7 +162,7 @@ async def run_paper(
             df = agg.last_n_bars_df(200)
             if len(df) < 140:
                 continue
-            signal = strat.on_bar({"window": df})
+            signal = strat.on_bar({"window": df, "symbol": symbol})
             if signal is None:
                 continue
             allowed, _reason, delta = risk.check_order(
