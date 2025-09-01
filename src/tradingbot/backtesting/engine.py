@@ -917,10 +917,11 @@ class EventDrivenBacktestEngine:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
                     limit_price = getattr(sig, "limit_price", None)
-                    if limit_price is not None:
-                        place_price = float(limit_price)
-                    else:
-                        place_price = float(arrs["close"][i])
+                    place_price = (
+                        float(sig.limit_price)
+                        if sig.limit_price is not None
+                        else float(arrs["close"][i])
+                    )
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
@@ -929,10 +930,11 @@ class EventDrivenBacktestEngine:
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
                         limit_price = getattr(sig, "limit_price", None)
-                        if limit_price is not None:
-                            place_price = float(limit_price)
-                        else:
-                            place_price = float(arrs["close"][i])
+                        place_price = (
+                            float(sig.limit_price)
+                            if sig.limit_price is not None
+                            else float(arrs["close"][i])
+                        )
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
