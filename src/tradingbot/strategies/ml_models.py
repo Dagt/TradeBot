@@ -2,6 +2,7 @@ import numpy as np
 from typing import Any
 from pathlib import Path
 
+import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.exceptions import NotFittedError
@@ -91,7 +92,15 @@ class MLStrategy(Strategy):
         except NotFittedError:
             return None
         proba = max(0.0, min(1.0, proba))
-        price = float(bar.get("close") or bar.get("price") or 0.0)
+        df: pd.DataFrame | None = bar.get("window")
+        price: float | None = None
+        if df is not None:
+            try:
+                price = float(df["close"].iloc[-1])
+            except (KeyError, IndexError, TypeError):
+                price = None
+        if price is None or np.isnan(price):
+            return None
         if self.trade and self.risk_service:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
