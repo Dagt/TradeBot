@@ -19,7 +19,7 @@ def dummy_data():
     "risk_pct,expected",
     [
         (0.5, 0.5),  # already a fraction
-        (1, 1.0),  # 100%
+        (1, 0.01),  # integer percentage (1%)
         (5, 0.05),  # percentage expressed as integer
         (50, 0.5),  # percentage conversion boundary
     ],
