@@ -17,6 +17,7 @@ PARAM_INFO = {
     "margin": "Margen de probabilidad sobre 0.5",
 }
 
+
 class MLStrategy(Strategy):
     """Machine learning based strategy using scikit-learn models.
 
@@ -90,7 +91,21 @@ class MLStrategy(Strategy):
         except NotFittedError:
             return None
         proba = max(0.0, min(1.0, proba))
-        price = float(bar.get("close") or bar.get("price") or 0.0)
+        price = bar.get("price")
+        if price is None:
+            if "window" not in bar:
+                return None
+            df = bar["window"]
+            col = (
+                "close"
+                if "close" in df.columns
+                else "price" if "price" in df.columns else None
+            )
+            if col is None:
+                return None
+            price = float(df[col].iloc[-1])
+        else:
+            price = float(price)
         if self.trade and self.risk_service:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
@@ -98,10 +113,14 @@ class MLStrategy(Strategy):
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = price
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = price
+                return sig
             return None
 
         if proba > 0.5 + self.margin:
@@ -115,14 +134,21 @@ class MLStrategy(Strategy):
 
         if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility")
             trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             if atr is not None:
                 trade["atr"] = atr
             self.risk_service.update_trailing(trade, price)
             self.trade = trade
-        return Signal(side, strength)
+        sig = Signal(side, strength)
+        sig.limit_price = price
+        return sig
 
 
 __all__ = ["MLStrategy"]

@@ -42,18 +42,29 @@ class OrderFlow(Strategy):
         needed = {"bid_qty", "ask_qty"}
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
-        price = bar.get("close")
-        if self.trade and self.risk_service and price is not None:
+        col = (
+            "close"
+            if "close" in df.columns
+            else "price" if "price" in df.columns else None
+        )
+        if col is None:
+            return None
+        price = float(df[col].iloc[-1])
+        if self.trade and self.risk_service:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
             decision = self.risk_service.manage_position(trade_state)
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = price
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = price
+                return sig
             return None
 
         vol_bps = float("inf")
@@ -71,7 +82,7 @@ class OrderFlow(Strategy):
             return None
 
         ofi_series = calc_ofi(df[list(needed)])
-        ofi_mean = ofi_series.iloc[-self.window:].mean()
+        ofi_mean = ofi_series.iloc[-self.window :].mean()
         if ofi_mean > self.buy_threshold:
             side = "buy"
         elif ofi_mean < -self.sell_threshold:
@@ -79,13 +90,20 @@ class OrderFlow(Strategy):
         else:
             return None
         strength = 1.0
-        if self.risk_service and price is not None:
+        if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility")
             trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             if atr is not None:
                 trade["atr"] = atr
             self.risk_service.update_trailing(trade, price)
             self.trade = trade
-        return Signal(side, strength)
+        sig = Signal(side, strength)
+        sig.limit_price = price
+        return sig

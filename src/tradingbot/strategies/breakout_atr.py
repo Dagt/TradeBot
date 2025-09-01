@@ -49,10 +49,14 @@ class BreakoutATR(Strategy):
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = last_close
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = last_close
+                return sig
             return None
         atr_val = float(atr(df, self.atr_n).iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
@@ -70,10 +74,13 @@ class BreakoutATR(Strategy):
         strength = 1.0
         if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, last_close)
-            trade = {"side": side, "entry_price": last_close, "qty": qty, "strength": strength}
-            trade["stop"] = self.risk_service.initial_stop(
-                last_close, side, atr_val
-            )
+            trade = {
+                "side": side,
+                "entry_price": last_close,
+                "qty": qty,
+                "strength": strength,
+            }
+            trade["stop"] = self.risk_service.initial_stop(last_close, side, atr_val)
             trade["atr"] = atr_val
             self.risk_service.update_trailing(trade, last_close)
             self.trade = trade
