@@ -11,6 +11,7 @@ PARAM_INFO = {
     "vol_window": "Ventana para estimar la volatilidad",
 }
 
+
 class Momentum(Strategy):
     """Simple momentum strategy using the Relative Strength Index (RSI).
 
@@ -87,7 +88,12 @@ class Momentum(Strategy):
         strength = 1.0
         if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility") or 0.0
             trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             trade["atr"] = atr

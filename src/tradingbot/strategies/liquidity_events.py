@@ -94,7 +94,12 @@ class LiquidityEvents(Strategy):
             strength = 1.0
             if self.risk_service:
                 qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
+                trade = {
+                    "side": side,
+                    "entry_price": float(last_price),
+                    "qty": qty,
+                    "strength": strength,
+                }
                 atr = bar.get("atr") or bar.get("volatility")
                 trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
@@ -109,7 +114,12 @@ class LiquidityEvents(Strategy):
             strength = 1.0
             if self.risk_service:
                 qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
+                trade = {
+                    "side": side,
+                    "entry_price": float(last_price),
+                    "qty": qty,
+                    "strength": strength,
+                }
                 atr = bar.get("atr") or bar.get("volatility")
                 trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
@@ -127,7 +137,12 @@ class LiquidityEvents(Strategy):
             strength = 1.0
             if self.risk_service:
                 qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
+                trade = {
+                    "side": side,
+                    "entry_price": float(last_price),
+                    "qty": qty,
+                    "strength": strength,
+                }
                 atr = bar.get("atr") or bar.get("volatility")
                 trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:
@@ -142,7 +157,12 @@ class LiquidityEvents(Strategy):
             strength = 1.0
             if self.risk_service:
                 qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {"side": side, "entry_price": float(last_price), "qty": qty, "strength": strength}
+                trade = {
+                    "side": side,
+                    "entry_price": float(last_price),
+                    "qty": qty,
+                    "strength": strength,
+                }
                 atr = bar.get("atr") or bar.get("volatility")
                 trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
                 if atr is not None:

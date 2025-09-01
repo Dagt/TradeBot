@@ -43,6 +43,9 @@ class OrderFlow(Strategy):
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
         price = bar.get("close")
+        if price is None:
+            col = "close" if "close" in df.columns else "price"
+            price = float(df[col].iloc[-1])
         if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
@@ -75,7 +78,7 @@ class OrderFlow(Strategy):
             return None
 
         ofi_series = calc_ofi(df[list(needed)])
-        ofi_mean = ofi_series.iloc[-self.window:].mean()
+        ofi_mean = ofi_series.iloc[-self.window :].mean()
         if ofi_mean > self.buy_threshold:
             side = "buy"
         elif ofi_mean < -self.sell_threshold:
@@ -85,7 +88,12 @@ class OrderFlow(Strategy):
         strength = 1.0
         if self.risk_service and price is not None:
             qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility")
             trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             if atr is not None:

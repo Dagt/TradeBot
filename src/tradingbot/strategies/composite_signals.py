@@ -25,9 +25,7 @@ class CompositeSignals(Strategy):
         self.sub_strategies = []
         for cls, params in strategies:
             try:
-                self.sub_strategies.append(
-                    cls(risk_service=risk_service, **params)
-                )
+                self.sub_strategies.append(cls(risk_service=risk_service, **params))
             except TypeError:
                 # Sub-strategy may not accept ``risk_service``; fall back to
                 # instantiating without it to preserve backward compatibility.
@@ -37,6 +35,7 @@ class CompositeSignals(Strategy):
     def on_bar(self, bar: dict) -> Signal | None:
         buys = 0
         sells = 0
+        price = float(bar.get("close") or bar.get("price") or 0.0)
         for strat in self.sub_strategies:
             sig = strat.on_bar(bar)
             if sig is None:
@@ -46,11 +45,19 @@ class CompositeSignals(Strategy):
             elif sig.side == "sell":
                 sells += 1
         if buys >= 2 and buys > sells:
-            return Signal("buy", 1.0)
+            sig = Signal("buy", 1.0)
+            sig.limit_price = price
+            return sig
         if sells >= 2 and sells > buys:
-            return Signal("sell", 1.0)
+            sig = Signal("sell", 1.0)
+            sig.limit_price = price
+            return sig
         if buys > len(self.sub_strategies) / 2:
-            return Signal("buy", 1.0)
+            sig = Signal("buy", 1.0)
+            sig.limit_price = price
+            return sig
         if sells > len(self.sub_strategies) / 2:
-            return Signal("sell", 1.0)
+            sig = Signal("sell", 1.0)
+            sig.limit_price = price
+            return sig
         return None
