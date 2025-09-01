@@ -10,15 +10,17 @@ from unittest.mock import MagicMock
 def test_depth_imbalance_strategy_buy():
     df = pd.DataFrame({"bid_qty": [5, 7, 9], "ask_qty": [5, 5, 3]})
     strat = DepthImbalance(window=2, threshold=0.1)
-    sig = strat.on_bar({"window": df})
+    sig = strat.on_bar({"window": df, "close": 100.0})
     assert sig is not None and sig.side == "buy"
+    assert sig.limit_price == 100.0
 
 
 def test_depth_imbalance_strategy_sell():
     df = pd.DataFrame({"bid_qty": [5, 4, 3], "ask_qty": [5, 6, 7]})
     strat = DepthImbalance(window=2, threshold=0.1)
-    sig = strat.on_bar({"window": df})
+    sig = strat.on_bar({"window": df, "close": 100.0})
     assert sig is not None and sig.side == "sell"
+    assert sig.limit_price == 100.0
 
 
 def test_depth_imbalance_trailing_close():
