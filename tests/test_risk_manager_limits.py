@@ -58,7 +58,7 @@ def test_risk_service_updates_and_persists(monkeypatch):
         account=account,
         risk_per_trade=0.01,
         atr_mult=2.0,
-        risk_pct=1.0,
+        risk_pct=100.0,
     )
     svc.account.cash = 100.0
     svc.rm.enabled = False

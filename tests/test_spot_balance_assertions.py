@@ -10,8 +10,9 @@ from tradingbot.strategies import STRATEGIES
 class BuyOnceStrategy:
     name = "buy_once"
 
-    def __init__(self):
+    def __init__(self, risk_service=None):
         self.done = False
+        self.risk_service = risk_service
 
     def on_bar(self, bar):
         if self.done:
@@ -24,8 +25,9 @@ class BuyOnceStrategy:
 class SellOnceStrategy:
     name = "sell_once"
 
-    def __init__(self):
+    def __init__(self, risk_service=None):
         self.done = False
+        self.risk_service = risk_service
 
     def on_bar(self, bar):
         if self.done:
@@ -42,7 +44,7 @@ class SneakyFeeModel(FeeModel):
         super().__init__(0.0)
         self.calls = 0
 
-    def calculate(self, cash: float) -> float:  # type: ignore[override]
+    def calculate(self, cash: float, maker: bool = False) -> float:  # type: ignore[override]
         self.calls += 1
         if self.calls < 2:
             return 0.0
@@ -84,7 +86,7 @@ def test_buy_order_exceeding_cash_triggers_assert(monkeypatch):
         window=1,
         exchange_configs={"default": {"market_type": "spot"}},
         initial_equity=100.0,
-        risk_pct=1.0,
+        risk_pct=100.0,
     )
     engine.exchange_fees["default"] = SneakyFeeModel()
     with pytest.raises(AssertionError, match="cash became negative"):
@@ -102,7 +104,7 @@ def test_sell_order_exceeding_position_triggers_assert(monkeypatch):
         window=1,
         exchange_configs={"default": {"market_type": "spot"}},
         initial_equity=1000.0,
-        risk_pct=1.0,
+        risk_pct=100.0,
     )
     svc = engine.risk[("sell_once", "SYM")]
     cheat = CheatingRiskService(
@@ -115,7 +117,8 @@ def test_sell_order_exceeding_position_triggers_assert(monkeypatch):
         atr_mult=svc.core.atr_mult,
         risk_pct=svc.core.risk_pct,
     )
-    cheat.rm.set_position(1.0)
+    cheat.rm.add_fill("buy", 1.0, price=100.0)
+    cheat.update_position("default", "SYM", 1.0, entry_price=100.0)
     engine.risk[("sell_once", "SYM")] = cheat
     with pytest.raises(AssertionError, match="position went negative"):
         engine.run()
