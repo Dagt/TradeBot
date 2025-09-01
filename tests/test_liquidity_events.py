@@ -33,6 +33,7 @@ def test_liquidity_events_strategy_buy_vacuum():
     strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, dynamic_thresholds=False)
     sig = strat.on_bar({"window": df})
     assert sig is not None and sig.side == "buy"
+    assert sig.limit_price == pytest.approx(100.5)
 
 
 def test_liquidity_events_strategy_sell_gap():
@@ -45,6 +46,7 @@ def test_liquidity_events_strategy_sell_gap():
     strat = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=5, dynamic_thresholds=False)
     sig = strat.on_bar({"window": df})
     assert sig is not None and sig.side == "sell"
+    assert sig.limit_price == pytest.approx(100.5)
 
 
 def test_liquidity_events_no_signal_returns_none():

@@ -101,5 +101,5 @@ class OrderFlow(Strategy):
             self.risk_service.update_trailing(trade, price)
             self.trade = trade
         sig = Signal(side, strength)
-        sig.limit_price = price if price is not None else None
+        sig.limit_price = price
         return sig

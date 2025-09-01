@@ -52,10 +52,12 @@ def test_order_flow_signals():
         "ask_qty": [1, 2, 3, 5],
     })
     strat = OrderFlow(window=3, buy_threshold=1.0, sell_threshold=1.0)
-    sig_buy = strat.on_bar({"window": df_buy})
+    sig_buy = strat.on_bar({"window": df_buy, "close": 100.0})
     assert sig_buy.side == "buy"
-    sig_sell = strat.on_bar({"window": df_sell})
+    assert sig_buy.limit_price == 100.0
+    sig_sell = strat.on_bar({"window": df_sell, "close": 100.0})
     assert sig_sell.side == "sell"
+    assert sig_sell.limit_price == 100.0
 
 
 def test_mean_rev_ofi_signals():
@@ -120,6 +122,7 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
     strat = BreakoutVol(lookback=2, mult=0.5, **{"risk_service": svc})
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
+    assert sig.limit_price == pytest.approx(df_buy["close"].iloc[-1])
     trade = strat.trade
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
