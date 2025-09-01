@@ -917,11 +917,9 @@ class EventDrivenBacktestEngine:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
                     limit_price = getattr(sig, "limit_price", None)
-                    place_price = (
-                        float(limit_price)
-                        if limit_price is not None
-                        else float(arrs["close"][i])
-                    )
+                    place_price = float(arrs["close"][i])
+                    if limit_price is not None:
+                        place_price = float(limit_price)
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
