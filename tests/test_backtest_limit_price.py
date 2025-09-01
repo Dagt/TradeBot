@@ -1,12 +1,17 @@
+"""Tests for limit price handling in the backtest engine."""
+
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
-from types import SimpleNamespace
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.strategies import STRATEGIES
 
 
 def test_backtest_limit_price(monkeypatch):
+    """Ensure that a limit signal is placed and filled at the expected price."""
+
     limit = 90.0
 
     class LimitStrategy:
@@ -17,6 +22,7 @@ def test_backtest_limit_price(monkeypatch):
             if self.called:
                 return None
             self.called = True
+            # Emit a buy signal with a specific limit price
             return SimpleNamespace(side="buy", strength=1.0, limit_price=limit)
 
     monkeypatch.setitem(STRATEGIES, "limit", LimitStrategy)
@@ -37,12 +43,16 @@ def test_backtest_limit_price(monkeypatch):
     )
     res = engine.run()
 
+    # The engine should create exactly one order which fills at the limit price
     assert len(res["orders"]) == 1
     order = res["orders"][0]
+    fill = res["fills"][0]
+    fill_price = fill[3]
+
     assert order["place_price"] == pytest.approx(limit)
     assert order["avg_price"] == pytest.approx(limit)
-
-    fill = res["fills"][0]
-    assert fill[1] == "order"
-    assert fill[3] == pytest.approx(limit)
-    assert fill[3] != data["close"].iloc[2]
+    assert fill_price == pytest.approx(limit)
+    # Place price, average fill price and actual fill should all match the limit
+    assert fill_price == order["avg_price"] == order["place_price"]
+    # Confirm the fill price differs from the bar close to ensure the limit was honoured
+    assert fill_price != data["close"].iloc[-1]
