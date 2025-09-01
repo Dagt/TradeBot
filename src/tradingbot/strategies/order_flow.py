@@ -42,15 +42,13 @@ class OrderFlow(Strategy):
         needed = {"bid_qty", "ask_qty"}
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
-        col = (
-            "close"
-            if "close" in df.columns
-            else "price" if "price" in df.columns else None
-        )
-        if col is None:
-            return None
-        price = float(df[col].iloc[-1])
-        if self.trade and self.risk_service:
+        price = bar.get("close")
+        if price is None:
+            if "close" in df.columns:
+                price = float(df["close"].iloc[-1])
+            elif "price" in df.columns:
+                price = float(df["price"].iloc[-1])
+        if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
             decision = self.risk_service.manage_position(trade_state)
@@ -90,7 +88,9 @@ class OrderFlow(Strategy):
         else:
             return None
         strength = 1.0
-        if self.risk_service:
+        if price is None:
+            return None
+        if self.risk_service and price is not None:
             qty = self.risk_service.calc_position_size(strength, price)
             trade = {
                 "side": side,

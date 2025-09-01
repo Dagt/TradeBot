@@ -1,7 +1,8 @@
+import pandas as pd
 import yaml
 import pytest
 from tradingbot.core import Account, RiskManager as CoreRiskManager
-from tradingbot.strategies.scalp_pingpong import ScalpPingPong
+from tradingbot.strategies.scalp_pingpong import ScalpPingPong, ScalpPingPongConfig
 
 
 def test_config_path_overrides(tmp_path):
@@ -29,3 +30,12 @@ def test_scalp_pingpong_trailing_stop_uses_atr():
     }
     rm.update_trailing(trade, 110.0)
     assert trade["stop"] == pytest.approx(110.0 - 2 * trade["atr"])
+
+
+def test_scalp_pingpong_emits_limit_price():
+    df = pd.DataFrame({"close": [1, 2, 1]})
+    cfg = ScalpPingPongConfig(lookback=2, z_threshold=0.1, volatility_factor=1.0, min_volatility=0.0)
+    strat = ScalpPingPong(cfg=cfg)
+    sig = strat.on_bar({"window": df, "close": df["close"].iloc[-1], "volatility": 0.0})
+    assert sig is not None
+    assert sig.limit_price == df["close"].iloc[-1]

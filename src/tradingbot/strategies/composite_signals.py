@@ -33,6 +33,10 @@ class CompositeSignals(Strategy):
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
+        window = bar.get("window")
+        if window is None or "close" not in window:
+            return None
+        price = float(window["close"].iloc[-1])
         buys = 0
         sells = 0
         df = bar.get("window")
@@ -54,20 +58,17 @@ class CompositeSignals(Strategy):
                 buys += 1
             elif sig.side == "sell":
                 sells += 1
+
+        result = None
         if buys >= 2 and buys > sells:
-            sig = Signal("buy", 1.0)
-            sig.limit_price = price
-            return sig
-        if sells >= 2 and sells > buys:
-            sig = Signal("sell", 1.0)
-            sig.limit_price = price
-            return sig
-        if buys > len(self.sub_strategies) / 2:
-            sig = Signal("buy", 1.0)
-            sig.limit_price = price
-            return sig
-        if sells > len(self.sub_strategies) / 2:
-            sig = Signal("sell", 1.0)
-            sig.limit_price = price
-            return sig
-        return None
+            result = Signal("buy", 1.0)
+        elif sells >= 2 and sells > buys:
+            result = Signal("sell", 1.0)
+        elif buys > len(self.sub_strategies) / 2:
+            result = Signal("buy", 1.0)
+        elif sells > len(self.sub_strategies) / 2:
+            result = Signal("sell", 1.0)
+
+        if result is not None:
+            result.limit_price = price
+        return result
