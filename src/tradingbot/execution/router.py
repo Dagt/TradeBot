@@ -261,21 +261,6 @@ class ExecutionRouter:
             res["pending_qty"] = order.pending_qty
             cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
             action = cb(order, res) if cb else None
-            if action == "taker" and order.pending_qty > 0:
-                taker_order = Order(
-                    symbol=order.symbol,
-                    side=order.side,
-                    type_="market",
-                    qty=order.pending_qty,
-                    reason=getattr(order, "reason", None),
-                    reduce_only=order.reduce_only,
-                )
-                res2 = await self.execute(
-                    taker_order, fill_mode=fill_mode, slip_bps=slip_bps
-                )
-                order.pending_qty = 0.0
-                res2.setdefault("pending_qty", 0.0)
-                return res2
             if action in {"re_quote", "re-quote", "requote"} and order.pending_qty > 0:
                 new_order = Order(
                     symbol=order.symbol,
