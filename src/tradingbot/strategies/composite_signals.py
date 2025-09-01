@@ -39,6 +39,17 @@ class CompositeSignals(Strategy):
         price = float(window["close"].iloc[-1])
         buys = 0
         sells = 0
+        df = bar.get("window")
+        if df is None:
+            return None
+        col = (
+            "close"
+            if "close" in df.columns
+            else "price" if "price" in df.columns else None
+        )
+        if col is None:
+            return None
+        price = float(df[col].iloc[-1])
         for strat in self.sub_strategies:
             sig = strat.on_bar(bar)
             if sig is None:

@@ -78,7 +78,7 @@ class DepthImbalance(Strategy):
         else:
             return None
         strength = 1.0
-        if self.risk_service and price is not None:
+        if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, price)
             trade = {
                 "side": side,

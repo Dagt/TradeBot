@@ -85,4 +85,3 @@ class TrendFollowing(Strategy):
         sig = Signal(side, strength)
         sig.limit_price = price
         return sig
-
