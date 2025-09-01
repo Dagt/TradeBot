@@ -44,8 +44,10 @@ class OrderFlow(Strategy):
             return None
         price = bar.get("close")
         if price is None:
-            col = "close" if "close" in df.columns else "price"
-            price = float(df[col].iloc[-1])
+            if "close" in df.columns:
+                price = float(df["close"].iloc[-1])
+            elif "price" in df.columns:
+                price = float(df["price"].iloc[-1])
         if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
@@ -86,6 +88,8 @@ class OrderFlow(Strategy):
         else:
             return None
         strength = 1.0
+        if price is None:
+            return None
         if self.risk_service and price is not None:
             qty = self.risk_service.calc_position_size(strength, price)
             trade = {
