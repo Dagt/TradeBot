@@ -916,7 +916,11 @@ class EventDrivenBacktestEngine:
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
-                    limit_price = getattr(sig, "limit_price", None)
+                    limit_price = (
+                        sig.get("limit_price")
+                        if isinstance(sig, dict)
+                        else getattr(sig, "limit_price", None)
+                    )
                     place_price = (
                         float(limit_price)
                         if limit_price is not None
@@ -929,7 +933,11 @@ class EventDrivenBacktestEngine:
                         trade["current_price"] = place_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
-                        limit_price = getattr(sig, "limit_price", None)
+                        limit_price = (
+                            sig.get("limit_price")
+                            if isinstance(sig, dict)
+                            else getattr(sig, "limit_price", None)
+                        )
                         place_price = (
                             float(limit_price)
                             if limit_price is not None
