@@ -68,10 +68,14 @@ class MeanRevOFI(Strategy):
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = last_close
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = last_close
+                return sig
             return None
 
         needed = {"bid_qty", "ask_qty", "close"}
@@ -104,12 +108,17 @@ class MeanRevOFI(Strategy):
         strength = 1.0
         if self.risk_service and last_close is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)
-            trade = {"side": side, "entry_price": last_close, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": last_close,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(
-                last_close, side, atr
-            )
+            trade["stop"] = self.risk_service.initial_stop(last_close, side, atr)
             trade["atr"] = atr
             self.risk_service.update_trailing(trade, last_close)
             self.trade = trade
-        return Signal(side, strength)
+        sig = Signal(side, strength)
+        sig.limit_price = last_close
+        return sig

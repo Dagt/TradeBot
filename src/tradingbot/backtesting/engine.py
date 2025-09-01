@@ -489,7 +489,7 @@ class EventDrivenBacktestEngine:
                                     abs(delta_qty),
                                     exchange,
                                     price,
-                                    None,
+                                    price,
                                     abs(delta_qty),
                                     0.0,
                                     0.0,
@@ -538,7 +538,7 @@ class EventDrivenBacktestEngine:
                                     pending_qty,
                                     exchange,
                                     price,
-                                    None,
+                                    price,
                                     pending_qty,
                                     0.0,
                                     0.0,
@@ -916,12 +916,18 @@ class EventDrivenBacktestEngine:
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
-                    limit_price = getattr(sig, "limit_price", None)
-                    place_price = (
-                        float(limit_price)
-                        if limit_price is not None
-                        else float(arrs["close"][i])
+                    limit_price = (
+                        sig.get("limit_price")
+                        if isinstance(sig, dict)
+                        else getattr(sig, "limit_price", None)
                     )
+                    place_price = (
+                        float(arrs["close"][i])
+                        if limit_price is None
+                        else float(limit_price)
+                    )
+                    if limit_price is None:
+                        limit_price = place_price
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
@@ -929,12 +935,18 @@ class EventDrivenBacktestEngine:
                         trade["current_price"] = place_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
-                        limit_price = getattr(sig, "limit_price", None)
-                        place_price = (
-                            float(limit_price)
-                            if limit_price is not None
-                            else float(arrs["close"][i])
+                        limit_price = (
+                            sig.get("limit_price")
+                            if isinstance(sig, dict)
+                            else getattr(sig, "limit_price", None)
                         )
+                        place_price = (
+                            float(arrs["close"][i])
+                            if limit_price is None
+                            else float(limit_price)
+                        )
+                        if limit_price is None:
+                            limit_price = place_price
                         svc.mark_price(symbol, place_price)
                         if decision == "close":
                             delta_qty = -pos_qty

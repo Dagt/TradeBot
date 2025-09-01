@@ -8,6 +8,7 @@ from .base import Strategy, Signal, record_signal_metrics
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_cross_signal
+
     _CAN_PG = True
 except Exception:  # pragma: no cover - optional
     _CAN_PG = False
@@ -20,6 +21,7 @@ PARAM_INFO = {
     "threshold": "Base mínima para actuar",
     "persist_pg": "Persistir señales en TimescaleDB",
 }
+
 
 @dataclass
 class CashCarryConfig:
@@ -35,6 +37,7 @@ class CashCarryConfig:
     perp_exchange: str = "perp"
     threshold: float = 0.0  # minimum basis to act
     persist_pg: bool = False
+
 
 class CashAndCarry(Strategy):
     """Simple cash-and-carry strategy using spot vs perpetual futures funding.
@@ -76,12 +79,18 @@ class CashAndCarry(Strategy):
         if funding > 0 and basis > self.cfg.threshold:
             strength = min(1.0, basis)
             self._persist_signal(basis, spot, perp)
-            return Signal("buy", strength)
+            sig = Signal("buy", strength)
+            sig.limit_price = spot
+            return sig
         if funding < 0 and basis < -self.cfg.threshold:
             strength = min(1.0, -basis)
             self._persist_signal(basis, spot, perp)
-            return Signal("sell", strength)
-        return Signal("flat", 0.0)
+            sig = Signal("sell", strength)
+            sig.limit_price = spot
+            return sig
+        sig = Signal("flat", 0.0)
+        sig.limit_price = spot
+        return sig
 
     def _persist_signal(self, basis: float, spot_px: float, perp_px: float) -> None:
         if self.engine is None:
