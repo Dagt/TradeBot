@@ -49,10 +49,14 @@ class MeanReversion(Strategy):
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = price
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = price
+                return sig
             return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
@@ -95,7 +99,12 @@ class MeanReversion(Strategy):
             return None
         if self.risk_service:
             qty = self.risk_service.calc_position_size(strength, price)
-            trade = {"side": side, "entry_price": price, "qty": qty, "strength": strength}
+            trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "strength": strength,
+            }
             atr = bar.get("atr") or bar.get("volatility") or 0.0
             trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             trade["atr"] = atr

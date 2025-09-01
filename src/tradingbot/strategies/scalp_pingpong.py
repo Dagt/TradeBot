@@ -99,10 +99,14 @@ class ScalpPingPong(Strategy):
             if decision == "close":
                 side = "sell" if self.trade["side"] == "buy" else "buy"
                 self.trade = None
-                return Signal(side, 1.0)
+                sig = Signal(side, 1.0)
+                sig.limit_price = price
+                return sig
             if decision in {"scale_in", "scale_out"}:
                 self.trade["strength"] = trade_state.get("strength", 1.0)
-                return Signal(self.trade["side"], self.trade["strength"])
+                sig = Signal(self.trade["side"], self.trade["strength"])
+                sig.limit_price = price
+                return sig
             return None
 
         vol = (
@@ -153,10 +157,10 @@ class ScalpPingPong(Strategy):
             qty = self.risk_service.calc_position_size(size, price)
             trade = {"side": side, "entry_price": price, "qty": qty, "strength": size}
             atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(
-                price, side, atr
-            )
+            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
             trade["atr"] = atr
             self.risk_service.update_trailing(trade, price)
             self.trade = trade
-        return Signal(side, size)
+        sig = Signal(side, size)
+        sig.limit_price = price
+        return sig
