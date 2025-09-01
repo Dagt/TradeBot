@@ -44,7 +44,6 @@ class LiquidityEvents(Strategy):
         self.vol_window = vol_window
         self.dynamic_thresholds = dynamic_thresholds
         self.risk_service = kwargs.get("risk_service")
-        self.trade: dict | None = None
 
     def _mid_prices(self, df: pd.DataFrame) -> pd.Series:
         bid = df["bid_px"].apply(lambda x: x[0])
@@ -68,108 +67,20 @@ class LiquidityEvents(Strategy):
             return None
 
         mid = self._mid_prices(df)
-        last_price = mid.iloc[-1]
-
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, last_price)
-            trade_state = {**self.trade, "current_price": last_price}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = float(last_price)
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = float(last_price)
-                return sig
-            return None
+        last_price = float(mid.iloc[-1])
 
         vac_thresh = self._vol_adjust(mid, self.vacuum_threshold)
         vac = book_vacuum(df[["bid_qty", "ask_qty"]], vac_thresh).iloc[-1]
+        sig: Signal | None = None
         if vac > 0:
-            side = "buy"
-            strength = 1.0
-            if self.risk_service:
-                qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {
-                    "side": side,
-                    "entry_price": float(last_price),
-                    "qty": qty,
-                    "strength": strength,
-                }
-                atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
-                if atr is not None:
-                    trade["atr"] = atr
-                self.risk_service.update_trailing(trade, last_price)
-                self.trade = trade
-            sig = Signal(side, strength)
-            sig.limit_price = float(last_price)
-            return sig
-        if vac < 0:
-            side = "sell"
-            strength = 1.0
-            if self.risk_service:
-                qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {
-                    "side": side,
-                    "entry_price": float(last_price),
-                    "qty": qty,
-                    "strength": strength,
-                }
-                atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
-                if atr is not None:
-                    trade["atr"] = atr
-                self.risk_service.update_trailing(trade, last_price)
-                self.trade = trade
-            sig = Signal(side, strength)
-            sig.limit_price = float(last_price)
-            return sig
-
-        gap_thresh = self._vol_adjust(mid, self.gap_threshold)
-        gap = liquidity_gap(df[["bid_px", "ask_px"]], gap_thresh).iloc[-1]
-        if gap > 0:
-            side = "buy"
-            strength = 1.0
-            if self.risk_service:
-                qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {
-                    "side": side,
-                    "entry_price": float(last_price),
-                    "qty": qty,
-                    "strength": strength,
-                }
-                atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
-                if atr is not None:
-                    trade["atr"] = atr
-                self.risk_service.update_trailing(trade, last_price)
-                self.trade = trade
-            sig = Signal(side, strength)
-            sig.limit_price = float(last_price)
-            return sig
-        if gap < 0:
-            side = "sell"
-            strength = 1.0
-            if self.risk_service:
-                qty = self.risk_service.calc_position_size(strength, last_price)
-                trade = {
-                    "side": side,
-                    "entry_price": float(last_price),
-                    "qty": qty,
-                    "strength": strength,
-                }
-                atr = bar.get("atr") or bar.get("volatility")
-                trade["stop"] = self.risk_service.initial_stop(last_price, side, atr)
-                if atr is not None:
-                    trade["atr"] = atr
-                self.risk_service.update_trailing(trade, last_price)
-                self.trade = trade
-            sig = Signal(side, strength)
-            sig.limit_price = float(last_price)
-            return sig
-        return None
+            sig = Signal("buy", 1.0)
+        elif vac < 0:
+            sig = Signal("sell", 1.0)
+        else:
+            gap_thresh = self._vol_adjust(mid, self.gap_threshold)
+            gap = liquidity_gap(df[["bid_px", "ask_px"]], gap_thresh).iloc[-1]
+            if gap > 0:
+                sig = Signal("buy", 1.0)
+            elif gap < 0:
+                sig = Signal("sell", 1.0)
+        return self.finalize_signal(bar, last_price, sig)

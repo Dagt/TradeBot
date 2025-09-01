@@ -141,6 +141,7 @@ async def run_live_binance(
     )
     risk.allow_short = False
     guard.refresh_usd_caps(broker.equity({}))
+    strat.risk_service = risk
     if pg_engine is not None:
         pos_map = load_positions(pg_engine, guard.cfg.venue)
         for sym, data in pos_map.items():
@@ -250,7 +251,7 @@ async def run_live_binance(
         if len(df) < 140:  # warmup básico
             continue
 
-        bar = {"window": df}
+        bar = {"window": df, "symbol": symbol}
         signal = strat.on_bar(bar)
         if signal is None:
             continue

@@ -116,6 +116,7 @@ async def _run_symbol(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    strat.risk_service = risk
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -245,7 +246,7 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        sig = strat.on_bar({"window": df})
+        sig = strat.on_bar({"window": df, "symbol": symbol})
         if sig is None:
             continue
         allowed, reason, delta = risk.check_order(

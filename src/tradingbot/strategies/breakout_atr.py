@@ -33,7 +33,6 @@ class BreakoutATR(Strategy):
         self.mult = float(params.get("mult", mult))
         self.min_atr = float(params.get("min_atr", min_atr))
         self.min_volatility = float(params.get("min_volatility", min_volatility))
-        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -42,22 +41,6 @@ class BreakoutATR(Strategy):
             return None
         upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
         last_close = float(df["close"].iloc[-1])
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, last_close)
-            trade_state = {**self.trade, "current_price": last_close}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = last_close
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = last_close
-                return sig
-            return None
         atr_val = float(atr(df, self.atr_n).iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
@@ -72,19 +55,7 @@ class BreakoutATR(Strategy):
         if side is None:
             return None
         strength = 1.0
-        if self.risk_service:
-            qty = self.risk_service.calc_position_size(strength, last_close)
-            trade = {
-                "side": side,
-                "entry_price": last_close,
-                "qty": qty,
-                "strength": strength,
-            }
-            trade["stop"] = self.risk_service.initial_stop(last_close, side, atr_val)
-            trade["atr"] = atr_val
-            self.risk_service.update_trailing(trade, last_close)
-            self.trade = trade
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         sig.limit_price = level
-        return sig
+        return self.finalize_signal(bar, last_close, sig)

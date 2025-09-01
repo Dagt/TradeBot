@@ -11,6 +11,8 @@ from ..execution.order_types import Order
 from ..execution.router import ExecutionRouter
 from ..execution.paper import PaperAdapter
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
+from ..broker.broker import Broker
+from ..config import settings
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
@@ -41,7 +43,8 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
 
     router = ExecutionRouter([cfg.spot, cfg.perp])
     bus = EventBus()
-    broker = PaperAdapter()
+    adapter = PaperAdapter()
+    broker = Broker(adapter)
     if risk is None:
         risk = RiskService(
             PortfolioGuard(GuardConfig(venue="cross")),
@@ -99,16 +102,19 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         size = min(abs(delta1), abs(delta2))
         if size <= 0:
             return
-        order_spot = Order(cfg.symbol, spot_side, "market", size)
-        order_perp = Order(cfg.symbol, perp_side, "market", size)
+        tick = getattr(settings, "tick_size", 0.0)
+        spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
+        perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
+        order_spot = Order(cfg.symbol, spot_side, "limit", size, spot_price, time_in_force="IOC")
+        order_perp = Order(cfg.symbol, perp_side, "limit", size, perp_price, time_in_force="IOC")
         await asyncio.gather(
             router.execute(order_spot),
             router.execute(order_perp),
         )
         broker.update_last_price(cfg.symbol, last["spot"])
-        await broker.place_order(cfg.symbol, spot_side, "market", size)
+        await broker.place_limit(cfg.symbol, spot_side, spot_price, size, tif="IOC")
         broker.update_last_price(cfg.symbol, last["perp"])
-        await broker.place_order(cfg.symbol, perp_side, "market", size)
+        await broker.place_limit(cfg.symbol, perp_side, perp_price, size, tif="IOC")
         risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
         risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
         log.info(

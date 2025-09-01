@@ -34,7 +34,6 @@ class OrderFlow(Strategy):
         self.sell_threshold = sell_threshold
         self.min_volatility = min_volatility
         self.risk_service = kwargs.get("risk_service")
-        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -48,22 +47,6 @@ class OrderFlow(Strategy):
                 price = float(df["close"].iloc[-1])
             elif "price" in df.columns:
                 price = float(df["price"].iloc[-1])
-        if self.trade and self.risk_service and price is not None:
-            self.risk_service.update_trailing(self.trade, price)
-            trade_state = {**self.trade, "current_price": price}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = price
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = price
-                return sig
-            return None
 
         vol_bps = float("inf")
         price_col = "close" if "close" in df.columns else None
@@ -86,24 +69,9 @@ class OrderFlow(Strategy):
         elif ofi_mean < -self.sell_threshold:
             side = "sell"
         else:
-            return None
-        strength = 1.0
+            return self.finalize_signal(bar, price or 0.0, None)
         if price is None:
             return None
-        if self.risk_service and price is not None:
-            qty = self.risk_service.calc_position_size(strength, price)
-            trade = {
-                "side": side,
-                "entry_price": price,
-                "qty": qty,
-                "strength": strength,
-            }
-            atr = bar.get("atr") or bar.get("volatility")
-            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
-            if atr is not None:
-                trade["atr"] = atr
-            self.risk_service.update_trailing(trade, price)
-            self.trade = trade
+        strength = 1.0
         sig = Signal(side, strength)
-        sig.limit_price = price
-        return sig
+        return self.finalize_signal(bar, price, sig)

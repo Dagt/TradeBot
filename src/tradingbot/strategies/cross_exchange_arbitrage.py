@@ -10,6 +10,8 @@ from ..adapters.base import ExchangeAdapter
 from ..execution.balance import rebalance_between_exchanges
 from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
 from ..risk.service import RiskService
+from ..broker.broker import Broker
+from ..config import settings
 
 try:
     from ..storage.timescale import (
@@ -100,6 +102,8 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
     risk = RiskService(PortfolioGuard(GuardConfig(venue="cross")), risk_pct=0.0)
+    spot_broker = Broker(cfg.spot)
+    perp_broker = Broker(cfg.perp)
 
     async def maybe_trade() -> None:
         nonlocal position_sign, entry_edge
@@ -203,9 +207,12 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 await asyncio.sleep(cfg.latency)
 
             # execute offsetting orders
+            tick = getattr(settings, "tick_size", 0.0)
+            spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
+            perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
             resp_spot, resp_perp = await asyncio.gather(
-                cfg.spot.place_order(cfg.symbol, spot_side, "market", qty),
-                cfg.perp.place_order(cfg.symbol, perp_side, "market", qty),
+                spot_broker.place_limit(cfg.symbol, spot_side, spot_price, qty, tif="IOC"),
+                perp_broker.place_limit(cfg.symbol, perp_side, perp_price, qty, tif="IOC"),
             )
 
             balances[cfg.spot.name] += qty if spot_side == "buy" else -qty
@@ -223,7 +230,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                         strategy="cross_arbitrage",
                         symbol=cfg.symbol,
                         side=spot_side,
-                        type_="market",
+                        type_="limit",
                         qty=qty,
                         price=resp_spot.get("price"),
                         fee_usdt=None,
@@ -236,7 +243,7 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                         strategy="cross_arbitrage",
                         symbol=cfg.symbol,
                         side=perp_side,
-                        type_="market",
+                        type_="limit",
                         qty=qty,
                         price=resp_perp.get("price"),
                         fee_usdt=None,

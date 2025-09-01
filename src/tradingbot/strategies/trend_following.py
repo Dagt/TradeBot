@@ -27,7 +27,6 @@ class TrendFollowing(Strategy):
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
         self.risk_service = kwargs.get("risk_service")
-        self.trade: dict | None = None
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -37,22 +36,6 @@ class TrendFollowing(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
-        if self.trade and self.risk_service:
-            self.risk_service.update_trailing(self.trade, price)
-            trade_state = {**self.trade, "current_price": price}
-            decision = self.risk_service.manage_position(trade_state)
-            if decision == "close":
-                side = "sell" if self.trade["side"] == "buy" else "buy"
-                self.trade = None
-                sig = Signal(side, 1.0)
-                sig.limit_price = price
-                return sig
-            if decision in {"scale_in", "scale_out"}:
-                self.trade["strength"] = trade_state.get("strength", 1.0)
-                sig = Signal(self.trade["side"], self.trade["strength"])
-                sig.limit_price = price
-                return sig
-            return None
         returns = prices.pct_change().dropna()
         vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
         if pd.isna(vol) or vol < self.min_volatility:
@@ -69,19 +52,5 @@ class TrendFollowing(Strategy):
         else:
             return None
         strength = 1.0
-        if self.risk_service:
-            qty = self.risk_service.calc_position_size(strength, price)
-            trade = {
-                "side": side,
-                "entry_price": price,
-                "qty": qty,
-                "strength": strength,
-            }
-            atr = bar.get("atr") or bar.get("volatility") or 0.0
-            trade["stop"] = self.risk_service.initial_stop(price, side, atr)
-            trade["atr"] = atr
-            self.risk_service.update_trailing(trade, price)
-            self.trade = trade
         sig = Signal(side, strength)
-        sig.limit_price = price
-        return sig
+        return self.finalize_signal(bar, price, sig)

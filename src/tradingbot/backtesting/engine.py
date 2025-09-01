@@ -237,7 +237,7 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 1000.0,
         risk_pct: float = 0.0,
-        risk_per_trade: float = 0.1,
+        risk_per_trade: float = 1.0,
         verbose_fills: bool = False,
         min_fill_qty: float = MIN_FILL_QTY,
         min_order_qty: float = MIN_ORDER_QTY,
@@ -347,7 +347,12 @@ class EventDrivenBacktestEngine:
             svc.rm.min_order_qty = self.min_order_qty
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
-            self.strategies[key] = strat_cls(risk_service=svc)
+            try:
+                strat = strat_cls(risk_service=svc)
+            except TypeError:
+                strat = strat_cls()
+                setattr(strat, "risk_service", svc)
+            self.strategies[key] = strat
 
         # Internal flag to avoid repeated on_bar calls per bar index
         self._last_on_bar_i: int = -1
@@ -912,9 +917,10 @@ class EventDrivenBacktestEngine:
                     start_idx = i - self.window
                     if getattr(strat, "needs_window_df", True):
                         window_df = df.iloc[start_idx:i]
-                        sig = strat.on_bar({"window": window_df})
+                        sig = strat.on_bar({"window": window_df, "symbol": symbol})
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
+                        bar_arrays["symbol"] = symbol
                         sig = strat.on_bar(bar_arrays)
                     limit_price = (
                         sig.get("limit_price")
