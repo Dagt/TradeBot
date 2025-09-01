@@ -33,9 +33,12 @@ class CompositeSignals(Strategy):
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
+        window = bar.get("window")
+        if window is None or "close" not in window:
+            return None
+        price = float(window["close"].iloc[-1])
         buys = 0
         sells = 0
-        price = float(bar.get("close") or bar.get("price") or 0.0)
         for strat in self.sub_strategies:
             sig = strat.on_bar(bar)
             if sig is None:
