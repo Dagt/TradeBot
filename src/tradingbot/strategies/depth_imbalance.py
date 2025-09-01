@@ -39,7 +39,12 @@ class DepthImbalance(Strategy):
         if not needed.issubset(df.columns) or len(df) < self.window:
             return None
 
-        price = bar.get("close")
+        price: float | None = None
+        if "close" in df.columns and len(df):
+            last_close = df["close"].iloc[-1]
+            if pd.notna(last_close):
+                price = float(last_close)
+
         if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
             trade_state = {**self.trade, "current_price": price}
