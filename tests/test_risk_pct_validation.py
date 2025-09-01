@@ -15,15 +15,21 @@ def dummy_data():
     })}
 
 
-def test_engine_normalizes_percentage(dummy_data):
-    eng = EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=5)
-    assert eng._risk_pct == pytest.approx(0.05)
-    eng = EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=1)
-    assert eng._risk_pct == pytest.approx(0.01)
+@pytest.mark.parametrize(
+    "risk_pct,expected",
+    [
+        (0.5, 0.5),  # already a fraction
+        (1, 1.0),  # 100%
+        (5, 0.05),  # percentage expressed as integer
+        (50, 0.5),  # percentage conversion boundary
+    ],
+)
+def test_engine_normalizes_percentage(dummy_data, risk_pct, expected):
+    eng = EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=risk_pct)
+    assert eng._risk_pct == pytest.approx(expected)
 
 
-def test_engine_rejects_invalid_risk_pct(dummy_data):
+@pytest.mark.parametrize("risk_pct", [-0.1, 120])
+def test_engine_rejects_invalid_risk_pct(dummy_data, risk_pct):
     with pytest.raises(ValueError):
-        EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=-0.1)
-    with pytest.raises(ValueError):
-        EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=150)
+        EventDrivenBacktestEngine(dummy_data, [("breakout_atr", "BTC/USDT")], risk_pct=risk_pct)

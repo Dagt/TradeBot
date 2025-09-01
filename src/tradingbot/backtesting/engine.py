@@ -33,14 +33,14 @@ def _validate_risk_pct(value: float) -> float:
     """Ensure ``risk_pct`` is a fraction in [0, 1].
 
     Values greater than 1 and up to 100 are interpreted as percentages and
-    converted by dividing by 100. Values outside these ranges raise a
-    :class:`ValueError`.
+    converted by dividing by 100. A value of 1 represents 100% and is returned
+    unchanged. Values outside these ranges raise a :class:`ValueError`.
     """
 
     val = float(value)
     if val < 0:
         raise ValueError("risk_pct must be non-negative")
-    if val >= 1:
+    if val > 1:
         if val <= 100:
             return val / 100
         raise ValueError("risk_pct must be between 0 and 1")
