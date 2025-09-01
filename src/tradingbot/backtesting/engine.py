@@ -60,6 +60,7 @@ class Order:
     qty: float = field(compare=False)
     exchange: str = field(default="default", compare=False)
     place_price: float = field(default=0.0, compare=False)
+    limit_price: float | None = field(default=None, compare=False)
     remaining_qty: float = field(default=0.0, compare=False)
     filled_qty: float = field(default=0.0, compare=False)
     total_cost: float = field(default=0.0, compare=False)
@@ -488,6 +489,7 @@ class EventDrivenBacktestEngine:
                                     abs(delta_qty),
                                     exchange,
                                     price,
+                                    None,
                                     abs(delta_qty),
                                     0.0,
                                     0.0,
@@ -536,6 +538,7 @@ class EventDrivenBacktestEngine:
                                     pending_qty,
                                     exchange,
                                     price,
+                                    None,
                                     pending_qty,
                                     0.0,
                                     0.0,
@@ -562,11 +565,17 @@ class EventDrivenBacktestEngine:
                     depth = self.exchange_depth.get(order.exchange, self.default_depth)
                     order.queue_pos = min(order.queue_pos + avail, depth)
                 if "bid" in arrs and "ask" in arrs:
-                    price = float(
+                    market_price = float(
                         arrs["ask"][i] if order.side == "buy" else arrs["bid"][i]
                     )
                 else:
-                    price = float(arrs["close"][i])
+                    market_price = float(arrs["close"][i])
+                price = market_price
+                if order.limit_price is not None:
+                    if order.side == "buy":
+                        price = min(market_price, order.limit_price)
+                    else:
+                        price = max(market_price, order.limit_price)
 
                 svc = self.risk[(order.strategy, order.symbol)]
                 mode = self.exchange_mode.get(order.exchange, "perp")
@@ -607,6 +616,12 @@ class EventDrivenBacktestEngine:
                             if eff_avail >= order.remaining_qty
                             else 0.0
                         )
+
+                if order.limit_price is not None:
+                    if order.side == "buy":
+                        price = min(price, order.limit_price)
+                    else:
+                        price = max(price, order.limit_price)
 
                 if mode == "spot":
                     if order.side == "sell":
@@ -901,7 +916,12 @@ class EventDrivenBacktestEngine:
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         sig = strat.on_bar(bar_arrays)
-                    place_price = float(arrs["close"][i])
+                    limit_price = getattr(sig, "limit_price", None)
+                    place_price = (
+                        float(limit_price)
+                        if limit_price is not None
+                        else float(arrs["close"][i])
+                    )
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
@@ -954,6 +974,7 @@ class EventDrivenBacktestEngine:
                             qty,
                             exchange,
                             place_price,
+                            limit_price,
                             qty,
                             0.0,
                             0.0,
@@ -1005,6 +1026,7 @@ class EventDrivenBacktestEngine:
                         qty,
                         exchange,
                         place_price,
+                        limit_price,
                         qty,
                         0.0,
                         0.0,
@@ -1069,6 +1091,7 @@ class EventDrivenBacktestEngine:
                             qty,
                             exchange,
                             current_price,
+                            None,
                             qty,
                             0.0,
                             0.0,
