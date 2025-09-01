@@ -40,10 +40,17 @@ class DepthImbalance(Strategy):
             return None
 
         price: float | None = None
-        if "close" in df.columns and len(df):
-            last_close = df["close"].iloc[-1]
-            if pd.notna(last_close):
-                price = float(last_close)
+        if len(df):
+            if "close" in df.columns:
+                last_px = df["close"].iloc[-1]
+                if pd.notna(last_px):
+                    price = float(last_px)
+            elif "price" in df.columns:
+                last_px = df["price"].iloc[-1]
+                if pd.notna(last_px):
+                    price = float(last_px)
+        if price is None:
+            return None
 
         if self.trade and self.risk_service and price is not None:
             self.risk_service.update_trailing(self.trade, price)
@@ -71,8 +78,6 @@ class DepthImbalance(Strategy):
         else:
             return None
         strength = 1.0
-        if price is None:
-            return None
         if self.risk_service and price is not None:
             qty = self.risk_service.calc_position_size(strength, price)
             trade = {
