@@ -56,3 +56,44 @@ def test_backtest_limit_price(monkeypatch):
     assert fill_price == order["avg_price"] == order["place_price"]
     # Confirm the fill price differs from the bar close to ensure the limit was honoured
     assert fill_price != data["close"].iloc[-1]
+
+
+def test_backtest_default_limit_price(monkeypatch):
+    """Orders without an explicit limit should use the bar close as limit price."""
+
+    class NoLimitStrategy:
+        def __init__(self, risk_service=None):
+            self.called = False
+
+        def on_bar(self, _):
+            if self.called:
+                return None
+            self.called = True
+            # Emit a buy signal without specifying a limit price
+            return SimpleNamespace(side="buy", strength=1.0)
+
+    monkeypatch.setitem(STRATEGIES, "no_limit", NoLimitStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2],
+            "open": [100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data}, [("no_limit", "SYM")], latency=1, window=1, verbose_fills=True
+    )
+    res = engine.run()
+
+    order = res["orders"][0]
+    fill = res["fills"][0]
+    close_price = data["close"].iloc[1]
+
+    assert order["place_price"] == pytest.approx(close_price)
+    assert order["avg_price"] == pytest.approx(close_price)
+    assert fill[3] == pytest.approx(close_price)

@@ -921,11 +921,12 @@ class EventDrivenBacktestEngine:
                         if isinstance(sig, dict)
                         else getattr(sig, "limit_price", None)
                     )
-                    place_price = (
-                        float(limit_price)
-                        if limit_price is not None
-                        else float(arrs["close"][i])
-                    )
+                    if limit_price is None:
+                        place_price = float(arrs["close"][i])
+                        limit_price = place_price
+                    else:
+                        place_price = float(limit_price)
+                        limit_price = place_price
                     svc.mark_price(symbol, place_price)
                     if equity < 0:
                         continue
@@ -938,11 +939,12 @@ class EventDrivenBacktestEngine:
                             if isinstance(sig, dict)
                             else getattr(sig, "limit_price", None)
                         )
-                        place_price = (
-                            float(limit_price)
-                            if limit_price is not None
-                            else float(arrs["close"][i])
-                        )
+                        if limit_price is None:
+                            place_price = float(arrs["close"][i])
+                            limit_price = place_price
+                        else:
+                            place_price = float(limit_price)
+                            limit_price = place_price
                         svc.mark_price(symbol, place_price)
                         if decision == "close":
                             delta_qty = -pos_qty
