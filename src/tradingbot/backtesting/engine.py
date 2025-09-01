@@ -918,8 +918,8 @@ class EventDrivenBacktestEngine:
                         sig = strat.on_bar(bar_arrays)
                     limit_price = getattr(sig, "limit_price", None)
                     place_price = (
-                        float(sig.limit_price)
-                        if sig.limit_price is not None
+                        float(limit_price)
+                        if limit_price is not None
                         else float(arrs["close"][i])
                     )
                     svc.mark_price(symbol, place_price)
@@ -931,10 +931,11 @@ class EventDrivenBacktestEngine:
                         decision = svc.manage_position(trade, sig_obj)
                         limit_price = getattr(sig, "limit_price", None)
                         place_price = (
-                            float(sig.limit_price)
-                            if sig.limit_price is not None
+                            float(limit_price)
+                            if limit_price is not None
                             else float(arrs["close"][i])
                         )
+                        svc.mark_price(symbol, place_price)
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
