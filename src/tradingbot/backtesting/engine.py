@@ -927,6 +927,10 @@ class EventDrivenBacktestEngine:
                         trade["current_price"] = place_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
+                        limit_price = getattr(sig, "limit_price", None)
+                        place_price = float(arrs["close"][i])
+                        if limit_price is not None:
+                            place_price = float(limit_price)
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
@@ -956,7 +960,9 @@ class EventDrivenBacktestEngine:
                         queue_pos = 0.0
                         if self.use_l2:
                             vol_key = "ask_size" if side == "buy" else "bid_size"
-                            depth = self.exchange_depth.get(exchange, self.default_depth)
+                            depth = self.exchange_depth.get(
+                                exchange, self.default_depth
+                            )
                             vol_arr = arrs.get(vol_key)
                             avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                             queue_pos = min(avail, depth)
