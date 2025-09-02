@@ -3,6 +3,7 @@ import pandas as pd
 
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import calc_ofi, returns
+from ..utils.rolling_quantile import RollingQuantileCache
 
 
 PARAM_INFO = {
@@ -56,6 +57,7 @@ class MeanRevOFI(Strategy):
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
         self.vol_threshold_bps = 0.0
         self.min_volatility = float(params.get("min_volatility", min_volatility))
+        self._rq = RollingQuantileCache()
 
     def _tf_minutes(self, timeframe: str) -> float:
         unit = timeframe[-1].lower()
@@ -90,12 +92,16 @@ class MeanRevOFI(Strategy):
         vol_series = returns(df).rolling(vol_window).std()
         vol_bps_series = vol_series * 10000
         vol_bps = float(vol_bps_series.iloc[-1])
-        window_q = min(len(vol_bps_series.dropna()), vol_window * 5)
-        if window_q >= vol_window:
-            self.vol_threshold_bps = float(
-                vol_bps_series.rolling(window_q).quantile(self.vol_threshold).iloc[-1]
-            )
-        else:
+        symbol = bar.get("symbol", "")
+        rq = self._rq.get(
+            symbol,
+            "vol_bps",
+            window=vol_window * 5,
+            q=self.vol_threshold,
+            min_periods=vol_window,
+        )
+        self.vol_threshold_bps = float(rq.update(vol_bps))
+        if pd.isna(self.vol_threshold_bps):
             self.vol_threshold_bps = float("inf")
 
         if (

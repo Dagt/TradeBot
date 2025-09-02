@@ -93,20 +93,17 @@ def _load_default_filter() -> LiquidityFilter:
 
         lookback = window or len(df)
         if max_spread == float("inf") and "spread" in df.columns and not df.empty:
-            roll = df["spread"].rolling(lookback, min_periods=1)
-            max_spread = float(roll.quantile(0.95).iloc[-1])
+            max_spread = float(df["spread"].tail(lookback).quantile(0.95))
         if min_volume == 0.0 and "volume" in df.columns and not df.empty:
-            roll = df["volume"].rolling(lookback, min_periods=1)
-            min_volume = float(roll.quantile(0.05).iloc[-1])
+            min_volume = float(df["volume"].tail(lookback).quantile(0.05))
         if max_volatility == float("inf"):
             if "volatility" in df.columns and not df.empty:
-                roll = df["volatility"].rolling(lookback, min_periods=1)
-                max_volatility = float(roll.quantile(0.95).iloc[-1])
+                max_volatility = float(df["volatility"].tail(lookback).quantile(0.95))
             elif {"close"} <= set(df.columns) and len(df) > 1:
                 returns = df["close"].pct_change()
                 vol_series = returns.rolling(lookback, min_periods=2).std().dropna()
                 if not vol_series.empty:
-                    max_volatility = float(vol_series.quantile(0.95))
+                    max_volatility = float(vol_series.tail(lookback).quantile(0.95))
 
     return LiquidityFilter(
         max_spread=max_spread,

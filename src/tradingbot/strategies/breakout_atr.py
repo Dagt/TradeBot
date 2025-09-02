@@ -2,6 +2,7 @@ import re
 import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import atr, keltner_channels
+from ..utils.rolling_quantile import RollingQuantileCache
 
 PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
@@ -47,6 +48,7 @@ class BreakoutATR(Strategy):
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
         # ``mult`` se calcula dinámicamente en ``on_bar``.
         self.mult = 1.0
+        self._rq = RollingQuantileCache()
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
@@ -79,24 +81,46 @@ class BreakoutATR(Strategy):
         vol_q = max(0.0, min(1.0, self.base_vol_quantile / tf_mult))
 
         window = min(len(atr_series), self.atr_n * 5)
+        symbol = bar.get("symbol", "")
         if window >= self.atr_n * 2:
-            atr_quant = float(atr_series.rolling(window).quantile(vol_q).iloc[-1])
-            atr_bps_series = (
-                atr_series / df["close"].abs().loc[atr_series.index] * 10000
+            rq_atr = self._rq.get(
+                symbol,
+                "atr",
+                window=self.atr_n * 5,
+                q=vol_q,
+                min_periods=self.atr_n * 2,
             )
-            atr_bps_quant = float(
-                atr_bps_series.rolling(window).quantile(vol_q).iloc[-1]
+            atr_quant = float(rq_atr.update(atr_val))
+            atr_bps_series = atr_series / df["close"].abs().loc[atr_series.index] * 10000
+            rq_bps = self._rq.get(
+                symbol,
+                "atr_bps",
+                window=self.atr_n * 5,
+                q=vol_q,
+                min_periods=self.atr_n * 2,
             )
+            atr_bps_quant = float(rq_bps.update(atr_bps))
             if atr_val < atr_quant or atr_bps < atr_bps_quant:
                 return None
 
-            # Multiplicador dinámico basado en el percentil reciente del ATR.
-            mult_quant = float(
-                atr_series.rolling(window).quantile(self._KC_MULT_QUANTILE).iloc[-1]
+            rq_mult = self._rq.get(
+                symbol,
+                "atr_mult",
+                window=self.atr_n * 5,
+                q=self._KC_MULT_QUANTILE,
+                min_periods=self.atr_n * 2,
             )
+            mult_quant = float(rq_mult.update(atr_val))
             self.mult = mult_quant / atr_val if atr_val else 1.0
-            # Target de volatilidad para ajustes de riesgo
-            target_vol = float(atr_series.rolling(window).median().iloc[-1])
+
+            rq_target = self._rq.get(
+                symbol,
+                "atr_median",
+                window=self.atr_n * 5,
+                q=0.5,
+                min_periods=self.atr_n * 2,
+            )
+            target_vol = float(rq_target.update(atr_val))
             bar["target_volatility"] = target_vol
         else:
             self.mult = 1.0
