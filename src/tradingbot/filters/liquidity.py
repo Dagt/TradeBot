@@ -124,6 +124,9 @@ _history: dict[tuple[str, str], dict[str, deque[float]]] = defaultdict(
 # Cached filters per (symbol, timeframe)
 _filters: dict[tuple[str, str], LiquidityFilter] = {}
 
+# Minimum samples required before enforcing thresholds
+MIN_SAMPLES = 5
+
 
 def _update_metrics(symbol: str, timeframe: str, bar: dict[str, Any]) -> LiquidityFilter:
     """Record metrics for ``symbol``/``timeframe`` and recompute thresholds."""
@@ -187,8 +190,12 @@ def passes(
     symbol = bar.get("symbol")
     tf = timeframe or bar.get("timeframe")
     if symbol and tf:
-        filt = _update_metrics(symbol, tf, bar)
+        hist = _history[(symbol, tf)]
+        filt = _filters.get((symbol, tf), LiquidityFilter())
+        samples = max(len(hist["spread"]), len(hist["volume"]), len(hist["volatility"]))
+        if samples >= MIN_SAMPLES and not filt.check(bar):
+            return False
+        _update_metrics(symbol, tf, bar)
+        return True
     else:
-        filt = _default_filter
-
-    return filt.check(bar)
+        return _default_filter.check(bar)
