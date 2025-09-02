@@ -121,3 +121,34 @@ def test_triple_barrier_trailing_stop_uses_atr():
     rm.update_trailing(trade, 110.0)
     assert trade["stop"] == pytest.approx(110.0 - 2 * trade["atr"])
 
+
+def test_triple_barrier_trains_with_1m_series():
+    idx = pd.date_range("2024-01-01", periods=10, freq="1min")
+    prices = pd.DataFrame(
+        {"close": [100, 103, 97, 104, 96, 100, 103, 97, 104, 96]}, index=idx
+    )
+    meta = DummyModel(value=1)
+    strat = TripleBarrier(horizon=1, training_window=5, tf_minutes=1, meta_model=meta)
+    for i in range(len(prices)):
+        strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0})
+    assert strat.fitted
+
+
+def test_triple_barrier_signal_with_1m_series():
+    idx = pd.date_range("2024-01-01", periods=10, freq="1min")
+    prices = pd.DataFrame(
+        {"close": [100, 103, 97, 104, 96, 100, 103, 97, 104, 96]}, index=idx
+    )
+    primary_model = DummyModel(value=1)
+    meta_model = DummyModel(value=1)
+    strat = TripleBarrier(horizon=1, training_window=5, tf_minutes=1, meta_model=meta_model)
+    strat.model = primary_model
+    signal = None
+    for i in range(len(prices)):
+        signal = strat.on_bar({"window": prices.iloc[: i + 1], "volatility": 0})
+        if signal is not None:
+            break
+    assert strat.fitted
+    assert signal is not None
+    assert signal.side == "buy"
+
