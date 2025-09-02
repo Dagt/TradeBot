@@ -73,6 +73,9 @@ servicio de riesgo.
 Aprovecha diferencias de precio entre el mercado spot y los futuros para
 capturar rendimientos sin exposición direccional.
 
+En marcos intradía (segundos, minutos u horas) el umbral `threshold` se
+reduce a la mitad para poder reaccionar a bases más pequeñas.
+
 ### Arbitraje (`arbitrage`)
 Busca beneficios cuando un mismo activo tiene precios distintos en dos
 mercados.
@@ -84,3 +87,9 @@ las tasas de cambio.
 ### Arbitraje entre Exchanges (`cross_exchange_arbitrage`)
 Compara el precio entre un mercado spot y uno de futuros (perpetuo) y opera
 cuando la diferencia supera un umbral.
+
+### Composite Signals (`composite_signals`)
+Combina múltiples subestrategias y emite una señal cuando hay consenso.
+En timeframes intradía exige al menos 20 velas en la ventana de precios y las
+estrategias secundarias aportan solo la mitad del peso de la principal para
+mitigar el ruido de marcos muy cortos.
