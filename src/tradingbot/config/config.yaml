@@ -31,11 +31,6 @@ balance:
   interval: 60.0
   assets: []
 
-filters:
-  max_spread: .inf
-  min_volume: 0.0
-  max_volatility: .inf
-
 execution:
   limit_offset_ticks: 1.0
   limit_expiry_sec: 1.0
