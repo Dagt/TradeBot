@@ -397,6 +397,9 @@ class RiskService:
             elif delta < 0:
                 delta = min(delta + pending_qty, 0.0)
 
+        if delta < 0 and not self.allow_short:
+            return False, "short_not_allowed", 0.0
+
         qty = abs(delta)
         alloc = qty * price
         if not self.check_global_exposure(symbol, alloc):
