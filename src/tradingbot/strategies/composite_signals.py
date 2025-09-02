@@ -68,7 +68,4 @@ class CompositeSignals(Strategy):
             result = Signal("buy", 1.0)
         elif sells > len(self.sub_strategies) / 2:
             result = Signal("sell", 1.0)
-
-        if result is not None:
-            result.limit_price = price
-        return result
+        return self.finalize_signal(bar, price, result)
