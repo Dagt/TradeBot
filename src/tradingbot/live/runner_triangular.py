@@ -155,13 +155,13 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ):
                             continue
                         risk.account.update_open_order(
-                            f"{cfg.route.base}/{cfg.route.quote}", base_qty
+                            f"{cfg.route.base}/{cfg.route.quote}", "buy", base_qty
                         )
                         risk.account.update_open_order(
-                            f"{cfg.route.mid}/{cfg.route.base}", mid_qty
+                            f"{cfg.route.mid}/{cfg.route.base}", "buy", mid_qty
                         )
                         risk.account.update_open_order(
-                            f"{cfg.route.mid}/{cfg.route.quote}", mid_qty
+                            f"{cfg.route.mid}/{cfg.route.quote}", "sell", mid_qty
                         )
                         resp1 = await broker.place_limit(
                             f"{cfg.route.base}/{cfg.route.quote}",
@@ -237,13 +237,13 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         ):
                             continue
                         risk.account.update_open_order(
-                            f"{cfg.route.mid}/{cfg.route.quote}", mid_qty
+                            f"{cfg.route.mid}/{cfg.route.quote}", "buy", mid_qty
                         )
                         risk.account.update_open_order(
-                            f"{cfg.route.mid}/{cfg.route.base}", mid_qty
+                            f"{cfg.route.mid}/{cfg.route.base}", "sell", mid_qty
                         )
                         risk.account.update_open_order(
-                            f"{cfg.route.base}/{cfg.route.quote}", base_qty
+                            f"{cfg.route.base}/{cfg.route.quote}", "sell", base_qty
                         )
                         resp1 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.quote}",

@@ -571,7 +571,7 @@ class RiskService:
         """Update internal position books after a fill."""
         self.add_fill(side, qty, price=price)
         self.guard.update_position_on_order(symbol, side, qty, venue=venue)
-        self.account.update_open_order(symbol, -abs(qty))
+        self.account.update_open_order(symbol, side, -abs(qty))
         delta = qty if side == "buy" else -qty
         self.account.update_position(symbol, delta, price=price)
         if venue is not None:

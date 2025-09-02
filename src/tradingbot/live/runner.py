@@ -200,7 +200,7 @@ async def run_live_binance(
                 )
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
-                risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                risk.account.update_open_order(symbol, close_side, filled_qty + pending_qty)
                 risk.on_fill(symbol, close_side, filled_qty, venue="binance")
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -229,7 +229,7 @@ async def run_live_binance(
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
-                    risk.account.update_open_order(symbol, filled_qty + pending_qty)
+                    risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
                     risk.on_fill(symbol, side, filled_qty, venue="binance")
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -301,7 +301,7 @@ async def run_live_binance(
         log.info("FILL live %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(symbol, filled_qty + pending_qty)
+        risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
         risk.on_fill(symbol, side, filled_qty, venue="binance")
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)

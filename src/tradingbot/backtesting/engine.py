@@ -570,7 +570,7 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
-                                svc.account.update_open_order(sym, abs(delta_qty))
+                                svc.account.update_open_order(sym, side, abs(delta_qty))
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
@@ -619,7 +619,7 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
-                                svc.account.update_open_order(sym, pending_qty)
+                                svc.account.update_open_order(sym, side, pending_qty)
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
@@ -1062,7 +1062,7 @@ class EventDrivenBacktestEngine:
                         notional = qty * place_price
                         if not svc.register_order(symbol, notional):
                             continue
-                        svc.account.update_open_order(symbol, qty)
+                        svc.account.update_open_order(symbol, side, qty)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
                         delay = max(1, int(base_latency * self.stress.latency))
@@ -1102,7 +1102,7 @@ class EventDrivenBacktestEngine:
                         continue
                     if sig is None or sig.side == "flat":
                         continue
-                    pending = svc.account.open_orders.get(symbol, 0.0)
+                    pending = svc.account.open_orders.get(symbol, {}).get(sig.side, 0.0)
                     atr_map = getattr(strat, "_last_atr", {})
                     tgt_map = getattr(strat, "_last_target_vol", {})
                     allowed, _reason, delta = svc.check_order(
@@ -1121,7 +1121,7 @@ class EventDrivenBacktestEngine:
                     notional = qty * place_price
                     if not svc.register_order(symbol, notional):
                         continue
-                    svc.account.update_open_order(symbol, qty)
+                    svc.account.update_open_order(symbol, side, qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     base_latency = self.exchange_latency.get(exchange, self.latency)
                     delay = max(1, int(base_latency * self.stress.latency))

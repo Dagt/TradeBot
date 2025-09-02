@@ -45,7 +45,7 @@ class DummyRisk:
         self.rm = types.SimpleNamespace(allow_short=True)
         self.account = types.SimpleNamespace(
             current_exposure=lambda symbol: (0.0, 0.0),
-            update_open_order=lambda symbol, qty: None,
+            update_open_order=lambda symbol, side, qty: None,
         )
         self.trades: dict = {}
 
@@ -76,6 +76,9 @@ class DummyRisk:
 
     def daily_mark(self, broker, symbol, price, delta_rpnl):
         return False, ""
+
+    def purge(self, symbols):
+        pass
 
 
 class DummyRouter:
@@ -136,7 +139,11 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
     monkeypatch.setattr(rp, "_CAN_PG", False)
-    monkeypatch.setattr(rp, "settings", types.SimpleNamespace(tick_size=0.1))
+    monkeypatch.setattr(
+        rp,
+        "settings",
+        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+    )
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 

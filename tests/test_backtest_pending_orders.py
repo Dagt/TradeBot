@@ -1,6 +1,9 @@
 import pandas as pd
 import pytest
 
+import pandas as pd
+import pytest
+
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.core import Account
 from tradingbot.strategies import STRATEGIES
@@ -30,6 +33,7 @@ class StubRisk:
     def __init__(self, account: Account):
         self.account = account
         self.rm = StubRM()
+        self.pos = self.rm.pos
 
     def get_trade(self, sym):
         return {"side": "buy"}
@@ -42,6 +46,9 @@ class StubRisk:
 
     def mark_price(self, symbol, price):
         pass
+
+    def check_limits(self, price):
+        return True
 
     def on_fill(self, symbol, side, qty, price):
         sign = 1 if side == "buy" else -1
@@ -68,4 +75,4 @@ def test_pending_order_quantity(monkeypatch):
     account.update_position("SYM", 1.0, price=100.0)
     engine.risk = {("dummy", "SYM"): StubRisk(account)}
     engine.run()
-    assert account.open_orders["SYM"] == pytest.approx(1.0)
+    assert account.open_orders["SYM"]["sell"] == pytest.approx(1.0)
