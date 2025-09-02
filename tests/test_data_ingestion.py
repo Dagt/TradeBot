@@ -532,8 +532,10 @@ def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
     import importlib
     from typer.testing import CliRunner
     import tradingbot.cli.main as cli_main
+    import tradingbot.cli.utils as cli_utils
 
     cli_main = importlib.reload(cli_main)
+    cli_utils = importlib.reload(cli_utils)
 
     def fail():
         raise AssertionError("get_engine should not be called for CSV backend")
@@ -552,8 +554,8 @@ def test_cli_ingest_csv_creates_file(monkeypatch, tmp_path):
                 "ask_qty": [4.0],
             }
 
-    monkeypatch.setattr(cli_main, "get_adapter_class", lambda name: DummyAdapter)
-    monkeypatch.setattr(cli_main, "_AVAILABLE_VENUES", {"dummy"})
+    monkeypatch.setattr(cli_utils, "get_adapter_class", lambda name: DummyAdapter)
+    monkeypatch.setattr(cli_utils, "_AVAILABLE_VENUES", {"dummy"})
 
     runner = CliRunner()
     monkeypatch.chdir(tmp_path)

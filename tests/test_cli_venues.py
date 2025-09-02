@@ -3,7 +3,7 @@ import inspect
 import pytest
 
 from tradingbot.adapters.base import ExchangeAdapter
-from tradingbot.cli.main import _AVAILABLE_VENUES, get_adapter_class
+from tradingbot.cli.utils import _AVAILABLE_VENUES, get_adapter_class
 
 
 @pytest.mark.parametrize("venue", sorted(_AVAILABLE_VENUES))
