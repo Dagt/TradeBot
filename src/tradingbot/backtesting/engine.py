@@ -343,8 +343,8 @@ class EventDrivenBacktestEngine:
                 risk_per_trade=self.risk_per_trade,
                 risk_pct=self._risk_pct,
             )
-            svc.rm.allow_short = allow_short
-            svc.rm.min_order_qty = self.min_order_qty
+            svc.allow_short = allow_short
+            svc.min_order_qty = self.min_order_qty
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
             try:
@@ -694,7 +694,7 @@ class EventDrivenBacktestEngine:
 
                 trade_value = fill_qty * price
                 fee_cost = fee_model.calculate(trade_value, maker=maker)
-                prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 if order.side == "buy":
                     cash -= trade_value + fee_cost
                 else:
@@ -702,11 +702,11 @@ class EventDrivenBacktestEngine:
                 sync_cash()
                 prev_qty = svc.account.current_exposure(order.symbol)[0]
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
-                new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slip_cash
                 slippage_pnl = -slip_cash
                 realized_pnl_total += realized_pnl
-                svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
+                svc.pos.realized_pnl = prev_rpnl + realized_pnl
                 new_qty = svc.account.current_exposure(order.symbol)[0]
                 key = (order.strategy, order.symbol)
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
@@ -791,7 +791,7 @@ class EventDrivenBacktestEngine:
                         order.side,
                         f"{fill_qty:.8f}",
                         price,
-                        getattr(svc.rm.pos, "realized_pnl", 0.0),
+                        getattr(svc.pos, "realized_pnl", 0.0),
                     )
                 if order.remaining_qty > 1e-9 and not self.cancel_unfilled:
                     order.execute_index = i + 1
@@ -839,7 +839,7 @@ class EventDrivenBacktestEngine:
                     fee_model = self.exchange_fees.get(exchange, self.default_fee)
                     trade_value = exit_qty * exit_price
                     fee_cost = fee_model.calculate(trade_value, maker=False)
-                    prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                    prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     if side == "sell":
                         cash += trade_value - fee_cost
                     else:
@@ -847,11 +847,11 @@ class EventDrivenBacktestEngine:
                     sync_cash()
                     prev_qty = svc.account.current_exposure(symbol)[0]
                     svc.on_fill(symbol, side, exit_qty, exit_price)
-                    new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                    new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     realized_pnl = new_rpnl - prev_rpnl - fee_cost
                     slippage_pnl = 0.0
                     realized_pnl_total += realized_pnl
-                    svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
+                    svc.pos.realized_pnl = prev_rpnl + realized_pnl
                     position_levels.pop((strat_name, symbol), None)
                     mtm_after = 0.0
                     for (strat_s, sym_s), svc_s in self.risk.items():
@@ -1099,7 +1099,7 @@ class EventDrivenBacktestEngine:
                 elif pos_qty < 0 and "high" in arrs:
                     check_price = float(arrs["high"][i])
                 try:
-                    svc.rm.check_limits(check_price)
+                    svc.check_limits(check_price)
                 except StopLossExceeded:
                     delta = -svc.account.current_exposure(symbol)[0]
                     if abs(delta) > self.min_order_qty:
@@ -1163,13 +1163,13 @@ class EventDrivenBacktestEngine:
                 fee_model = self.exchange_fees.get(exchange, self.default_fee)
                 trade_value = qty * last_price
                 fee_cost = fee_model.calculate(trade_value, maker=False)
-                prev_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 svc.on_fill(symbol, side, qty, last_price)
-                new_rpnl = getattr(svc.rm.pos, "realized_pnl", 0.0)
+                new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 slippage_pnl = 0.0
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
                 realized_pnl_total += realized_pnl
-                svc.rm.pos.realized_pnl = prev_rpnl + realized_pnl
+                svc.pos.realized_pnl = prev_rpnl + realized_pnl
                 if side == "sell":
                     cash += trade_value - fee_cost
                 else:

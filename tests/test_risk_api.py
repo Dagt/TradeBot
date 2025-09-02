@@ -37,10 +37,9 @@ def test_risk_reset_resets_and_auth(monkeypatch):
     app = get_app()
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
     rs = RiskService(guard, account=Account(float("inf")))
-    rm = rs.rm
-    rm.enabled = False
-    rm.last_kill_reason = "dd"
-    app.state.risk_manager = rm
+    rs.enabled = False
+    rs.last_kill_reason = "dd"
+    app.state.risk_service = rs
     client = TestClient(app)
 
     resp = client.post("/risk/reset")
@@ -51,4 +50,4 @@ def test_risk_reset_resets_and_auth(monkeypatch):
     data = resp.json()
     assert data["risk"]["enabled"] is True
     assert data["risk"]["last_kill_reason"] is None
-    assert rm.enabled is True
+    assert rs.enabled is True

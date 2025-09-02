@@ -158,7 +158,7 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
-        if self.risk_service is not None and not self.risk_service.rm.enabled:
+        if self.risk_service is not None and not self.risk_service.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
             return {"status": "rejected", "reason": "risk_disabled"}
 
@@ -284,7 +284,7 @@ class ExecutionRouter:
                     order.symbol, float(res.get("pending_qty", 0.0))
                 )
                 if filled:
-                    book = self.risk_service.rm.positions_multi.get(venue, {})
+                    book = self.risk_service.positions_multi.get(venue, {})
                     cur_qty = book.get(order.symbol, 0.0)
                     delta = filled if order.side == "buy" else -filled
                     self.risk_service.update_position(
@@ -374,7 +374,7 @@ class ExecutionRouter:
             pending = float(res.get("pending_qty", 0.0))
             self.risk_service.account.update_open_order(order.symbol, pending)
             if filled:
-                book = self.risk_service.rm.positions_multi.get(venue, {})
+                book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)
                 delta = filled if order.side == "buy" else -filled
                 self.risk_service.update_position(

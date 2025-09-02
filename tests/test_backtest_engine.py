@@ -17,11 +17,9 @@ from tradingbot.backtest.event_engine import (
 )
 from tradingbot.strategies import STRATEGIES
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
-from tradingbot.risk.service import RiskService, _RiskManager
+from tradingbot.risk.service import RiskService
 from tradingbot.core import Account
 
-_RiskManager.register_order = lambda self, n: True  # type: ignore
-_RiskManager.complete_order = lambda self: None  # type: ignore
 
 
 class DummyStrategy:
@@ -100,9 +98,9 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     svc = RiskService(PortfolioGuard(GuardConfig(venue="test")), account=Account(float("inf")))
     expected = []
     for row in df.itertuples():
-        prev = svc.rm.pos.realized_pnl
-        svc.rm.add_fill(row.side, row.qty, row.price)
-        delta = svc.rm.pos.realized_pnl - prev
+        prev = svc.pos.realized_pnl
+        svc.add_fill(row.side, row.qty, row.price)
+        delta = svc.pos.realized_pnl - prev
         expected.append(delta - row.fee_cost + row.slippage_pnl)
     assert np.allclose(df["realized_pnl"], expected)
     assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])
@@ -322,7 +320,7 @@ def test_spot_venue_config_applied(tmp_path, monkeypatch):
     )
 
     risk_service = eng.risk[("buyonce", "SYM")]
-    assert risk_service.rm.allow_short is False
+    assert risk_service.allow_short is False
 
     res = eng.run()
     fills = pd.DataFrame(

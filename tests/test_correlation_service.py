@@ -73,5 +73,5 @@ def test_update_correlation_uses_guard_for_global_cap():
         ("ETH", "SOL"): 0.85,
         ("XRP", "DOGE"): 0.7,  # below threshold
     }
-    exceeded = rs.rm.update_correlation(pairs, 0.8)
+    exceeded = rs.update_correlation(pairs, 0.8)
     assert set(exceeded) == {("BTC", "ETH"), ("ETH", "SOL")}
