@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Iterable
 import math
 
 import pandas as pd
@@ -61,3 +61,14 @@ class CorrelationService:
                 if not pd.isna(val):
                     result[(a, b)] = float(val)
         return result
+
+    def purge(self, symbols_active: Iterable[str]) -> None:
+        """Remove tracking for symbols not present in ``symbols_active``."""
+
+        active = set(symbols_active)
+        for sym in list(self._last_price.keys()):
+            if sym not in active:
+                self._last_price.pop(sym, None)
+        if not self._returns.empty:
+            cols = [c for c in self._returns.columns if c in active]
+            self._returns = self._returns[cols]

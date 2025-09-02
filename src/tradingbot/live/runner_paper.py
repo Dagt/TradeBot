@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio
 import logging
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timezone, timedelta
 
 import uvicorn
 
@@ -96,11 +97,18 @@ async def run_paper(
         best_bid = bids[0][0] if bids else last
         best_ask = asks[0][0] if asks else last
         return (best_ask - tick) if side == "buy" else (best_bid + tick)
+    purge_minutes = float(os.getenv("RISK_PURGE_MINUTES", "10"))
+    next_purge = datetime.now(timezone.utc) + timedelta(minutes=purge_minutes)
+
     try:
         async for t in adapter.stream_trades(symbol):
             ts = t.get("ts") or datetime.now(timezone.utc)
             px = float(t.get("price"))
             qty = float(t.get("qty", 0.0))
+            now = datetime.now(timezone.utc)
+            if now >= next_purge and hasattr(risk, "purge"):
+                risk.purge({symbol})
+                next_purge = now + timedelta(minutes=purge_minutes)
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
             risk.update_correlation(corr._returns.corr(), corr_threshold)

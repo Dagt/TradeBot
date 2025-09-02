@@ -2,9 +2,10 @@
 from __future__ import annotations
 import asyncio
 import logging
+import os
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Deque, Dict, Optional
 
 import pandas as pd
@@ -156,6 +157,9 @@ async def run_live_binance(
 
     tick = getattr(settings, "tick_size", 0.0)
 
+    purge_minutes = float(os.getenv("RISK_PURGE_MINUTES", "10"))
+    next_purge = datetime.now(timezone.utc) + timedelta(minutes=purge_minutes)
+
     def _limit_price(side: str) -> float:
         book = getattr(broker.state, "order_book", {}).get(symbol, {})
         bids = book.get("bids") or []
@@ -169,6 +173,10 @@ async def run_live_binance(
         ts: datetime = t["ts"] or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t["qty"] or 0.0)
+        now = datetime.now(timezone.utc)
+        if now >= next_purge and hasattr(risk, "purge"):
+            risk.purge({symbol})
+            next_purge = now + timedelta(minutes=purge_minutes)
         broker.update_last_price(symbol, px)
         risk.mark_price(symbol, px)
         halted, reason = risk.daily_mark(broker, symbol, px, 0.0)

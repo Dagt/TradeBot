@@ -75,6 +75,16 @@ El riesgo por operación se controla mediante `risk_pct` (equivalente a
 `--risk-pct` en la CLI). Para limitar la exposición global pueden utilizarse
 los parámetros `total_cap_pct` y `per_symbol_cap_pct` de `PortfolioGuard`.
 
+### Purga de símbolos inactivos
+
+Los runners limpian periódicamente los registros de símbolos que ya no se
+operan invocando `RiskService.purge`. El intervalo (en minutos) se configura
+mediante la variable de entorno `RISK_PURGE_MINUTES` y por defecto es `10`:
+
+```bash
+export RISK_PURGE_MINUTES=30
+```
+
 ### Ejemplo
 
 ```python

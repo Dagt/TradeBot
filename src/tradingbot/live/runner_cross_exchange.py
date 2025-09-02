@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 
 from ..bus import EventBus
@@ -153,7 +155,16 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             risk.mark_price(cfg.symbol, price)
             await maybe_trade()
 
-    tasks = [listen_spot(), listen_perp()]
+    purge_minutes = float(os.getenv("RISK_PURGE_MINUTES", "10"))
+
+    async def purge_loop() -> None:
+        while True:
+            await asyncio.sleep(purge_minutes * 60)
+            if hasattr(risk, "purge"):
+                risk.purge({cfg.symbol})
+
+    tasks = [listen_spot(), listen_perp(), purge_loop()]
+
     if getattr(cfg.perp, "fetch_funding", None):
         tasks.append(poll_funding(cfg.perp, cfg.symbol, bus, persist_pg=True))
     if getattr(cfg.perp, "fetch_open_interest", None) or getattr(cfg.perp, "fetch_oi", None):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 from dataclasses import dataclass
 from collections import defaultdict
 
@@ -197,6 +197,52 @@ class RiskService:
     def get_trade(self, symbol: str) -> dict | None:
         """Return tracked trade for ``symbol`` if any."""
         return self.trades.get(symbol)
+
+    def purge(self, symbols_active: Iterable[str]) -> None:
+        """Remove internal references to symbols not in ``symbols_active``.
+
+        This helps keep memory usage bounded when the set of traded symbols
+        changes over time.  Keys related to inactive symbols are removed from
+        internal books, guard state and account tracking structures.
+        """
+
+        active = set(symbols_active)
+
+        # trades
+        for sym in list(self.trades.keys()):
+            if sym not in active:
+                self.trades.pop(sym, None)
+
+        # account structures
+        for dct in [self.account.positions, self.account.prices, self.account.open_orders]:
+            for sym in list(dct.keys()):
+                if sym not in active:
+                    dct.pop(sym, None)
+
+        # guard state
+        st = self.guard.st
+        for dct in [st.positions, st.prices, st.sym_soft_started, st.returns]:
+            for sym in list(dct.keys()):
+                if sym not in active:
+                    dct.pop(sym, None)
+        for venue, book in list(st.venue_positions.items()):
+            for sym in list(book.keys()):
+                if sym not in active:
+                    book.pop(sym, None)
+            if not book:
+                st.venue_positions.pop(venue, None)
+
+        # multi-venue book
+        for venue, book in list(self.positions_multi.items()):
+            for sym in list(book.keys()):
+                if sym not in active:
+                    book.pop(sym, None)
+            if not book:
+                self.positions_multi.pop(venue, None)
+
+        # correlation service
+        if self.corr is not None and hasattr(self.corr, "purge"):
+            self.corr.purge(active)
 
     # Delegates to core risk manager
     def calc_position_size(

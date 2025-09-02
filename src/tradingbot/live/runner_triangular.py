@@ -2,7 +2,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from typing import Dict
 
 import websockets
@@ -61,6 +63,9 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero SQL no disponible (sqlalchemy/psycopg2).")
 
+    purge_minutes = float(os.getenv("RISK_PURGE_MINUTES", "10"))
+    next_purge = datetime.now(timezone.utc) + timedelta(minutes=purge_minutes)
+
     backoff = 1.0
     while True:
         try:
@@ -75,6 +80,11 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                     if price is None:
                         continue
                     price = float(price)
+
+                    now = datetime.now(timezone.utc)
+                    if now >= next_purge and hasattr(risk, "purge"):
+                        risk.purge({syms.bq, syms.mq, syms.mb})
+                        next_purge = now + timedelta(minutes=purge_minutes)
 
                     if syms.bq.replace("/", "").lower() in s:
                         last["bq"] = price
