@@ -45,3 +45,18 @@ def test_trend_following_risk_service_handles_stop_and_size():
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"])
     assert trade["stop"] == pytest.approx(expected_stop)
 
+
+@pytest.mark.parametrize("timeframe", ["1m", "15m"])
+def test_trend_following_generates_signal_across_timeframes(timeframe):
+    lookback_min = 60
+    tf_minutes = 1 if timeframe == "1m" else 15
+    lookback_bars = lookback_min // tf_minutes
+    n = max(lookback_bars * 2 + 1, 15)
+    prices = [100] * (n - 1) + [110]
+    freq = f"{tf_minutes}min"
+    df = pd.DataFrame({"close": prices}, index=pd.date_range("2024", periods=n, freq=freq))
+    strat = TrendFollowing(vol_lookback=lookback_min)
+    bar = {"window": df, "timeframe": timeframe, "volatility": 0.0}
+    sig = strat.on_bar(bar)
+    assert sig and sig.side == "buy"
+

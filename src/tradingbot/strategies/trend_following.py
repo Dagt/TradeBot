@@ -6,7 +6,7 @@ from ..data.features import rsi, calc_ofi
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "min_volatility": "Volatilidad mínima requerida",
-    "vol_lookback": "Ventana para calcular la volatilidad",
+    "vol_lookback": "Ventana para calcular la volatilidad (minutos)",
 }
 
 
@@ -22,37 +22,66 @@ class TrendFollowing(Strategy):
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.min_volatility = kwargs.get("min_volatility", 0.0)
+        # ``vol_lookback`` se especifica en minutos y se escalará al timeframe
+        # real en ``on_bar``.
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
+        self.min_volatility = 0.0
         self.risk_service = kwargs.get("risk_service")
 
-    def auto_threshold(self, rsi_series: pd.Series, vol: float) -> float:
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _tf_minutes(tf: str | None) -> int:
+        """Convert timeframe strings like ``'1m'`` or ``'15m'`` to minutes."""
+
+        if not tf:
+            return 1
+        tf = tf.lower()
+        if tf.endswith("m"):
+            return int(tf[:-1] or 1)
+        if tf.endswith("h"):
+            return int(tf[:-1] or 1) * 60
+        return 1
+
+    def auto_threshold(self, rsi_series: pd.Series, vol_bps: float) -> float:
         """Derive RSI threshold based on recent volatility.
 
-        Uses the median RSI as a base and adds a fraction of current
-        volatility (in bps) to adapt entry levels dynamically.
+        The threshold starts at the rolling median RSI and shifts by a
+        multiplier of the current volatility expressed in basis points.  A
+        higher volatility therefore raises the entry level making signals more
+        selective when markets are noisy.
         """
 
         base = rsi_series.rolling(self.rsi_n).median().iloc[-1]
         base = 50.0 if pd.isna(base) else float(base)
-        thresh = base + vol * 0.1
+        thresh = base + vol_bps * 0.5
         return max(55.0, min(90.0, thresh))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < max(self.rsi_n, self.vol_lookback) + 1:
+        tf = bar.get("timeframe")
+        tf_minutes = self._tf_minutes(tf)
+        lookback_bars = max(1, int(self.vol_lookback / tf_minutes))
+        if len(df) < max(self.rsi_n, lookback_bars) + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
         returns = prices.pct_change().dropna()
-        vol = returns.rolling(self.vol_lookback).std().iloc[-1] * 10000
-        if pd.isna(vol) or vol < self.min_volatility:
+        vol_series = returns.rolling(lookback_bars).std().dropna()
+        vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
+        window = min(len(vol_series), lookback_bars * 5)
+        if window >= lookback_bars:
+            self.min_volatility = float(
+                (vol_series * 10000).rolling(window).quantile(0.2).iloc[-1]
+            )
+        else:
+            self.min_volatility = 0.0
+        if pd.isna(vol_bps) or vol_bps < self.min_volatility:
             return None
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
-        threshold = self.auto_threshold(rsi_series, vol)
+        threshold = self.auto_threshold(rsi_series, vol_bps)
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
