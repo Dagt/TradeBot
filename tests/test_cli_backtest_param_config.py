@@ -1,6 +1,6 @@
 def test_backtest_param_config_path(monkeypatch, tmp_path):
     monkeypatch.setenv("TRADINGBOT_SKIP_NTP_CHECK", "1")
-    from tradingbot.cli import main as cli_main
+    from tradingbot.cli.commands import backtesting as cli_backtesting
     from tradingbot.backtest import event_engine as ev_module
     from tradingbot import strategies as strat_module
 
@@ -16,7 +16,7 @@ def test_backtest_param_config_path(monkeypatch, tmp_path):
             return {}
 
     monkeypatch.setattr(ev_module, "EventDrivenBacktestEngine", DummyEngine)
-    monkeypatch.setattr(cli_main, "generate_report", lambda result: "")
+    monkeypatch.setattr(cli_backtesting, "generate_report", lambda result: "")
 
     captured = {}
 
@@ -28,7 +28,7 @@ def test_backtest_param_config_path(monkeypatch, tmp_path):
 
     monkeypatch.setitem(strat_module.STRATEGIES, "dummy", DummyStrategy)
 
-    cli_main.backtest(
+    cli_backtesting.backtest(
         data=str(datafile),
         symbol="BTC/USDT",
         strategy="dummy",

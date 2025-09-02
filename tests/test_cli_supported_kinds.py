@@ -1,6 +1,6 @@
 import pytest
 
-from tradingbot.cli.main import get_adapter_class, get_supported_kinds
+from tradingbot.cli.utils import get_adapter_class, get_supported_kinds
 
 EXPECTED_KINDS = {
     "binance_spot": {
