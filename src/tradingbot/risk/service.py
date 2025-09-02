@@ -216,7 +216,13 @@ class RiskService:
     # ------------------------------------------------------------------
     # Position helpers
     def update_position(
-        self, exchange: str, symbol: str, qty: float, *, entry_price: float | None = None
+        self,
+        exchange: str,
+        symbol: str,
+        qty: float,
+        *,
+        entry_price: float | None = None,
+        atr: float | None = None,
     ) -> None:
         """Synchronise position and track trade state for ``symbol``."""
         book = self.positions_multi.setdefault(exchange, {})
@@ -230,9 +236,11 @@ class RiskService:
         side = "buy" if qty > 0 else "sell"
         trade = self.trades.get(symbol, {})
         trade.update({"side": side, "qty": abs(qty)})
+        if atr is not None:
+            trade["atr"] = float(atr)
         if entry_price is not None:
             trade["entry_price"] = entry_price
-            trade.setdefault("stop", self.initial_stop(entry_price, side))
+            trade.setdefault("stop", self.initial_stop(entry_price, side, atr))
         trade["stage"] = 0
         self.trades[symbol] = trade
 
@@ -567,6 +575,7 @@ class RiskService:
         qty: float,
         price: float | None = None,
         venue: str | None = None,
+        atr: float | None = None,
     ) -> None:
         """Update internal position books after a fill."""
         self.add_fill(side, qty, price=price)
@@ -590,11 +599,13 @@ class RiskService:
                 "entry_price": self._entry_price,
             }
         )
+        if atr is not None:
+            trade["atr"] = float(atr)
         entry_price = trade.get("entry_price")
         if entry_price is not None:
             trade.setdefault(
                 "stop",
-                self.initial_stop(entry_price, trade["side"]),
+                self.initial_stop(entry_price, trade["side"], atr),
             )
         trade.setdefault("stage", 0)
         self.trades[symbol] = trade
