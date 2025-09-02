@@ -68,6 +68,9 @@ class DummyRisk:
         self.last_strength = strength
         return True, "", 1.0
 
+    def register_order(self, symbol, notional):
+        return True
+
     def on_fill(self, symbol, side, qty, price=None, venue=None):
         pass
 

@@ -25,6 +25,7 @@ from .runner import BarAggregator
 from ..config import settings
 from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
+from ..strategies.breakout_atr import BreakoutATR
 from ..risk.service import load_positions
 from ..risk.daily_guard import DailyGuard, GuardLimits
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
@@ -116,7 +117,6 @@ async def _run_symbol(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
-    strat.risk_service = risk
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -147,6 +147,7 @@ async def _run_symbol(
         risk_pct=cfg.risk_pct,
     )
     risk.allow_short = market != "spot"
+    strat.risk_service = risk
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -269,6 +270,9 @@ async def _run_symbol(
             if sig.limit_price is not None
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
+        notional = qty * price
+        if not risk.register_order(cfg.symbol, notional):
+            continue
         prev_rpnl = broker.state.realized_pnl
         resp = await exec_broker.place_limit(
             cfg.symbol,
@@ -282,6 +286,7 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
+        risk.account.update_open_order(cfg.symbol, filled_qty + pending_qty)
         risk.on_fill(
             cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )

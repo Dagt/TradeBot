@@ -970,7 +970,7 @@ class EventDrivenBacktestEngine:
                             )
                         qty = abs(delta_qty)
                         notional = qty * place_price
-                        if not svc.register_order(notional):
+                        if not svc.register_order(symbol, notional):
                             continue
                         svc.account.update_open_order(symbol, qty)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
@@ -1029,8 +1029,9 @@ class EventDrivenBacktestEngine:
                     side = "buy" if delta > 0 else "sell"
                     qty = abs(delta)
                     notional = qty * place_price
-                    if not svc.register_order(notional):
+                    if not svc.register_order(symbol, notional):
                         continue
+                    svc.account.update_open_order(symbol, qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     base_latency = self.exchange_latency.get(exchange, self.latency)
                     delay = max(1, int(base_latency * self.stress.latency))

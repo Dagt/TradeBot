@@ -145,6 +145,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         price1 = last["bq"] + tick
                         price2 = last["mb"] + tick
                         price3 = last["mq"] - tick
+                        not1 = base_qty * price1
+                        not2 = mid_qty * price2
+                        not3 = mid_qty * price3
+                        if not (
+                            risk.register_order(f"{cfg.route.base}/{cfg.route.quote}", not1)
+                            and risk.register_order(f"{cfg.route.mid}/{cfg.route.base}", not2)
+                            and risk.register_order(f"{cfg.route.mid}/{cfg.route.quote}", not3)
+                        ):
+                            continue
+                        risk.account.update_open_order(
+                            f"{cfg.route.base}/{cfg.route.quote}", base_qty
+                        )
+                        risk.account.update_open_order(
+                            f"{cfg.route.mid}/{cfg.route.base}", mid_qty
+                        )
+                        risk.account.update_open_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}", mid_qty
+                        )
                         resp1 = await broker.place_limit(
                             f"{cfg.route.base}/{cfg.route.quote}",
                             "buy",
@@ -209,6 +227,24 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         price1 = last["mq"] + tick
                         price2 = last["mb"] - tick
                         price3 = last["bq"] - tick
+                        not1 = mid_qty * price1
+                        not2 = mid_qty * price2
+                        not3 = base_qty * price3
+                        if not (
+                            risk.register_order(f"{cfg.route.mid}/{cfg.route.quote}", not1)
+                            and risk.register_order(f"{cfg.route.mid}/{cfg.route.base}", not2)
+                            and risk.register_order(f"{cfg.route.base}/{cfg.route.quote}", not3)
+                        ):
+                            continue
+                        risk.account.update_open_order(
+                            f"{cfg.route.mid}/{cfg.route.quote}", mid_qty
+                        )
+                        risk.account.update_open_order(
+                            f"{cfg.route.mid}/{cfg.route.base}", mid_qty
+                        )
+                        risk.account.update_open_order(
+                            f"{cfg.route.base}/{cfg.route.quote}", base_qty
+                        )
                         resp1 = await broker.place_limit(
                             f"{cfg.route.mid}/{cfg.route.quote}",
                             "buy",

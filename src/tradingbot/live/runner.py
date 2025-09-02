@@ -183,13 +183,17 @@ async def run_live_binance(
             decision = risk.manage_position(trade)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
-                prev_rpnl = broker.state.realized_pnl
                 price = _limit_price(close_side)
+                qty_close = abs(pos_qty)
+                notional = qty_close * price
+                if not risk.register_order(symbol, notional):
+                    continue
+                prev_rpnl = broker.state.realized_pnl
                 resp = await exec_broker.place_limit(
                     symbol,
                     close_side,
                     price,
-                    abs(pos_qty),
+                    qty_close,
                     on_partial_fill=strat.on_partial_fill,
                     on_order_expiry=strat.on_order_expiry,
                 )
@@ -210,11 +214,15 @@ async def run_live_binance(
                     side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(side)
+                    qty_scale = abs(delta_qty)
+                    notional = qty_scale * price
+                    if not risk.register_order(symbol, notional):
+                        continue
                     resp = await exec_broker.place_limit(
                         symbol,
                         side,
                         price,
-                        abs(delta_qty),
+                        qty_scale,
                         on_partial_fill=strat.on_partial_fill,
                         on_order_expiry=strat.on_order_expiry,
                     )
@@ -272,13 +280,17 @@ async def run_live_binance(
             continue
 
         side = "buy" if delta > 0 else "sell"
-        prev_rpnl = broker.state.realized_pnl
+        qty = abs(delta)
         price = signal.limit_price if signal.limit_price is not None else _limit_price(side)
+        notional = qty * price
+        if not risk.register_order(symbol, notional):
+            continue
+        prev_rpnl = broker.state.realized_pnl
         resp = await exec_broker.place_limit(
             symbol,
             side,
             price,
-            abs(delta),
+            qty,
             on_partial_fill=strat.on_partial_fill,
             on_order_expiry=strat.on_order_expiry,
         )
@@ -286,6 +298,7 @@ async def run_live_binance(
         log.info("FILL live %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
+        risk.account.update_open_order(symbol, filled_qty + pending_qty)
         risk.on_fill(symbol, side, filled_qty, venue="binance")
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
