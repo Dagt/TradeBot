@@ -71,8 +71,8 @@ def test_backtest_db_futures_config(monkeypatch):
         cfg["taker_fee_bps"] / 10000.0
     )
     assert eng.exchange_tick_size["binance_futures"] == cfg["tick_size"]
-    rm = eng.risk[("dummy", "BTCUSDT")].rm
-    assert rm.allow_short is True
+    rs = eng.risk[("dummy", "BTCUSDT")]
+    assert rs.allow_short is True
 
 
 def test_backtest_db_spot_config(monkeypatch):
@@ -86,8 +86,8 @@ def test_backtest_db_spot_config(monkeypatch):
         cfg["taker_fee_bps"] / 10000.0
     )
     assert eng.exchange_tick_size["binance_spot"] == cfg["tick_size"]
-    rm = eng.risk[("dummy", "BTCUSDT")].rm
-    assert rm.allow_short is False
+    rs = eng.risk[("dummy", "BTCUSDT")]
+    assert rs.allow_short is False
 
 
 def test_backtest_db_normalizes_symbol(monkeypatch):

@@ -35,40 +35,40 @@ def test_stop_loss_risk_pct():
 
     qty = equity * 0.10 / price
     rs = _make_rs(equity, risk_pct=risk_pct)
-    rs.rm.add_fill("buy", qty, price)
+    rs.add_fill("buy", qty, price)
 
-    assert rs.rm.check_limits(price)
+    assert rs.check_limits(price)
     with pytest.raises(StopLossExceeded):
-        rs.rm.check_limits(price * (1 - risk_pct - 0.01))
-    assert rs.rm.enabled is True
-    assert rs.rm.last_kill_reason == "stop_loss"
+        rs.check_limits(price * (1 - risk_pct - 0.01))
+    assert rs.enabled is True
+    assert rs.last_kill_reason == "stop_loss"
 
 
 def test_pyramiding_and_scaling(risk_service):
     rs = risk_service
     price = 100.0
     symbol = "SYM"
-    rs.rm.risk_pct = 0.0
+    rs.risk_pct = 0.0
     max_qty = rs.account.cash / price
 
     delta = rs.calc_position_size(0.5, price)
-    rs.rm.add_fill("buy", delta, price)
-    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    rs.add_fill("buy", delta, price)
+    rs.update_position("test", symbol, rs.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
     target = rs.calc_position_size(1.0, price)
-    rs.rm.add_fill("buy", target - rs.rm.pos.qty, price)
-    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    rs.add_fill("buy", target - rs.pos.qty, price)
+    rs.update_position("test", symbol, rs.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty)
 
     target = rs.calc_position_size(0.5, price)
-    rs.rm.add_fill("sell", rs.rm.pos.qty - target, price)
-    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    rs.add_fill("sell", rs.pos.qty - target, price)
+    rs.update_position("test", symbol, rs.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(max_qty * 0.5)
 
     target = rs.calc_position_size(0.0, price)
-    rs.rm.add_fill("sell", rs.rm.pos.qty - target, price)
-    rs.update_position("test", symbol, rs.rm.pos.qty, entry_price=price)
+    rs.add_fill("sell", rs.pos.qty - target, price)
+    rs.update_position("test", symbol, rs.pos.qty, entry_price=price)
     assert rs.account.positions[symbol] == pytest.approx(0.0)
 
 
@@ -170,8 +170,8 @@ async def test_daily_guard_halts_on_loss():
 
 def test_long_only_prevents_shorts():
     rs = _make_rs(100.0)
-    rs.rm.allow_short = False
-    rs.rm.add_fill("buy", 1.0, price=100.0)
+    rs.allow_short = False
+    rs.add_fill("buy", 1.0, price=100.0)
     rs.update_position("test", "SYM", 1.0, entry_price=100.0)
     allowed, _, delta = rs.check_order("SYM", "sell", 100.0)
     assert allowed and delta == pytest.approx(-1.0)
@@ -179,7 +179,7 @@ def test_long_only_prevents_shorts():
 
 def test_min_order_qty_blocks_small_orders():
     rs = _make_rs(100.0)
-    rs.rm.min_order_qty = 0.01
+    rs.min_order_qty = 0.01
     allowed, reason, delta = rs.check_order("SYM", "buy", 100.0, strength=0.001)
     assert not allowed
     assert reason == "zero_size"

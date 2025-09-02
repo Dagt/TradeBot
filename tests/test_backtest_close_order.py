@@ -35,7 +35,7 @@ def test_stop_triggers_close(monkeypatch):
     svc.update_position("default", "SYM", 1.0, entry_price=100.0)
     trade = svc.get_trade("SYM")
     trade["stop"] = 95.0
-    monkeypatch.setattr(svc.rm, "check_limits", lambda price: None)
+    monkeypatch.setattr(svc, "check_limits", lambda price: None)
 
     res = engine.run()
     assert res["orders"][0]["side"] == "sell"

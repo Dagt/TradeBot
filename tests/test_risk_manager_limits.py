@@ -18,26 +18,26 @@ def test_stop_loss_sets_reason():
     from tradingbot.risk.exceptions import StopLossExceeded
 
     svc = _make_service(risk_pct=0.05)
-    svc.rm.add_fill("buy", 1.0, price=100.0)
-    assert svc.rm.check_limits(100.0)
+    svc.add_fill("buy", 1.0, price=100.0)
+    assert svc.check_limits(100.0)
     with pytest.raises(StopLossExceeded):
-        svc.rm.check_limits(94.0)
-    assert svc.rm.enabled is True
-    assert svc.rm.last_kill_reason == "stop_loss"
-    assert svc.rm.pos.qty == pytest.approx(1.0)
+        svc.check_limits(94.0)
+    assert svc.enabled is True
+    assert svc.last_kill_reason == "stop_loss"
+    assert svc.pos.qty == pytest.approx(1.0)
 
 
 def test_stop_loss_multiple_fills_weighted_average():
     from tradingbot.risk.exceptions import StopLossExceeded
 
     svc = _make_service(risk_pct=0.1)
-    svc.rm.add_fill("buy", 1, price=100)
-    svc.rm.add_fill("buy", 1, price=120)
-    assert svc.rm._entry_price == pytest.approx(110.0)
-    assert svc.rm.pos.qty == pytest.approx(2.0)
-    assert svc.rm.check_limits(105)
+    svc.add_fill("buy", 1, price=100)
+    svc.add_fill("buy", 1, price=120)
+    assert svc._entry_price == pytest.approx(110.0)
+    assert svc.pos.qty == pytest.approx(2.0)
+    assert svc.check_limits(105)
     with pytest.raises(StopLossExceeded):
-        svc.rm.check_limits(98)
+        svc.check_limits(98)
 
 
 def test_risk_service_updates_and_persists(monkeypatch):
@@ -61,8 +61,8 @@ def test_risk_service_updates_and_persists(monkeypatch):
         risk_pct=100.0,
     )
     svc.account.cash = 100.0
-    svc.rm.enabled = False
-    svc.rm.last_kill_reason = "manual"
+    svc.enabled = False
+    svc.last_kill_reason = "manual"
     allowed, _, _delta = svc.check_order("BTC", "buy", 1.0, strength=1.0)
     assert not allowed
     assert events and events[0]["kind"] == "VIOLATION"
@@ -78,7 +78,7 @@ def test_risk_service_stop_loss_triggers_close():
         risk_pct=0.05,
     )
     svc.account.cash = 100.0
-    svc.rm.add_fill("buy", 1.0, price=100.0)
+    svc.add_fill("buy", 1.0, price=100.0)
     svc.update_position("X", "BTC", 1.0, entry_price=100.0)
     allowed, reason, delta = svc.check_order("BTC", "buy", 94.0)
     assert allowed is True
@@ -90,7 +90,7 @@ def test_risk_service_stop_loss_triggers_close():
 async def test_update_correlation_returns_pairs():
     svc = _make_service()
     pairs = {("BTC", "ETH"): 0.9}
-    exceeded = svc.rm.update_correlation(pairs, 0.8)
+    exceeded = svc.update_correlation(pairs, 0.8)
     assert exceeded == [("BTC", "ETH")]
 
 
@@ -102,7 +102,7 @@ async def test_update_covariance_returns_pairs():
         ("ETH", "ETH"): 0.04,
         ("BTC", "ETH"): 0.039,
     }
-    exceeded = svc.rm.update_covariance(cov, 0.8)
+    exceeded = svc.update_covariance(cov, 0.8)
     assert exceeded == [("BTC", "ETH")]
 
 

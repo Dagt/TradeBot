@@ -40,7 +40,7 @@ async def test_risk_service_correlation_limits_and_sizing():
         atr_mult=2.0,
         risk_pct=100.0,
     )
-    svc.rm.bus = bus
+    svc.bus = bus
     svc.account.cash = 1000.0
 
     _feed_correlated_prices(corr)
@@ -72,7 +72,7 @@ async def test_risk_service_covariance_limit():
         atr_mult=2.0,
         risk_pct=100.0,
     )
-    svc.rm.bus = bus
+    svc.bus = bus
     cov_df = pd.DataFrame(
         [[0.04, 0.039], [0.039, 0.04]], index=["AAA", "BBB"], columns=["AAA", "BBB"]
     )
