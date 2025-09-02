@@ -39,3 +39,19 @@ def test_scalp_pingpong_emits_limit_price():
     sig = strat.on_bar({"window": df, "close": df["close"].iloc[-1], "volatility": 0.0})
     assert sig is not None
     assert sig.limit_price == df["close"].iloc[-1]
+
+
+@pytest.mark.parametrize(
+    "timeframe,closes",
+    [
+        (1, list(range(100, 115)) + [100]),
+        (5, [100, 105, 110, 100]),
+    ],
+)
+def test_scalp_pingpong_generates_trades_across_timeframes(timeframe, closes):
+    df = pd.DataFrame({"close": closes})
+    cfg = ScalpPingPongConfig(volatility_factor=0.02, min_volatility=0.0)
+    strat = ScalpPingPong(cfg=cfg)
+    sig = strat.on_bar({"window": df, "timeframe": timeframe})
+    assert sig is not None
+    assert 0 < sig.strength <= 1.0
