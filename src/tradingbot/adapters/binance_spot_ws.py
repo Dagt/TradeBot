@@ -108,15 +108,39 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
         messages = self._ws_messages(url)
+        last_uid: int | None = None
         while True:
             try:
                 raw = await asyncio.wait_for(messages.__anext__(), 15)
             except asyncio.TimeoutError:
                 log.warning("No message received on %s for 15s", stream)
                 messages = self._ws_messages(url)
+                last_uid = None
                 continue
             msg = json.loads(raw)
             d = msg.get("data") or msg
+            pu = d.get("pu")
+            u = d.get("u") or d.get("lastUpdateId")
+            if last_uid is not None and pu is not None and pu != last_uid:
+                log.warning("Gap in depthUpdate for %s: expected %s, got %s", stream, last_uid, pu)
+                if self.rest:
+                    try:
+                        snap = await self.rest.fetch_order_book(normalize(symbol), depth)
+                        bids_n = [[float(b[0]), float(b[1])] for b in snap.get("bids", [])]
+                        asks_n = [[float(a[0]), float(a[1])] for a in snap.get("asks", [])]
+                        ts = datetime.now(timezone.utc)
+                        self.state.order_book[symbol] = {"bids": bids_n, "asks": asks_n}
+                        last_uid = snap.get("lastUpdateId")
+                        yield {
+                            **self.normalize_order_book(symbol, ts, bids_n, asks_n),
+                            "last_update_id": last_uid,
+                            "resync": True,
+                        }
+                    except Exception as e:  # pragma: no cover - logging only
+                        log.warning("Failed to resync order book: %s", e)
+                messages = self._ws_messages(url)
+                last_uid = None
+                continue
             ts_ms = d.get("T") or d.get("E")
             bids = d.get("bids") or d.get("b") or []
             asks = d.get("asks") or d.get("a") or []
@@ -124,7 +148,11 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
             asks_n = [[float(a[0]), float(a[1])] for a in asks]
             ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else datetime.now(timezone.utc)
             self.state.order_book[symbol] = {"bids": bids_n, "asks": asks_n}
-            yield self.normalize_order_book(symbol, ts, bids_n, asks_n)
+            last_uid = u if u is not None else last_uid
+            yield {
+                **self.normalize_order_book(symbol, ts, bids_n, asks_n),
+                "last_update_id": last_uid,
+            }
 
     stream_orderbook = stream_order_book
 
@@ -160,6 +188,8 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
 
         prev: dict | None = None
         async for ob in self.stream_order_book(symbol, depth):
+            if ob.get("resync"):
+                prev = None
             curr_bids = list(zip(ob.get("bid_px", []), ob.get("bid_qty", [])))
             curr_asks = list(zip(ob.get("ask_px", []), ob.get("ask_qty", [])))
             if prev is None:
