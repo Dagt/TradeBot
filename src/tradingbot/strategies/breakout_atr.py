@@ -6,8 +6,11 @@ PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
     "mult": "Multiplicador aplicado al ATR",
-    "min_atr": "ATR mínimo para operar",
-    "min_volatility": "Volatilidad mínima reciente en bps",
+    # ``min_atr`` se interpreta en unidades de precio y ya no depende del
+    # tamaño de la vela.
+    "min_atr": "ATR mínimo para operar (independiente del timeframe)",
+    # Umbral relativo expresado en puntos básicos del precio.
+    "min_atr_bps": "ATR mínimo relativo en bps",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -21,7 +24,7 @@ class BreakoutATR(Strategy):
         atr_n: int = 14,
         mult: float = 1.0,
         min_atr: float = 0.0,
-        min_volatility: float = 0.0,
+        min_atr_bps: float = 0.0,
         *,
         config_path: str | None = None,
         **kwargs,
@@ -32,7 +35,7 @@ class BreakoutATR(Strategy):
         self.atr_n = int(params.get("atr_n", atr_n))
         self.mult = float(params.get("mult", mult))
         self.min_atr = float(params.get("min_atr", min_atr))
-        self.min_volatility = float(params.get("min_volatility", min_volatility))
+        self.min_atr_bps = float(params.get("min_atr_bps", min_atr_bps))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -44,7 +47,7 @@ class BreakoutATR(Strategy):
         atr_val = float(atr(df, self.atr_n).iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
-        if atr_val < self.min_atr or atr_bps < self.min_volatility:
+        if atr_val < self.min_atr or atr_bps < self.min_atr_bps:
             return None
 
         side: str | None = None
@@ -58,4 +61,16 @@ class BreakoutATR(Strategy):
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         sig.limit_price = level
+
+        if self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(strength, last_close)
+            stop = self.risk_service.initial_stop(last_close, side, atr_val)
+            self.trade = {
+                "side": side,
+                "entry_price": last_close,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+            }
+
         return self.finalize_signal(bar, last_close, sig)

@@ -22,6 +22,12 @@ en una orden de mercado cuando la ventaja desaparece.
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador
 ATR y vende cuando cae por debajo del canal inferior.
+Parámetros clave:
+
+- `min_atr`: umbral mínimo del ATR en unidades de precio, independiente del
+  tamaño de la vela.
+- `min_atr_bps`: exige un ATR relativo mínimo expresado en puntos básicos del
+  precio.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.
