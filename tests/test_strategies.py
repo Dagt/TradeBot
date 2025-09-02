@@ -20,6 +20,12 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
     assert sig_sell.side == "sell"
 
 
+def test_breakout_atr_min_atr_bps_filter(breakout_df_buy):
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, min_atr_bps=2000)
+    sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    assert sig is None
+
+
 def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
     account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
