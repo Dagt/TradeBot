@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
@@ -50,14 +52,20 @@ class LiquidityEvents(Strategy):
         ask = df["ask_px"].apply(lambda x: x[0])
         return (bid + ask) / 2
 
-    def _vol_adjust(self, series: pd.Series, base: float) -> float:
-        if not self.dynamic_thresholds:
-            return base
-        returns = series.pct_change().fillna(0)
-        vol = returns.rolling(self.vol_window).std().iloc[-1]
-        if pd.isna(vol):
-            vol = 0.0
-        return base / (1 + vol)
+    def _effective_window(self, bar: dict) -> int:
+        """Return volatility window adjusted for short timeframes.
+
+        Timeframes between ``1m`` and ``5m`` use half of ``vol_window`` to
+        increase sensitivity in fast markets.
+        """
+
+        tf = str(bar.get("timeframe", ""))
+        m = re.match(r"^(\d+)m$", tf)
+        if m:
+            minutes = int(m.group(1))
+            if 1 <= minutes <= 5:
+                return max(5, self.vol_window // 2)
+        return self.vol_window
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -67,20 +75,42 @@ class LiquidityEvents(Strategy):
             return None
 
         mid = self._mid_prices(df)
-        last_price = float(mid.iloc[-1])
+        last_price = float(mid.iloc[-1]) if len(mid) else 0.0
 
-        vac_thresh = self._vol_adjust(mid, self.vacuum_threshold)
-        vac = book_vacuum(df[["bid_qty", "ask_qty"]], vac_thresh).iloc[-1]
+        window = self._effective_window(bar)
         sig: Signal | None = None
+        if self.dynamic_thresholds:
+            vol = mid.rolling(window).std().iloc[-1]
+            if pd.isna(vol) or last_price == 0:
+                vol = 0.0
+            vac_thresh = (vol / last_price) * self.vacuum_threshold if last_price else self.vacuum_threshold
+            gap_thresh = vol * self.gap_threshold
+        else:
+            vac_thresh = self.vacuum_threshold
+            gap_thresh = self.gap_threshold
+
+        vac = book_vacuum(df[["bid_qty", "ask_qty"]], vac_thresh).iloc[-1]
         if vac > 0:
             sig = Signal("buy", 1.0)
         elif vac < 0:
             sig = Signal("sell", 1.0)
         else:
-            gap_thresh = self._vol_adjust(mid, self.gap_threshold)
             gap = liquidity_gap(df[["bid_px", "ask_px"]], gap_thresh).iloc[-1]
             if gap > 0:
                 sig = Signal("buy", 1.0)
             elif gap < 0:
                 sig = Signal("sell", 1.0)
+
+        if sig is not None and self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(sig.strength, last_price)
+            atr_val = bar.get("atr") or bar.get("volatility")
+            stop = self.risk_service.initial_stop(last_price, sig.side, atr_val)
+            self.trade = {
+                "side": sig.side,
+                "entry_price": last_price,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+            }
+
         return self.finalize_signal(bar, last_price, sig)
