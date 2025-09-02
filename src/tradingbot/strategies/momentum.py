@@ -2,6 +2,7 @@ import math
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, returns
+from ..utils.rolling_quantile import RollingQuantileCache
 
 
 PARAM_INFO = {
@@ -33,6 +34,7 @@ class Momentum(Strategy):
         self.min_volatility = kwargs.get("min_volatility")
         self.vol_window = kwargs.get("vol_window", 20)
         self.risk_service = kwargs.get("risk_service")
+        self._rq = RollingQuantileCache()
 
     def _tf_to_minutes(self, tf: str | None) -> int:
         """Convert timeframe strings like ``1m`` or ``15m`` to minutes."""
@@ -48,14 +50,17 @@ class Momentum(Strategy):
             return int(tf[:-1]) * 60 * 24
         return 1
 
-    def auto_threshold(self, rsi_series: pd.Series, n: int) -> float:
+    def auto_threshold(self, symbol: str, last_rsi: float, n: int) -> float:
         """Automatically derive RSI threshold from recent values.
 
-        Uses a rolling 75th percentile of the RSI to determine the overbought
-        level. The oversold level is symmetrical around 100.
+        Maintains an incremental 75th percentile of the RSI using
+        :class:`~tradingbot.utils.rolling_quantile.RollingQuantile`.  This
+        avoids recalculating the quantile over the entire window for every new
+        bar.
         """
 
-        thresh = rsi_series.rolling(n).quantile(0.75).iloc[-1]
+        rq = self._rq.get(symbol, "rsi", window=n, q=0.75)
+        thresh = rq.update(float(last_rsi))
         return 55.0 if pd.isna(thresh) else float(thresh)
 
     @record_signal_metrics
@@ -73,29 +78,42 @@ class Momentum(Strategy):
         price = float(closes.iloc[-1])
         rsi_series = rsi(df, rsi_n)
         prev_rsi = rsi_series.iloc[-2]
-        last_rsi = rsi_series.iloc[-1]
+        last_rsi = float(rsi_series.iloc[-1])
 
         # Optional inactivity filters
         min_vol = self.min_volume
+        symbol = bar.get("symbol", "")
         if min_vol is None and "volume" in df:
-            min_vol = float(
-                df["volume"].rolling(vol_window, min_periods=1).quantile(0.2).iloc[-1]
+            rq_vol = self._rq.get(
+                symbol,
+                "volume",
+                window=vol_window,
+                q=0.2,
+                min_periods=1,
             )
+            min_vol = float(rq_vol.update(float(df["volume"].iloc[-1])))
         if min_vol is not None:
             if "volume" not in df or df["volume"].iloc[-1] < min_vol:
                 return None
 
         ret = returns(df)
         vol_series = ret.rolling(vol_window).std()
-        vol = vol_series.iloc[-1]
+        vol = float(vol_series.iloc[-1])
         min_volatility = self.min_volatility
         if min_volatility is None and not vol_series.dropna().empty:
-            min_volatility = float(vol_series.dropna().tail(vol_window).quantile(0.2))
+            rq_vola = self._rq.get(
+                symbol,
+                "volatility",
+                window=vol_window,
+                q=0.2,
+                min_periods=1,
+            )
+            min_volatility = float(rq_vola.update(vol))
         if min_volatility is not None:
             if pd.isna(vol) or vol < min_volatility:
                 return None
 
-        threshold = self.auto_threshold(rsi_series, rsi_n)
+        threshold = self.auto_threshold(symbol, last_rsi, rsi_n)
         upper = threshold
         lower = 100 - threshold
         side: str | None = None

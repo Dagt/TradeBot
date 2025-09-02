@@ -1,6 +1,7 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
+from ..utils.rolling_quantile import RollingQuantileCache
 
 
 PARAM_INFO = {
@@ -27,6 +28,7 @@ class TrendFollowing(Strategy):
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
         self.min_volatility = 0.0
         self.risk_service = kwargs.get("risk_service")
+        self._rq = RollingQuantileCache()
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -42,7 +44,7 @@ class TrendFollowing(Strategy):
             return int(tf[:-1] or 1) * 60
         return 1
 
-    def auto_threshold(self, rsi_series: pd.Series, vol_bps: float) -> float:
+    def auto_threshold(self, symbol: str, last_rsi: float, vol_bps: float) -> float:
         """Derive RSI threshold based on recent volatility.
 
         The threshold starts at the rolling median RSI and shifts by a
@@ -51,7 +53,8 @@ class TrendFollowing(Strategy):
         selective when markets are noisy.
         """
 
-        base = rsi_series.rolling(self.rsi_n).median().iloc[-1]
+        rq = self._rq.get(symbol, "rsi_median", window=self.rsi_n, q=0.5)
+        base = rq.update(last_rsi)
         base = 50.0 if pd.isna(base) else float(base)
         thresh = base + vol_bps * 0.5
         return max(55.0, min(90.0, thresh))
@@ -71,17 +74,24 @@ class TrendFollowing(Strategy):
         vol_series = returns.rolling(lookback_bars).std().dropna()
         vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
         window = min(len(vol_series), lookback_bars * 5)
+        symbol = bar.get("symbol", "")
         if window >= lookback_bars:
-            self.min_volatility = float(
-                (vol_series * 10000).rolling(window).quantile(0.2).iloc[-1]
+            rq_vol = self._rq.get(
+                symbol,
+                "vol_bps",
+                window=lookback_bars * 5,
+                q=0.2,
+                min_periods=lookback_bars,
             )
+            val = rq_vol.update(vol_bps)
+            self.min_volatility = 0.0 if pd.isna(val) else float(val)
         else:
             self.min_volatility = 0.0
         if pd.isna(vol_bps) or vol_bps < self.min_volatility:
             return None
         rsi_series = rsi(df, self.rsi_n)
-        last_rsi = rsi_series.iloc[-1]
-        threshold = self.auto_threshold(rsi_series, vol_bps)
+        last_rsi = float(rsi_series.iloc[-1])
+        threshold = self.auto_threshold(symbol, last_rsi, vol_bps)
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]

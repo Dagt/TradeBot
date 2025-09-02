@@ -3,6 +3,7 @@ import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import calc_ofi
+from ..utils.rolling_quantile import RollingQuantileCache
 
 
 PARAM_INFO = {
@@ -36,6 +37,7 @@ class OrderFlow(Strategy):
         self.sell_threshold = sell_threshold
         self.min_volatility = min_volatility
         self.risk_service = kwargs.get("risk_service")
+        self._rq = RollingQuantileCache()
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -64,13 +66,16 @@ class OrderFlow(Strategy):
 
             if self.min_volatility is None:
                 vol_series = returns.rolling(self.window).std() * 10000
-                window_q = min(len(vol_series.dropna()), self.window * 5)
-                if window_q >= self.window:
-                    self.min_volatility = float(
-                        vol_series.rolling(window_q).quantile(0.1).iloc[-1]
-                    )
-                else:
-                    self.min_volatility = 0.0
+                symbol = bar.get("symbol", "")
+                rq = self._rq.get(
+                    symbol,
+                    "vol_bps",
+                    window=self.window * 5,
+                    q=0.1,
+                    min_periods=self.window,
+                )
+                val = rq.update(float(vol_series.iloc[-1]) if len(vol_series) else 0.0)
+                self.min_volatility = 0.0 if pd.isna(val) else float(val)
 
         if self.min_volatility is not None and vol_bps < self.min_volatility:
             return None

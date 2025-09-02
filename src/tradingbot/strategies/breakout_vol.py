@@ -1,5 +1,6 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
+from ..utils.rolling_quantile import RollingQuantileCache
 
 PARAM_INFO = {
     "lookback": "Ventana para medias y desviación estándar",
@@ -37,6 +38,7 @@ class BreakoutVol(Strategy):
         # Valores dinámicos calculados en ``on_bar``.
         self.mult = 1.0
         self.min_volatility = 0.0
+        self._rq = RollingQuantileCache()
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -48,10 +50,16 @@ class BreakoutVol(Strategy):
         std_series = closes.rolling(self.lookback).std().dropna()
         std = float(std_series.iloc[-1])
         window = min(len(std_series), self.lookback * 5)
+        symbol = bar.get("symbol", "")
         if window >= self.lookback and std > 0.0:
-            mult_quant = float(
-                std_series.rolling(window).quantile(self._mult_quantile).iloc[-1]
+            rq_std = self._rq.get(
+                symbol,
+                "std",
+                window=self.lookback * 5,
+                q=self._mult_quantile,
+                min_periods=self.lookback,
             )
+            mult_quant = float(rq_std.update(std))
             self.mult = mult_quant / std
         else:
             self.mult = 1.0
@@ -66,15 +74,22 @@ class BreakoutVol(Strategy):
         vol_bps = vol * 10000
         window = min(len(vol_series), self.lookback * 5)
         if window >= self.lookback * 2:
-            vol_quant = float(
-                vol_series.rolling(window).quantile(self._vol_quantile).iloc[-1]
+            rq_vol = self._rq.get(
+                symbol,
+                "vol", 
+                window=self.lookback * 5,
+                q=self._vol_quantile,
+                min_periods=self.lookback * 2,
             )
-            vol_bps_quant = float(
-                (vol_series * 10000)
-                .rolling(window)
-                .quantile(self._vol_quantile)
-                .iloc[-1]
+            vol_quant = float(rq_vol.update(vol))
+            rq_vol_bps = self._rq.get(
+                symbol,
+                "vol_bps",
+                window=self.lookback * 5,
+                q=self._vol_quantile,
+                min_periods=self.lookback * 2,
             )
+            vol_bps_quant = float(rq_vol_bps.update(vol_bps))
             self.min_volatility = vol_bps_quant
             if vol < vol_quant or vol_bps < vol_bps_quant:
                 return None
