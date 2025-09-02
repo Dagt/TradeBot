@@ -160,6 +160,12 @@ E2E_LATENCY = Histogram(
     "End-to-end order processing latency in seconds",
 )
 
+# Latency from signal generation to order confirmation
+SIGNAL_CONFIRM_LATENCY = Histogram(
+    "signal_confirmation_latency_seconds",
+    "Latency from signal generation to order confirmation in seconds",
+)
+
 # Order book persistence failures
 ORDERBOOK_INSERT_FAILURES = Counter(
     "orderbook_insert_failures_total",

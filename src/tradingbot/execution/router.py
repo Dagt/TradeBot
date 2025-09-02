@@ -17,6 +17,7 @@ from ..utils.metrics import (
     MAKER_TAKER_RATIO,
     FILL_COUNT,
     QUEUE_POSITION,
+    SIGNAL_CONFIRM_LATENCY,
 )
 from ..storage import timescale
 from ..utils.logging import get_logger
@@ -71,6 +72,38 @@ class ExecutionRouter:
         self.risk_service = risk_service
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
+
+    # ------------------------------------------------------------------
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        type_: str,
+        qty: float,
+        price: float | None = None,
+        *,
+        post_only: bool = False,
+        time_in_force: str | None = None,
+        reduce_only: bool = False,
+        signal_ts: float | None = None,
+        **kwargs,
+    ) -> dict:
+        """Build an :class:`Order` and forward to :meth:`execute`."""
+
+        order = Order(
+            symbol=symbol,
+            side=side,
+            type_=type_,
+            qty=qty,
+            price=price,
+            post_only=post_only,
+            time_in_force=time_in_force,
+            iceberg_qty=kwargs.get("iceberg_qty"),
+            reduce_only=reduce_only,
+            reason=kwargs.get("reason"),
+            slip_bps=kwargs.get("slip_bps"),
+        )
+        return await self.execute(order, signal_ts=signal_ts, **kwargs)
 
     # ------------------------------------------------------------------
     def _is_maker(self, order: Order) -> bool:
@@ -139,6 +172,7 @@ class ExecutionRouter:
         *,
         fill_mode: str = "close",
         slip_bps: float = 0.0,
+        signal_ts: float | None = None,
         **algo_kwargs,
     ) -> dict | list[dict]:
         """Execute an order using optional execution algorithms.
@@ -182,7 +216,7 @@ class ExecutionRouter:
 
             results: List[dict] = []
             for i, child in enumerate(children):
-                res = await self.execute(child)
+                res = await self.execute(child, signal_ts=signal_ts)
                 results.append(res)
                 if delay and i < len(children) - 1:
                     await asyncio.sleep(delay)
@@ -369,6 +403,8 @@ class ExecutionRouter:
             res.get("trade_id"),
             res.get("reason"),
         )
+        if signal_ts is not None:
+            SIGNAL_CONFIRM_LATENCY.observe(time.time() - signal_ts)
         if self.risk_service is not None:
             filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
             pending = float(res.get("pending_qty", 0.0))

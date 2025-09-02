@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Dict, Callable, Tuple, Type, List, Any
+import time
 
 import pandas as pd
 
@@ -152,6 +153,7 @@ async def _run_symbol(
         sig = strat.on_bar(bar)
         if sig is None:
             continue
+        signal_ts = getattr(sig, "signal_ts", time.time())
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
@@ -181,6 +183,7 @@ async def _run_symbol(
             tif=tif,
             on_partial_fill=lambda *_: "re_quote",
             on_order_expiry=lambda *_: "re_quote",
+            signal_ts=signal_ts,
         )
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))

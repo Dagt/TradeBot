@@ -37,6 +37,15 @@ groups:
           summary: High end-to-end latency
           description: 95th percentile E2E latency above 2s for 5m
 
+      - alert: HighSignalLatency
+        expr: histogram_quantile(0.95, sum(rate(signal_confirmation_latency_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High signal confirmation latency
+          description: 95th percentile signal confirmation latency above 1s for 5m
+
       - alert: WebsocketDisconnects
         expr: increase(ws_failures_total[5m]) > 0
         for: 5m
