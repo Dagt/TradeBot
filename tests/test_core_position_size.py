@@ -102,3 +102,30 @@ def test_check_global_exposure_enforces_limit():
     rm = CoreRiskManager(account)
     assert rm.check_global_exposure("BTC", 700.0)
     assert not rm.check_global_exposure("BTC", 900.0)
+
+
+def test_calc_position_size_adjusts_with_atr():
+    """Higher ATR should reduce position size and lower ATR should increase it."""
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account, risk_per_trade=0.1, risk_pct=0.02)
+    price = 100.0
+    base = rm.calc_position_size(1.0, price)
+
+    high_atr = rm.calc_position_size(1.0, price, volatility=4.0, target_volatility=2.0)
+    low_atr = rm.calc_position_size(1.0, price, volatility=1.0, target_volatility=2.0)
+
+    assert high_atr < base
+    assert low_atr > base
+
+
+def test_effective_risk_pct_varies_with_std():
+    """Effective risk pct should shrink/grow with volatility changes."""
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account, risk_pct=0.02)
+    base = rm.risk_pct
+
+    high_std = rm.effective_risk_pct(0.04, 0.02)
+    low_std = rm.effective_risk_pct(0.01, 0.02)
+
+    assert high_std < base
+    assert low_std > base

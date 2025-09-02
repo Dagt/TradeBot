@@ -64,19 +64,38 @@ class RiskManager:
     risk_pct: float = 0.01
 
     # ------------------------------------------------------------------
+    # Volatility adjustment
+    def effective_risk_pct(self, current_volatility: float, target_volatility: float) -> float:
+        """Return volatility-adjusted risk percentage.
+
+        The adjustment scales :attr:`risk_pct` by the ratio of ``target_volatility``
+        to ``current_volatility``.  When the market is more volatile than our
+        target the effective risk is reduced, otherwise it is increased.
+        """
+
+        if current_volatility <= 0:
+            return self.risk_pct
+        return self.risk_pct * float(target_volatility) / float(current_volatility)
+
+    # ------------------------------------------------------------------
     # Position sizing
     def calc_position_size(
         self,
         signal_strength: float,
         price: float,
         risk_per_trade: float | None = None,
+        volatility: float | None = None,
+        target_volatility: float | None = None,
     ) -> float:
         """Return position size given ``signal_strength`` and ``price``.
 
         ``signal_strength`` is expected to be in the ``[0, 1]`` range and
         linearly scales the capital fraction used.  A ``signal_strength`` of
         ``1`` risks the full ``risk_per_trade`` portion of available balance,
-        while ``0.5`` uses half of it.  The method does **not** clamp the
+        while ``0.5`` uses half of it.  When ``volatility`` and
+        ``target_volatility`` are provided the allocated capital is further
+        scaled by the ratio of the target to current volatility so the position
+        size adapts to market conditions.  The method does **not** clamp the
         signal so callers can experiment with their own conventions.
 
         Parameters
@@ -88,11 +107,19 @@ class RiskManager:
         risk_per_trade:
             Optional override for the fraction of balance to risk.  If ``None``
             (default) the manager's ``risk_per_trade`` attribute is used.
+        volatility:
+            Current volatility measure (e.g. ATR or standard deviation).
+        target_volatility:
+            Desired volatility level.  Position sizes are scaled by
+            ``target_volatility / volatility`` when both values are supplied.
         """
 
         balance = float(self.account.get_available_balance())
         rpt = self.risk_per_trade if risk_per_trade is None else float(risk_per_trade)
         alloc = balance * rpt * float(signal_strength)
+        if volatility is not None and target_volatility is not None and volatility > 0:
+            scale = self.effective_risk_pct(volatility, target_volatility) / self.risk_pct
+            alloc *= scale
         if price <= 0:
             return 0.0
         size = alloc / float(price)
