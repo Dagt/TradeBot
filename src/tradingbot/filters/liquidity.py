@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from collections import defaultdict, deque
 
 from ..config.hydra_conf import load_config
 
@@ -116,8 +117,54 @@ def _load_default_filter() -> LiquidityFilter:
 
 _default_filter = _load_default_filter()
 
+# Historical metrics per (symbol, timeframe)
+_history: dict[tuple[str, str], dict[str, deque[float]]] = defaultdict(
+    lambda: {"spread": deque(maxlen=1000), "volume": deque(maxlen=1000), "volatility": deque(maxlen=1000)}
+)
+# Cached filters per (symbol, timeframe)
+_filters: dict[tuple[str, str], LiquidityFilter] = {}
 
-def passes(bar: dict[str, Any], filt: LiquidityFilter | None = None) -> bool:
+
+def _update_metrics(symbol: str, timeframe: str, bar: dict[str, Any]) -> LiquidityFilter:
+    """Record metrics for ``symbol``/``timeframe`` and recompute thresholds."""
+
+    hist = _history[(symbol, timeframe)]
+
+    spread = bar.get("spread")
+    if spread is None and {"ask", "bid"} <= bar.keys():
+        spread = float(bar["ask"]) - float(bar["bid"])
+    if spread is not None:
+        hist["spread"].append(float(spread))
+
+    volume = bar.get("volume")
+    if volume is not None:
+        hist["volume"].append(float(volume))
+
+    vol = bar.get("volatility")
+    if vol is None:
+        window = bar.get("window")
+        if isinstance(window, pd.DataFrame) and "close" in window.columns and len(window) > 1:
+            vol = window["close"].pct_change().dropna().std()
+    if vol is not None:
+        hist["volatility"].append(float(vol))
+
+    filt = _filters.get((symbol, timeframe), LiquidityFilter())
+    if hist["spread"]:
+        filt.max_spread = float(pd.Series(hist["spread"]).quantile(0.95))
+    if hist["volume"]:
+        filt.min_volume = float(pd.Series(hist["volume"]).quantile(0.05))
+    if hist["volatility"]:
+        filt.max_volatility = float(pd.Series(hist["volatility"]).quantile(0.95))
+
+    _filters[(symbol, timeframe)] = filt
+    return filt
+
+
+def passes(
+    bar: dict[str, Any],
+    timeframe: str | None = None,
+    filt: LiquidityFilter | None = None,
+) -> bool:
     """Return ``True`` if ``bar`` passes liquidity checks.
 
     Parameters
@@ -125,9 +172,23 @@ def passes(bar: dict[str, Any], filt: LiquidityFilter | None = None) -> bool:
     bar:
         Market data bar containing metrics like ``bid``, ``ask``, ``volume``
         or a pandas ``DataFrame`` under the ``window`` key.
+    timeframe:
+        Optional timeframe string.  When provided along with a ``symbol`` in
+        ``bar``, historical metrics are tracked separately for each
+        ``(symbol, timeframe)`` combination.
     filt:
-        Optional :class:`LiquidityFilter` instance.  If ``None``, the
-        module's default filter configured via ``config.yaml`` is used.
+        Optional :class:`LiquidityFilter` instance.  If provided it takes
+        precedence over the cached filters.
     """
 
-    return (filt or _default_filter).check(bar)
+    if filt is not None:
+        return filt.check(bar)
+
+    symbol = bar.get("symbol")
+    tf = timeframe or bar.get("timeframe")
+    if symbol and tf:
+        filt = _update_metrics(symbol, tf, bar)
+    else:
+        filt = _default_filter
+
+    return filt.check(bar)

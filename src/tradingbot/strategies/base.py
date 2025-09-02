@@ -171,7 +171,7 @@ def record_signal_metrics(fn):
     """
 
     def wrapper(self: Strategy, bar: dict[str, Any]) -> Signal | None:  # type: ignore[misc]
-        if not liquidity_passes(bar):
+        if not liquidity_passes(bar, bar.get("timeframe")):
             return None
         start = time.monotonic()
         sig = fn(self, bar)
