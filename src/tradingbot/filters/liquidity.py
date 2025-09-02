@@ -13,6 +13,7 @@ check for that metric is skipped.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -53,14 +54,56 @@ class LiquidityFilter:
 
 
 def _load_default_filter() -> LiquidityFilter:
+    """Load thresholds from config or infer them from recent market data.
+
+    When the user does not provide explicit thresholds in ``config.yaml`` the
+    function falls back to estimating sensible defaults from the most recent
+    ``N`` bars of the dataset.  This keeps the behaviour transparent to the
+    caller while still enforcing liquidity constraints.
+    """
+
     cfg = load_config()
     filt_cfg = getattr(cfg, "filters", None)
-    if filt_cfg is None:
-        return LiquidityFilter()
+
+    # Start with any explicitly configured thresholds
+    max_spread = float(getattr(filt_cfg, "max_spread", float("inf")))
+    min_volume = float(getattr(filt_cfg, "min_volume", 0.0))
+    max_volatility = float(getattr(filt_cfg, "max_volatility", float("inf")))
+
+    # If some thresholds are missing, estimate them from the latest bars
+    if (
+        max_spread == float("inf")
+        or min_volume == 0.0
+        or max_volatility == float("inf")
+    ):
+        bt_cfg = getattr(cfg, "backtest", None)
+        data_path = getattr(bt_cfg, "data", None) if bt_cfg else None
+        window = int(getattr(bt_cfg, "window", 0)) if bt_cfg else 0
+        try:
+            df = pd.read_csv(Path(data_path)) if data_path else pd.DataFrame()
+            if window:
+                df = df.tail(window)
+        except Exception:  # pragma: no cover - best effort to load data
+            df = pd.DataFrame()
+
+        if max_spread == float("inf") and "spread" in df.columns:
+            # upper bound roughly twice the typical spread
+            max_spread = 2 * float(df["spread"].median())
+        if min_volume == 0.0 and "volume" in df.columns:
+            # require at least median traded volume
+            min_volume = float(df["volume"].median())
+        if max_volatility == float("inf"):
+            if "volatility" in df.columns:
+                max_volatility = 2 * float(df["volatility"].median())
+            elif {"close"} <= set(df.columns) and len(df) > 1:
+                returns = df["close"].pct_change().dropna()
+                if not returns.empty:
+                    max_volatility = 2 * float(returns.std())
+
     return LiquidityFilter(
-        max_spread=float(getattr(filt_cfg, "max_spread", float("inf"))),
-        min_volume=float(getattr(filt_cfg, "min_volume", 0.0)),
-        max_volatility=float(getattr(filt_cfg, "max_volatility", float("inf"))),
+        max_spread=max_spread,
+        min_volume=min_volume,
+        max_volatility=max_volatility,
     )
 
 

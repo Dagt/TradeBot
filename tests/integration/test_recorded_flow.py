@@ -68,5 +68,5 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     final_price = df["close"].iloc[-1]
     expected_equity = cash + base * final_price
     assert result["equity"] == pytest.approx(expected_equity)
-    assert result["equity"] == pytest.approx(103.86715654853998)
-    assert result["pnl"] == pytest.approx(3.367156548539981)
+    assert result["equity"] == pytest.approx(104.07283406244801)
+    assert result["pnl"] == pytest.approx(3.5728340624480097)
