@@ -162,7 +162,8 @@ async def run_paper(
             df = agg.last_n_bars_df(200)
             if len(df) < 140:
                 continue
-            signal = strat.on_bar({"window": df, "symbol": symbol})
+            bar = {"window": df, "symbol": symbol}
+            signal = strat.on_bar(bar)
             if signal is None:
                 continue
             allowed, _reason, delta = risk.check_order(
@@ -170,6 +171,8 @@ async def run_paper(
                 signal.side,
                 closed.c,
                 strength=signal.strength,
+                volatility=bar.get("atr") or bar.get("volatility"),
+                target_volatility=bar.get("target_volatility"),
             )
             if not allowed or abs(delta) <= 0:
                 continue
