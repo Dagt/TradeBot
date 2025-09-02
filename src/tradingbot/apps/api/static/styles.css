@@ -575,3 +575,10 @@ button.icon-btn.warn:hover {
 .dropdown.open .dropdown-content {
   display: block;
 }
+
+#field-toggle-params span,
+#field-fills-csv span {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}

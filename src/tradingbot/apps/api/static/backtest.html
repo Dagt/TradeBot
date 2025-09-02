@@ -88,9 +88,15 @@
         <label for="bt-slippage-bps">Slippage (bps)</label>
         <input id="bt-slippage-bps" type="number" step="any" placeholder="1"/>
       </div>
-      <div id="field-fills-csv" style="display:flex;align-items:center;gap:4px">
-        <label><input type="checkbox" id="bt-fills-csv"> Exportar fills a CSV</label>
-      </div>
+      <div id="field-fills-csv" style="display:flex;align-items:center;gap:8px">
+  <span>Exportar fills a CSV</span>
+  <label class="switch">
+    <input type="checkbox" id="bt-fills-csv">
+    <span class="slider"></span>
+  </label>
+</div>
+
+
 
       <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
         <span>Configurar parámetros</span>
