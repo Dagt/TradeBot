@@ -13,17 +13,17 @@ from tradingbot.data.features import keltner_channels, atr
 
 
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0)
+    strat = BreakoutATR(ema_n=2, atr_n=2)
 
-    upper, lower = keltner_channels(breakout_df_buy, 2, 2, 1.0)
-    atr_buy = atr(breakout_df_buy, 2).dropna().iloc[-1]
     sig_buy = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    atr_buy = atr(breakout_df_buy, 2).dropna().iloc[-1]
+    upper, lower = keltner_channels(breakout_df_buy, 2, 2, strat.mult)
     assert sig_buy.side == "buy"
     assert sig_buy.limit_price == pytest.approx(upper.iloc[-1] + 0.1 * atr_buy)
 
-    upper, lower = keltner_channels(breakout_df_sell, 2, 2, 1.0)
-    atr_sell = atr(breakout_df_sell, 2).dropna().iloc[-1]
     sig_sell = strat.on_bar({"window": breakout_df_sell, "volatility": 0.0})
+    atr_sell = atr(breakout_df_sell, 2).dropna().iloc[-1]
+    upper, lower = keltner_channels(breakout_df_sell, 2, 2, strat.mult)
     assert sig_sell.side == "sell"
     assert sig_sell.limit_price == pytest.approx(lower.iloc[-1] - 0.1 * atr_sell)
 
@@ -39,7 +39,7 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0, **{"risk_service": svc})
+    strat = BreakoutATR(ema_n=2, atr_n=2, **{"risk_service": svc})
     sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
     trade = strat.trade
@@ -127,7 +127,7 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = BreakoutVol(lookback=2, mult=0.5, **{"risk_service": svc})
+    strat = BreakoutVol(lookback=2, **{"risk_service": svc})
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
     assert sig.limit_price == pytest.approx(df_buy["close"].iloc[-1])
