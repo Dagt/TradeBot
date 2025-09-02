@@ -69,6 +69,8 @@ def _load_default_filter() -> LiquidityFilter:
     max_spread = float(getattr(filt_cfg, "max_spread", float("inf")))
     min_volume = float(getattr(filt_cfg, "min_volume", 0.0))
     max_volatility = float(getattr(filt_cfg, "max_volatility", float("inf")))
+    volume_quantile = float(getattr(filt_cfg, "volume_quantile", 0.5))
+    spread_quantile = float(getattr(filt_cfg, "spread_quantile", 0.5))
 
     # If some thresholds are missing, estimate them from the latest bars
     if (
@@ -87,11 +89,11 @@ def _load_default_filter() -> LiquidityFilter:
             df = pd.DataFrame()
 
         if max_spread == float("inf") and "spread" in df.columns:
-            # upper bound roughly twice the typical spread
-            max_spread = 2 * float(df["spread"].median())
+            # accept trades only when spreads are below the chosen quantile
+            max_spread = float(df["spread"].quantile(spread_quantile))
         if min_volume == 0.0 and "volume" in df.columns:
-            # require at least median traded volume
-            min_volume = float(df["volume"].median())
+            # require volumes above the selected percentile
+            min_volume = float(df["volume"].quantile(volume_quantile))
         if max_volatility == float("inf"):
             if "volatility" in df.columns:
                 max_volatility = 2 * float(df["volatility"].median())

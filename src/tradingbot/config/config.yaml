@@ -35,6 +35,8 @@ filters:
   max_spread: 0.5
   min_volume: 1000.0
   max_volatility: 0.05
+  volume_quantile: 0.5
+  spread_quantile: 0.5
 
 execution:
   limit_offset_ticks: 1.0
