@@ -540,7 +540,7 @@ class EventDrivenBacktestEngine:
                         decision = svc.manage_position(trade)
                         if decision in {"scale_in", "scale_out"}:
                             target = svc.calc_position_size(
-                                trade.get("strength", 1.0), price
+                                trade.get("strength", 1.0), price, clamp=False
                             )
                             delta_qty = target - abs(pos_qty)
                             if abs(delta_qty) > self.min_order_qty:
@@ -1044,7 +1044,7 @@ class EventDrivenBacktestEngine:
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
-                            target = svc.calc_position_size(sig.strength, place_price)
+                            target = svc.calc_position_size(sig.strength, place_price, clamp=False)
                             delta_qty = target - abs(pos_qty)
                         else:
                             continue

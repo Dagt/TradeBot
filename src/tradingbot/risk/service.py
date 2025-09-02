@@ -326,12 +326,14 @@ class RiskService:
         *,
         volatility: float | None = None,
         target_volatility: float | None = None,
+        clamp: bool = True,
     ) -> float:
         return self.rm.calc_position_size(
             signal_strength,
             price,
             volatility=volatility,
             target_volatility=target_volatility,
+            clamp=clamp,
         )
 
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
@@ -412,6 +414,7 @@ class RiskService:
             price,
             volatility=volatility,
             target_volatility=target_volatility,
+            clamp=False,
         )
         delta = unsigned if side.lower() == "buy" else -unsigned
 
