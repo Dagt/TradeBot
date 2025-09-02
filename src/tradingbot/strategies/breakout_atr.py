@@ -15,7 +15,10 @@ class BreakoutATR(Strategy):
 
     El umbral de volatilidad se calcula como un percentil reciente del ATR,
     por lo que el usuario no necesita ajustar parámetros adicionales para
-    filtrar períodos de baja volatilidad.
+    filtrar períodos de baja volatilidad. Las órdenes límite aplican un
+    pequeño offset basado en el ATR y lo incrementan de forma progresiva si
+    la orden expira sin ejecutarse, buscando mejorar la tasa de ejecución
+    sin requerir parámetros adicionales.
     """
 
     name = "breakout_atr"
@@ -78,7 +81,14 @@ class BreakoutATR(Strategy):
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        sig.limit_price = level
+        offset = 0.1 * atr_val
+        sig.limit_price = level + offset if side == "buy" else level - offset
+
+        symbol = bar.get("symbol")
+        if symbol:
+            if not hasattr(self, "_last_atr"):
+                self._last_atr: dict[str, float] = {}
+            self._last_atr[symbol] = atr_val
 
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)

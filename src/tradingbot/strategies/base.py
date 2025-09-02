@@ -71,7 +71,18 @@ class Strategy(ABC):
         self.pending_qty[order.symbol] = pending
         if pending <= 0:
             return None
-        return "re_quote" if self._edge_still_exists(order) else None
+        if not self._edge_still_exists(order):
+            return None
+
+        atr_map = getattr(self, "_last_atr", {})
+        atr_val = atr_map.get(order.symbol)
+        if atr_val:
+            offset = 0.1 * atr_val
+            if order.side == "buy":
+                order.price = (order.price or 0.0) + offset
+            else:
+                order.price = (order.price or 0.0) - offset
+        return "re_quote"
 
     # ------------------------------------------------------------------
     def finalize_signal(

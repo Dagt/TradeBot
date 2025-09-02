@@ -29,7 +29,10 @@ Parámetros clave:
 - `mult`: multiplicador aplicado al ATR.
 
 El filtro de volatilidad se autocalibra a partir de percentiles recientes del
-ATR, por lo que no requiere configuración manual.
+ATR, por lo que no requiere configuración manual. Las órdenes límite aplican un
+pequeño offset proporcional al ATR y lo incrementan cada vez que se re‑cotiza
+una orden expirada. Este comportamiento busca incrementar la tasa de ejecución
+sin requerir parámetros adicionales.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.
