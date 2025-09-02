@@ -563,12 +563,13 @@ class EventDrivenBacktestEngine:
                     continue
                 vol_key = "ask_size" if order.side == "buy" else "bid_size"
                 vol_arr = arrs.get(vol_key)
-                avail = (
-                    float(vol_arr[i]) if vol_arr is not None else order.remaining_qty
-                )
                 if self.use_l2:
+                    avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                     depth = self.exchange_depth.get(order.exchange, self.default_depth)
                     order.queue_pos = min(order.queue_pos + avail, depth)
+                else:
+                    avail = order.remaining_qty
+                    order.queue_pos = 0.0
                 if "bid" in arrs and "ask" in arrs:
                     market_price = float(
                         arrs["ask"][i] if order.side == "buy" else arrs["bid"][i]
