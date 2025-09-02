@@ -6,7 +6,9 @@ from tradingbot.execution.slippage import impact_by_depth, queue_position
 from tradingbot.utils.metrics import SLIPPAGE
 from tradingbot.backtesting.engine import SlippageModel
 from tradingbot.data.features import calc_ofi
+from tradingbot.config import settings
 import pandas as pd
+import time
 
 
 class MockAdapter:
@@ -127,6 +129,53 @@ async def test_est_slippage_and_queue_paths():
     assert res_maker["queue_position"] == pytest.approx(0.8, rel=1e-3)
 
 
+@pytest.mark.asyncio
+async def test_best_venue_slippage_factor():
+    ts = time.time()
+    ob1 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0), (101.0, 1.0)], "ts": ts}}
+    ob2 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 2.0)], "ts": ts}}
+    a1 = MockAdapter("a1", order_book=ob1)
+    a2 = MockAdapter("a2", order_book=ob2)
+    router = ExecutionRouter([a1, a2], prefer="taker")
+    order = Order(symbol="XYZ", side="buy", type_="market", qty=1.5)
+    selected = await router.best_venue(order)
+    assert selected is a2
+
+
+@pytest.mark.asyncio
+async def test_best_venue_queue_factor():
+    ts = time.time()
+    ob1 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(101.0, 1.0)], "ts": ts}}
+    ob2 = {"XYZ": {"bids": [(99.0, 2.0)], "asks": [(101.0, 1.0)], "ts": ts}}
+    a1 = MockAdapter("a1", order_book=ob1, maker_fee_bps=0.0)
+    a2 = MockAdapter("a2", order_book=ob2, maker_fee_bps=0.0)
+    router = ExecutionRouter([a1, a2], prefer="maker")
+    order = Order(
+        symbol="XYZ",
+        side="sell",
+        type_="limit",
+        qty=0.5,
+        price=99.0,
+        post_only=True,
+    )
+    selected = await router.best_venue(order)
+    assert selected is a1
+
+
+@pytest.mark.asyncio
+async def test_best_venue_skips_stale_book(monkeypatch):
+    ts = time.time()
+    ob1 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)], "ts": ts - 10}}
+    ob2 = {"XYZ": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)], "ts": ts}}
+    a1 = MockAdapter("a1", order_book=ob1)
+    a2 = MockAdapter("a2", order_book=ob2)
+    monkeypatch.setattr(settings, "router_max_book_age_ms", 1000.0)
+    router = ExecutionRouter([a1, a2], prefer="taker")
+    order = Order(symbol="XYZ", side="buy", type_="market", qty=0.5)
+    selected = await router.best_venue(order)
+    assert selected is a2
+
+
 def test_slippage_model_ofi_impact():
     df = pd.DataFrame(
         {
@@ -139,7 +188,7 @@ def test_slippage_model_ofi_impact():
     )
     df["order_flow_imbalance"] = calc_ofi(df[["bid_qty", "ask_qty"]])
     bar = df.iloc[1]
-    model = SlippageModel(volume_impact=0.0, spread_mult=0.0, ofi_impact=0.5)
+    model = SlippageModel(volume_impact=0.0, spread_mult=0.0, ofi_impact=0.5, pct=0.0)
     price = 100.0
     adj_buy = model.adjust("buy", 1.0, price, bar)
     adj_sell = model.adjust("sell", 1.0, price, bar)
@@ -150,25 +199,25 @@ def test_slippage_model_ofi_impact():
 def test_slippage_model_sources():
     bar = {"bid": 100.0, "ask": 100.2, "volume": 1000.0}
     price = 100.0
-    model_bba = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.05)
+    model_bba = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.05, pct=0.0)
     adj_bba = model_bba.adjust("buy", 1.0, price, bar)
     assert adj_bba == pytest.approx(100.1, rel=1e-9)
 
     bar_missing = {"volume": 1000.0}
     model_fallback = SlippageModel(
-        volume_impact=0.0, source="bba", base_spread=0.3
+        volume_impact=0.0, source="bba", base_spread=0.3, pct=0.0
     )
     adj_fallback = model_fallback.adjust("buy", 1.0, price, bar_missing)
     assert adj_fallback == pytest.approx(100.15, rel=1e-9)
 
     model_fixed = SlippageModel(
-        volume_impact=0.0, source="fixed_spread", base_spread=0.4
+        volume_impact=0.0, source="fixed_spread", base_spread=0.4, pct=0.0
     )
     adj_fixed = model_fixed.adjust("sell", 1.0, price, bar)
     assert adj_fixed == pytest.approx(99.8, rel=1e-9)
 
     bar_nan = {"bid": float("nan"), "ask": float("nan"), "volume": 1000.0}
-    model_nan = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.3)
+    model_nan = SlippageModel(volume_impact=0.0, source="bba", base_spread=0.3, pct=0.0)
     adj_nan = model_nan.adjust("sell", 1.0, price, bar_nan)
     assert adj_nan == pytest.approx(99.85, rel=1e-9)
 

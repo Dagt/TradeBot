@@ -85,12 +85,20 @@ class ExecutionRouter:
 
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
-        """Select venue based on spread, fees and latency."""
+        """Select venue based on spread, fees, latency and slippage estimates."""
         maker_pref = self._is_maker(order)
 
         def venue_score(adapter) -> tuple[float, bool] | None:
             state = getattr(adapter, "state", None)
             book = getattr(state, "order_book", {}).get(order.symbol) if state else None
+            ts = None
+            if book:
+                ts = book.get("ts") or book.get("timestamp")
+                if ts is not None:
+                    ts_val = ts.timestamp() if hasattr(ts, "timestamp") else float(ts)
+                    age_ms = (time.time() - ts_val) * 1000.0
+                    if age_ms > settings.router_max_book_age_ms:
+                        return None
             last = getattr(state, "last_px", {}).get(order.symbol) if state else None
             if book and book.get("bids") and book.get("asks"):
                 bid = book["bids"][0][0]
@@ -111,7 +119,24 @@ class ExecutionRouter:
             fee = price * fee_bps / 10000.0
             latency = getattr(adapter, "latency", 0.0)
             direction = 1 if order.side == "buy" else -1
-            score = direction * price + fee + spread / 2 + latency * 1e-6
+            levels = (
+                book["bids"] if maker and order.side == "buy"
+                else book["asks"] if maker and order.side == "sell"
+                else book["asks"] if order.side == "buy"
+                else book["bids"]
+            ) if book else []
+            slip_bps = impact_by_depth(order.side, order.qty, levels) if not maker else None
+            slip_px = price * (slip_bps or 0.0) / 10000.0
+            queue_pos = queue_position(order.qty, levels) if maker else 0.0
+
+            score = (
+                settings.router_price_weight * direction * price
+                + settings.router_fee_weight * fee
+                + settings.router_spread_weight * spread / 2
+                + settings.router_latency_weight * latency
+                + settings.router_slippage_weight * direction * slip_px
+                + settings.router_queue_weight * queue_pos
+            )
             return score, maker
 
         selected = None
