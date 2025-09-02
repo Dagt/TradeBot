@@ -57,13 +57,23 @@ class ExecutionRouter:
         else:  # single adapter
             self.adapters = {getattr(adapters, "name", "default"): adapters}
 
-        # Ensure adapters expose fee attributes for routing logic
+        # Ensure adapters expose fee attributes for routing logic and cache
+        # whether they support ``iceberg_qty`` to avoid repeated signature
+        # inspections during order execution
+        self._supports_iceberg_qty = {}
         for ad in self.adapters.values():
             if not hasattr(ad, "maker_fee_bps"):
                 setattr(ad, "maker_fee_bps", getattr(settings, f"{ad.name}_maker_fee_bps", 0.0))
             if not hasattr(ad, "taker_fee_bps"):
                 default = getattr(settings, f"{ad.name}_taker_fee_bps", getattr(ad, "maker_fee_bps", 0.0))
                 setattr(ad, "taker_fee_bps", default)
+
+            sig = inspect.signature(ad.place_order)
+            params = sig.parameters
+            self._supports_iceberg_qty[ad] = (
+                "iceberg_qty" in params
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            )
 
         self._maker_counts = defaultdict(int)
         self._taker_counts = defaultdict(int)
@@ -313,14 +323,8 @@ class ExecutionRouter:
             time_in_force=order.time_in_force,
             reduce_only=order.reduce_only,
         )
-        if order.iceberg_qty is not None:
-            sig = inspect.signature(adapter.place_order)
-            params = sig.parameters
-            if (
-                "iceberg_qty" in params
-                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-            ):
-                kwargs["iceberg_qty"] = order.iceberg_qty
+        if order.iceberg_qty is not None and self._supports_iceberg_qty.get(adapter):
+            kwargs["iceberg_qty"] = order.iceberg_qty
 
         try:
             res = await adapter.place_order(**kwargs)
