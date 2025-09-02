@@ -30,8 +30,8 @@ class ScalpPingPongConfig:
     z_threshold : float, optional
         Absolute z-score value required to open a trade, by default ``0.2``.
     volatility_factor : float, optional
-        Multiplier applied to recent volatility (in bps) to size positions,
-        default ``0.02``.
+        Fraction of the recent volatility (in bps or ATR) used to size
+        positions, default ``0.02``.
     min_volatility : float, optional
         Volatilidad mínima reciente en bps requerida para operar, por defecto ``0``.
     trend_ma : int, optional
@@ -70,12 +70,12 @@ class ScalpPingPong(Strategy):
         self.cfg = cfg or ScalpPingPongConfig(**params)
         self.risk_service = kwargs.get("risk_service")
 
-    def _calc_zscore(self, closes: pd.Series) -> float:
+    def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
         returns = closes.pct_change().dropna()
-        if len(returns) < self.cfg.lookback:
+        if len(returns) < lookback:
             return 0.0
-        mean = returns.rolling(self.cfg.lookback).mean().iloc[-1]
-        std = returns.rolling(self.cfg.lookback).std().iloc[-1]
+        mean = returns.rolling(lookback).mean().iloc[-1]
+        std = returns.rolling(lookback).std().iloc[-1]
         if std == 0 or pd.isna(std):
             return 0.0
         z = (returns.iloc[-1] - mean) / std
@@ -84,34 +84,42 @@ class ScalpPingPong(Strategy):
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < self.cfg.lookback + 1:
+        tf = int(bar.get("timeframe", 1)) or 1
+        lookback = max(1, int(self.cfg.lookback / tf))
+        trend_ma = max(1, int(self.cfg.trend_ma / tf))
+        trend_rsi_n = max(1, int(self.cfg.trend_rsi_n / tf))
+
+        if len(df) < lookback + 1:
             return None
         closes = df["close"]
         returns = closes.pct_change().dropna()
-        z = self._calc_zscore(closes)
+        z = self._calc_zscore(closes, lookback)
         price = float(closes.iloc[-1])
 
-        vol = (
-            returns.rolling(self.cfg.lookback).std().iloc[-1]
-            if len(returns) >= self.cfg.lookback
-            else 0.0
-        )
-        vol_bps = vol * 10000
+        if bar.get("atr") is not None and price != 0:
+            vol_bps = float(bar["atr"]) / abs(price) * 10000
+        else:
+            vol = (
+                returns.rolling(lookback).std().iloc[-1]
+                if len(returns) >= lookback
+                else 0.0
+            )
+            vol_bps = vol * 10000
         if vol_bps < self.cfg.min_volatility:
             return None
-        vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor))
+        vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor / 10000))
 
         trend_dir = 0
-        if len(closes) >= self.cfg.trend_ma:
-            ma = closes.rolling(self.cfg.trend_ma).mean().iloc[-1]
+        if len(closes) >= trend_ma:
+            ma = closes.rolling(trend_ma).mean().iloc[-1]
             if not pd.isna(ma) and ma != 0:
                 diff_pct = (price - ma) / ma * 100
                 if diff_pct > self.cfg.trend_threshold:
                     trend_dir = 1
                 elif diff_pct < -self.cfg.trend_threshold:
                     trend_dir = -1
-        elif len(closes) >= self.cfg.trend_rsi_n:
-            trsi = rsi(df, self.cfg.trend_rsi_n).iloc[-1]
+        elif len(closes) >= trend_rsi_n:
+            trsi = rsi(df, trend_rsi_n).iloc[-1]
             if trsi > 50 + self.cfg.trend_threshold:
                 trend_dir = 1
             elif trsi < 50 - self.cfg.trend_threshold:
