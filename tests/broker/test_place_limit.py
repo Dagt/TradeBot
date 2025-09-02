@@ -69,7 +69,10 @@ class ExpiringAdapter:
 
     async def place_order(self, *args, **kwargs):
         qty = args[3] if len(args) > 3 else kwargs.get("qty", 0.0)
-        self.calls.append({"qty": qty, **kwargs})
+        price = args[4] if len(args) > 4 else kwargs.get("price")
+        data = {"qty": qty, "price": price}
+        data.update(kwargs)
+        self.calls.append(data)
         if len(self.calls) == 1:
             return {"status": "new", "qty": 0.0, "order_id": 1}
         return {"status": "filled", "qty": qty, "order_id": 2}
@@ -134,6 +137,7 @@ async def test_place_limit_partial_fill_no_fallback():
 @pytest.mark.asyncio
 async def test_place_limit_expiry_respects_callback():
     strat = setup_strategy("buy")
+    strat._last_atr = {"BTC/USDT": 1.0}
     adapter = ExpiringAdapter()
     broker = Broker(adapter)
     await broker.place_limit(
@@ -146,6 +150,7 @@ async def test_place_limit_expiry_respects_callback():
     )
     assert len(adapter.calls) == 2
     assert strat.pending_qty["BTC/USDT"] == pytest.approx(1.0)
+    assert adapter.calls[1]["price"] == pytest.approx(90.1)
 
 
 @pytest.mark.asyncio

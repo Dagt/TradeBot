@@ -17,7 +17,10 @@ signal = {"side": "buy", "strength": 0.75, "limit_price": 100.5}
 
 Las estrategias pueden implementar callbacks `on_partial_fill` y
 `on_order_expiry` para decidir si re‑cotizar, cancelar o convertir el remanente
-en una orden de mercado cuando la ventaja desaparece.
+en una orden de mercado cuando la ventaja desaparece. Al re‑cotizar tras una
+expiración, el precio límite se ajusta internamente con un pequeño offset
+donde se suma aproximadamente el 10 % del ATR para mejorar la probabilidad de
+ejecución.
 
 ### Breakout con ATR (`breakout_atr`)
 Compra cuando el precio supera el canal superior calculado con el indicador

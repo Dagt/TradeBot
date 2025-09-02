@@ -62,7 +62,10 @@ class Strategy(ABC):
 
         Behaviour mirrors :meth:`on_partial_fill` where orders are
         re‑quoted only if the last signal still points in the same
-        direction.
+        direction.  Expired orders are re‑submitted at the previous
+        limit price plus a small ATR-based offset (≈0.1 × ATR) to
+        improve the fill probability.  The offset is calculated
+        internally and does not require additional parameters.
         """
 
         if not hasattr(self, "pending_qty"):
@@ -78,10 +81,14 @@ class Strategy(ABC):
         atr_val = atr_map.get(order.symbol)
         if atr_val:
             offset = 0.1 * atr_val
+            price = order.price if order.price is not None else res.get("price")
+            if price is None:
+                price = 0.0
             if order.side == "buy":
-                order.price = (order.price or 0.0) + offset
+                price += offset
             else:
-                order.price = (order.price or 0.0) - offset
+                price -= offset
+            order.price = price
         return "re_quote"
 
     # ------------------------------------------------------------------
