@@ -29,6 +29,11 @@ Parámetros clave:
 - `min_atr_bps`: exige un ATR relativo mínimo expresado en puntos básicos del
   precio.
 
+Esta estrategia añade automáticamente un offset interno de `±0.1 × ATR` al
+`limit_price` de cada señal y, si la orden expira sin ejecutarse, la recotiza
+con offsets crecientes. El objetivo es incrementar la tasa de ejecución sin
+introducir parámetros adicionales.
+
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.
 

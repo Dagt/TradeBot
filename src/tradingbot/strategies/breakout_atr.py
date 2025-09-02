@@ -60,7 +60,14 @@ class BreakoutATR(Strategy):
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        sig.limit_price = level
+        offset_step = 0.1 * atr_val
+        symbol = bar.get("symbol")
+        if symbol:
+            if not hasattr(self, "_limit_offset"):
+                self._limit_offset: dict[str, float] = {}
+            self._limit_offset[symbol] = offset_step
+        sign = 1 if side == "buy" else -1
+        sig.limit_price = level + sign * offset_step
 
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)

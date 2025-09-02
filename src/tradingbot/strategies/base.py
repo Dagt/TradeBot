@@ -71,7 +71,14 @@ class Strategy(ABC):
         self.pending_qty[order.symbol] = pending
         if pending <= 0:
             return None
-        return "re_quote" if self._edge_still_exists(order) else None
+        if not self._edge_still_exists(order):
+            return None
+        offsets = getattr(self, "_limit_offset", {})
+        step = offsets.get(order.symbol)
+        if step and order.price is not None:
+            sign = 1 if order.side == "buy" else -1
+            order.price += sign * step
+        return "re_quote"
 
     # ------------------------------------------------------------------
     def finalize_signal(

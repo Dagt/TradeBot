@@ -10,20 +10,25 @@ from tradingbot.risk.service import RiskService
 import pytest
 from hypothesis import given, strategies as st, settings
 from tradingbot.data.features import keltner_channels
+from tradingbot.data.features import atr
 
 
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
     strat = BreakoutATR(ema_n=2, atr_n=2, mult=1.0)
 
     upper, lower = keltner_channels(breakout_df_buy, 2, 2, 1.0)
-    sig_buy = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    atr_val = float(atr(breakout_df_buy, 2).iloc[-1])
+    sig_buy = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0, "symbol": "XYZ"})
     assert sig_buy.side == "buy"
-    assert sig_buy.limit_price == pytest.approx(upper.iloc[-1])
+    expected_buy = float(upper.iloc[-1]) + 0.1 * atr_val
+    assert sig_buy.limit_price == pytest.approx(expected_buy)
 
     upper, lower = keltner_channels(breakout_df_sell, 2, 2, 1.0)
-    sig_sell = strat.on_bar({"window": breakout_df_sell, "volatility": 0.0})
+    atr_val = float(atr(breakout_df_sell, 2).iloc[-1])
+    sig_sell = strat.on_bar({"window": breakout_df_sell, "volatility": 0.0, "symbol": "XYZ"})
     assert sig_sell.side == "sell"
-    assert sig_sell.limit_price == pytest.approx(lower.iloc[-1])
+    expected_sell = float(lower.iloc[-1]) - 0.1 * atr_val
+    assert sig_sell.limit_price == pytest.approx(expected_sell)
 
 
 def test_breakout_atr_min_atr_bps_filter(breakout_df_buy):
