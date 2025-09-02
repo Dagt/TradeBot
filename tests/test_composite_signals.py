@@ -18,9 +18,12 @@ class SellStrat(Strategy):
         return Signal("sell", 1.0)
 
 
-def _bar(price: float = 100.0):
-    df = pd.DataFrame({"close": [price]})
-    return {"window": df, "symbol": "BTCUSDT"}
+def _bar(price: float = 100.0, n: int = 1, timeframe: str | None = None):
+    df = pd.DataFrame({"close": [price] * n})
+    bar = {"window": df, "symbol": "BTCUSDT"}
+    if timeframe:
+        bar["timeframe"] = timeframe
+    return bar
 
 
 def test_no_consensus_returns_none():
@@ -52,3 +55,14 @@ def test_composite_signals_risk_closes_position():
     sig = cs.on_bar(_bar())
     assert rs.updated
     assert sig and sig.side == "sell" and sig.limit_price == 100.0
+
+
+def test_intraday_requires_longer_window():
+    cs = CompositeSignals([(BuyStrat, {}), (BuyStrat, {})])
+    assert cs.on_bar(_bar(n=5, timeframe="1m")) is None
+
+
+def test_intraday_secondary_weights():
+    cs = CompositeSignals([(BuyStrat, {}), (SellStrat, {})])
+    sig = cs.on_bar(_bar(n=20, timeframe="1m"))
+    assert sig is not None and sig.side == "buy"

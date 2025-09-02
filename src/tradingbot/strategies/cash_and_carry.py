@@ -75,13 +75,23 @@ class CashAndCarry(Strategy):
         funding = bar.get("funding")
         if spot is None or perp is None or funding is None:
             return None
+
+        # Ajustar la sensibilidad según el timeframe. Para marcos intradía
+        # (segundos, minutos u horas) reducimos a la mitad el umbral mínimo
+        # requerido antes de actuar, lo que permite reaccionar a bases más
+        # pequeñas.
+        threshold = self.cfg.threshold
+        tf = bar.get("timeframe")
+        if isinstance(tf, str) and tf.lower().endswith(("s", "m", "h")):
+            threshold *= 0.5
+
         basis = (perp - spot) / spot
-        if funding > 0 and basis > self.cfg.threshold:
+        if funding > 0 and basis > threshold:
             strength = min(1.0, basis)
             self._persist_signal(basis, spot, perp)
             sig = Signal("buy", strength)
             return self.finalize_signal(bar, spot, sig)
-        if funding < 0 and basis < -self.cfg.threshold:
+        if funding < 0 and basis < -threshold:
             strength = min(1.0, -basis)
             self._persist_signal(basis, spot, perp)
             sig = Signal("sell", strength)

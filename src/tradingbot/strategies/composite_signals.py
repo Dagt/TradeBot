@@ -33,15 +33,18 @@ class CompositeSignals(Strategy):
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
-        window = bar.get("window")
-        if window is None or "close" not in window:
-            return None
-        price = float(window["close"].iloc[-1])
-        buys = 0
-        sells = 0
         df = bar.get("window")
         if df is None:
             return None
+
+        tf = bar.get("timeframe")
+        intraday = isinstance(tf, str) and tf.lower().endswith(("s", "m", "h"))
+
+        # Requerir más historial para marcos intradía, ya que son más ruidosos.
+        min_window = 20 if intraday else 1
+        if len(df) < min_window:
+            return None
+
         col = (
             "close"
             if "close" in df.columns
@@ -50,22 +53,29 @@ class CompositeSignals(Strategy):
         if col is None:
             return None
         price = float(df[col].iloc[-1])
-        for strat in self.sub_strategies:
+
+        # En timeframes intradía las subestrategias secundarias pesan la mitad
+        # para mitigar el ruido. El primer elemento mantiene peso completo.
+        if intraday:
+            weights = [1.0] + [0.5] * (len(self.sub_strategies) - 1)
+        else:
+            weights = [1.0] * len(self.sub_strategies)
+
+        buys = 0.0
+        sells = 0.0
+        for strat, weight in zip(self.sub_strategies, weights):
             sig = strat.on_bar(bar)
             if sig is None:
                 continue
             if sig.side == "buy":
-                buys += 1
+                buys += weight
             elif sig.side == "sell":
-                sells += 1
+                sells += weight
 
+        total = sum(weights)
         result = None
-        if buys >= 2 and buys > sells:
+        if buys >= total / 2 and buys > sells:
             result = Signal("buy", 1.0)
-        elif sells >= 2 and sells > buys:
-            result = Signal("sell", 1.0)
-        elif buys > len(self.sub_strategies) / 2:
-            result = Signal("buy", 1.0)
-        elif sells > len(self.sub_strategies) / 2:
+        elif sells >= total / 2 and sells > buys:
             result = Signal("sell", 1.0)
         return self.finalize_signal(bar, price, result)

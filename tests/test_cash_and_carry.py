@@ -42,6 +42,16 @@ def test_cash_and_carry_strategy():
     assert sig_flat and sig_flat.side == "flat"
 
 
+def test_cash_and_carry_intraday_threshold():
+    cfg = CashCarryConfig(symbol="BTCUSDT", threshold=0.01)
+    strat = CashAndCarry(cfg)
+    bar = {"spot": 100.0, "perp": 101.0, "funding": 0.001, "timeframe": "1m"}
+    sig = strat.on_bar(bar)
+    assert sig and sig.side == "buy"
+    sig_no_tf = strat.on_bar({"spot": 100.0, "perp": 101.0, "funding": 0.001})
+    assert sig_no_tf and sig_no_tf.side == "flat"
+
+
 def test_cash_and_carry_risk_closes_position():
     class DummyRisk:
         updated = False
