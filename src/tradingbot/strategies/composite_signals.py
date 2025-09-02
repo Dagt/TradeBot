@@ -71,4 +71,4 @@ class CompositeSignals(Strategy):
 
         if result is not None:
             result.limit_price = price
-        return result
+        return self.finalize_signal(bar, price, result)
