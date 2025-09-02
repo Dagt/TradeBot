@@ -295,9 +295,7 @@ class EventDrivenBacktestEngine:
             self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
-            self.exchange_min_fill_qty[exch] = float(
-                cfg.get("min_fill_qty", self.min_fill_qty)
-            )
+            self.exchange_min_fill_qty[exch] = float(cfg.get("min_fill_qty", 0.0))
             market_type = cfg.get("market_type")
             if market_type is None:
                 if exch.endswith("_spot"):
