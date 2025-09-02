@@ -10,43 +10,9 @@
   @keyframes blink{0%,100%{opacity:.2;}50%{opacity:1;}}
   #bt-working{animation:blink 1s linear infinite;display:none;margin-left:8px;}
   </style>
+  <script src="/static/header.js" defer></script>
 </head>
 <body>
-<header class="center" style="margin-bottom:8px">
-  <div class="logo-wrap">
-  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
-</div>
-
-  <nav>
-  <div class="menu">
-    <a href="/" class="">Monitoreo</a>
-    <a href="/bots" class="">Bots</a>
-    <a href="/stats" class="">Estadísticas operativas</a>
-    <a href="/data" class="">Datos históricos</a>
-    <a href="/backtest" class="active">Backtest</a>
-    <div class="dropdown">
-      <a class="dropbtn" href="#">Herramientas</a>
-      <div class="dropdown-content">
-        <a href="http://localhost:3000/" target="_blank">Grafana</a>
-        <a href="http://localhost:9090/" target="_blank">Prometeus</a>
-        <a href="http://localhost:8081/" target="_blank">Adminer</a>
-        <a href="http://localhost:9093/" target="_blank">AlertManager</a>
-        <!-- Agregar aquí otros enlaces necesarios -->
-      </div>
-    </div>
-  </div>
-</nav>
-
-<script>
-document.querySelectorAll('.dropdown .dropbtn').forEach(btn => {
-  btn.addEventListener('click', function(e){
-    e.preventDefault();
-    this.parentElement.classList.toggle('open');
-  });
-});
-</script>
-
-</header>
   <h1>Backtest</h1>
 
   <div class="card">
