@@ -6,6 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Deque, Dict, Optional
+import time
 
 import pandas as pd
 
@@ -255,6 +256,7 @@ async def run_live_binance(
         signal = strat.on_bar(bar)
         if signal is None:
             continue
+        signal_ts = getattr(signal, "signal_ts", time.time())
 
         pending = getattr(strat, "pending_qty", {}).get(symbol, 0.0)
         allowed, reason, delta = risk.check_order(
@@ -281,6 +283,7 @@ async def run_live_binance(
             abs(delta),
             on_partial_fill=strat.on_partial_fill,
             on_order_expiry=strat.on_order_expiry,
+            signal_ts=signal_ts,
         )
         fills += 1
         log.info("FILL live %s", resp)

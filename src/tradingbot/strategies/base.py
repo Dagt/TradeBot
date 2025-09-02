@@ -26,6 +26,7 @@ class Signal:
     strength: float = 1.0  # fraction of the base equity allocation
     reduce_only: bool = False
     limit_price: float | None = None
+    signal_ts: float | None = None
 
 class Strategy(ABC):
     name: str
@@ -175,6 +176,9 @@ def record_signal_metrics(fn):
             return None
         start = time.monotonic()
         sig = fn(self, bar)
+        gen_ts = time.time()
+        if sig is not None:
+            sig.signal_ts = gen_ts
         duration = time.monotonic() - start
         REQUEST_LATENCY.labels(method=self.name, endpoint="on_bar").observe(duration)
 

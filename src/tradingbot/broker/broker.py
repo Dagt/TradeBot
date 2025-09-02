@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Callable, Optional
 
 from ..config import settings
@@ -32,6 +33,7 @@ class Broker:
         tif: str = "GTC|PO",
         on_partial_fill: Optional[Callable[[Order, dict], str | None]] = None,
         on_order_expiry: Optional[Callable[[Order, dict], str | None]] = None,
+        signal_ts: float | None = None,
     ) -> dict:
         """Place a limit order respecting ``tif`` semantics.
 
@@ -100,15 +102,24 @@ class Broker:
 
         while remaining > 0 and attempts < max_attempts:
             attempts += 1
-            res = await self.adapter.place_order(
-                symbol,
-                side,
-                "limit",
-                remaining,
-                price,
+            kwargs = dict(
+                symbol=symbol,
+                side=side,
+                type_="limit",
+                qty=remaining,
+                price=price,
                 post_only=post_only,
                 time_in_force=time_in_force,
             )
+            if signal_ts is not None:
+                sig = inspect.signature(self.adapter.place_order)
+                params = sig.parameters
+                if (
+                    "signal_ts" in params
+                    or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+                ):
+                    kwargs["signal_ts"] = signal_ts
+            res = await self.adapter.place_order(**kwargs)
             qty_filled = float(
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
             )

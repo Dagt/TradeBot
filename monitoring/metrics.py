@@ -23,6 +23,7 @@ from tradingbot.utils.metrics import (
     OPEN_POSITIONS,
     MARKET_LATENCY,
     E2E_LATENCY,
+    SIGNAL_CONFIRM_LATENCY,
     FUNDING_RATE,
     BASIS,
     OPEN_INTEREST,

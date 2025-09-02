@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+import time
 
 import uvicorn
 
@@ -166,6 +167,7 @@ async def run_paper(
             signal = strat.on_bar(bar)
             if signal is None:
                 continue
+            signal_ts = getattr(signal, "signal_ts", time.time())
             allowed, _reason, delta = risk.check_order(
                 symbol,
                 signal.side,
@@ -187,6 +189,7 @@ async def run_paper(
                 abs(delta),
                 on_partial_fill=strat.on_partial_fill,
                 on_order_expiry=strat.on_order_expiry,
+                signal_ts=signal_ts,
             )
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
