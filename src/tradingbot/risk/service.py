@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
+from threading import Lock
 
 import pandas as pd
 import numpy as np
@@ -73,6 +74,7 @@ class RiskService:
         self._pos = Position()
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
         self._entry_price: float | None = None
+        self._lock = Lock()
 
     @property
     def min_order_qty(self) -> float:
@@ -162,11 +164,12 @@ class RiskService:
 
     def reset(self) -> None:
         """Reset internal risk state."""
-        self.enabled = True
-        self.last_kill_reason = None
-        self._pos.qty = 0.0
-        self.positions_multi.clear()
-        self._reset_price_trackers()
+        with self._lock:
+            self.enabled = True
+            self.last_kill_reason = None
+            self._pos.qty = 0.0
+            self.positions_multi.clear()
+            self._reset_price_trackers()
 
     # ------------------------------------------------------------------
     # Internal helpers replacing former _RiskManager methods
@@ -232,26 +235,27 @@ class RiskService:
         atr: float | None = None,
     ) -> None:
         """Synchronise position and track trade state for ``symbol``."""
-        book = self.positions_multi.setdefault(exchange, {})
-        book[symbol] = float(qty)
-        self.guard.set_position(exchange, symbol, qty)
-        cur = self.account.positions.get(symbol, 0.0)
-        self.account.update_position(symbol, qty - cur, price=entry_price)
-        if abs(qty) < self._min_order_qty:
-            self.trades.pop(symbol, None)
-            return
-        side = "buy" if qty > 0 else "sell"
-        is_new_trade = symbol not in self.trades
-        trade = self.trades.get(symbol, {})
-        trade.update({"side": side, "qty": abs(qty)})
-        if atr is not None:
-            trade["atr"] = float(atr)
-        if entry_price is not None:
-            trade["entry_price"] = entry_price
-            trade.setdefault("stop", self.initial_stop(entry_price, side, atr))
-        if is_new_trade:
-            trade["stage"] = 0
-        self.trades[symbol] = trade
+        with self._lock:
+            book = self.positions_multi.setdefault(exchange, {})
+            book[symbol] = float(qty)
+            self.guard.set_position(exchange, symbol, qty)
+            cur = self.account.positions.get(symbol, 0.0)
+            self.account.update_position(symbol, qty - cur, price=entry_price)
+            if abs(qty) < self._min_order_qty:
+                self.trades.pop(symbol, None)
+                return
+            side = "buy" if qty > 0 else "sell"
+            is_new_trade = symbol not in self.trades
+            trade = self.trades.get(symbol, {})
+            trade.update({"side": side, "qty": abs(qty)})
+            if atr is not None:
+                trade["atr"] = float(atr)
+            if entry_price is not None:
+                trade["entry_price"] = entry_price
+                trade.setdefault("stop", self.initial_stop(entry_price, side, atr))
+            if is_new_trade:
+                trade["stage"] = 0
+            self.trades[symbol] = trade
 
     def aggregate_positions(self) -> Dict[str, float]:
         """Return aggregated positions across all venues."""
@@ -274,28 +278,29 @@ class RiskService:
 
         active = set(symbols_active)
 
-        # trades
-        for sym in list(self.trades.keys()):
-            if sym not in active:
-                self.trades.pop(sym, None)
-
-        # multi-venue positions
-        for venue, book in list(self.positions_multi.items()):
-            for sym in list(book.keys()):
+        with self._lock:
+            # trades
+            for sym in list(self.trades.keys()):
                 if sym not in active:
-                    book.pop(sym, None)
-            if not book:
-                self.positions_multi.pop(venue, None)
+                    self.trades.pop(sym, None)
 
-        # account level tracking
-        for mapping in (
-            self.account.positions,
-            self.account.prices,
-            self.account.open_orders,
-        ):
-            for sym in list(mapping.keys()):
-                if sym not in active:
-                    mapping.pop(sym, None)
+            # multi-venue positions
+            for venue, book in list(self.positions_multi.items()):
+                for sym in list(book.keys()):
+                    if sym not in active:
+                        book.pop(sym, None)
+                if not book:
+                    self.positions_multi.pop(venue, None)
+
+            # account level tracking
+            for mapping in (
+                self.account.positions,
+                self.account.prices,
+                self.account.open_orders,
+            ):
+                for sym in list(mapping.keys()):
+                    if sym not in active:
+                        mapping.pop(sym, None)
 
         # portfolio guard state
         st = getattr(self.guard, "st", None)
@@ -366,10 +371,11 @@ class RiskService:
     # ------------------------------------------------------------------
     # Price tracking and risk checks
     def mark_price(self, symbol: str, price: float) -> None:
-        self.guard.mark_price(symbol, price)
-        self.account.mark_price(symbol, price)
-        if self.corr is not None:
-            self.corr.update_price(symbol, price)
+        with self._lock:
+            self.guard.mark_price(symbol, price)
+            self.account.mark_price(symbol, price)
+            if self.corr is not None:
+                self.corr.update_price(symbol, price)
 
     def check_order(
         self,
@@ -427,7 +433,9 @@ class RiskService:
                 delta = min(delta + pending_qty, 0.0)
 
         if delta < 0 and not self.allow_short:
-            return False, "short_not_allowed", 0.0
+            cur_qty, _ = self.account.current_exposure(symbol)
+            if cur_qty + delta < 0:
+                return False, "short_not_allowed", 0.0
 
         qty = abs(delta)
         alloc = qty * price
@@ -602,37 +610,38 @@ class RiskService:
         atr: float | None = None,
     ) -> None:
         """Update internal position books after a fill."""
-        self.add_fill(side, qty, price=price)
-        self.guard.update_position_on_order(symbol, side, qty, venue=venue)
-        self.account.update_open_order(symbol, side, -abs(qty))
-        delta = qty if side == "buy" else -qty
-        self.account.update_position(symbol, delta, price=price)
-        if venue is not None:
-            book = self.guard.st.venue_positions.get(venue, {})
-            venue_book = self.positions_multi.setdefault(venue, {})
-            venue_book[symbol] = float(book.get(symbol, 0.0))
-        cur_qty, _ = self.account.current_exposure(symbol)
-        if abs(cur_qty) < self._min_order_qty:
-            self.trades.pop(symbol, None)
-            return
-        trade = self.trades.get(symbol, {})
-        trade.update(
-            {
-                "side": "buy" if cur_qty > 0 else "sell",
-                "qty": abs(cur_qty),
-                "entry_price": self._entry_price,
-            }
-        )
-        if atr is not None:
-            trade["atr"] = float(atr)
-        entry_price = trade.get("entry_price")
-        if entry_price is not None:
-            trade.setdefault(
-                "stop",
-                self.initial_stop(entry_price, trade["side"], atr),
+        with self._lock:
+            self.add_fill(side, qty, price=price)
+            self.guard.update_position_on_order(symbol, side, qty, venue=venue)
+            self.account.update_open_order(symbol, side, -abs(qty))
+            delta = qty if side == "buy" else -qty
+            self.account.update_position(symbol, delta, price=price)
+            if venue is not None:
+                book = self.guard.st.venue_positions.get(venue, {})
+                venue_book = self.positions_multi.setdefault(venue, {})
+                venue_book[symbol] = float(book.get(symbol, 0.0))
+            cur_qty, _ = self.account.current_exposure(symbol)
+            if abs(cur_qty) < self._min_order_qty:
+                self.trades.pop(symbol, None)
+                return
+            trade = self.trades.get(symbol, {})
+            trade.update(
+                {
+                    "side": "buy" if cur_qty > 0 else "sell",
+                    "qty": abs(cur_qty),
+                    "entry_price": self._entry_price,
+                }
             )
-        trade.setdefault("stage", 0)
-        self.trades[symbol] = trade
+            if atr is not None:
+                trade["atr"] = float(atr)
+            entry_price = trade.get("entry_price")
+            if entry_price is not None:
+                trade.setdefault(
+                    "stop",
+                    self.initial_stop(entry_price, trade["side"], atr),
+                )
+            trade.setdefault("stage", 0)
+            self.trades[symbol] = trade
 
     def daily_mark(self, broker, symbol: str, price: float, delta_rpnl: float) -> tuple[bool, str]:
         """Update daily guard with latest mark and realized PnL delta."""
