@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import yaml
 from tradingbot.strategies.breakout_atr import BreakoutATR
 from tradingbot.strategies.order_flow import OrderFlow
@@ -137,6 +138,22 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
     assert trade["qty"] == pytest.approx(expected_qty)
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade.get("atr"))
     assert trade["stop"] == pytest.approx(expected_stop)
+
+
+def test_breakout_vol_more_signals_in_lower_timeframe():
+    np.random.seed(0)
+    prices = 100 + np.cumsum(np.random.normal(0, 0.03, 120))
+    signals: dict[str, int] = {}
+    for tf in ["1m", "5m"]:
+        strat = BreakoutVol(lookback=10, timeframe=tf)
+        sigs = 0
+        for i in range(10, len(prices)):
+            df = pd.DataFrame({"close": prices[: i + 1]})
+            sig = strat.on_bar({"window": df})
+            if sig and sig.side in {"buy", "sell"}:
+                sigs += 1
+        signals[tf] = sigs
+    assert signals["1m"] > signals["5m"]
 
 
 @settings(deadline=None)

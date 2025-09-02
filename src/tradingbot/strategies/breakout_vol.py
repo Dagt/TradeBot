@@ -18,14 +18,22 @@ class BreakoutVol(Strategy):
 
     name = "breakout_vol"
 
-    # Percentil para mínimos de volatilidad y dimensionar el multiplicador.
-    _VOL_QUANTILE = 0.2
-    _MULT_QUANTILE = 0.8
+    # Percentiles dependientes del timeframe para mínimos de volatilidad y
+    # dimensionar el multiplicador.  Valores más bajos en timeframes cortos
+    # permiten generar más señales sin relajar el control de riesgo.
+    _VOL_QUANTILES = {"1m": 0.1, "5m": 0.2}
+    _MULT_QUANTILES = {"1m": 0.7, "5m": 0.8}
+    _DEFAULT_VOL_Q = 0.2
+    _DEFAULT_MULT_Q = 0.8
 
     def __init__(self, **kwargs):
         self.lookback = kwargs.get("lookback", 10)
         self.volatility_factor = kwargs.get("volatility_factor", 0.02)
         self.risk_service = kwargs.get("risk_service")
+        tf = kwargs.get("timeframe", "3m")
+        self._vol_quantile = self._VOL_QUANTILES.get(tf, self._DEFAULT_VOL_Q)
+        self._mult_quantile = self._MULT_QUANTILES.get(tf, self._DEFAULT_MULT_Q)
+        self.timeframe = tf
         # Valores dinámicos calculados en ``on_bar``.
         self.mult = 1.0
         self.min_volatility = 0.0
@@ -42,7 +50,7 @@ class BreakoutVol(Strategy):
         window = min(len(std_series), self.lookback * 5)
         if window >= self.lookback and std > 0.0:
             mult_quant = float(
-                std_series.rolling(window).quantile(self._MULT_QUANTILE).iloc[-1]
+                std_series.rolling(window).quantile(self._mult_quantile).iloc[-1]
             )
             self.mult = mult_quant / std
         else:
@@ -59,17 +67,22 @@ class BreakoutVol(Strategy):
         window = min(len(vol_series), self.lookback * 5)
         if window >= self.lookback * 2:
             vol_quant = float(
-                vol_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+                vol_series.rolling(window).quantile(self._vol_quantile).iloc[-1]
             )
             vol_bps_quant = float(
                 (vol_series * 10000)
                 .rolling(window)
-                .quantile(self._VOL_QUANTILE)
+                .quantile(self._vol_quantile)
                 .iloc[-1]
             )
             self.min_volatility = vol_bps_quant
             if vol < vol_quant or vol_bps < vol_bps_quant:
                 return None
+            # Ajuste dinámico del multiplicador cuando la volatilidad es baja
+            low_vol_threshold = vol_quant * 1.5
+            if vol < low_vol_threshold and self.mult > 0.0:
+                factor = max(0.5, vol / low_vol_threshold)
+                self.mult *= factor
         else:
             self.min_volatility = 0.0
 
