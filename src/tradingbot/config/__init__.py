@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     router_slippage_weight: float = 1.0
     router_queue_weight: float = 1.0
     router_max_book_age_ms: float = 1000.0
+    router_fee_update_interval_sec: float = 3600.0
 
     # Risk manager defaults
     risk_pct: float = 0.0

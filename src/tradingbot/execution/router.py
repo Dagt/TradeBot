@@ -6,6 +6,7 @@ import asyncio
 import time
 import inspect
 import uuid
+import contextlib
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
@@ -19,6 +20,8 @@ from ..utils.metrics import (
     FILL_COUNT,
     QUEUE_POSITION,
     SIGNAL_CONFIRM_LATENCY,
+    ROUTER_SELECTED_VENUE,
+    ROUTER_STALE_BOOK,
 )
 from ..storage import timescale
 from ..utils.logging import get_logger
@@ -84,6 +87,34 @@ class ExecutionRouter:
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
 
+        self._fee_update_task = None
+        interval = getattr(settings, "router_fee_update_interval_sec", 3600.0)
+        try:
+            loop = asyncio.get_running_loop()
+            self._fee_update_task = loop.create_task(self._fee_update_loop(interval))
+        except RuntimeError:  # pragma: no cover - no running loop
+            self._fee_update_task = None
+
+    async def _fee_update_loop(self, interval: float) -> None:
+        while True:
+            await self.update_fees()
+            await asyncio.sleep(interval)
+
+    async def update_fees(self) -> None:
+        for ad in self.adapters.values():
+            if hasattr(ad, "update_fees"):
+                try:
+                    await ad.update_fees()  # type: ignore[attr-defined]
+                except Exception as e:  # pragma: no cover - best effort
+                    log.warning("update_fees failed: %s", e)
+
+    async def close(self) -> None:
+        task = getattr(self, "_fee_update_task", None)
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
     # ------------------------------------------------------------------
     async def place_order(
         self,
@@ -142,6 +173,9 @@ class ExecutionRouter:
                     ts_val = ts.timestamp() if hasattr(ts, "timestamp") else float(ts)
                     age_ms = (time.time() - ts_val) * 1000.0
                     if age_ms > settings.router_max_book_age_ms:
+                        ROUTER_STALE_BOOK.labels(
+                            venue=getattr(adapter, "name", "unknown")
+                        ).inc()
                         return None
             last = getattr(state, "last_px", {}).get(order.symbol) if state else None
             if book and book.get("bids") and book.get("asks"):
@@ -198,6 +232,10 @@ class ExecutionRouter:
         if selected is None:
             selected = next(iter(self.adapters.values()))
         self._last_maker = selected_maker
+        ROUTER_SELECTED_VENUE.labels(
+            venue=getattr(selected, "name", "unknown"),
+            path="maker" if selected_maker else "taker",
+        ).inc()
         return selected
 
     # ------------------------------------------------------------------

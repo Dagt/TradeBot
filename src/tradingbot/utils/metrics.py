@@ -94,6 +94,19 @@ MAKER_TAKER_RATIO = Gauge(
     ["venue"],
 )
 
+# Venue selection metrics
+ROUTER_SELECTED_VENUE = Counter(
+    "router_selected_venue_total",
+    "Total venue selections by router",
+    ["venue", "path"],
+)
+
+ROUTER_STALE_BOOK = Counter(
+    "router_stale_book_total",
+    "Venues skipped due to stale order book data",
+    ["venue"],
+)
+
 # --- Additional high level trading metrics ---
 
 # Current profit and loss in USD

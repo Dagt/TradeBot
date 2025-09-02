@@ -31,6 +31,8 @@ balance:
   interval: 60.0
   assets: []
 
+router_fee_update_interval_sec: 3600.0
+
 execution:
   limit_offset_ticks: 1.0
   limit_expiry_sec: 1.0
