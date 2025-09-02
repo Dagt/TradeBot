@@ -7,16 +7,17 @@ from ..data.features import depth_imbalance
 
 
 PARAM_INFO = {
-    "window": "Ventana para promediar el desequilibrio",
-    "threshold": "Umbral de desequilibrio para operar",
+    "window": "Ventana para estimar el desequilibrio",
+    "percentile": "Percentil para derivar el umbral dinámico",
 }
 
 
 class DepthImbalance(Strategy):
     """Depth Imbalance strategy.
 
-    Computes the mean depth imbalance over a rolling window and issues
-    directional signals when the average exceeds ``threshold``.
+    Computes the depth imbalance over a rolling window and issues
+    directional signals when the latest value exceeds a dynamic
+    threshold derived from the specified percentile.
     """
 
     name = "depth_imbalance"
@@ -24,11 +25,11 @@ class DepthImbalance(Strategy):
     def __init__(
         self,
         window: int = 3,
-        threshold: float = 0.2,
+        percentile: float = 80.0,
         **kwargs,
     ):
         self.window = window
-        self.threshold = threshold
+        self.percentile = percentile
         self.risk_service = kwargs.get("risk_service")
 
     @record_signal_metrics
@@ -49,16 +50,43 @@ class DepthImbalance(Strategy):
                 if pd.notna(last_px):
                     price = float(last_px)
         if price is None:
+            price = bar.get("close") or bar.get("price")
+        if price is None:
             return None
 
+        if self.risk_service is not None and getattr(self, "trade", None):
+            self.risk_service.update_trailing(self.trade, price)
+            decision = self.risk_service.manage_position(
+                {**self.trade, "current_price": price}, None
+            )
+            if decision == "close":
+                side = "sell" if self.trade.get("side") == "buy" else "buy"
+                close_sig = Signal(side, 1.0)
+                self.trade = None
+                return self.finalize_signal(bar, price, close_sig)
+
         di_series = depth_imbalance(df[list(needed)])
-        di_mean = di_series.iloc[-self.window :].mean()
-        if di_mean > self.threshold:
+        window_di = di_series.iloc[-self.window :]
+        threshold = window_di.abs().quantile(self.percentile / 100)
+        last_di = di_series.iloc[-1]
+        if last_di > threshold:
             side = "buy"
-        elif di_mean < -self.threshold:
+        elif last_di < -threshold:
             side = "sell"
         else:
             return None
         strength = 1.0
         sig = Signal(side, strength)
+        if self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(strength, price)
+            atr_val = bar.get("atr") or bar.get("volatility") or 0.0
+            stop = self.risk_service.initial_stop(price, side, atr_val)
+            self.trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+            }
+            self.risk_service.update_trailing(self.trade, price)
         return self.finalize_signal(bar, price, sig)
