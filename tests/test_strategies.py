@@ -64,23 +64,25 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timefr
 def test_order_flow_signals():
     df_buy = pd.DataFrame(
         {
-            "bid_qty": [1, 2, 3, 5],
-            "ask_qty": [5, 4, 3, 2],
+            "bid_qty": [1, 2, 3, 4, 10],
+            "ask_qty": [5, 4, 3, 2, 1],
+            "close": [100, 101, 100, 102, 101],
         }
     )
     df_sell = pd.DataFrame(
         {
-            "bid_qty": [5, 4, 3, 2],
-            "ask_qty": [1, 2, 3, 5],
+            "bid_qty": [10, 4, 3, 2, 1],
+            "ask_qty": [1, 2, 3, 4, 10],
+            "close": [101, 100, 102, 99, 98],
         }
     )
-    strat = OrderFlow(window=3, buy_threshold=1.0, sell_threshold=1.0)
-    sig_buy = strat.on_bar({"window": df_buy, "close": 100.0})
-    assert sig_buy.side == "buy"
-    assert sig_buy.limit_price == 100.0
-    sig_sell = strat.on_bar({"window": df_sell, "close": 100.0})
-    assert sig_sell.side == "sell"
-    assert sig_sell.limit_price == 100.0
+    strat = OrderFlow(window=3, buy_threshold=10.0, sell_threshold=10.0)
+    sig_buy = strat.on_bar({"window": df_buy, "timeframe": "1m", "symbol": "X", "volatility": 0.0})
+    assert sig_buy and sig_buy.side == "buy"
+    assert sig_buy.limit_price == pytest.approx(df_buy["close"].iloc[-1])
+    sig_sell = strat.on_bar({"window": df_sell, "timeframe": "1m", "symbol": "X", "volatility": 0.0})
+    assert sig_sell and sig_sell.side == "sell"
+    assert sig_sell.limit_price == pytest.approx(df_sell["close"].iloc[-1])
 
 
 def test_mean_rev_ofi_signals():
