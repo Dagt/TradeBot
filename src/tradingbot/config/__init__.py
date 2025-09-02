@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     limit_expiry_sec: float = 1.0
     requote_attempts: int = 5
 
+    # Venue selection weights
+    router_price_weight: float = 1.0
+    router_fee_weight: float = 1.0
+    router_spread_weight: float = 1.0
+    router_latency_weight: float = 1e-6
+    router_slippage_weight: float = 1.0
+    router_queue_weight: float = 1.0
+    router_max_book_age_ms: float = 1000.0
+
     # Risk manager defaults
     risk_pct: float = 0.0
     max_symbol_exposure: float | None = None
