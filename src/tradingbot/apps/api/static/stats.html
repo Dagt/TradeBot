@@ -8,24 +8,7 @@
   <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
-<header class="center" style="margin-bottom:8px">
-  <div class="logo-wrap">
-  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
-</div>
-
-  <nav>
-  <div class="menu">
-    <a href="/" class="">Monitoreo</a>
-    <a href="/bots" class="">Bots</a>
-    <a href="/stats" class="active">Estadísticas operativas</a>
-    <a href="/data" class="">Datos históricos</a>
-    <a href="/backtest" class="">Backtest</a>
-    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
-    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
-  </div>
-</nav>
-
-</header>
+<div id="header"></div>
 
   <h1>Estadísticas operativas</h1>
   <div class="grid5" style="margin:14px 0 10px">
@@ -146,7 +129,9 @@
       </table>
     </div>
   </div>
+<script src="/static/header.js"></script>
 <script>
+loadHeader('stats');
 async function refreshMetrics(){
   try{
     const r = await fetch('/metrics');

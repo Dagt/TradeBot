@@ -12,25 +12,7 @@
   </style>
 </head>
 <body>
-<header class="center" style="margin-bottom:8px">
-  <div class="logo-wrap">
-  <img src="/static/logo.png" alt="DMI Bot Trading" class="logo">
-</div>
-
-  <nav>
-  <div class="menu">
-    <a href="/" class="">Monitoreo</a>
-    <a href="/bots" class="">Bots</a>
-    <a href="/stats" class="">Estadísticas operativas</a>
-    <a href="/data" class="">Datos históricos</a>
-    <a href="/backtest" class="active">Backtest</a>
-    <a href="http://localhost:3000/" target="_blank" class="">Grafana</a>
-    <a href="http://localhost:9090/" target="_blank" class="">Prometheus</a>
-
-  </div>
-</nav>
-
-</header>
+<div id="header"></div>
   <h1>Backtest</h1>
 
   <div class="card">
@@ -134,7 +116,9 @@
     <pre id="cli-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
+<script src="/static/header.js"></script>
 <script>
+loadHeader('backtest');
 const api = (path) => `${location.origin}${path}`;
 
 function normalizeSymbol(sym) {
