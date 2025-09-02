@@ -200,6 +200,33 @@ backtest:
     base_spread: 0.1  # spread fijo si faltan columnas bid/ask o tienen NaN
 ```
 
+Para backtests con datos de nivel 1 (sin profundidad de libro) se recomienda:
+
+- Ejecutar con `use_l2=False`.
+- Definir `min_fill_qty=0` y `exchange_min_fill_qty=0`.
+- Eliminar o ignorar las columnas `ask_size` y `bid_size` del CSV.
+
+Ejemplo de YAML completo:
+
+```yaml
+backtest:
+  data: data/examples/btcusdt_3m.csv
+  symbol: BTC/USDT
+  strategy: breakout_atr
+  use_l2: false
+  min_fill_qty: 0
+
+exchange_configs:
+  binance_spot:
+    min_fill_qty: 0
+```
+
+Ejemplo en la CLI:
+
+```bash
+python -m tradingbot.cli backtest-cfg config.yaml
+```
+
 Si se especifica `--fills-csv`, se genera un archivo con las columnas
 `timestamp, reason, side, price, qty, strategy, symbol, exchange, fee_cost, slippage_pnl, realized_pnl, realized_pnl_total, equity_after`.
 La columna `price` refleja el precio final de ejecución con spread y slippage aplicados.

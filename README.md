@@ -146,6 +146,35 @@ predeterminado es la constante `MIN_FILL_QTY = 1e-3`, pero puede ajustarse
 al crear `EventDrivenBacktestEngine` o mediante los campos `backtest.min_fill_qty`
 y `exchange_configs.<exchange>.min_fill_qty` en la configuración YAML.
 
+### Backtesting con datos de nivel 1
+
+Para reproducir un entorno sin profundidad de libro (L2) se recomienda:
+
+- Ejecutar con `use_l2=False`.
+- Definir `min_fill_qty=0` y `exchange_configs.<exchange>.min_fill_qty=0`.
+- Eliminar o ignorar las columnas `ask_size` y `bid_size` del CSV.
+
+Ejemplo de configuración:
+
+```yaml
+backtest:
+  data: data/examples/btcusdt_3m.csv
+  symbol: BTC/USDT
+  strategy: breakout_atr
+  use_l2: false
+  min_fill_qty: 0
+
+exchange_configs:
+  binance_spot:
+    min_fill_qty: 0
+```
+
+Ejecución desde la CLI:
+
+```bash
+python -m tradingbot.cli backtest-cfg config.yaml
+```
+
 ## Solución de problemas
 
 Si se muestra el mensaje `System clock offset`, indica que el reloj del
