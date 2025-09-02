@@ -37,7 +37,7 @@ def test_walk_forward_optimize(tmp_path):
     csv_path = tmp_path / "data.csv"
     df.to_csv(csv_path, index=False)
 
-    params = [{"rsi_n": 2, "rsi_threshold": 55}, {"rsi_n": 2, "rsi_threshold": 65}]
+    params = [{"rsi_n": 2}, {"rsi_n": 3}]
 
     results = walk_forward_optimize(
         str(csv_path),
@@ -68,7 +68,7 @@ def test_walk_forward_mlflow(tmp_path):
     csv_path = tmp_path / "data.csv"
     df.to_csv(csv_path, index=False)
 
-    params = [{"rsi_n": 2, "rsi_threshold": 55}, {"rsi_n": 2, "rsi_threshold": 65}]
+    params = [{"rsi_n": 2}, {"rsi_n": 3}]
 
     mlflow.set_tracking_uri(str(tmp_path))
     exp_name = "wf_test"
