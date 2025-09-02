@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     risk_pct: float = 0.0
     max_symbol_exposure: float | None = None
 
+    # Websocket behaviour
+    adapter_ping_interval: float = 20.0
+    adapter_max_backoff: float = 30.0
+    connector_ping_interval: float = 20.0
+    connector_max_backoff: float = 60.0
+
     # Binance Spot
     binance_spot_maker_fee_bps: float = 7.5
     binance_spot_taker_fee_bps: float = 7.5

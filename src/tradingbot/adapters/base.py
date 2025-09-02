@@ -12,6 +12,7 @@ import websockets
 from ..core.symbols import normalize as normalize_symbol
 from ..core.account import Account
 from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
+from ..config import settings
 
 
 class AdapterState:
@@ -40,7 +41,13 @@ class ExchangeAdapter(ABC):
         self.state = AdapterState()
         # basic account information for the adapter
         self.account = Account(float("inf"))
-        self.ping_interval = 20.0
+        name = getattr(self, "name", "")
+        self.ping_interval = getattr(
+            settings, f"{name}_ping_interval", settings.adapter_ping_interval
+        )
+        self.max_backoff = getattr(
+            settings, f"{name}_max_backoff", settings.adapter_max_backoff
+        )
         self._fee_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
@@ -228,9 +235,11 @@ class ExchangeAdapter(ABC):
                 WS_RECONNECTS.labels(adapter=self.name).inc()
                 successes = 0
                 delay = backoff * random.uniform(0.5, 1.5)
-                self.log.warning("WS disconnected (%s). Reconnecting in %.1fs ...", e, delay)
+                self.log.warning(
+                    "WS disconnected (%s). Reconnecting in %.1fs ...", e, delay
+                )
                 await asyncio.sleep(delay)
-                backoff = min(backoff * 2, 30.0)
+                backoff = min(backoff * 2, self.max_backoff)
 
     # ------------------------------------------------------------------
     # Abstract API

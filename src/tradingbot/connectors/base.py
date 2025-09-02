@@ -12,6 +12,8 @@ import ccxt.async_support as ccxt
 import websockets
 from pydantic import BaseModel
 from tradingbot.execution.retry import with_retries
+from ..config import settings
+from ..utils.metrics import WS_FAILURES, WS_RECONNECTS
 
 
 class Trade(BaseModel):
@@ -61,8 +63,14 @@ class ExchangeConnector:
         self.rest = getattr(ccxt, self.name)({"enableRateLimit": True})
         self._sem = asyncio.Semaphore(rate_limit)
         self.log = logging.getLogger(self.__class__.__name__)
+        name = getattr(self, "name", "")
         self.reconnect_delay = 1
-        self.ping_interval = 20
+        self.ping_interval = getattr(
+            settings, f"{name}_ping_interval", settings.connector_ping_interval
+        )
+        self.max_backoff = getattr(
+            settings, f"{name}_max_backoff", settings.connector_max_backoff
+        )
 
     async def _rest_call(
         self,
@@ -172,10 +180,12 @@ class ExchangeConnector:
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
+                WS_FAILURES.labels(adapter=self.name).inc()
+                WS_RECONNECTS.labels(adapter=self.name).inc()
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
                 delay = backoff * random.uniform(0.5, 1.5)
                 await asyncio.sleep(delay)
-                backoff = min(backoff * 2, 60)
+                backoff = min(backoff * 2, self.max_backoff)
 
     async def stream_trades(self, symbol: str):
         """Stream trades for the given symbol."""
@@ -199,10 +209,12 @@ class ExchangeConnector:
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network/streaming
+                WS_FAILURES.labels(adapter=self.name).inc()
+                WS_RECONNECTS.labels(adapter=self.name).inc()
                 self.log.warning("ws_reconnect", extra={"err": str(e)})
                 delay = backoff * random.uniform(0.5, 1.5)
                 await asyncio.sleep(delay)
-                backoff = min(backoff * 2, 60)
+                backoff = min(backoff * 2, self.max_backoff)
 
     # --- methods to be implemented by subclasses ---
     def _ws_url(self, symbol: str) -> str:  # pragma: no cover - abstract
