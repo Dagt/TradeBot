@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, returns
@@ -33,38 +34,68 @@ class Momentum(Strategy):
         self.vol_window = kwargs.get("vol_window", 20)
         self.risk_service = kwargs.get("risk_service")
 
-    def auto_threshold(self, rsi_series: pd.Series) -> float:
+    def _tf_to_minutes(self, tf: str | None) -> int:
+        """Convert timeframe strings like ``1m`` or ``15m`` to minutes."""
+
+        if not tf:
+            return 1
+        tf = tf.lower()
+        if tf.endswith("m"):
+            return int(tf[:-1])
+        if tf.endswith("h"):
+            return int(tf[:-1]) * 60
+        if tf.endswith("d"):
+            return int(tf[:-1]) * 60 * 24
+        return 1
+
+    def auto_threshold(self, rsi_series: pd.Series, n: int) -> float:
         """Automatically derive RSI threshold from recent values.
 
         Uses a rolling 75th percentile of the RSI to determine the overbought
         level. The oversold level is symmetrical around 100.
         """
 
-        thresh = rsi_series.rolling(self.rsi_n).quantile(0.75).iloc[-1]
+        thresh = rsi_series.rolling(n).quantile(0.75).iloc[-1]
         return 55.0 if pd.isna(thresh) else float(thresh)
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < self.rsi_n + 2:
+
+        tf_min = self._tf_to_minutes(bar.get("timeframe"))
+        rsi_n = max(2, int(math.ceil(self.rsi_n / tf_min)))
+        vol_window = max(2, int(math.ceil(self.vol_window / tf_min)))
+
+        if len(df) < rsi_n + 2:
             return None
 
         closes = df["close"]
         price = float(closes.iloc[-1])
-        rsi_series = rsi(df, self.rsi_n)
+        rsi_series = rsi(df, rsi_n)
         prev_rsi = rsi_series.iloc[-2]
         last_rsi = rsi_series.iloc[-1]
 
         # Optional inactivity filters
-        if self.min_volume is not None:
-            if "volume" not in df or df["volume"].iloc[-1] < self.min_volume:
-                return None
-        if self.min_volatility is not None:
-            vol = returns(df).rolling(self.vol_window).std().iloc[-1]
-            if pd.isna(vol) or vol < self.min_volatility:
+        min_vol = self.min_volume
+        if min_vol is None and "volume" in df:
+            min_vol = float(
+                df["volume"].rolling(vol_window, min_periods=1).quantile(0.2).iloc[-1]
+            )
+        if min_vol is not None:
+            if "volume" not in df or df["volume"].iloc[-1] < min_vol:
                 return None
 
-        threshold = self.auto_threshold(rsi_series)
+        ret = returns(df)
+        vol_series = ret.rolling(vol_window).std()
+        vol = vol_series.iloc[-1]
+        min_volatility = self.min_volatility
+        if min_volatility is None and not vol_series.dropna().empty:
+            min_volatility = float(vol_series.dropna().tail(vol_window).quantile(0.2))
+        if min_volatility is not None:
+            if pd.isna(vol) or vol < min_volatility:
+                return None
+
+        threshold = self.auto_threshold(rsi_series, rsi_n)
         upper = threshold
         lower = 100 - threshold
         side: str | None = None
