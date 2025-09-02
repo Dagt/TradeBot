@@ -9,7 +9,7 @@ PARAM_INFO = {
     "ofi_window": "Ventana para estadísticos de OFI",
     "zscore_threshold": "Z-score absoluto requerido",
     "vol_window": "Ventana para volatilidad de retornos",
-    "vol_threshold": "Volatilidad máxima permitida",
+    "vol_threshold": "Percentil para volatilidad máxima en bps",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
@@ -28,9 +28,11 @@ class MeanRevOFI(Strategy):
     zscore_threshold : float, optional
         Absolute z-score required to trigger a trade, by default ``1.0``.
     vol_window : int, optional
-        Window for the volatility estimation of log returns, by default ``20``.
+        Window for the volatility estimation of log returns at ``3m`` timeframe,
+        by default ``20``.
     vol_threshold : float, optional
-        Maximum volatility allowed to take a position, by default ``0.01``.
+        Percentile (0-1) of volatility in bps used as maximum allowed level,
+        by default ``0.8``.
     """
 
     name = "mean_rev_ofi"
@@ -40,7 +42,7 @@ class MeanRevOFI(Strategy):
         ofi_window: int = 5,
         zscore_threshold: float = 1.0,
         vol_window: int = 20,
-        vol_threshold: float = 0.01,
+        vol_threshold: float = 0.8,
         min_volatility: float = 0.0,
         *,
         config_path: str | None = None,
@@ -52,7 +54,21 @@ class MeanRevOFI(Strategy):
         self.zscore_threshold = float(params.get("zscore_threshold", zscore_threshold))
         self.vol_window = int(params.get("vol_window", vol_window))
         self.vol_threshold = float(params.get("vol_threshold", vol_threshold))
+        self.vol_threshold_bps = 0.0
         self.min_volatility = float(params.get("min_volatility", min_volatility))
+
+    def _tf_minutes(self, timeframe: str) -> float:
+        unit = timeframe[-1].lower()
+        value = float(timeframe[:-1])
+        factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
+        return value * factors.get(unit, 0)
+
+    def _scaled_vol_window(self, timeframe: str | None) -> int:
+        if timeframe is None:
+            return self.vol_window
+        tf_min = self._tf_minutes(timeframe)
+        base_min = 3.0
+        return max(1, int(round(self.vol_window * base_min / tf_min)))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -61,7 +77,8 @@ class MeanRevOFI(Strategy):
 
 
         needed = {"bid_qty", "ask_qty", "close"}
-        min_len = max(self.ofi_window, self.vol_window) + 1
+        vol_window = self._scaled_vol_window(bar.get("timeframe"))
+        min_len = max(self.ofi_window, vol_window) + 1
         if not needed.issubset(df.columns) or len(df) < min_len:
             return None
 
@@ -70,13 +87,21 @@ class MeanRevOFI(Strategy):
         rolling_std = ofi_series.rolling(self.ofi_window).std(ddof=0).replace(0, np.nan)
         zscore = ((ofi_series - rolling_mean) / rolling_std).iloc[-1]
 
-        vol = returns(df).rolling(self.vol_window).std().iloc[-1]
-        vol_bps = vol * 10000
+        vol_series = returns(df).rolling(vol_window).std()
+        vol_bps_series = vol_series * 10000
+        vol_bps = float(vol_bps_series.iloc[-1])
+        window_q = min(len(vol_bps_series.dropna()), vol_window * 5)
+        if window_q >= vol_window:
+            self.vol_threshold_bps = float(
+                vol_bps_series.rolling(window_q).quantile(self.vol_threshold).iloc[-1]
+            )
+        else:
+            self.vol_threshold_bps = float("inf")
 
         if (
             pd.isna(zscore)
-            or pd.isna(vol)
-            or vol >= self.vol_threshold
+            or pd.isna(vol_bps)
+            or vol_bps >= self.vol_threshold_bps
             or vol_bps < self.min_volatility
         ):
             return None
