@@ -5,7 +5,6 @@ from ..data.features import rsi, returns
 
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
-    "threshold": "Nivel de RSI para generar señal",
     "min_volume": "Volumen mínimo requerido",
     "min_volatility": "Volatilidad mínima requerida",
     "vol_window": "Ventana para estimar la volatilidad",
@@ -22,21 +21,27 @@ class Momentum(Strategy):
     ----------
     rsi_n : int, optional
         Lookback window for the RSI calculation, by default ``14``.
-    rsi_threshold : float, optional
-        Level above which a ``buy`` signal is produced (and mirrored for
-        ``sell``), by default ``60``.
     """
 
     name = "momentum"
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.threshold = kwargs.get("rsi_threshold", 55.0)
         # Optional market activity filters
         self.min_volume = kwargs.get("min_volume")
         self.min_volatility = kwargs.get("min_volatility")
         self.vol_window = kwargs.get("vol_window", 20)
         self.risk_service = kwargs.get("risk_service")
+
+    def auto_threshold(self, rsi_series: pd.Series) -> float:
+        """Automatically derive RSI threshold from recent values.
+
+        Uses a rolling 75th percentile of the RSI to determine the overbought
+        level. The oversold level is symmetrical around 100.
+        """
+
+        thresh = rsi_series.rolling(self.rsi_n).quantile(0.75).iloc[-1]
+        return 55.0 if pd.isna(thresh) else float(thresh)
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -59,8 +64,9 @@ class Momentum(Strategy):
             if pd.isna(vol) or vol < self.min_volatility:
                 return None
 
-        upper = self.threshold
-        lower = 100 - self.threshold
+        threshold = self.auto_threshold(rsi_series)
+        upper = threshold
+        lower = 100 - threshold
         side: str | None = None
         if prev_rsi <= upper and last_rsi > upper:
             side = "buy"

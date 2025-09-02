@@ -4,8 +4,6 @@ from ..data.features import rsi
 
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
-    "upper": "Nivel RSI superior para vender",
-    "lower": "Nivel RSI inferior para comprar",
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
@@ -16,22 +14,29 @@ PARAM_INFO = {
 class MeanReversion(Strategy):
     """RSI based mean reversion strategy with adaptive strength.
 
-    Generates ``buy`` or ``sell`` signals when the RSI crosses ``lower`` or
-    ``upper`` thresholds. Signal strength scales with the distance from the
-    threshold.
+    Generates ``buy`` or ``sell`` signals when the RSI deviates from
+    dynamically determined thresholds. Signal strength scales with the
+    distance from the threshold.
     """
 
     name = "mean_reversion"
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.upper = kwargs.get("upper", 60.0)
-        self.lower = kwargs.get("lower", 40.0)
         self.trend_ma = kwargs.get("trend_ma", 50)
         self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
         self.trend_threshold = kwargs.get("trend_threshold", 10.0)
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.risk_service = kwargs.get("risk_service")
+
+    def auto_threshold(self, rsi_series: pd.Series) -> tuple[float, float]:
+        """Derive upper and lower RSI bounds from recent variability."""
+
+        dev = rsi_series.rolling(self.rsi_n).std().iloc[-1]
+        dev = 10.0 if pd.isna(dev) else float(dev)
+        upper = 50 + dev
+        lower = 50 - dev
+        return upper, lower
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -69,8 +74,11 @@ class MeanReversion(Strategy):
             elif trsi < 50 - self.trend_threshold:
                 trend_dir = -1
 
-        upper = self.upper + (self.trend_threshold if trend_dir == 1 else 0)
-        lower = self.lower - (self.trend_threshold if trend_dir == -1 else 0)
+        upper, lower = self.auto_threshold(rsi_series)
+        if trend_dir == 1:
+            upper += self.trend_threshold
+        elif trend_dir == -1:
+            lower -= self.trend_threshold
 
         if last_rsi > upper:
             strength = min(1.0, (last_rsi - upper) / (100 - upper))

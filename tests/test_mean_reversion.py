@@ -4,7 +4,7 @@ from tradingbot.strategies.mean_reversion import MeanReversion, generate_signals
 def test_mean_reversion_on_bar_signals():
     df_down = pd.DataFrame({"close": list(range(20, 0, -1))})
     df_up = pd.DataFrame({"close": list(range(1, 21))})
-    strat = MeanReversion(rsi_n=5, upper=70, lower=30)
+    strat = MeanReversion(rsi_n=5)
     sig_buy = strat.on_bar({"window": df_down, "volatility": 0.0})
     sig_sell = strat.on_bar({"window": df_up, "volatility": 0.0})
     assert sig_buy.side == "buy"
