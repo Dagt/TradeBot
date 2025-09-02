@@ -263,6 +263,8 @@ async def run_live_binance(
             closed.c,
             strength=signal.strength,
             pending_qty=pending,
+            volatility=bar.get("atr") or bar.get("volatility"),
+            target_volatility=bar.get("target_volatility"),
         )
         if not allowed or abs(delta) <= 1e-9:
             if not allowed:

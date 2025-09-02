@@ -233,8 +233,20 @@ class RiskService:
         return self.trades.get(symbol)
 
     # Delegates to core risk manager
-    def calc_position_size(self, signal_strength: float, price: float) -> float:
-        return self.core.calc_position_size(signal_strength, price)
+    def calc_position_size(
+        self,
+        signal_strength: float,
+        price: float,
+        *,
+        volatility: float | None = None,
+        target_volatility: float | None = None,
+    ) -> float:
+        return self.core.calc_position_size(
+            signal_strength,
+            price,
+            volatility=volatility,
+            target_volatility=target_volatility,
+        )
 
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
         current = self.account.current_exposure(symbol)[1]
@@ -272,6 +284,8 @@ class RiskService:
         *,
         corr_threshold: float = 0.0,
         pending_qty: float = 0.0,
+        volatility: float | None = None,
+        target_volatility: float | None = None,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
@@ -281,6 +295,11 @@ class RiskService:
             Quantity already reserved by open orders for ``symbol``.  This
             amount is subtracted from the computed ``delta`` so that subsequent
             orders account for outstanding amounts.
+        volatility:
+            Current volatility measure (e.g. ATR) used to scale risk.
+        target_volatility:
+            Desired volatility level.  Position size is scaled by
+            ``target_volatility / volatility`` when both values are supplied.
 
         Returns
         -------
@@ -296,7 +315,12 @@ class RiskService:
         if self.corr is not None:
             corr_pairs = self.corr.get_correlations()
 
-        unsigned = self.calc_position_size(strength, price)
+        unsigned = self.calc_position_size(
+            strength,
+            price,
+            volatility=volatility,
+            target_volatility=target_volatility,
+        )
         delta = unsigned if side.lower() == "buy" else -unsigned
 
         if pending_qty > 0:

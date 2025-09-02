@@ -148,7 +148,8 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        sig = strat.on_bar({"window": df, "symbol": symbol})
+        bar = {"window": df, "symbol": symbol}
+        sig = strat.on_bar(bar)
         if sig is None:
             continue
         allowed, reason, delta = risk.check_order(
@@ -157,6 +158,8 @@ async def _run_symbol(
             closed.c,
             strength=sig.strength,
             corr_threshold=corr_threshold,
+            volatility=bar.get("atr") or bar.get("volatility"),
+            target_volatility=bar.get("target_volatility"),
         )
         if not allowed or abs(delta) <= 0:
             if reason:

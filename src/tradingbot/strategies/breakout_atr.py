@@ -56,6 +56,8 @@ class BreakoutATR(Strategy):
         last_close = float(df["close"].iloc[-1])
         atr_val = float(atr_series.iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
+        # Expose current ATR so runners and the RiskManager can adapt sizing
+        bar["atr"] = atr_val
 
         window = min(len(atr_series), self.atr_n * 5)
         if window >= self.atr_n * 2:
@@ -76,8 +78,13 @@ class BreakoutATR(Strategy):
                 atr_series.rolling(window).quantile(self._KC_MULT_QUANTILE).iloc[-1]
             )
             self.mult = mult_quant / atr_val if atr_val else 1.0
+            # Target de volatilidad para ajustes de riesgo
+            target_vol = float(atr_series.rolling(window).median().iloc[-1])
+            bar["target_volatility"] = target_vol
         else:
             self.mult = 1.0
+            target_vol = atr_val
+            bar["target_volatility"] = target_vol
 
         upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
 
@@ -99,6 +106,9 @@ class BreakoutATR(Strategy):
             if not hasattr(self, "_last_atr"):
                 self._last_atr: dict[str, float] = {}
             self._last_atr[symbol] = atr_val
+            if not hasattr(self, "_last_target_vol"):
+                self._last_target_vol: dict[str, float] = {}
+            self._last_target_vol[symbol] = target_vol
 
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)

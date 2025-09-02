@@ -1014,12 +1014,16 @@ class EventDrivenBacktestEngine:
                     if sig is None or sig.side == "flat":
                         continue
                     pending = svc.account.open_orders.get(symbol, 0.0)
+                    atr_map = getattr(strat, "_last_atr", {})
+                    tgt_map = getattr(strat, "_last_target_vol", {})
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
                         place_price,
                         strength=sig.strength,
                         pending_qty=pending,
+                        volatility=atr_map.get(symbol),
+                        target_volatility=tgt_map.get(symbol),
                     )
                     if not allowed or abs(delta) < self.min_order_qty:
                         continue
