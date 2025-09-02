@@ -75,6 +75,7 @@ async def test_cancel_on_partial_fill_when_edge_gone():
 @pytest.mark.asyncio
 async def test_order_expiry_requote_when_edge_persists():
     strat = setup_strategy("buy")
+    strat._last_atr = {"XYZ": 1.0}
     adapter = ExpiringAdapter()
     router = ExecutionRouter(adapter, on_order_expiry=strat.on_order_expiry)
     order = Order(symbol="XYZ", side="buy", type_="limit", qty=10.0, price=100.0)
@@ -83,6 +84,8 @@ async def test_order_expiry_requote_when_edge_persists():
     # pending_qty mirrors the size of the re-quoted order
     assert strat.pending_qty["XYZ"] == pytest.approx(10.0)
     assert len(adapter.calls) == 2
+    # re-quoted price includes offset
+    assert adapter.calls[1]["price"] == pytest.approx(100.1)
 
 
 @pytest.mark.asyncio
