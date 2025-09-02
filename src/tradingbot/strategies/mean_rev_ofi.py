@@ -11,7 +11,6 @@ PARAM_INFO = {
     "vol_window": "Ventana para volatilidad de retornos",
     "vol_threshold": "Volatilidad máxima permitida",
     "min_volatility": "Volatilidad mínima reciente en bps",
-    "config_path": "Ruta opcional de configuración",
 }
 
 

@@ -16,7 +16,6 @@ PARAM_INFO = {
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
-    "config_path": "Ruta opcional al archivo de configuración",
 }
 
 

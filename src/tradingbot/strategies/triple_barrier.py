@@ -11,7 +11,6 @@ PARAM_INFO = {
     "lower_pct": "Porcentaje de barrera inferior",
     "training_window": "Ventana para entrenamiento del modelo",
     "meta_model": "Modelo para meta etiquetado",
-    "config_path": "Ruta opcional al archivo de configuración",
 }
 
 

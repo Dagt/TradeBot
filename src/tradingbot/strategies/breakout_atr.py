@@ -5,7 +5,6 @@ from ..data.features import atr, keltner_channels
 PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
-    "config_path": "Ruta opcional al archivo de configuración",
 }
 
 
