@@ -311,12 +311,14 @@ class RiskService:
         *,
         volatility: float | None = None,
         target_volatility: float | None = None,
+        clamp: bool = True,
     ) -> float:
         return self.rm.calc_position_size(
             signal_strength,
             price,
             volatility=volatility,
             target_volatility=target_volatility,
+            clamp=clamp,
         )
 
     def check_global_exposure(self, symbol: str, new_alloc: float) -> bool:
@@ -354,6 +356,7 @@ class RiskService:
         pending_qty: float = 0.0,
         volatility: float | None = None,
         target_volatility: float | None = None,
+        clamp: bool = True,
     ) -> tuple[bool, str, float]:
         """Check limits and compute sized order before submitting.
 
@@ -368,6 +371,8 @@ class RiskService:
         target_volatility:
             Desired volatility level.  Position size is scaled by
             ``target_volatility / volatility`` when both values are supplied.
+        clamp:
+            Whether to clamp ``strength`` to ``[0, 1]`` before sizing.
 
         Returns
         -------
@@ -388,6 +393,7 @@ class RiskService:
             price,
             volatility=volatility,
             target_volatility=target_volatility,
+            clamp=clamp,
         )
         delta = unsigned if side.lower() == "buy" else -unsigned
 

@@ -208,7 +208,9 @@ async def _run_symbol(
                     break
                 continue
             if decision in {"scale_in", "scale_out"}:
-                target = risk.calc_position_size(trade.get("strength", 1.0), px)
+                target = risk.calc_position_size(
+                    trade.get("strength", 1.0), px, clamp=False
+                )
                 delta_qty = target - abs(pos_qty)
                 if abs(delta_qty) > risk.min_order_qty:
                     side = trade["side"] if delta_qty > 0 else (

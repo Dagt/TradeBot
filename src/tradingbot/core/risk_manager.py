@@ -86,6 +86,8 @@ class RiskManager:
         risk_per_trade: float | None = None,
         volatility: float | None = None,
         target_volatility: float | None = None,
+        *,
+        clamp: bool = True,
     ) -> float:
         """Return position size given ``signal_strength`` and ``price``.
 
@@ -95,8 +97,9 @@ class RiskManager:
         while ``0.5`` uses half of it.  When ``volatility`` and
         ``target_volatility`` are provided the allocated capital is further
         scaled by the ratio of the target to current volatility so the position
-        size adapts to market conditions.  The method does **not** clamp the
-        signal so callers can experiment with their own conventions.
+        size adapts to market conditions.  By default the ``signal_strength`` is
+        clamped to ``[0, 1]`` but this behaviour can be disabled with
+        ``clamp=False`` to experiment with custom conventions.
 
         Parameters
         ----------
@@ -112,11 +115,16 @@ class RiskManager:
         target_volatility:
             Desired volatility level.  Position sizes are scaled by
             ``target_volatility / volatility`` when both values are supplied.
+        clamp:
+            Whether to clamp ``signal_strength`` to ``[0, 1]``.  Defaults to
+            ``True``.
         """
-
+        strength = float(signal_strength)
+        if clamp:
+            strength = min(max(strength, 0.0), 1.0)
         balance = float(self.account.get_available_balance())
         rpt = self.risk_per_trade if risk_per_trade is None else float(risk_per_trade)
-        alloc = balance * rpt * float(signal_strength)
+        alloc = balance * rpt * strength
         if volatility is not None and target_volatility is not None and volatility > 0:
             scale = self.effective_risk_pct(volatility, target_volatility) / self.risk_pct
             alloc *= scale
