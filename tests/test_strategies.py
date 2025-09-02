@@ -50,6 +50,41 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
     assert trade["stop"] == pytest.approx(expected_stop)
 
 
+def test_breakout_atr_vol_filter_can_be_disabled():
+    close = 100.0
+    data = []
+    for _ in range(8):
+        data.append({
+            "open": close,
+            "high": close + 1,
+            "low": close - 1,
+            "close": close,
+            "volume": 1,
+        })
+    data.append({
+        "open": close,
+        "high": close + 0.02,
+        "low": close - 0.02,
+        "close": close,
+        "volume": 1,
+    })
+    data.append({
+        "open": close,
+        "high": close + 0.03,
+        "low": close - 0.02,
+        "close": close + 0.03,
+        "volume": 1,
+    })
+    df = pd.DataFrame(data)
+
+    strat = BreakoutATR(ema_n=2, atr_n=2, mult=0.2)
+    assert strat.on_bar({"window": df}) is None
+
+    strat_nofilter = BreakoutATR(ema_n=2, atr_n=2, mult=0.2, vol_quantile=0)
+    sig = strat_nofilter.on_bar({"window": df})
+    assert sig and sig.side == "buy"
+
+
 def test_order_flow_signals():
     df_buy = pd.DataFrame({
         "bid_qty": [1, 2, 3, 5],

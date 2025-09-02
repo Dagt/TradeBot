@@ -6,6 +6,7 @@ PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
     "mult": "Multiplicador aplicado al ATR",
+    "vol_quantile": "Percentil mínimo de ATR para generar señal (0 desactiva el filtro)",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -24,13 +25,14 @@ class BreakoutATR(Strategy):
     name = "breakout_atr"
 
     # Percentil utilizado para estimar el umbral de volatilidad.
-    _VOL_QUANTILE = 0.2
+    DEFAULT_VOL_QUANTILE = 0.05
 
     def __init__(
         self,
         ema_n: int = 20,
         atr_n: int = 14,
         mult: float = 1.0,
+        vol_quantile: float = DEFAULT_VOL_QUANTILE,
         *,
         config_path: str | None = None,
         **kwargs,
@@ -40,6 +42,7 @@ class BreakoutATR(Strategy):
         self.ema_n = int(params.get("ema_n", ema_n))
         self.atr_n = int(params.get("atr_n", atr_n))
         self.mult = float(params.get("mult", mult))
+        self.vol_quantile = float(params.get("vol_quantile", vol_quantile))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -56,15 +59,15 @@ class BreakoutATR(Strategy):
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
         window = min(len(atr_series), self.atr_n * 5)
-        if window >= self.atr_n * 2:
+        if self.vol_quantile > 0 and window >= self.atr_n * 2:
             atr_quant = float(
-                atr_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+                atr_series.rolling(window).quantile(self.vol_quantile).iloc[-1]
             )
             atr_bps_series = (
                 atr_series / df["close"].abs().loc[atr_series.index] * 10000
             )
             atr_bps_quant = float(
-                atr_bps_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+                atr_bps_series.rolling(window).quantile(self.vol_quantile).iloc[-1]
             )
             if atr_val < atr_quant or atr_bps < atr_bps_quant:
                 return None
