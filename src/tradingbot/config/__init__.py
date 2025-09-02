@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     risk_pct: float = 0.0
     max_symbol_exposure: float | None = None
 
+    # Risk maintenance
+    risk_purge_minutes: float = 60.0
+
     # Websocket behaviour
     adapter_ping_interval: float = 20.0
     adapter_max_backoff: float = 30.0

@@ -27,6 +27,7 @@ from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
 from ..execution.balance import rebalance_between_exchanges
 from ..utils.metrics import BASIS, FUNDING_RATE, OPEN_INTEREST
+from ..config import settings
 
 try:
     from ..storage.timescale import get_engine
@@ -126,6 +127,7 @@ class TradeBotDaemon:
         strategy_paths: Iterable[str] | None = None,
         arb_runners: Iterable[tuple[str, dict]] | None = None,
         balance_interval: float = 60.0,
+        purge_interval: float | None = None,
         correlation_threshold: float = 0.8,
         returns_window: int = 100,
         rebalance_assets: Iterable[str] | None = None,
@@ -160,6 +162,9 @@ class TradeBotDaemon:
             except Exception as exc:
                 log.warning("runner_load_error", extra={"path": path, "err": str(exc)})
         self.balance_interval = balance_interval
+        self.purge_interval = (
+            purge_interval if purge_interval is not None else settings.risk_purge_minutes * 60.0
+        )
         self.corr_threshold = float(correlation_threshold)
         self.rebalance_assets = list(rebalance_assets or [])
         self.rebalance_threshold = float(rebalance_threshold)
@@ -309,6 +314,15 @@ class TradeBotDaemon:
                     )
                     capture_exception(exc)
             await asyncio.sleep(self.rebalance_interval)
+
+    # ------------------------------------------------------------------
+    async def _purge_worker(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.risk.purge(self.symbols)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.warning("purge_error", extra={"err": str(exc)})
+            await asyncio.sleep(self.purge_interval)
 
     # ------------------------------------------------------------------
     async def _cross_arbitrage(self, cfg: CrossArbConfig) -> None:
@@ -623,6 +637,10 @@ class TradeBotDaemon:
         self._tasks.append(task)
         if self.rebalance_enabled and self.rebalance_assets:
             task = asyncio.create_task(self._rebalance_worker())
+            task.add_done_callback(_report_task_error)
+            self._tasks.append(task)
+        if self.purge_interval > 0:
+            task = asyncio.create_task(self._purge_worker())
             task.add_done_callback(_report_task_error)
             self._tasks.append(task)
         # cross exchange arbitrage loops
