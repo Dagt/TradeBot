@@ -16,10 +16,7 @@ except Exception:  # pragma: no cover - optional
 log = logging.getLogger(__name__)
 
 PARAM_INFO = {
-    "spot_exchange": "Nombre del exchange spot",
-    "perp_exchange": "Nombre del exchange perp",
     "threshold": "Base mínima para actuar",
-    "persist_pg": "Persistir señales en TimescaleDB",
 }
 
 
@@ -27,9 +24,11 @@ PARAM_INFO = {
 class CashCarryConfig:
     """Configuration parameters for :class:`CashAndCarry`.
 
-    The dataclass is kept for optional persistence features, but the strategy
-    itself accepts parameters via ``**kwargs`` and will build this config
-    internally.
+    The dataclass retains additional fields used only for optional persistence
+    (``spot_exchange``, ``perp_exchange`` and ``persist_pg``).  These values are
+    kept internally and are **not** exposed through the public schema – only the
+    ``threshold`` parameter is surfaced to users.  The strategy itself accepts
+    parameters via ``**kwargs`` and will build this config internally.
     """
 
     symbol: str = ""
@@ -52,7 +51,8 @@ class CashAndCarry(Strategy):
     threshold : float, optional
         Minimum basis required to trigger a trade, by default ``0.0``.
     symbol, spot_exchange, perp_exchange, persist_pg : optional
-        Passed through to :class:`CashCarryConfig` for persistence.
+        Persistence-related fields forwarded to :class:`CashCarryConfig`; these
+        are kept internal and are not part of the public schema.
     """
 
     name = "cash_and_carry"
