@@ -40,3 +40,24 @@ def test_cash_and_carry_strategy():
     assert sig_short and sig_short.side == "sell"
     sig_flat = strat.on_bar({"spot": 100.0, "perp": 100.0, "funding": 0.0001})
     assert sig_flat and sig_flat.side == "flat"
+
+
+def test_cash_and_carry_risk_closes_position():
+    class DummyRisk:
+        updated = False
+
+        def get_trade(self, symbol):
+            return {"symbol": symbol, "side": "buy"}
+
+        def update_trailing(self, trade, price):
+            self.updated = True
+
+        def manage_position(self, trade, signal):
+            return "close"
+
+    cfg = CashCarryConfig(symbol="BTCUSDT", threshold=0.0001)
+    rs = DummyRisk()
+    strat = CashAndCarry(cfg, risk_service=rs)
+    sig = strat.on_bar({"spot": 100.0, "perp": 101.0, "funding": 0.001, "symbol": "BTCUSDT"})
+    assert rs.updated
+    assert sig and sig.side == "sell" and sig.limit_price == 100.0
