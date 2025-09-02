@@ -47,6 +47,7 @@ class RiskService:
         risk_per_trade: float = 0.01,
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
+        profit_lock_usd: float = 1.0,
     ) -> None:
         self.guard = guard
         self.daily = daily
@@ -59,6 +60,7 @@ class RiskService:
             risk_per_trade=risk_per_trade,
             atr_mult=atr_mult,
             risk_pct=risk_pct,
+            profit_lock_usd=profit_lock_usd,
         )
         self.trades: Dict[str, dict] = {}
 
@@ -328,9 +330,18 @@ class RiskService:
         return self.rm.initial_stop(entry_price, side, atr)
 
     def update_trailing(
-        self, trade: dict | object, current_price: float, fees_slip: float = 0.0
+        self,
+        trade: dict | object,
+        current_price: float,
+        fees_slip: float = 0.0,
+        profit_lock_usd: float | None = None,
     ) -> None:
-        self.rm.update_trailing(trade, current_price, fees_slip)
+        self.rm.update_trailing(
+            trade,
+            current_price,
+            fees_slip,
+            profit_lock_usd=profit_lock_usd,
+        )
 
     def manage_position(self, trade: dict | object, signal: dict | None = None) -> str:
         return self.rm.manage_position(trade, signal)

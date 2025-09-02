@@ -14,7 +14,7 @@ Main features
     * Progressively tighten stops as a trade becomes profitable using four stages:
       1. cut the initial risk in half,
       2. move the stop to break‑even once price moves the full initial risk,
-      3. lock in one dollar of net profit (after fees and slippage),
+      3. lock in a configurable amount of net profit (after fees and slippage),
       4. afterwards trail the stop at ``2 × ATR``.
     * Check global exposure limits before submitting new orders.
 """
@@ -63,6 +63,7 @@ class RiskManager:
     risk_per_trade: float = 0.1
     atr_mult: float = 2.0
     risk_pct: float = 0.01
+    profit_lock_usd: float = 1.0
 
     # ------------------------------------------------------------------
     # Volatility adjustment
@@ -150,7 +151,13 @@ class RiskManager:
             return float(entry_price) - delta
         return float(entry_price) + delta
 
-    def update_trailing(self, trade: Any, current_price: float, fees_slip: float = 0.0) -> None:
+    def update_trailing(
+        self,
+        trade: Any,
+        current_price: float,
+        fees_slip: float = 0.0,
+        profit_lock_usd: float | None = None,
+    ) -> None:
         """Update ``trade`` stop according to the four stop stages."""
 
         side = _get(trade, "side")
@@ -177,10 +184,11 @@ class RiskManager:
             _set(trade, "stage", 2)
             return
 
-        # Stage 2 -> 3: lock in +1 USD net after fees/slippage
+        # Stage 2 -> 3: lock in configurable net profit after fees/slippage
+        lock = self.profit_lock_usd if profit_lock_usd is None else float(profit_lock_usd)
         net = move * qty - float(fees_slip)
-        if stage <= 2 and net >= 1.0:
-            price_shift = (1.0 + float(fees_slip)) / qty
+        if stage <= 2 and net >= lock:
+            price_shift = (lock + float(fees_slip)) / qty
             new_stop = entry + price_shift if side in {"buy", "long"} else entry - price_shift
             _set(trade, "stop", new_stop)
             _set(trade, "stage", 3)
