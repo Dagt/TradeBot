@@ -440,6 +440,18 @@ def strategy_schema(name: str):
 
     from ...strategies import STRATEGIES
 
+    # Parameters that should never be exposed via the schema endpoint
+    _INTERNAL_KEYS = {
+        "config_path",
+        "risk_service",
+        "spot_exchange",
+        "perp_exchange",
+        "persist_pg",
+        "rebalance_assets",
+        "rebalance_threshold",
+        "latency",
+    }
+
     # Special case for the functional cross exchange arbitrage strategy
     if name == "cross_arbitrage":
         from ...strategies.cross_exchange_arbitrage import (
@@ -447,8 +459,12 @@ def strategy_schema(name: str):
             PARAM_INFO as param_info,
         )
 
+        param_info = {k: v for k, v in param_info.items() if k not in _INTERNAL_KEYS}
+
         params: list[dict] = []
         for f in dataclasses.fields(CrossArbConfig):
+            if f.name in _INTERNAL_KEYS:
+                continue
             if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
                 default = None
             else:
@@ -493,14 +509,22 @@ def strategy_schema(name: str):
         if isinstance(source, dict):
             param_info.update({str(k): str(v) for k, v in source.items()})
 
+    # Drop internal keys from optional descriptions
+    for k in list(param_info):
+        if k in _INTERNAL_KEYS:
+            del param_info[k]
+
     doc_params: dict[str, str] = {}
     doc = inspect.getdoc(strategy_cls.__init__) or inspect.getdoc(strategy_cls)
     if doc:
         for m in re.finditer(r":param\s+(\w+)\s*:\s*(.+)", doc):
-            doc_params[m.group(1)] = m.group(2).strip()
+            if m.group(1) not in _INTERNAL_KEYS:
+                doc_params[m.group(1)] = m.group(2).strip()
 
     for p in list(sig.parameters.values())[1:]:  # skip ``self``
         if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        if p.name in _INTERNAL_KEYS:
             continue
         default = None if p.default is inspect._empty else p.default
         if p.annotation is inspect._empty:
@@ -524,10 +548,10 @@ def strategy_schema(name: str):
                 params = []
                 for f in dataclasses.fields(cfg):
                     field_name = f.name
-                    default = getattr(cfg, field_name)
-                    if field_name not in param_info and field_name not in doc_params:
+                    if field_name in _INTERNAL_KEYS or field_name not in param_info:
                         continue
-                    desc = param_info.get(field_name) or doc_params.get(field_name) or ""
+                    default = getattr(cfg, field_name)
+                    desc = param_info.get(field_name, "")
                     params.append(
                         {
                             "name": field_name,
@@ -547,11 +571,13 @@ def strategy_schema(name: str):
 
             inst = strategy_cls()
             for attr_name, v in vars(inst).items():
-                if attr_name.startswith("_"):
+                if attr_name.startswith("_") or attr_name in _INTERNAL_KEYS:
                     continue
                 if dataclasses.is_dataclass(v):
                     for f in dataclasses.fields(v):
                         field_name = f.name
+                        if field_name in _INTERNAL_KEYS:
+                            continue
                         default = getattr(v, field_name)
                         if field_name not in param_info and field_name not in doc_params:
                             continue
