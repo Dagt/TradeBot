@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any, MutableMapping
 
 from .account import Account
+from ..execution.normalize import adjust_order, SymbolRules
 
 
 def _get(obj: Any, name: str, default: Any = None) -> Any:
@@ -86,6 +87,8 @@ class RiskManager:
         risk_per_trade: float | None = None,
         volatility: float | None = None,
         target_volatility: float | None = None,
+        rules: SymbolRules | None = None,
+        side: str = "buy",
     ) -> float:
         """Return position size given ``signal_strength`` and ``price``.
 
@@ -112,6 +115,12 @@ class RiskManager:
         target_volatility:
             Desired volatility level.  Position sizes are scaled by
             ``target_volatility / volatility`` when both values are supplied.
+        rules:
+            Optional :class:`SymbolRules` used to round ``price`` and ``qty`` and
+            ensure minimum notional requirements are met. When omitted no
+            adjustment is performed.
+        side:
+            Order side (``buy`` or ``sell``) forwarded to the normalisation helper.
         """
 
         balance = float(self.account.get_available_balance())
@@ -123,7 +132,13 @@ class RiskManager:
         if price <= 0:
             return 0.0
         size = alloc / float(price)
-        return max(0.0, size)
+        size = max(0.0, size)
+        if rules is not None:
+            adj = adjust_order(price, size, price, rules, side)
+            if not adj.ok:
+                return 0.0
+            size = adj.qty
+        return size
 
     # ------------------------------------------------------------------
     # Stop management helpers
