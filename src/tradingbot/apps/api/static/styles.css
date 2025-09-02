@@ -533,3 +533,36 @@ button.icon-btn.warn:hover {
   border-color: rgba(250,204,21,.6);
   background: rgba(250,204,21,.08);
 }
+
+/* Dropdown menu */
+.dropdown { position: relative; }
+.dropbtn { cursor: pointer; }
+.dropdown-content {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #0f1622;
+  border: 1px solid #263041;
+  border-radius: 8px;
+  min-width: 160px;
+  box-shadow: 0 8px 16px rgba(0,0,0,.3);
+  z-index: 10;
+}
+.dropdown-content a {
+  display: block;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dropdown-content a:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.04);
+}
+.dropdown:hover .dropdown-content,
+.dropdown.open .dropdown-content {
+  display: block;
+}
