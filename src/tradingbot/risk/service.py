@@ -112,11 +112,16 @@ class RiskService:
             for sym in self.account.open_orders
             if sym != symbol
         )
-        proj_sym_exp = self.guard.exposure_symbol(symbol) + pending_existing + float(
-            notional
+        proj_sym_exp = (
+            self.guard.exposure_symbol(symbol)
+            + pending_existing
+            + abs(float(notional))
         )
-        proj_total_exp = self.guard.exposure_total() + pending_other + pending_existing + float(
-            notional
+        proj_total_exp = (
+            self.guard.exposure_total()
+            + pending_other
+            + pending_existing
+            + abs(float(notional))
         )
 
         per_cap = getattr(self.guard.st, "per_symbol_cap_usdt", None)
