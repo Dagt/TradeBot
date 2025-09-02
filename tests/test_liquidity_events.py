@@ -96,15 +96,27 @@ def test_liquidity_events_risk_service_handles_stop_and_size():
 
 def test_dynamic_thresholds_increase_events():
     df = pd.DataFrame({
-        "bid_qty": [10, 10, 10, 10],
-        "ask_qty": [10, 10, 10, 10],
-        "bid_px": [[100, 99], [200, 199], [50, 49], [50, 48.5]],
-        "ask_px": [[101, 102], [201, 202], [51, 52], [51, 52]],
+        "bid_qty": [10, 10],
+        "ask_qty": [10, 10],
+        "bid_px": [[100, 99], [100, 98.5]],
+        "ask_px": [[101, 102], [101, 102]],
     })
-    strat_dyn = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, vol_window=3, dynamic_thresholds=True)
+    strat_dyn = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=1.0, dynamic_thresholds=True)
     sig_dyn = strat_dyn.on_bar({"window": df})
     assert sig_dyn is not None and sig_dyn.side == "sell"
 
     strat_static = LiquidityEvents(vacuum_threshold=0.5, gap_threshold=2, dynamic_thresholds=False)
     sig_static = strat_static.on_bar({"window": df})
     assert sig_static is None
+
+
+def test_liquidity_events_detects_on_1m_timeframe():
+    df = pd.DataFrame({
+        "bid_qty": [10] * 15,
+        "ask_qty": [10] * 14 + [4],
+        "bid_px": [[100 + i, 99 + i] for i in range(15)],
+        "ask_px": [[101 + i, 102 + i] for i in range(15)],
+    })
+    strat = LiquidityEvents(vol_window=20)
+    sig = strat.on_bar({"window": df, "timeframe": "1m"})
+    assert sig is not None and sig.side == "buy"
