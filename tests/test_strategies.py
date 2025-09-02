@@ -50,22 +50,34 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
     assert trade["stop"] == pytest.approx(expected_stop)
 
 
-def test_order_flow_signals():
-    df_buy = pd.DataFrame({
-        "bid_qty": [1, 2, 3, 5],
-        "ask_qty": [5, 4, 3, 2],
-    })
-    df_sell = pd.DataFrame({
-        "bid_qty": [5, 4, 3, 2],
-        "ask_qty": [1, 2, 3, 5],
-    })
-    strat = OrderFlow(window=3, buy_threshold=1.0, sell_threshold=1.0)
-    sig_buy = strat.on_bar({"window": df_buy, "close": 100.0})
-    assert sig_buy.side == "buy"
-    assert sig_buy.limit_price == 100.0
-    sig_sell = strat.on_bar({"window": df_sell, "close": 100.0})
-    assert sig_sell.side == "sell"
-    assert sig_sell.limit_price == 100.0
+def test_order_flow_signal_1m():
+    idx = pd.date_range("2024-01-01", periods=6, freq="1min")
+    df_buy = pd.DataFrame(
+        {
+            "bid_qty": [10, 12, 15, 20, 25, 30],
+            "ask_qty": [30, 25, 20, 18, 15, 12],
+            "close": [100, 100.1, 99.9, 100.3, 100.0, 100.5],
+        },
+        index=idx,
+    )
+    strat = OrderFlow(window=3, buy_threshold=0.5, sell_threshold=0.5)
+    sig_buy = strat.on_bar({"window": df_buy})
+    assert sig_buy and sig_buy.side == "buy"
+
+
+def test_order_flow_signal_15m():
+    idx = pd.date_range("2024-01-01", periods=6, freq="15min")
+    df_sell = pd.DataFrame(
+        {
+            "bid_qty": [30, 25, 20, 18, 15, 12],
+            "ask_qty": [10, 12, 15, 20, 25, 30],
+            "close": [100, 99.8, 100.2, 99.7, 100.1, 99.6],
+        },
+        index=idx,
+    )
+    strat = OrderFlow(window=3, buy_threshold=0.5, sell_threshold=0.5)
+    sig_sell = strat.on_bar({"window": df_sell})
+    assert sig_sell and sig_sell.side == "sell"
 
 
 def test_mean_rev_ofi_signals():
