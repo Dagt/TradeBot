@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
@@ -5,9 +6,9 @@ from ..data.features import calc_ofi
 
 
 PARAM_INFO = {
-    "window": "Ventana para promediar el OFI",
-    "buy_threshold": "Umbral de compra para OFI",
-    "sell_threshold": "Umbral de venta para OFI",
+    "window": "Ventana para estadísticos de OFI",
+    "buy_threshold": "Umbral de compra en bps",
+    "sell_threshold": "Umbral de venta en bps",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
@@ -15,8 +16,9 @@ PARAM_INFO = {
 class OrderFlow(Strategy):
     """Order Flow Imbalance strategy.
 
-    Calculates the mean Order Flow Imbalance (OFI) over a rolling window and
-    issues buy/sell signals when the mean exceeds the configured thresholds.
+    Uses the z-score of the Order Flow Imbalance (OFI) scaled by recent
+    volatility in basis points.  Buy/sell signals are issued when the resulting
+    dynamic value exceeds the configured thresholds.
     """
 
     name = "order_flow"
@@ -26,7 +28,7 @@ class OrderFlow(Strategy):
         window: int = 3,
         buy_threshold: float = 1.0,
         sell_threshold: float = 1.0,
-        min_volatility: float = 0.0,
+        min_volatility: float | None = None,
         **kwargs,
     ):
         self.window = window
@@ -59,19 +61,37 @@ class OrderFlow(Strategy):
                 else 0.0
             )
             vol_bps = vol * 10000
-        if vol_bps < self.min_volatility:
+
+            if self.min_volatility is None:
+                vol_series = returns.rolling(self.window).std() * 10000
+                window_q = min(len(vol_series.dropna()), self.window * 5)
+                if window_q >= self.window:
+                    self.min_volatility = float(
+                        vol_series.rolling(window_q).quantile(0.1).iloc[-1]
+                    )
+                else:
+                    self.min_volatility = 0.0
+
+        if self.min_volatility is not None and vol_bps < self.min_volatility:
             return None
 
         ofi_series = calc_ofi(df[list(needed)])
-        ofi_mean = ofi_series.iloc[-self.window :].mean()
-        if ofi_mean > self.buy_threshold:
+        rolling = ofi_series.rolling(self.window)
+        ofi_mean = rolling.mean()
+        ofi_std = rolling.std(ddof=0).replace(0, np.nan)
+        zscore = ((ofi_series - ofi_mean) / ofi_std).iloc[-1]
+        if pd.isna(zscore) or not np.isfinite(vol_bps):
+            return None
+
+        ofi_bps = zscore * vol_bps
+        if ofi_bps > self.buy_threshold:
             side = "buy"
-        elif ofi_mean < -self.sell_threshold:
+        elif ofi_bps < -self.sell_threshold:
             side = "sell"
         else:
             return self.finalize_signal(bar, price or 0.0, None)
+
         if price is None:
             return None
-        strength = 1.0
-        sig = Signal(side, strength)
+        sig = Signal(side, 1.0)
         return self.finalize_signal(bar, price, sig)
