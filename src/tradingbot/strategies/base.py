@@ -90,7 +90,7 @@ class Strategy(ABC):
         ``limit_price`` and returns the signal unchanged.
         """
 
-        if signal is not None:
+        if signal is not None and signal.limit_price is None:
             signal.limit_price = price
         rs = getattr(self, "risk_service", None)
         if rs is None:
