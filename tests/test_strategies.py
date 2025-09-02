@@ -13,25 +13,33 @@ from hypothesis import given, strategies as st, settings
 from tradingbot.data.features import keltner_channels, atr
 
 
-def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell):
+@pytest.mark.parametrize("timeframe, mult", [("1m", 0.02), ("5m", 0.1)])
+def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe, mult):
     strat = BreakoutATR(ema_n=2, atr_n=2)
 
-    sig_buy = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    sig_buy = strat.on_bar(
+        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": timeframe}
+    )
     atr_buy = atr(breakout_df_buy, 2).dropna().iloc[-1]
     upper, lower = keltner_channels(breakout_df_buy, 2, 2, strat.mult)
     assert sig_buy.side == "buy"
-    assert sig_buy.limit_price == pytest.approx(upper.iloc[-1] + 0.1 * atr_buy)
+    assert sig_buy.limit_price == pytest.approx(upper.iloc[-1] + mult * atr_buy)
 
-    sig_sell = strat.on_bar({"window": breakout_df_sell, "volatility": 0.0})
+    sig_sell = strat.on_bar(
+        {"window": breakout_df_sell, "volatility": 0.0, "timeframe": timeframe}
+    )
     atr_sell = atr(breakout_df_sell, 2).dropna().iloc[-1]
     upper, lower = keltner_channels(breakout_df_sell, 2, 2, strat.mult)
     assert sig_sell.side == "sell"
-    assert sig_sell.limit_price == pytest.approx(lower.iloc[-1] - 0.1 * atr_sell)
+    assert sig_sell.limit_price == pytest.approx(lower.iloc[-1] - mult * atr_sell)
 
 
-def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
+@pytest.mark.parametrize("timeframe", ["1m", "5m"])
+def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timeframe):
     account = Account(float("inf"))
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
     svc = RiskService(
         guard,
         account=account,
@@ -41,7 +49,9 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
     )
     svc.account.update_cash(1000.0)
     strat = BreakoutATR(ema_n=2, atr_n=2, **{"risk_service": svc})
-    sig = strat.on_bar({"window": breakout_df_buy, "volatility": 0.0})
+    sig = strat.on_bar(
+        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": timeframe}
+    )
     assert sig and sig.side == "buy"
     trade = strat.trade
     assert trade is not None
@@ -52,14 +62,18 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy):
 
 
 def test_order_flow_signals():
-    df_buy = pd.DataFrame({
-        "bid_qty": [1, 2, 3, 5],
-        "ask_qty": [5, 4, 3, 2],
-    })
-    df_sell = pd.DataFrame({
-        "bid_qty": [5, 4, 3, 2],
-        "ask_qty": [1, 2, 3, 5],
-    })
+    df_buy = pd.DataFrame(
+        {
+            "bid_qty": [1, 2, 3, 5],
+            "ask_qty": [5, 4, 3, 2],
+        }
+    )
+    df_sell = pd.DataFrame(
+        {
+            "bid_qty": [5, 4, 3, 2],
+            "ask_qty": [1, 2, 3, 5],
+        }
+    )
     strat = OrderFlow(window=3, buy_threshold=1.0, sell_threshold=1.0)
     sig_buy = strat.on_bar({"window": df_buy, "close": 100.0})
     assert sig_buy.side == "buy"
@@ -119,7 +133,9 @@ def test_mean_rev_ofi_trailing_stop_uses_atr():
 def test_breakout_vol_risk_service_handles_stop_and_size():
     df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
     account = Account(float("inf"))
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
+    )
     svc = RiskService(
         guard,
         account=account,
@@ -159,10 +175,12 @@ def test_breakout_vol_more_signals_in_lower_timeframe():
 @settings(deadline=None)
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
 def test_order_flow_buy_property(start, inc):
-    df = pd.DataFrame({
-        "bid_qty": [start + i * inc for i in range(3)],
-        "ask_qty": [start - i * inc for i in range(3)],
-    })
+    df = pd.DataFrame(
+        {
+            "bid_qty": [start + i * inc for i in range(3)],
+            "ask_qty": [start - i * inc for i in range(3)],
+        }
+    )
     strat = OrderFlow(window=3, buy_threshold=0.0, sell_threshold=0.0)
     sig = strat.on_bar({"window": df})
     assert sig is None
@@ -171,10 +189,12 @@ def test_order_flow_buy_property(start, inc):
 @settings(deadline=None)
 @given(start=st.floats(1, 10), inc=st.floats(0.1, 5))
 def test_order_flow_sell_property(start, inc):
-    df = pd.DataFrame({
-        "bid_qty": [start - i * inc for i in range(3)],
-        "ask_qty": [start + i * inc for i in range(3)],
-    })
+    df = pd.DataFrame(
+        {
+            "bid_qty": [start - i * inc for i in range(3)],
+            "ask_qty": [start + i * inc for i in range(3)],
+        }
+    )
     strat = OrderFlow(window=3, buy_threshold=0.0, sell_threshold=0.0)
     sig = strat.on_bar({"window": df})
     assert sig is None
