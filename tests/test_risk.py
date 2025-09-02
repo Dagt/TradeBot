@@ -111,6 +111,20 @@ def test_update_position_uses_risk_pct_for_stop(qty):
     assert trade["stop"] == pytest.approx(expected)
 
 
+def test_update_position_uses_atr_for_stop():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(
+        guard, account=Account(float("inf")), risk_pct=0.02, atr_mult=2.0, risk_per_trade=1.0
+    )
+    price = 100.0
+    atr = 1.5
+    rs.update_position("X", "BTC", 1.0, entry_price=price, atr=atr)
+    trade = rs.get_trade("BTC")
+    expected = price - 2.0 * atr
+    assert trade["stop"] == pytest.approx(expected)
+    assert trade["atr"] == pytest.approx(atr)
+
+
 @pytest.mark.parametrize("side", ["buy", "sell"])
 def test_on_fill_sets_initial_stop(side):
     risk_pct = 0.02

@@ -49,6 +49,13 @@ def test_initial_stop_uses_risk_pct():
     assert rm.initial_stop(100.0, "sell") == pytest.approx(102.0)
 
 
+def test_initial_stop_uses_atr():
+    account = Account(float("inf"), cash=1000.0)
+    rm = CoreRiskManager(account, risk_pct=0.02, atr_mult=2.0)
+    assert rm.initial_stop(100.0, "buy", atr=1.5) == pytest.approx(97.0)
+    assert rm.initial_stop(100.0, "sell", atr=1.5) == pytest.approx(103.0)
+
+
 def test_update_trailing_advances_stop_and_stage():
     account = Account(float("inf"), cash=1000.0)
     rm = CoreRiskManager(account, risk_per_trade=0.1)
