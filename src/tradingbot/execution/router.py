@@ -406,7 +406,7 @@ class ExecutionRouter:
         expected = order.price
         if expected is None:
             expected = getattr(getattr(adapter, "state", None), "last_px", {}).get(order.symbol)
-        if exec_price is not None and expected:
+        if exec_price is not None and expected is not None:
             bps = (exec_price - expected) / expected * 10000
             if bps != 0:
                 SLIPPAGE.labels(symbol=order.symbol, side=order.side).observe(bps)
