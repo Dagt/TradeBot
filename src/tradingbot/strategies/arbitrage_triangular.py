@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 
 from .base import Strategy, Signal, record_signal_metrics
+from ..filters.liquidity import LiquidityFilterManager
 
 PARAM_INFO = {
     "taker_fee_bps": "Comisión taker por tramo en puntos básicos",
@@ -87,6 +88,9 @@ def compute_edge(
     else:
         return TriEdge(direction="m->b", gross=edge_mb, net=edge_mb, prices=prices)
 
+liquidity = LiquidityFilterManager()
+
+
 class TriangularArb(Strategy):
     """Naive triangular arbitrage strategy based on three market prices.
 
@@ -114,7 +118,7 @@ class TriangularArb(Strategy):
         # Accept optional ``risk_service`` for interface compatibility.
         self.risk_service = kwargs.get("risk_service")
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: Dict[str, Dict[str, float]]) -> Optional[Signal]:
         prices = bar.get("prices") if isinstance(bar, dict) else None
         if not prices:

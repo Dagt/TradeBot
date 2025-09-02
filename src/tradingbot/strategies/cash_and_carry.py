@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .base import Strategy, Signal, record_signal_metrics
+from ..filters.liquidity import LiquidityFilterManager
 
 try:  # optional persistence
     from ..storage.timescale import get_engine, insert_cross_signal
@@ -38,6 +39,9 @@ class CashCarryConfig:
     persist_pg: bool = False
 
 
+liquidity = LiquidityFilterManager()
+
+
 class CashAndCarry(Strategy):
     """Simple cash-and-carry strategy using spot vs perpetual futures funding.
 
@@ -68,7 +72,7 @@ class CashAndCarry(Strategy):
         self.cfg = cfg or CashCarryConfig(**kwargs)
         self.engine = get_engine() if (self.cfg.persist_pg and _CAN_PG) else None
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Optional[Signal]:
         spot = bar.get("spot")
         perp = bar.get("perp")

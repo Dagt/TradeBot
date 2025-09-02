@@ -6,6 +6,7 @@ import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import book_vacuum, liquidity_gap
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -14,6 +15,9 @@ PARAM_INFO = {
     "vol_window": "Ventana para calcular la volatilidad",
     "dynamic_thresholds": "Ajustar umbrales según volatilidad",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class LiquidityEvents(Strategy):
@@ -67,7 +71,7 @@ class LiquidityEvents(Strategy):
                 return max(5, self.vol_window // 2)
         return self.vol_window
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         needed = {"bid_qty", "ask_qty", "bid_px", "ask_px"}

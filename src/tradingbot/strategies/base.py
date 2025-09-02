@@ -8,7 +8,6 @@ import yaml
 
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
-from ..filters import passes as liquidity_passes
 from ..execution.order_types import Order
 
 
@@ -162,57 +161,61 @@ def load_params(path: str | None) -> dict[str, Any]:
     return data
 
 
-def record_signal_metrics(fn):
-    """Decorator to time strategy signal generation and persist events.
+def record_signal_metrics(liquidity):
+    """Decorator factory to time signal generation and persist events.
 
-    It observes ``REQUEST_LATENCY`` for each ``on_bar`` invocation and persists
-    generated signals as orders into Timescale if available. Any persistence
-    errors are silently ignored so strategies remain side-effect free in test
-    environments.
+    Parameters
+    ----------
+    liquidity:
+        Instance of :class:`LiquidityFilterManager` providing the ``passes``
+        method used to gate signal generation.
     """
 
-    def wrapper(self: Strategy, bar: dict[str, Any]) -> Signal | None:  # type: ignore[misc]
-        if not liquidity_passes(bar, bar.get("timeframe")):
-            return None
-        start = time.monotonic()
-        sig = fn(self, bar)
-        gen_ts = time.time()
-        if sig is not None:
-            sig.signal_ts = gen_ts
-        duration = time.monotonic() - start
-        REQUEST_LATENCY.labels(method=self.name, endpoint="on_bar").observe(duration)
+    def decorator(fn):
+        def wrapper(self: Strategy, bar: dict[str, Any]) -> Signal | None:  # type: ignore[misc]
+            if not liquidity.passes(bar, bar.get("timeframe")):
+                return None
+            start = time.monotonic()
+            sig = fn(self, bar)
+            gen_ts = time.time()
+            if sig is not None:
+                sig.signal_ts = gen_ts
+            duration = time.monotonic() - start
+            REQUEST_LATENCY.labels(method=self.name, endpoint="on_bar").observe(duration)
 
-        # track last signal for re-quoting decisions
-        symbol = bar.get("symbol")
-        if not hasattr(self, "_last_signal"):
-            self._last_signal = {}
-        if symbol:
-            self._last_signal[symbol] = sig
+            # track last signal for re-quoting decisions
+            symbol = bar.get("symbol")
+            if not hasattr(self, "_last_signal"):
+                self._last_signal = {}
+            if symbol:
+                self._last_signal[symbol] = sig
 
-        # Risk-based sizing is now handled within ``RiskService.check_order``
-        # so strategy signals keep their original strength here.
+            # Risk-based sizing is now handled within ``RiskService.check_order``
+            # so strategy signals keep their original strength here.
 
-        if sig and sig.side in {"buy", "sell"} and {"exchange", "symbol"} <= bar.keys():
-            try:
-                engine = timescale.get_engine()
-                timescale.insert_order(
-                    engine,
-                    strategy=self.name,
-                    exchange=bar["exchange"],
-                    symbol=bar["symbol"],
-                    side=sig.side,
-                    type_="signal",
-                    qty=float(sig.strength),
-                    px=bar.get("close"),
-                    status="signal",
-                    notes=None,
-                )
-            except Exception:
-                # Persistence is best-effort only
-                pass
-        return sig
+            if sig and sig.side in {"buy", "sell"} and {"exchange", "symbol"} <= bar.keys():
+                try:
+                    engine = timescale.get_engine()
+                    timescale.insert_order(
+                        engine,
+                        strategy=self.name,
+                        exchange=bar["exchange"],
+                        symbol=bar["symbol"],
+                        side=sig.side,
+                        type_="signal",
+                        qty=float(sig.strength),
+                        px=bar.get("close"),
+                        status="signal",
+                        notes=None,
+                    )
+                except Exception:
+                    # Persistence is best-effort only
+                    pass
+            return sig
 
-    return wrapper
+        return wrapper
+
+    return decorator
 
 
 __all__ = ["Signal", "Strategy", "load_params", "record_signal_metrics"]

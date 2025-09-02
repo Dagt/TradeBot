@@ -47,7 +47,8 @@ def test_default_filter_estimates_percentiles(tmp_path, monkeypatch, spreads, vo
     monkeypatch.setattr("tradingbot.config.hydra_conf.load_config", lambda path=None: cfg)
     importlib.reload(liquidity)
     try:
-        filt = liquidity._default_filter
+        manager = liquidity.LiquidityFilterManager()
+        filt = manager._default_filter
         assert filt.max_spread == pytest.approx(df["spread"].quantile(0.95))
         assert filt.min_volume == pytest.approx(df["volume"].quantile(0.05))
         assert filt.max_volatility == pytest.approx(df["volatility"].quantile(0.95))
@@ -91,11 +92,11 @@ def test_filter_thresholds_vary_by_dataset(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tradingbot.config.hydra_conf.load_config", lambda path=None: load(csv1))
     importlib.reload(liquidity)
-    filt1 = liquidity._default_filter
+    filt1 = liquidity.LiquidityFilterManager()._default_filter
 
     monkeypatch.setattr("tradingbot.config.hydra_conf.load_config", lambda path=None: load(csv2))
     importlib.reload(liquidity)
-    filt2 = liquidity._default_filter
+    filt2 = liquidity.LiquidityFilterManager()._default_filter
 
     assert filt1.max_spread != filt2.max_spread
     assert filt1.min_volume != filt2.min_volume
@@ -109,6 +110,7 @@ def test_thresholds_adjust_per_timeframe():
     """Each timeframe maintains its own dynamic thresholds."""
 
     importlib.reload(liquidity)
+    manager = liquidity.LiquidityFilterManager()
     symbol = "BTC"
 
     bars_1h = [
@@ -120,9 +122,9 @@ def test_thresholds_adjust_per_timeframe():
         )
     ]
     for bar in bars_1h:
-        assert liquidity.passes(bar, bar["timeframe"])  # populate history
+        assert manager.passes(bar, bar["timeframe"])  # populate history
 
-    filt_1h = liquidity._filters[(symbol, "1h")]
+    filt_1h = manager._filters[(symbol, "1h")]
 
     bars_1m = [
         {"symbol": symbol, "timeframe": "1m", "spread": s, "volume": v, "volatility": vol}
@@ -133,9 +135,9 @@ def test_thresholds_adjust_per_timeframe():
         )
     ]
     for bar in bars_1m:
-        assert liquidity.passes(bar, bar["timeframe"])  # populate history
+        assert manager.passes(bar, bar["timeframe"])  # populate history
 
-    filt_1m = liquidity._filters[(symbol, "1m")]
+    filt_1m = manager._filters[(symbol, "1m")]
 
     assert filt_1h.max_spread != filt_1m.max_spread
     assert filt_1h.min_volume != filt_1m.min_volume
@@ -143,7 +145,7 @@ def test_thresholds_adjust_per_timeframe():
 
     # verify that a wide 1m spread fails while similar 1h spread still passes
     wide_1m = {"symbol": symbol, "timeframe": "1m", "spread": filt_1m.max_spread * 1.5, "volume": 100, "volatility": 0.01}
-    assert not liquidity.passes(wide_1m, wide_1m["timeframe"])
+    assert not manager.passes(wide_1m, wide_1m["timeframe"])
 
     ok_1h = {"symbol": symbol, "timeframe": "1h", "spread": filt_1h.max_spread * 0.9, "volume": 1000, "volatility": 0.1}
-    assert liquidity.passes(ok_1h, ok_1h["timeframe"])  # should still pass under 1h thresholds
+    assert manager.passes(ok_1h, ok_1h["timeframe"])  # should still pass under 1h thresholds

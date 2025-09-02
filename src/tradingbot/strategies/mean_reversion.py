@@ -1,6 +1,7 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi
+from ..filters.liquidity import LiquidityFilterManager
 
 
 def _tf_to_minutes(tf: str) -> int:
@@ -11,6 +12,8 @@ def _tf_to_minutes(tf: str) -> int:
     if tf.endswith("h"):
         return int(tf[:-1]) * 60
     raise ValueError(f"unsupported timeframe: {tf}")
+
+liquidity = LiquidityFilterManager()
 
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
@@ -57,7 +60,7 @@ class MeanReversion(Strategy):
         lower = 50 - dev
         return upper, lower
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.rsi_n + 1:

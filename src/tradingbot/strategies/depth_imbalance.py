@@ -4,6 +4,10 @@ import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import depth_imbalance
+from ..filters.liquidity import LiquidityFilterManager
+
+
+liquidity = LiquidityFilterManager()
 
 
 PARAM_INFO = {
@@ -32,7 +36,7 @@ class DepthImbalance(Strategy):
         self.percentile = percentile
         self.risk_service = kwargs.get("risk_service")
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         needed = {"bid_qty", "ask_qty"}

@@ -3,11 +3,15 @@ from __future__ import annotations
 from typing import Sequence, Type
 
 from .base import Strategy, Signal, record_signal_metrics
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
     "strategies": "Lista de subestrategias y sus parámetros",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class CompositeSignals(Strategy):
@@ -31,7 +35,7 @@ class CompositeSignals(Strategy):
                 # instantiating without it to preserve backward compatibility.
                 self.sub_strategies.append(cls(**params))
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df = bar.get("window")
         if df is None:

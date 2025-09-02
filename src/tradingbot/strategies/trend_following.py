@@ -2,6 +2,7 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -9,6 +10,9 @@ PARAM_INFO = {
     "min_volatility": "Volatilidad mínima requerida",
     "vol_lookback": "Ventana para calcular la volatilidad (minutos)",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class TrendFollowing(Strategy):
@@ -59,7 +63,7 @@ class TrendFollowing(Strategy):
         thresh = base + vol_bps * 0.5
         return max(55.0, min(90.0, thresh))
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         tf = bar.get("timeframe")

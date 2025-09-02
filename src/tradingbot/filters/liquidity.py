@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from threading import Lock
 
 import pandas as pd
 from collections import defaultdict, deque
@@ -112,87 +113,85 @@ def _load_default_filter() -> LiquidityFilter:
     )
 
 
-_default_filter = _load_default_filter()
+class LiquidityFilterManager:
+    """Manage liquidity filters and historical metrics with thread safety."""
 
-# Historical metrics per (symbol, timeframe)
-_history: dict[tuple[str, str], dict[str, deque[float]]] = defaultdict(
-    lambda: {"spread": deque(maxlen=1000), "volume": deque(maxlen=1000), "volatility": deque(maxlen=1000)}
-)
-# Cached filters per (symbol, timeframe)
-_filters: dict[tuple[str, str], LiquidityFilter] = {}
+    MIN_SAMPLES = 5
 
-# Minimum samples required before enforcing thresholds
-MIN_SAMPLES = 5
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._default_filter = _load_default_filter()
+        self._history: dict[tuple[str, str], dict[str, deque[float]]] = defaultdict(
+            lambda: {
+                "spread": deque(maxlen=1000),
+                "volume": deque(maxlen=1000),
+                "volatility": deque(maxlen=1000),
+            }
+        )
+        self._filters: dict[tuple[str, str], LiquidityFilter] = {}
+
+    def _update_metrics(self, symbol: str, timeframe: str, bar: dict[str, Any]) -> LiquidityFilter:
+        """Record metrics for ``symbol``/``timeframe`` and recompute thresholds."""
+
+        hist = self._history[(symbol, timeframe)]
+
+        spread = bar.get("spread")
+        if spread is None and {"ask", "bid"} <= bar.keys():
+            spread = float(bar["ask"]) - float(bar["bid"])
+        if spread is not None:
+            hist["spread"].append(float(spread))
+
+        volume = bar.get("volume")
+        if volume is not None:
+            hist["volume"].append(float(volume))
+
+        vol = bar.get("volatility")
+        if vol is None:
+            window = bar.get("window")
+            if isinstance(window, pd.DataFrame) and "close" in window.columns and len(window) > 1:
+                vol = window["close"].pct_change().dropna().std()
+        if vol is not None:
+            hist["volatility"].append(float(vol))
+
+        filt = self._filters.get((symbol, timeframe), LiquidityFilter())
+        if hist["spread"]:
+            filt.max_spread = float(pd.Series(hist["spread"]).quantile(0.95))
+        if hist["volume"]:
+            filt.min_volume = float(pd.Series(hist["volume"]).quantile(0.05))
+        if hist["volatility"]:
+            filt.max_volatility = float(pd.Series(hist["volatility"]).quantile(0.95))
+
+        self._filters[(symbol, timeframe)] = filt
+        return filt
+
+    def passes(
+        self,
+        bar: dict[str, Any],
+        timeframe: str | None = None,
+        filt: LiquidityFilter | None = None,
+    ) -> bool:
+        """Return ``True`` if ``bar`` passes liquidity checks."""
+
+        if filt is not None:
+            return filt.check(bar)
+
+        symbol = bar.get("symbol")
+        tf = timeframe or bar.get("timeframe")
+        if symbol and tf:
+            with self._lock:
+                hist = self._history[(symbol, tf)]
+                filt = self._filters.get((symbol, tf), LiquidityFilter())
+                samples = max(
+                    len(hist["spread"]),
+                    len(hist["volume"]),
+                    len(hist["volatility"]),
+                )
+                if samples >= self.MIN_SAMPLES and not filt.check(bar):
+                    return False
+                self._update_metrics(symbol, tf, bar)
+            return True
+        else:
+            return self._default_filter.check(bar)
 
 
-def _update_metrics(symbol: str, timeframe: str, bar: dict[str, Any]) -> LiquidityFilter:
-    """Record metrics for ``symbol``/``timeframe`` and recompute thresholds."""
-
-    hist = _history[(symbol, timeframe)]
-
-    spread = bar.get("spread")
-    if spread is None and {"ask", "bid"} <= bar.keys():
-        spread = float(bar["ask"]) - float(bar["bid"])
-    if spread is not None:
-        hist["spread"].append(float(spread))
-
-    volume = bar.get("volume")
-    if volume is not None:
-        hist["volume"].append(float(volume))
-
-    vol = bar.get("volatility")
-    if vol is None:
-        window = bar.get("window")
-        if isinstance(window, pd.DataFrame) and "close" in window.columns and len(window) > 1:
-            vol = window["close"].pct_change().dropna().std()
-    if vol is not None:
-        hist["volatility"].append(float(vol))
-
-    filt = _filters.get((symbol, timeframe), LiquidityFilter())
-    if hist["spread"]:
-        filt.max_spread = float(pd.Series(hist["spread"]).quantile(0.95))
-    if hist["volume"]:
-        filt.min_volume = float(pd.Series(hist["volume"]).quantile(0.05))
-    if hist["volatility"]:
-        filt.max_volatility = float(pd.Series(hist["volatility"]).quantile(0.95))
-
-    _filters[(symbol, timeframe)] = filt
-    return filt
-
-
-def passes(
-    bar: dict[str, Any],
-    timeframe: str | None = None,
-    filt: LiquidityFilter | None = None,
-) -> bool:
-    """Return ``True`` if ``bar`` passes liquidity checks.
-
-    Parameters
-    ----------
-    bar:
-        Market data bar containing metrics like ``bid``, ``ask``, ``volume``
-        or a pandas ``DataFrame`` under the ``window`` key.
-    timeframe:
-        Optional timeframe string.  When provided along with a ``symbol`` in
-        ``bar``, historical metrics are tracked separately for each
-        ``(symbol, timeframe)`` combination.
-    filt:
-        Optional :class:`LiquidityFilter` instance.  If provided it takes
-        precedence over the cached filters.
-    """
-
-    if filt is not None:
-        return filt.check(bar)
-
-    symbol = bar.get("symbol")
-    tf = timeframe or bar.get("timeframe")
-    if symbol and tf:
-        hist = _history[(symbol, tf)]
-        filt = _filters.get((symbol, tf), LiquidityFilter())
-        samples = max(len(hist["spread"]), len(hist["volume"]), len(hist["volatility"]))
-        if samples >= MIN_SAMPLES and not filt.check(bar):
-            return False
-        _update_metrics(symbol, tf, bar)
-        return True
-    else:
-        return _default_filter.check(bar)
+__all__ = ["LiquidityFilter", "LiquidityFilterManager"]

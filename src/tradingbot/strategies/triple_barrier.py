@@ -3,6 +3,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.base import ClassifierMixin
 
 from .base import Strategy, Signal, record_signal_metrics, load_params
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -105,6 +106,9 @@ def triple_barrier_labels(
     return labels
 
 
+liquidity = LiquidityFilterManager()
+
+
 class TripleBarrier(Strategy):
     """Strategy using triple-barrier labeling and a gradient boosting model."""
 
@@ -153,7 +157,7 @@ class TripleBarrier(Strategy):
         )
         return feat
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.training_window:

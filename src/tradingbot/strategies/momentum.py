@@ -3,7 +3,10 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, returns
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
+
+liquidity = LiquidityFilterManager()
 
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
@@ -63,7 +66,7 @@ class Momentum(Strategy):
         thresh = rq.update(float(last_rsi))
         return 55.0 if pd.isna(thresh) else float(thresh)
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
 

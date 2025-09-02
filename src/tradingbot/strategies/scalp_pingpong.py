@@ -6,6 +6,7 @@ import pandas as pd
 
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import rsi
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -53,6 +54,9 @@ class ScalpPingPongConfig:
     trend_threshold: float = 10.0
 
 
+liquidity = LiquidityFilterManager()
+
+
 class ScalpPingPong(Strategy):
     """Mean-reversion scalping strategy using z-score of returns."""
 
@@ -81,7 +85,7 @@ class ScalpPingPong(Strategy):
         z = (returns.iloc[-1] - mean) / std
         return float(z)
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         tf = int(bar.get("timeframe", 1)) or 1

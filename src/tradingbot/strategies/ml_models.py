@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from joblib import dump, load
 
 from .base import Strategy, Signal, record_signal_metrics
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -17,6 +18,9 @@ PARAM_INFO = {
     "model_path": "Ruta para cargar el modelo",
     "margin": "Margen de probabilidad sobre 0.5",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class MLStrategy(Strategy):
@@ -69,7 +73,7 @@ class MLStrategy(Strategy):
         self.model.fit(X_scaled, y)
 
     # ------------------------------------------------------------------
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict[str, Any]) -> Signal | None:
         """Generate a signal for a given bar using the ML model.
 

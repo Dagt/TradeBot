@@ -3,12 +3,16 @@ import pytest
 from tradingbot.strategies.base import Strategy, Signal, record_signal_metrics
 from tradingbot.execution.order_types import Order
 from tradingbot.execution.router import ExecutionRouter
+from tradingbot.filters.liquidity import LiquidityFilterManager
+
+
+liquidity = LiquidityFilterManager()
 
 
 class DummyStrategy(Strategy):
     name = "dummy"
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar):
         # Always emit the side provided in the bar for testing
         return Signal(bar.get("side", "buy"), 1.0)
