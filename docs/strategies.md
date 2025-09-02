@@ -50,7 +50,9 @@ precio cae por debajo del promedio y vende cuando lo supera.
 
 ### Mean Reversion con OFI (`mean_rev_ofi`)
 Variación de mean reversion que utiliza el desequilibrio de flujo de órdenes
-(Order Flow Imbalance) para estimar el regreso al promedio.
+(Order Flow Imbalance) para estimar el regreso al promedio. Filtra señales
+cuando la volatilidad reciente, medida en bps, supera un percentil móvil y la
+ventana de cálculo se adapta automáticamente al timeframe de las velas.
 
 ### Depth Imbalance (`depth_imbalance`)
 Evalúa el desequilibrio entre órdenes de compra y venta en el libro de

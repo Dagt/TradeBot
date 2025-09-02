@@ -89,29 +89,30 @@ def test_mean_rev_ofi_signals():
 ofi_window: 2
 zscore_threshold: 0.5
 vol_window: 2
-vol_threshold: 1.0
+vol_threshold: 0.9
 """
     )
+    closes = [100, 110, 100, 105, 100, 101]
     df_sell = pd.DataFrame(
         {
-            "bid_qty": [1, 2, 10],
-            "ask_qty": [3, 1, 0],
-            "close": [100, 100, 100],
+            "bid_qty": [1, 2, 3, 4, 5, 10],
+            "ask_qty": [5, 4, 3, 2, 1, 0],
+            "close": closes,
         }
     )
     strat = MeanRevOFI(**cfg)
-    sig_sell = strat.on_bar({"window": df_sell, "volatility": 0.0})
+    sig_sell = strat.on_bar({"window": df_sell, "volatility": 0.0, "timeframe": "3m"})
     assert sig_sell.side == "sell"
 
     df_buy = pd.DataFrame(
         {
-            "bid_qty": [3, 1, 0],
-            "ask_qty": [1, 2, 10],
-            "close": [100, 100, 100],
+            "bid_qty": [5, 4, 3, 2, 1, 0],
+            "ask_qty": [1, 2, 3, 4, 5, 10],
+            "close": closes,
         }
     )
     strat = MeanRevOFI(**cfg)
-    sig_buy = strat.on_bar({"window": df_buy, "volatility": 0.0})
+    sig_buy = strat.on_bar({"window": df_buy, "volatility": 0.0, "timeframe": "3m"})
     assert sig_buy.side == "buy"
 
 
