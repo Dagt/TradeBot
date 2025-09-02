@@ -364,6 +364,7 @@ nav{
 nav .menu{
   display:inline-flex;
   gap:20px;
+  align-items:center;
 }
 
 nav a{
@@ -537,6 +538,14 @@ button.icon-btn.warn:hover {
 /* Dropdown menu */
 .dropdown { position: relative; }
 .dropbtn { cursor: pointer; }
+.dropdown .dropbtn {
+  font-weight:600;
+  font-size:15px;
+  padding:8px 4px;
+  color:var(--muted);
+  transition: color .15s ease;
+  display:inline-block;
+}
 .dropdown-content {
   display: none;
   position: absolute;
