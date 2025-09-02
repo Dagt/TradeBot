@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
 from .order_types import Order
 from .slippage import impact_by_depth, queue_position
+from .normalize import adjust_order, SymbolRules
 from ..utils.metrics import (
     SLIPPAGE,
     ORDER_LATENCY,
@@ -260,6 +261,33 @@ class ExecutionRouter:
 
         state = getattr(adapter, "state", None)
         book = getattr(state, "order_book", {}).get(order.symbol) if state else None
+
+        rules: SymbolRules | None = None
+        meta = getattr(adapter, "meta", None)
+        if meta is not None:
+            try:
+                rules = meta.rules_for(order.symbol)
+            except Exception:
+                rules = None
+        mark_price = order.price
+        if mark_price is None:
+            if state and getattr(state, "last_px", {}).get(order.symbol) is not None:
+                mark_price = float(state.last_px[order.symbol])
+            elif book and book.get("bids") and book.get("asks"):
+                bid = book["bids"][0][0]
+                ask = book["asks"][0][0]
+                mark_price = (bid + ask) / 2.0
+            else:
+                mark_price = 0.0
+        if rules is not None:
+            adj = adjust_order(order.price, order.qty, float(mark_price or 0.0), rules, order.side)
+            if not adj.ok:
+                log.warning("Order %s rejected by adjust_order: %s", order, adj.reason)
+                return {"status": "rejected", "reason": adj.reason}
+            order.price = adj.price
+            order.qty = adj.qty
+            order.pending_qty = adj.qty
+
         est_slippage = None
         queue_pos = None
         if book and book.get("bids") and book.get("asks"):
