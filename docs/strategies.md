@@ -24,10 +24,12 @@ Compra cuando el precio supera el canal superior calculado con el indicador
 ATR y vende cuando cae por debajo del canal inferior.
 Parámetros clave:
 
-- `min_atr`: umbral mínimo del ATR en unidades de precio, independiente del
-  tamaño de la vela.
-- `min_atr_bps`: exige un ATR relativo mínimo expresado en puntos básicos del
-  precio.
+- `ema_n`: periodo de la EMA para la línea central.
+- `atr_n`: periodo del ATR usado en los canales.
+- `mult`: multiplicador aplicado al ATR.
+
+El filtro de volatilidad se autocalibra a partir de percentiles recientes del
+ATR, por lo que no requiere configuración manual.
 
 ### Breakout por Volumen (`breakout_vol`)
 Detecta rupturas de precio acompañadas de incrementos de volumen.

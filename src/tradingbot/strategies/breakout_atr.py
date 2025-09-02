@@ -6,25 +6,28 @@ PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
     "mult": "Multiplicador aplicado al ATR",
-    # ``min_atr`` se interpreta en unidades de precio y ya no depende del
-    # tamaño de la vela.
-    "min_atr": "ATR mínimo para operar (independiente del timeframe)",
-    # Umbral relativo expresado en puntos básicos del precio.
-    "min_atr_bps": "ATR mínimo relativo en bps",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
 
 class BreakoutATR(Strategy):
+    """Keltner breakout con filtros de volatilidad autocalibrados.
+
+    El umbral de volatilidad se calcula como un percentil reciente del ATR,
+    por lo que el usuario no necesita ajustar parámetros adicionales para
+    filtrar períodos de baja volatilidad.
+    """
+
     name = "breakout_atr"
+
+    # Percentil utilizado para estimar el umbral de volatilidad.
+    _VOL_QUANTILE = 0.2
 
     def __init__(
         self,
         ema_n: int = 20,
         atr_n: int = 14,
         mult: float = 1.0,
-        min_atr: float = 0.0,
-        min_atr_bps: float = 0.0,
         *,
         config_path: str | None = None,
         **kwargs,
@@ -34,21 +37,36 @@ class BreakoutATR(Strategy):
         self.ema_n = int(params.get("ema_n", ema_n))
         self.atr_n = int(params.get("atr_n", atr_n))
         self.mult = float(params.get("mult", mult))
-        self.min_atr = float(params.get("min_atr", min_atr))
-        self.min_atr_bps = float(params.get("min_atr_bps", min_atr_bps))
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < max(self.ema_n, self.atr_n) + 2:
             return None
-        upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
+
+        atr_series = atr(df, self.atr_n).dropna()
+        if len(atr_series) < self.atr_n:
+            return None
+
         last_close = float(df["close"].iloc[-1])
-        atr_val = float(atr(df, self.atr_n).iloc[-1])
+        atr_val = float(atr_series.iloc[-1])
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
 
-        if atr_val < self.min_atr or atr_bps < self.min_atr_bps:
-            return None
+        window = min(len(atr_series), self.atr_n * 5)
+        if window >= self.atr_n * 2:
+            atr_quant = float(
+                atr_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+            )
+            atr_bps_series = (
+                atr_series / df["close"].abs().loc[atr_series.index] * 10000
+            )
+            atr_bps_quant = float(
+                atr_bps_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+            )
+            if atr_val < atr_quant or atr_bps < atr_bps_quant:
+                return None
+
+        upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
 
         side: str | None = None
         if last_close > upper.iloc[-1]:
