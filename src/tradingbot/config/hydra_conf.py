@@ -52,7 +52,7 @@ class BacktestConfig:
     strategy: str = "breakout_atr"
     latency: int = 1
     window: int = 120
-    min_fill_qty: float = 1e-3
+    min_fill_qty: float = 0.0
     slippage: "SlippageConfig | None" = None
 
 
@@ -94,7 +94,7 @@ class ExchangeVenueConfig:
     maker_fee_bps: float = 10.0
     taker_fee_bps: float = 10.0
     tick_size: float = 0.0
-    min_fill_qty: float = 1e-3
+    min_fill_qty: float = 0.0
 
 
 @dataclass

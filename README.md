@@ -142,7 +142,7 @@ backtest:
 
 El motor de backtesting ignora ejecuciones cuya cantidad sea menor a
 `min_fill_qty` para evitar registrar residuos irrelevantes. El umbral
-predeterminado es la constante `MIN_FILL_QTY = 1e-3`, pero puede ajustarse
+predeterminado es la constante `MIN_FILL_QTY = 0.0`, pero puede ajustarse
 al crear `EventDrivenBacktestEngine` o mediante los campos `backtest.min_fill_qty`
 y `exchange_configs.<exchange>.min_fill_qty` en la configuración YAML.
 

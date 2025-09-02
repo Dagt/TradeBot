@@ -24,7 +24,7 @@ from ..data.features import returns, calc_ofi
 log = logging.getLogger(__name__)
 
 # Minimum quantity to record a fill. Fills below this threshold are ignored.
-MIN_FILL_QTY = 1e-3
+MIN_FILL_QTY = 0.0
 # Minimum absolute order quantity. Orders below this are discarded.
 MIN_ORDER_QTY = 1e-9
 
@@ -216,7 +216,7 @@ class EventDrivenBacktestEngine:
     """Backtest engine supporting multiple symbols/strategies and order latency.
 
     Fills with quantity below ``min_fill_qty`` (defaults to
-    ``MIN_FILL_QTY`` = ``1e-3``) are ignored to avoid recording irrelevant
+    ``MIN_FILL_QTY`` = ``0.0``) are ignored to avoid recording irrelevant
     residuals.
     """
 
