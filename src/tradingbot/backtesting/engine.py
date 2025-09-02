@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import random
 import math
+from numba import njit
 
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
@@ -27,6 +28,63 @@ log = logging.getLogger(__name__)
 MIN_FILL_QTY = 0.0
 # Minimum absolute order quantity. Orders below this are discarded.
 MIN_ORDER_QTY = 1e-9
+
+
+@njit(cache=True)
+def _fee_calc(cash: float, rate: float) -> float:
+    return abs(cash) * rate
+
+
+@njit(cache=True)
+def _slippage_core(
+    side_is_buy: bool,
+    qty: float,
+    price: float,
+    spread: float,
+    volume: float,
+    ofi_val: float,
+    volume_impact: float,
+    ofi_impact: float,
+    pct: float,
+) -> float:
+    impact = volume_impact * qty / max(volume, 1e-9)
+    slip = spread / 2 + impact + ofi_impact * ofi_val + price * pct
+    return price + slip if side_is_buy else price - slip
+
+
+@njit(cache=True)
+def _fill_core(
+    side_is_buy: bool,
+    qty: float,
+    price: float,
+    spread: float,
+    volume: float,
+    avail: float,
+    queue_pos: float,
+    volume_impact: float,
+    ofi_impact: float,
+    ofi_val: float,
+    pct: float,
+    partial: bool,
+) -> tuple[float, float, float]:
+    eff_avail = max(0.0, avail - queue_pos)
+    new_queue = max(0.0, queue_pos - avail)
+    if partial:
+        fill_qty = qty if qty < eff_avail else eff_avail
+    else:
+        fill_qty = qty if eff_avail >= qty else 0.0
+    adj_price = _slippage_core(
+        side_is_buy,
+        fill_qty,
+        price,
+        spread,
+        volume,
+        ofi_val,
+        volume_impact,
+        ofi_impact,
+        pct,
+    )
+    return adj_price, fill_qty, new_queue
 
 
 def _validate_risk_pct(value: float) -> float:
@@ -115,14 +173,7 @@ class SlippageModel:
         self.source = source
         self.base_spread = float(base_spread)
         self.pct = float(pct)
-
-    def adjust(
-        self,
-        side: str,
-        qty: float,
-        price: float,
-        bar: Mapping[str, float] | pd.Series,
-    ) -> float:
+    def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
             ask = bar.get("ask") or bar.get("ask_px") or bar.get("ask_price")
@@ -137,14 +188,13 @@ class SlippageModel:
                 spread = self.base_spread
         else:
             spread = self.base_spread
-        spread *= self.spread_mult
-        vol = float(bar.get("volume", 0.0))
-        impact = self.volume_impact * qty / max(vol, 1e-9)
-        ofi_val = 0.0
+        return spread * self.spread_mult
+
+    def _ofi_from_bar(self, bar: Mapping[str, float] | pd.Series) -> float:
         if "order_flow_imbalance" in bar:
-            ofi_val = float(bar["order_flow_imbalance"])
-        elif {"bid_qty", "ask_qty"}.issubset(getattr(bar, "keys", lambda: [])()):
-            ofi_val = float(
+            return float(bar["order_flow_imbalance"])
+        if {"bid_qty", "ask_qty"}.issubset(getattr(bar, "keys", lambda: [])()):
+            return float(
                 calc_ofi(
                     pd.DataFrame(
                         [[bar["bid_qty"], bar["ask_qty"]]],
@@ -152,8 +202,32 @@ class SlippageModel:
                     )
                 ).iloc[-1]
             )
-        slip = spread / 2 + impact + self.ofi_impact * ofi_val + price * self.pct
-        return price + slip if side == "buy" else price - slip
+        return 0.0
+
+    def adjust(
+        self,
+        side: str,
+        qty: float,
+        price: float,
+        bar: Mapping[str, float] | pd.Series,
+    ) -> float:
+        spread = self._compute_spread(bar)
+        vol = float(bar.get("volume", 0.0))
+        ofi_val = self._ofi_from_bar(bar)
+        side_is_buy = side == "buy"
+        return float(
+            _slippage_core(
+                side_is_buy,
+                qty,
+                price,
+                spread,
+                vol,
+                ofi_val,
+                self.volume_impact,
+                self.ofi_impact,
+                self.pct,
+            )
+        )
 
     # ------------------------------------------------------------------
     def fill(
@@ -176,17 +250,27 @@ class SlippageModel:
         queue_pos: volume ahead in the order book queue.
         partial: whether partial fills are allowed.
         """
-
+        spread = self._compute_spread(bar)
+        vol = float(bar.get("volume", 0.0))
+        ofi_val = self._ofi_from_bar(bar)
         vol_key = "ask_size" if side == "buy" else "bid_size"
         avail = float(bar.get(vol_key, qty))
-        eff_avail = max(0.0, avail - queue_pos)
-        new_queue = max(0.0, queue_pos - avail)
-        if partial:
-            fill_qty = min(qty, eff_avail)
-        else:
-            fill_qty = qty if eff_avail >= qty else 0.0
-        adj_price = self.adjust(side, fill_qty, price, bar)
-        return adj_price, fill_qty, new_queue
+        side_is_buy = side == "buy"
+        adj_price, fill_qty, new_queue = _fill_core(
+            side_is_buy,
+            qty,
+            price,
+            spread,
+            vol,
+            avail,
+            queue_pos,
+            self.volume_impact,
+            self.ofi_impact,
+            ofi_val,
+            self.pct,
+            partial,
+        )
+        return float(adj_price), float(fill_qty), float(new_queue)
 
 
 class FeeModel:
@@ -201,7 +285,7 @@ class FeeModel:
 
     def calculate(self, cash: float, maker: bool = False) -> float:
         rate = self.maker_fee if maker else self.taker_fee
-        return abs(cash) * rate
+        return float(_fee_calc(cash, rate))
 
 
 @dataclass
@@ -241,6 +325,7 @@ class EventDrivenBacktestEngine:
         verbose_fills: bool = False,
         min_fill_qty: float = MIN_FILL_QTY,
         min_order_qty: float = MIN_ORDER_QTY,
+        fast: bool = False,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -261,6 +346,7 @@ class EventDrivenBacktestEngine:
         self.verbose_fills = bool(verbose_fills)
         self.min_fill_qty = float(min_fill_qty)
         self.min_order_qty = float(min_order_qty)
+        self.fast = bool(fast)
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -411,7 +497,11 @@ class EventDrivenBacktestEngine:
         equity_curve.append(equity)
         last_index = max_len - 1
 
-        returns_df = pd.DataFrame(index=range(max_len)) if len(self.risk) > 1 else None
+        returns_df = (
+            pd.DataFrame(index=range(max_len))
+            if len(self.risk) > 1 and not self.fast
+            else None
+        )
         rolling_corr = None
         rolling_cov = None
         if returns_df is not None:
@@ -627,7 +717,7 @@ class EventDrivenBacktestEngine:
                     else:
                         price = max(price, order.limit_price)
 
-                if mode == "spot":
+                if not self.fast and mode == "spot":
                     if order.side == "sell":
                         avail_base = max(
                             0.0, svc.account.current_exposure(order.symbol)[0]
@@ -661,7 +751,7 @@ class EventDrivenBacktestEngine:
                 trade_value = fill_qty * price
                 fee_cost = fee_model.calculate(trade_value, maker=maker)
 
-                if mode == "spot":
+                if not self.fast and mode == "spot":
                     if order.side == "sell":
                         while (
                             svc.account.current_exposure(order.symbol)[0] - fill_qty < 0
@@ -733,7 +823,7 @@ class EventDrivenBacktestEngine:
                                 state["best_price"] = min(
                                     state.get("best_price", price), price
                                 )
-                if mode == "spot":
+                if not self.fast and mode == "spot":
                     if cash < -1e-9:
                         raise AssertionError(
                             f"cash became negative after {order.side} {order.symbol}: {cash}"
@@ -1084,52 +1174,53 @@ class EventDrivenBacktestEngine:
                     sync_cash()
 
             # Re-check risk limits after funding adjustments
-            for (strat_name, symbol), svc in self.risk.items():
-                arrs = data_arrays[symbol]
-                sym_len = data_lengths[symbol]
-                if i >= sym_len:
-                    continue
-                current_price = float(arrs["close"][i])
-                svc.mark_price(symbol, current_price)
-                check_price = current_price
-                pos_qty, _ = svc.account.current_exposure(symbol)
-                if pos_qty > 0 and "low" in arrs:
-                    check_price = float(arrs["low"][i])
-                elif pos_qty < 0 and "high" in arrs:
-                    check_price = float(arrs["high"][i])
-                try:
-                    svc.check_limits(check_price)
-                except StopLossExceeded:
-                    delta = -svc.account.current_exposure(symbol)[0]
-                    if abs(delta) > self.min_order_qty:
-                        side = "buy" if delta > 0 else "sell"
-                        qty = abs(delta)
-                        exchange = self.strategy_exchange[(strat_name, symbol)]
-                        base_latency = self.exchange_latency.get(exchange, self.latency)
-                        delay = max(1, int(base_latency * self.stress.latency))
-                        exec_index = i + delay
-                        order_seq += 1
-                        order = Order(
-                            exec_index,
-                            order_seq,
-                            i,
-                            strat_name,
-                            symbol,
-                            side,
-                            qty,
-                            exchange,
-                            current_price,
-                            None,
-                            qty,
-                            0.0,
-                            0.0,
-                            0.0,
-                            None,
-                            False,
-                            None,
-                        )
-                        orders.append(order)
-                        heapq.heappush(order_queue, order)
+            if not self.fast:
+                for (strat_name, symbol), svc in self.risk.items():
+                    arrs = data_arrays[symbol]
+                    sym_len = data_lengths[symbol]
+                    if i >= sym_len:
+                        continue
+                    current_price = float(arrs["close"][i])
+                    svc.mark_price(symbol, current_price)
+                    check_price = current_price
+                    pos_qty, _ = svc.account.current_exposure(symbol)
+                    if pos_qty > 0 and "low" in arrs:
+                        check_price = float(arrs["low"][i])
+                    elif pos_qty < 0 and "high" in arrs:
+                        check_price = float(arrs["high"][i])
+                    try:
+                        svc.check_limits(check_price)
+                    except StopLossExceeded:
+                        delta = -svc.account.current_exposure(symbol)[0]
+                        if abs(delta) > self.min_order_qty:
+                            side = "buy" if delta > 0 else "sell"
+                            qty = abs(delta)
+                            exchange = self.strategy_exchange[(strat_name, symbol)]
+                            base_latency = self.exchange_latency.get(exchange, self.latency)
+                            delay = max(1, int(base_latency * self.stress.latency))
+                            exec_index = i + delay
+                            order_seq += 1
+                            order = Order(
+                                exec_index,
+                                order_seq,
+                                i,
+                                strat_name,
+                                symbol,
+                                side,
+                                qty,
+                                exchange,
+                                current_price,
+                                None,
+                                qty,
+                                0.0,
+                                0.0,
+                                0.0,
+                                None,
+                                False,
+                                None,
+                            )
+                            orders.append(order)
+                            heapq.heappush(order_queue, order)
 
             # Track equity after processing each bar
             mtm = sum(
