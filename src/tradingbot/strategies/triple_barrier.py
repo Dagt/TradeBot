@@ -10,6 +10,7 @@ PARAM_INFO = {
     "upper_pct": "Porcentaje de barrera superior",
     "lower_pct": "Porcentaje de barrera inferior",
     "training_window": "Ventana para entrenamiento del modelo",
+    "tf_minutes": "Duración del timeframe en minutos",
     "meta_model": "Modelo para meta etiquetado",
 }
 
@@ -55,19 +56,25 @@ def triple_barrier_labels(
     horizon: int = 5,
     upper_pct: float = 0.02,
     lower_pct: float = 0.02,
+    tf_minutes: int = 1,
 ) -> pd.Series:
     """Generate triple-barrier labels for a price series.
+
+    ``horizon`` is expressed in 1-minute bars and scaled by ``tf_minutes``
+    to adapt the labeling horizon to the bar timeframe.
 
     Parameters
     ----------
     prices: pd.Series
         Series of prices.
     horizon: int, optional
-        Number of future bars to inspect, by default ``5``.
+        Number of future 1‑minute bars to inspect, by default ``5``.
     upper_pct: float, optional
         Upper barrier percentage, by default ``0.02``.
     lower_pct: float, optional
         Lower barrier percentage, by default ``0.02``.
+    tf_minutes: int, optional
+        Duration of the timeframe in minutes, by default ``1``.
 
     Returns
     -------
@@ -76,6 +83,7 @@ def triple_barrier_labels(
         lower barrier, or ``0`` if neither is reached within the horizon.
     """
 
+    horizon = int(horizon * tf_minutes)
     labels = pd.Series(0, index=prices.index, dtype=int)
     n = len(prices)
     for i in range(n - 1):
@@ -108,6 +116,7 @@ class TripleBarrier(Strategy):
         upper_pct: float = 0.02,
         lower_pct: float = 0.02,
         training_window: int = 200,
+        tf_minutes: int = 1,
         meta_model: ClassifierMixin | None = None,
         *,
         config_path: str | None = None,
@@ -118,12 +127,14 @@ class TripleBarrier(Strategy):
         upper_pct = params.get("upper_pct", upper_pct)
         lower_pct = params.get("lower_pct", lower_pct)
         training_window = params.get("training_window", training_window)
+        tf_minutes = params.get("tf_minutes", tf_minutes)
         meta_model = params.get("meta_model", meta_model)
 
         self.horizon = int(horizon)
         self.upper_pct = float(upper_pct)
         self.lower_pct = float(lower_pct)
-        self.training_window = int(training_window)
+        self.tf_minutes = int(tf_minutes)
+        self.training_window = int(training_window * self.tf_minutes)
         self.model = GradientBoostingClassifier()
         self.meta_model = meta_model or GradientBoostingClassifier()
         self.fitted = False
@@ -132,11 +143,12 @@ class TripleBarrier(Strategy):
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         returns = df["close"].pct_change().fillna(0)
+        window = max(1, int(self.horizon * self.tf_minutes))
         feat = pd.DataFrame(
             {
                 "ret": returns,
-                "ret_mean": returns.rolling(5).mean().fillna(0),
-                "ret_std": returns.rolling(5).std().fillna(0),
+                "ret_mean": returns.rolling(window).mean().fillna(0),
+                "ret_std": returns.rolling(window).std().fillna(0),
             }
         )
         return feat
@@ -151,7 +163,11 @@ class TripleBarrier(Strategy):
         features = self._prepare_features(df)
         if not self.fitted:
             labels = triple_barrier_labels(
-                df["close"], self.horizon, self.upper_pct, self.lower_pct
+                df["close"],
+                self.horizon,
+                self.upper_pct,
+                self.lower_pct,
+                self.tf_minutes,
             )
             X = features.iloc[:-1]
             y = labels.iloc[:-1]
