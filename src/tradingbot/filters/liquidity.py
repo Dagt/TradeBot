@@ -5,9 +5,11 @@ strategies to emit trading signals.  The filter verifies that the current
 market spread is below ``max_spread``, that traded volume exceeds
 ``min_volume`` and that price volatility stays below ``max_volatility``.
 
-Thresholds are loaded from the application configuration when the module
-is imported.  If a particular metric is missing from the bar data, the
-check for that metric is skipped.
+Thresholds are normally loaded from the application configuration when the
+module is imported.  When no explicit thresholds are provided the default
+filter automatically calibrates sensible values based on moving percentiles
+of the most recent market data.  If a particular metric is missing from the
+bar data, the check for that metric is skipped.
 """
 
 from __future__ import annotations
@@ -56,10 +58,12 @@ class LiquidityFilter:
 def _load_default_filter() -> LiquidityFilter:
     """Load thresholds from config or infer them from recent market data.
 
-    When the user does not provide explicit thresholds in ``config.yaml`` the
-    function falls back to estimating sensible defaults from the most recent
-    ``N`` bars of the dataset.  This keeps the behaviour transparent to the
-    caller while still enforcing liquidity constraints.
+    When no thresholds are provided in ``config.yaml`` the filter estimates
+    defaults from the most recent ``N`` bars using moving percentiles.  The
+    95th percentile of the spread and volatility set upper bounds, while the
+    5th percentile of traded volume establishes a minimum requirement.  This
+    keeps behaviour transparent to the caller while still enforcing liquidity
+    constraints.
     """
 
     cfg = load_config()
@@ -86,19 +90,22 @@ def _load_default_filter() -> LiquidityFilter:
         except Exception:  # pragma: no cover - best effort to load data
             df = pd.DataFrame()
 
-        if max_spread == float("inf") and "spread" in df.columns:
-            # upper bound roughly twice the typical spread
-            max_spread = 2 * float(df["spread"].median())
-        if min_volume == 0.0 and "volume" in df.columns:
-            # require at least median traded volume
-            min_volume = float(df["volume"].median())
+        lookback = window or len(df)
+        if max_spread == float("inf") and "spread" in df.columns and not df.empty:
+            roll = df["spread"].rolling(lookback, min_periods=1)
+            max_spread = float(roll.quantile(0.95).iloc[-1])
+        if min_volume == 0.0 and "volume" in df.columns and not df.empty:
+            roll = df["volume"].rolling(lookback, min_periods=1)
+            min_volume = float(roll.quantile(0.05).iloc[-1])
         if max_volatility == float("inf"):
-            if "volatility" in df.columns:
-                max_volatility = 2 * float(df["volatility"].median())
+            if "volatility" in df.columns and not df.empty:
+                roll = df["volatility"].rolling(lookback, min_periods=1)
+                max_volatility = float(roll.quantile(0.95).iloc[-1])
             elif {"close"} <= set(df.columns) and len(df) > 1:
-                returns = df["close"].pct_change().dropna()
-                if not returns.empty:
-                    max_volatility = 2 * float(returns.std())
+                returns = df["close"].pct_change()
+                vol_series = returns.rolling(lookback, min_periods=2).std().dropna()
+                if not vol_series.empty:
+                    max_volatility = float(vol_series.quantile(0.95))
 
     return LiquidityFilter(
         max_spread=max_spread,
