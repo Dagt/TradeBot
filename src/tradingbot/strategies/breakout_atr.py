@@ -5,7 +5,6 @@ from ..data.features import atr, keltner_channels
 PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
-    "mult": "Multiplicador aplicado al ATR",
     "config_path": "Ruta opcional al archivo de configuración",
 }
 
@@ -13,24 +12,26 @@ PARAM_INFO = {
 class BreakoutATR(Strategy):
     """Keltner breakout con filtros de volatilidad autocalibrados.
 
-    El umbral de volatilidad se calcula como un percentil reciente del ATR,
-    por lo que el usuario no necesita ajustar parámetros adicionales para
-    filtrar períodos de baja volatilidad. Las órdenes límite aplican un
-    pequeño offset basado en el ATR y lo incrementan de forma progresiva si
-    la orden expira sin ejecutarse, buscando mejorar la tasa de ejecución
-    sin requerir parámetros adicionales.
+    El umbral de volatilidad y el ancho del canal se recalculan en cada
+    barra usando percentiles recientes del ATR, por lo que el usuario no
+    necesita ajustar parámetros adicionales para filtrar períodos de baja
+    volatilidad. Las órdenes límite aplican un pequeño offset basado en el
+    ATR y lo incrementan de forma progresiva si la orden expira sin
+    ejecutarse, buscando mejorar la tasa de ejecución sin requerir
+    parámetros adicionales.
     """
 
     name = "breakout_atr"
 
     # Percentil utilizado para estimar el umbral de volatilidad.
     _VOL_QUANTILE = 0.2
+    # Percentil usado para dimensionar el multiplicador del canal.
+    _KC_MULT_QUANTILE = 0.8
 
     def __init__(
         self,
         ema_n: int = 20,
         atr_n: int = 14,
-        mult: float = 1.0,
         *,
         config_path: str | None = None,
         **kwargs,
@@ -39,7 +40,8 @@ class BreakoutATR(Strategy):
         self.risk_service = params.pop("risk_service", None)
         self.ema_n = int(params.get("ema_n", ema_n))
         self.atr_n = int(params.get("atr_n", atr_n))
-        self.mult = float(params.get("mult", mult))
+        # ``mult`` se calcula dinámicamente en ``on_bar``.
+        self.mult = 1.0
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -68,6 +70,14 @@ class BreakoutATR(Strategy):
             )
             if atr_val < atr_quant or atr_bps < atr_bps_quant:
                 return None
+
+            # Multiplicador dinámico basado en el percentil reciente del ATR.
+            mult_quant = float(
+                atr_series.rolling(window).quantile(self._KC_MULT_QUANTILE).iloc[-1]
+            )
+            self.mult = mult_quant / atr_val if atr_val else 1.0
+        else:
+            self.mult = 1.0
 
         upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
 
