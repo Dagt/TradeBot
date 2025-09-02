@@ -368,7 +368,7 @@ class ExecutionRouter:
             res.setdefault("venue", venue)
             if self.risk_service is not None:
                 self.risk_service.account.update_open_order(
-                    order.symbol, float(res.get("pending_qty", 0.0))
+                    order.symbol, order.side, float(res.get("pending_qty", 0.0))
                 )
                 if filled:
                     book = self.risk_service.positions_multi.get(venue, {})
@@ -461,7 +461,7 @@ class ExecutionRouter:
         if self.risk_service is not None:
             filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
             pending = float(res.get("pending_qty", 0.0))
-            self.risk_service.account.update_open_order(order.symbol, pending)
+            self.risk_service.account.update_open_order(order.symbol, order.side, pending)
             if filled:
                 book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)

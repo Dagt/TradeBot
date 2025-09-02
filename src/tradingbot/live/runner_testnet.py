@@ -192,7 +192,7 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(cfg.symbol, filled_qty + pending_qty)
+        risk.account.update_open_order(cfg.symbol, side, filled_qty + pending_qty)
         risk.on_fill(
             cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )

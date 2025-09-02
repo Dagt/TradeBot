@@ -19,7 +19,7 @@ def test_register_order_blocks_on_caps(monkeypatch):
     events = []
     monkeypatch.setattr(svc, "_persist", lambda k, s, m, d: events.append(m))
     assert svc.register_order("BTC", 400.0)
-    svc.account.update_open_order("BTC", 4.0)
+    svc.account.update_open_order("BTC", "buy", 4.0)
     assert not svc.register_order("BTC", 600.0)
     assert any("per_symbol_cap_usdt" in msg for msg in events)
 

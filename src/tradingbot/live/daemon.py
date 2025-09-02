@@ -361,7 +361,8 @@ class TradeBotDaemon:
                 notional = qty * (price_s + price_p)
                 if not self.risk.register_order(cfg.symbol, notional):
                     return
-                self.risk.account.update_open_order(cfg.symbol, qty * 2)
+                self.risk.account.update_open_order(cfg.symbol, spot_side, qty)
+                self.risk.account.update_open_order(cfg.symbol, perp_side, qty)
                 resp_spot, resp_perp = await asyncio.gather(
                     cfg.spot.place_order(
                         cfg.symbol,
