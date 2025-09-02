@@ -2,6 +2,16 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi
 
+
+def _tf_to_minutes(tf: str) -> int:
+    """Convert a timeframe like ``1m`` or ``1h`` to minutes."""
+    tf = tf.lower()
+    if tf.endswith("m"):
+        return int(tf[:-1])
+    if tf.endswith("h"):
+        return int(tf[:-1]) * 60
+    raise ValueError(f"unsupported timeframe: {tf}")
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "trend_ma": "Ventana para la media móvil de tendencia",
@@ -23,9 +33,18 @@ class MeanReversion(Strategy):
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
-        self.trend_ma = kwargs.get("trend_ma", 50)
-        self.trend_rsi_n = kwargs.get("trend_rsi_n", 50)
-        self.trend_threshold = kwargs.get("trend_threshold", 10.0)
+
+        tf_minutes = _tf_to_minutes(kwargs.get("timeframe", "1m"))
+
+        trend_ma_min = kwargs.get("trend_ma", 50)
+        self.trend_ma = max(1, int(trend_ma_min / tf_minutes))
+
+        trend_rsi_min = kwargs.get("trend_rsi_n", 50)
+        self.trend_rsi_n = max(1, int(trend_rsi_min / tf_minutes))
+
+        thresh = kwargs.get("trend_threshold", 10.0)
+        self.trend_threshold = float(thresh) / tf_minutes
+
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.risk_service = kwargs.get("risk_service")
 
