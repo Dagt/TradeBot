@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import atr, keltner_channels
@@ -5,6 +6,8 @@ from ..data.features import atr, keltner_channels
 PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
+    "vol_quantile": "Percentil base para filtrar baja volatilidad (1m)",
+    "offset_frac": "Fracción base del ATR usada como offset (1m)",
 }
 
 
@@ -22,8 +25,6 @@ class BreakoutATR(Strategy):
 
     name = "breakout_atr"
 
-    # Percentil utilizado para estimar el umbral de volatilidad.
-    _VOL_QUANTILE = 0.2
     # Percentil usado para dimensionar el multiplicador del canal.
     _KC_MULT_QUANTILE = 0.8
 
@@ -31,6 +32,8 @@ class BreakoutATR(Strategy):
         self,
         ema_n: int = 20,
         atr_n: int = 14,
+        vol_quantile: float = 0.2,
+        offset_frac: float = 0.02,
         *,
         config_path: str | None = None,
         **kwargs,
@@ -39,8 +42,22 @@ class BreakoutATR(Strategy):
         self.risk_service = params.pop("risk_service", None)
         self.ema_n = int(params.get("ema_n", ema_n))
         self.atr_n = int(params.get("atr_n", atr_n))
+        # Valores base parametrizables para 1m.
+        self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
+        self.base_offset_frac = float(params.get("offset_frac", offset_frac))
         # ``mult`` se calcula dinámicamente en ``on_bar``.
         self.mult = 1.0
+
+    @staticmethod
+    def _tf_multiplier(tf: str | None) -> float:
+        if not tf:
+            return 1.0
+        m = re.fullmatch(r"(\d+)([smhd])", str(tf))
+        if not m:
+            return 1.0
+        value, unit = int(m.group(1)), m.group(2)
+        factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
+        return value * factors.get(unit, 1.0)
 
     @record_signal_metrics
     def on_bar(self, bar: dict) -> Signal | None:
@@ -58,16 +75,17 @@ class BreakoutATR(Strategy):
         # Expose current ATR so runners and the RiskManager can adapt sizing
         bar["atr"] = atr_val
 
+        tf_mult = self._tf_multiplier(bar.get("timeframe"))
+        vol_q = max(0.0, min(1.0, self.base_vol_quantile / tf_mult))
+
         window = min(len(atr_series), self.atr_n * 5)
         if window >= self.atr_n * 2:
-            atr_quant = float(
-                atr_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
-            )
+            atr_quant = float(atr_series.rolling(window).quantile(vol_q).iloc[-1])
             atr_bps_series = (
                 atr_series / df["close"].abs().loc[atr_series.index] * 10000
             )
             atr_bps_quant = float(
-                atr_bps_series.rolling(window).quantile(self._VOL_QUANTILE).iloc[-1]
+                atr_bps_series.rolling(window).quantile(vol_q).iloc[-1]
             )
             if atr_val < atr_quant or atr_bps < atr_bps_quant:
                 return None
@@ -97,7 +115,7 @@ class BreakoutATR(Strategy):
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        offset = 0.1 * atr_val
+        offset = atr_val * self.base_offset_frac * tf_mult
         sig.limit_price = level + offset if side == "buy" else level - offset
 
         symbol = bar.get("symbol")
