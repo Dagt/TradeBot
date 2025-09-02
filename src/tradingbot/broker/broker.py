@@ -140,6 +140,7 @@ class Broker:
                     pass
                 action = on_order_expiry(order, res) if on_order_expiry else "re_quote"
                 if action in {"re_quote", "requote", "re-quote"}:
+                    price = order.price or price
                     continue
                 break
 
