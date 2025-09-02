@@ -3,6 +3,7 @@ import pytest
 from tradingbot.broker import Broker
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.strategies.base import Strategy, Signal, record_signal_metrics
+from tradingbot.filters.liquidity import LiquidityFilterManager
 
 
 class DummyAdapter:
@@ -82,10 +83,13 @@ class ExpiringAdapter:
         return {"status": "canceled"}
 
 
+liquidity = LiquidityFilterManager()
+
+
 class DummyStrategy(Strategy):
     name = "dummy"
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar):
         return Signal(bar.get("side", "buy"), 1.0)
 

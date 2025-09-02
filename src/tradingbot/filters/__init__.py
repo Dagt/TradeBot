@@ -1,5 +1,5 @@
 """Filter utilities for trading strategies."""
 
-from .liquidity import LiquidityFilter, passes
+from .liquidity import LiquidityFilter, LiquidityFilterManager
 
-__all__ = ["LiquidityFilter", "passes"]
+__all__ = ["LiquidityFilter", "LiquidityFilterManager"]

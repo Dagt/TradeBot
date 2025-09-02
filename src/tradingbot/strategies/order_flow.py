@@ -4,6 +4,7 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import calc_ofi
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -12,6 +13,9 @@ PARAM_INFO = {
     "sell_threshold": "Umbral de venta en bps",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class OrderFlow(Strategy):
@@ -39,7 +43,7 @@ class OrderFlow(Strategy):
         self.risk_service = kwargs.get("risk_service")
         self._rq = RollingQuantileCache()
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         needed = {"bid_qty", "ask_qty"}

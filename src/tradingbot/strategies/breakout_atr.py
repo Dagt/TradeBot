@@ -3,6 +3,7 @@ import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import atr, keltner_channels
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
 PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
@@ -10,6 +11,9 @@ PARAM_INFO = {
     "vol_quantile": "Percentil base para filtrar baja volatilidad (1m)",
     "offset_frac": "Fracción base del ATR usada como offset (1m)",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class BreakoutATR(Strategy):
@@ -61,7 +65,7 @@ class BreakoutATR(Strategy):
         factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
         return value * factors.get(unit, 1.0)
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < max(self.ema_n, self.atr_n) + 2:

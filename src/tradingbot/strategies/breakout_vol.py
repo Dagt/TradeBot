@@ -1,11 +1,15 @@
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
 PARAM_INFO = {
     "lookback": "Ventana para medias y desviación estándar",
     "volatility_factor": "Factor para dimensionar según volatilidad",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class BreakoutVol(Strategy):
@@ -40,7 +44,7 @@ class BreakoutVol(Strategy):
         self.min_volatility = 0.0
         self._rq = RollingQuantileCache()
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         if len(df) < self.lookback + 1:

@@ -4,6 +4,7 @@ import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
 from ..data.features import calc_ofi, returns
 from ..utils.rolling_quantile import RollingQuantileCache
+from ..filters.liquidity import LiquidityFilterManager
 
 
 PARAM_INFO = {
@@ -13,6 +14,9 @@ PARAM_INFO = {
     "vol_threshold": "Percentil para volatilidad máxima en bps",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
+
+
+liquidity = LiquidityFilterManager()
 
 
 class MeanRevOFI(Strategy):
@@ -72,7 +76,7 @@ class MeanRevOFI(Strategy):
         base_min = 3.0
         return max(1, int(round(self.vol_window * base_min / tf_min)))
 
-    @record_signal_metrics
+    @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         last_close = float(df["close"].iloc[-1]) if "close" in df.columns else None
