@@ -344,6 +344,10 @@ class TradeBotDaemon:
                     return
                 price_s = last["spot"] * (1.001 if spot_side == "buy" else 0.999)
                 price_p = last["perp"] * (1.001 if perp_side == "buy" else 0.999)
+                notional = qty * (price_s + price_p)
+                if not self.risk.register_order(cfg.symbol, notional):
+                    return
+                self.risk.account.update_open_order(cfg.symbol, qty * 2)
                 resp_spot, resp_perp = await asyncio.gather(
                     cfg.spot.place_order(
                         cfg.symbol,

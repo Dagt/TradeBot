@@ -105,6 +105,10 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         tick = getattr(settings, "tick_size", 0.0)
         spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
         perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
+        total_notional = size * (spot_price + perp_price)
+        if not risk.register_order(cfg.symbol, total_notional):
+            return
+        risk.account.update_open_order(cfg.symbol, size * 2)
         order_spot = Order(cfg.symbol, spot_side, "limit", size, spot_price, time_in_force="IOC")
         order_perp = Order(cfg.symbol, perp_side, "limit", size, perp_price, time_in_force="IOC")
         await asyncio.gather(

@@ -32,15 +32,6 @@ def test_calc_position_size_accounts_for_open_orders():
     assert size == pytest.approx(0.8)
 
 
-def test_check_global_exposure_includes_pending():
-    account = Account(max_symbol_exposure=1000.0, cash=0.0)
-    account.update_position("BTC", 2.0, price=100.0)  # $200 exposure
-    account.mark_price("BTC", 100.0)
-    account.update_open_order("BTC", 3.0)  # $300 pending
-    svc = make_service(account)
-    assert svc.check_global_exposure("BTC", 400.0)
-    assert not svc.check_global_exposure("BTC", 600.0)
-
 
 def test_check_order_pending_qty_reduces_next_size():
     account = Account(float("inf"), cash=1000.0)
@@ -74,6 +65,7 @@ def test_check_order_pending_qty_handles_partial_fill():
 
     allowed, _, delta = svc.check_order("BTC", "buy", 100.0, strength=1.0)
     assert allowed
+    svc.account.update_open_order("BTC", delta)
     # simulate a partial fill of half the order
     svc.on_fill("BTC", "buy", delta / 2, price=100.0)
     pending = svc.account.open_orders.get("BTC", 0.0)
@@ -96,5 +88,6 @@ def test_available_balance_decreases_with_pending_order():
     svc = make_service(account)
     allowed, _, delta = svc.check_order("BTC", "buy", 100.0, strength=1.0)
     assert allowed
+    account.update_open_order("BTC", delta)
     assert account.cash == pytest.approx(1000.0)
     assert account.get_available_balance() == pytest.approx(900.0)

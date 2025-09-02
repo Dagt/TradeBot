@@ -179,14 +179,18 @@ async def run_paper(
             if not allowed or abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
-            prev_rpnl = broker.state.realized_pnl
+            qty = abs(delta)
             price = getattr(signal, "limit_price", None)
             price = price if price is not None else _limit_price(side)
+            notional = qty * price
+            if not risk.register_order(symbol, notional):
+                continue
+            prev_rpnl = broker.state.realized_pnl
             resp = await exec_broker.place_limit(
                 symbol,
                 side,
                 price,
-                abs(delta),
+                qty,
                 on_partial_fill=strat.on_partial_fill,
                 on_order_expiry=strat.on_order_expiry,
                 signal_ts=signal_ts,

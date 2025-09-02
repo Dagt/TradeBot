@@ -94,7 +94,57 @@ class RiskService:
         """Current aggregate position."""
         return self._pos
 
-    def register_order(self, notional: float) -> bool:
+    def register_order(self, symbol: str, notional: float) -> bool:
+        """Check projected exposure for ``symbol`` before queuing an order.
+
+        The method considers any outstanding open orders via
+        :meth:`Account.pending_exposure` and compares the projected
+        exposure against the hard caps enforced by :class:`PortfolioGuard`
+        and the state of :class:`DailyGuard`.
+        """
+
+        if not self.enabled:
+            return False
+
+        pending_existing = self.account.pending_exposure(symbol)
+        pending_other = sum(
+            self.account.pending_exposure(sym)
+            for sym in self.account.open_orders
+            if sym != symbol
+        )
+        proj_sym_exp = self.guard.exposure_symbol(symbol) + pending_existing + float(
+            notional
+        )
+        proj_total_exp = self.guard.exposure_total() + pending_other + pending_existing + float(
+            notional
+        )
+
+        per_cap = getattr(self.guard.st, "per_symbol_cap_usdt", None)
+        if per_cap is not None and proj_sym_exp > per_cap:
+            reason = (
+                f"per_symbol_cap_usdt excedido ({proj_sym_exp:.2f} > {per_cap:.2f})"
+            )
+            self.last_kill_reason = reason
+            self._persist(
+                "VIOLATION", symbol, reason, {"sym_exp": proj_sym_exp, "total": proj_total_exp}
+            )
+            return False
+
+        tot_cap = getattr(self.guard.st, "total_cap_usdt", None)
+        if tot_cap is not None and proj_total_exp > tot_cap:
+            reason = f"total_cap_usdt excedido ({proj_total_exp:.2f} > {tot_cap:.2f})"
+            self.last_kill_reason = reason
+            self._persist(
+                "VIOLATION", symbol, reason, {"sym_exp": proj_sym_exp, "total": proj_total_exp}
+            )
+            return False
+
+        if self.daily is not None and getattr(self.daily, "halted", False):
+            reason = "daily_halt"
+            self.last_kill_reason = reason
+            self._persist("VIOLATION", symbol, reason, {})
+            return False
+
         return True
 
     def complete_order(self) -> None:
@@ -324,7 +374,6 @@ class RiskService:
             return False, reason, delta
         if action == "soft_allow":
             self._persist("INFO", symbol, reason, metrics)
-        self.account.update_open_order(symbol, qty)
         return True, reason, delta
 
     # ------------------------------------------------------------------
