@@ -32,9 +32,9 @@ balance:
   assets: []
 
 filters:
-  max_spread: 0.5
-  min_volume: 1000.0
-  max_volatility: 0.05
+  max_spread: .inf
+  min_volume: 0.0
+  max_volatility: .inf
 
 execution:
   limit_offset_ticks: 1.0
