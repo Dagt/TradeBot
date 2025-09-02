@@ -29,6 +29,8 @@ def test_default_filter_estimates_thresholds(tmp_path, monkeypatch):
             max_spread=float("inf"),
             min_volume=0.0,
             max_volatility=float("inf"),
+            volume_quantile=0.5,
+            spread_quantile=0.5,
         ),
         backtest=SimpleNamespace(data=str(csv_path), window=5),
     )
@@ -37,8 +39,8 @@ def test_default_filter_estimates_thresholds(tmp_path, monkeypatch):
     importlib.reload(liquidity)
     try:
         filt = liquidity._default_filter
-        assert filt.max_spread == pytest.approx(2 * df["spread"].median())
-        assert filt.min_volume == pytest.approx(df["volume"].median())
+        assert filt.max_spread == pytest.approx(df["spread"].quantile(0.5))
+        assert filt.min_volume == pytest.approx(df["volume"].quantile(0.5))
         assert filt.max_volatility == pytest.approx(2 * df["volatility"].median())
     finally:
         monkeypatch.undo()

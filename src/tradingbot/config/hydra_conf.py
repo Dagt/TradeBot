@@ -104,6 +104,8 @@ class FiltersConfig:
     max_spread: float = float("inf")
     min_volume: float = 0.0
     max_volatility: float = float("inf")
+    volume_quantile: float = 0.5
+    spread_quantile: float = 0.5
 
 
 @dataclass

@@ -9,3 +9,6 @@ slippage:
   base_spread: 0.1   # spread fijo si faltan columnas bid/ask o tienen NaN
 mlflow:
   run_name: example_backtest
+filters:
+  volume_quantile: 0.1
+  spread_quantile: 0.1

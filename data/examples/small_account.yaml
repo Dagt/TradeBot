@@ -8,3 +8,6 @@ backtest:
     source: bba
     base_spread: 0.1  # spread fijo si faltan columnas bid/ask o tienen NaN
   min_fill_qty: 0.001
+filters:
+  volume_quantile: 0.1
+  spread_quantile: 0.1
