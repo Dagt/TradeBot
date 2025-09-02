@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 
@@ -243,6 +243,61 @@ class RiskService:
             for sym, qty in book.items():
                 agg[sym] = agg.get(sym, 0.0) + float(qty)
         return agg
+
+    def purge(self, symbols_active: Iterable[str]) -> None:
+        """Remove bookkeeping entries for inactive symbols.
+
+        Parameters
+        ----------
+        symbols_active:
+            Iterable of symbols that should be retained. Any symbol not present
+            here will be removed from internal dictionaries to keep the risk
+            state tidy.
+        """
+
+        active = set(symbols_active)
+
+        # trades
+        for sym in list(self.trades.keys()):
+            if sym not in active:
+                self.trades.pop(sym, None)
+
+        # multi-venue positions
+        for venue, book in list(self.positions_multi.items()):
+            for sym in list(book.keys()):
+                if sym not in active:
+                    book.pop(sym, None)
+            if not book:
+                self.positions_multi.pop(venue, None)
+
+        # account level tracking
+        for mapping in (
+            self.account.positions,
+            self.account.prices,
+            self.account.open_orders,
+        ):
+            for sym in list(mapping.keys()):
+                if sym not in active:
+                    mapping.pop(sym, None)
+
+        # portfolio guard state
+        st = getattr(self.guard, "st", None)
+        if st is not None:
+            for attr in ("positions", "prices", "returns", "sym_soft_started"):
+                data = getattr(st, attr, None)
+                if isinstance(data, dict):
+                    for sym in list(data.keys()):
+                        if sym not in active:
+                            data.pop(sym, None)
+            # per-venue positions
+            vp = getattr(st, "venue_positions", None)
+            if isinstance(vp, dict):
+                for venue, book in list(vp.items()):
+                    for sym in list(book.keys()):
+                        if sym not in active:
+                            book.pop(sym, None)
+                    if not book:
+                        vp.pop(venue, None)
 
     def get_trade(self, symbol: str) -> dict | None:
         """Return tracked trade for ``symbol`` if any."""

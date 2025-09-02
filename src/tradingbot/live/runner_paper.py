@@ -88,6 +88,8 @@ async def run_paper(
 
     agg = BarAggregator()
     tick = getattr(settings, "tick_size", 0.0)
+    purge_interval = settings.risk_purge_minutes * 60.0
+    last_purge = time.time()
 
     def _limit_price(side: str) -> float:
         book = getattr(broker.state, "order_book", {}).get(symbol, {})
@@ -104,6 +106,9 @@ async def run_paper(
             qty = float(t.get("qty", 0.0))
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
+            if time.time() - last_purge >= purge_interval:
+                risk.purge([symbol])
+                last_purge = time.time()
             risk.update_correlation(corr._returns.corr(), corr_threshold)
             pos_qty, _ = risk.account.current_exposure(symbol)
             trade = risk.get_trade(symbol)

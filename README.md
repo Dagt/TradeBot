@@ -105,6 +105,16 @@ o superiores a 100 generan un error.
 superan los límites configurados, detiene el bot o cierra las posiciones
 abiertas.
 
+### Purga periódica de símbolos
+
+`RiskService` elimina periódicamente la información de símbolos que ya no
+están activos para mantener un estado limpio. El intervalo se controla mediante
+la variable de entorno `RISK_PURGE_MINUTES` (valor por defecto: `60`).
+
+```bash
+export RISK_PURGE_MINUTES=15  # purga cada 15 minutos
+```
+
 ### Ejemplo para cuenta pequeña
 
 Las configuraciones de ejemplo utilizan velas de 3 minutos.
