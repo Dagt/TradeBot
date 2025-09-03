@@ -60,6 +60,7 @@ class DepthImbalance(Strategy):
 
         if self.risk_service is not None and getattr(self, "trade", None):
             self.risk_service.update_trailing(self.trade, price)
+            self.trade["_trail_done"] = True
             decision = self.risk_service.manage_position(
                 {**self.trade, "current_price": price}, None
             )
@@ -93,4 +94,5 @@ class DepthImbalance(Strategy):
                 "atr": atr_val,
             }
             self.risk_service.update_trailing(self.trade, price)
+            self.trade["_trail_done"] = True
         return self.finalize_signal(bar, price, sig)

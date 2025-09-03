@@ -114,6 +114,7 @@ async def run_paper(
             trade = risk.get_trade(symbol)
             if trade and abs(pos_qty) > risk.min_order_qty:
                 risk.update_trailing(trade, px)
+                trade["_trail_done"] = True
                 decision = risk.manage_position(trade)
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"

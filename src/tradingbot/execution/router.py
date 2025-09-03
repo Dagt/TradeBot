@@ -296,6 +296,19 @@ class ExecutionRouter:
                     await asyncio.sleep(delay)
             return results
 
+        if (
+            self.risk_service is not None
+            and not self.risk_service.allow_short
+            and order.side.lower() == "sell"
+        ):
+            cur_qty, _ = self.risk_service.account.current_exposure(order.symbol)
+            if cur_qty <= 0:
+                log.warning("Short not allowed; rejecting order %s", order)
+                return {"status": "rejected", "reason": "short_not_allowed"}
+            if order.qty > cur_qty:
+                order.qty = cur_qty
+                order.pending_qty = cur_qty
+
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
         log.info(

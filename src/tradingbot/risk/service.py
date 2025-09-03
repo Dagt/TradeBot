@@ -366,6 +366,19 @@ class RiskService:
         )
 
     def manage_position(self, trade: dict | object, signal: dict | None = None) -> str:
+        price = None
+        if isinstance(trade, dict):
+            price = trade.get("current_price")
+            trail_done = trade.get("_trail_done")
+        else:
+            price = getattr(trade, "current_price", None)
+            trail_done = getattr(trade, "_trail_done", False)
+        if price is not None and not trail_done:
+            self.update_trailing(trade, float(price))
+            if isinstance(trade, dict):
+                trade["_trail_done"] = True
+            else:
+                setattr(trade, "_trail_done", True)
         return self.rm.manage_position(trade, signal)
 
     # ------------------------------------------------------------------
@@ -434,8 +447,10 @@ class RiskService:
 
         if delta < 0 and not self.allow_short:
             cur_qty, _ = self.account.current_exposure(symbol)
-            if cur_qty + delta < 0:
+            if cur_qty <= 0:
                 return False, "short_not_allowed", 0.0
+            sellable = min(abs(delta), cur_qty)
+            delta = -sellable
 
         qty = abs(delta)
         alloc = qty * price
