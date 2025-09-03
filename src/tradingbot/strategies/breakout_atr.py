@@ -10,6 +10,8 @@ PARAM_INFO = {
     "atr_n": "Periodo del ATR usado en los canales",
     "vol_quantile": "Percentil base para filtrar baja volatilidad (1m)",
     "offset_frac": "Fracción base del ATR usada como offset (1m)",
+    "volume_factor": "Multiplicador de volumen mínimo requerido",
+    "cooldown_bars": "Barras a esperar tras una pérdida",
 }
 
 
@@ -50,6 +52,12 @@ class BreakoutATR(Strategy):
         # Valores base parametrizables para 1m.
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
+        self.volume_factor = float(params.get("volume_factor", 1.5))
+        tf = params.get("timeframe", "3m")
+        self.cooldown_bars = int(params.get("cooldown_bars", 3 if tf in {"1m", "3m"} else 0))
+        self._cooldown = 0
+        self._last_rpnl = 0.0
+        self.timeframe = tf
         # ``mult`` se calcula dinámicamente en ``on_bar``.
         self.mult = 1.0
         self._rq = RollingQuantileCache()
@@ -71,9 +79,9 @@ class BreakoutATR(Strategy):
         tf_mult = self._tf_multiplier(bar.get("timeframe"))
 
         # Ajusta parámetros según el timeframe
-        if tf_mult <= 5:
-            ema_n = max(5, self.ema_n // 2)
-            atr_n = max(7, self.atr_n // 2)
+        if tf_mult <= 3:
+            ema_n = 15
+            atr_n = 10
             stop_mult = 1.5
             max_hold = 10
         elif tf_mult >= 30:
@@ -90,6 +98,15 @@ class BreakoutATR(Strategy):
         if len(df) < max(ema_n, atr_n) + 2:
             return None
 
+        if self.risk_service is not None:
+            rpnl = getattr(self.risk_service.pos, "realized_pnl", 0.0)
+            if rpnl < self._last_rpnl and abs(self.risk_service.pos.qty) < 1e-9:
+                self._cooldown = self.cooldown_bars
+            self._last_rpnl = rpnl
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return None
+
         atr_series = atr(df, atr_n).dropna()
         if len(atr_series) < atr_n:
             return None
@@ -100,7 +117,12 @@ class BreakoutATR(Strategy):
         # Expose current ATR so runners and the RiskManager can adapt sizing
         bar["atr"] = atr_val
 
-        vol_q = max(0.0, min(1.0, self.base_vol_quantile / tf_mult))
+        if tf_mult <= 1:
+            vol_q = 0.3
+        elif tf_mult <= 3:
+            vol_q = 0.25
+        else:
+            vol_q = max(1.0 / tf_mult, 0.05)
 
         window = min(len(atr_series), self.atr_n * 5)
         symbol = bar.get("symbol", "")
@@ -163,12 +185,17 @@ class BreakoutATR(Strategy):
         if "volume" in df:
             vol_series = df["volume"]
             avg_vol = vol_series.iloc[-20:].mean()
-            if vol_series.iloc[-1] <= avg_vol:
+            if vol_series.iloc[-1] <= self.volume_factor * avg_vol:
                 return None
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        offset = atr_val * self.base_offset_frac * tf_mult
+        if tf_mult <= 1:
+            offset = atr_val * 0.05
+        elif tf_mult <= 3:
+            offset = atr_val * 0.04
+        else:
+            offset = atr_val * 0.02 * tf_mult
         sig.limit_price = level + offset if side == "buy" else level - offset
 
         symbol = bar.get("symbol")
