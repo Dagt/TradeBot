@@ -37,7 +37,9 @@ class MeanReversion(Strategy):
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
 
-        tf_minutes = _tf_to_minutes(kwargs.get("timeframe", "1m"))
+        tf = kwargs.get("timeframe", "1m")
+        self.timeframe = tf
+        tf_minutes = _tf_to_minutes(tf)
 
         trend_ma_min = kwargs.get("trend_ma", 50)
         self.trend_ma = max(1, int(trend_ma_min / tf_minutes))
@@ -47,8 +49,13 @@ class MeanReversion(Strategy):
 
         thresh = kwargs.get("trend_threshold", 10.0)
         self.trend_threshold = float(thresh) / tf_minutes
+        if tf in {"30m", "1h"}:
+            self.trend_threshold *= 1.5
 
         self.min_volatility = kwargs.get("min_volatility", 0.0)
+        self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
+        self.time_stop = kwargs.get("time_stop", 10 if tf in {"30m", "1h"} else 0)
+        self._open_bars: dict[str, int] = {}
         self.risk_service = kwargs.get("risk_service")
 
     def auto_threshold(self, rsi_series: pd.Series) -> tuple[float, float]:
@@ -71,6 +78,18 @@ class MeanReversion(Strategy):
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
 
+        if self.time_stop and self.risk_service is not None and bar.get("symbol"):
+            sym = bar["symbol"]
+            trade = self.risk_service.get_trade(sym)
+            if trade:
+                cnt = self._open_bars.get(sym, 0) + 1
+                self._open_bars[sym] = cnt
+                if cnt >= self.time_stop:
+                    side_exit = "sell" if trade.get("side") == "buy" else "buy"
+                    return self.finalize_signal(bar, price, Signal(side_exit, 1.0))
+            else:
+                self._open_bars[sym] = 0
+
         returns = price_series.pct_change().dropna()
         vol = (
             returns.rolling(self.rsi_n).std().iloc[-1]
@@ -79,6 +98,18 @@ class MeanReversion(Strategy):
         )
         if vol * 10000 < self.min_volatility:
             return None
+
+        high = df.get("high")
+        low = df.get("low")
+        atr_val = 0.0
+        if high is not None and low is not None:
+            prev_close = price_series.shift()
+            tr = pd.concat(
+                [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
+                axis=1,
+            ).max(axis=1)
+            atr_series = tr.rolling(self.rsi_n).mean().dropna()
+            atr_val = float(atr_series.iloc[-1]) if len(atr_series) else 0.0
 
         trend_dir = 0
         if len(df) >= self.trend_ma:
@@ -102,15 +133,47 @@ class MeanReversion(Strategy):
         elif trend_dir == -1:
             lower -= self.trend_threshold
 
+        prev_rsi = rsi_series.iloc[-2]
+        prev_price = float(price_series.iloc[-2])
+
         if last_rsi > upper:
+            if self.timeframe in {"5m", "15m"} and not (
+                prev_rsi > last_rsi and price < prev_price
+            ):
+                return self.finalize_signal(bar, price, None)
             strength = min(1.0, (last_rsi - upper) / (100 - upper))
             side = "sell"
         elif last_rsi < lower:
+            if self.timeframe in {"5m", "15m"} and not (
+                prev_rsi < last_rsi and price > prev_price
+            ):
+                return self.finalize_signal(bar, price, None)
             strength = min(1.0, (lower - last_rsi) / lower)
             side = "buy"
         else:
             return self.finalize_signal(bar, price, None)
+
+        if side == "sell" and trend_dir == 1 and self.only_buy_dip:
+            return self.finalize_signal(bar, price, None)
+
         sig = Signal(side, strength)
+        if self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(strength, price)
+            stop = self.risk_service.initial_stop(price, side, atr_val)
+            if (
+                side == "sell"
+                and trend_dir == 1
+                and self.timeframe in {"5m", "15m"}
+            ):
+                stop = price + 1.5 * atr_val
+            self.trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+            }
+
         return self.finalize_signal(bar, price, sig)
 
 

@@ -536,6 +536,7 @@ class EventDrivenBacktestEngine:
                     trade = svc.get_trade(sym)
                     if trade and abs(pos_qty) > self.min_order_qty:
                         svc.update_trailing(trade, price)
+                        trade["_trail_done"] = True
                         trade["current_price"] = price
                         decision = svc.manage_position(trade)
                         if decision in {"scale_in", "scale_out"}:

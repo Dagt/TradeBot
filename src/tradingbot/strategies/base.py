@@ -121,6 +121,10 @@ class Strategy(ABC):
             if atr is not None:
                 trade["atr"] = atr
             rs.update_trailing(trade, price)
+            if isinstance(trade, dict):
+                trade["_trail_done"] = True
+            else:
+                setattr(trade, "_trail_done", True)
             sig_dict = None
             if signal is not None:
                 sig_dict = {"side": signal.side, "strength": signal.strength}
