@@ -37,7 +37,7 @@ from monitoring.dashboard import router as dashboard_router
 from ...storage.timescale import select_recent_fills
 from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
-from ...cli.main import get_adapter_class, get_supported_kinds
+from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 from ...core.symbols import normalize as normalize_symbol
 
