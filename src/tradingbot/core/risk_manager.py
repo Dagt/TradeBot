@@ -152,16 +152,26 @@ class RiskManager:
 
     # ------------------------------------------------------------------
     # Stop management helpers
-    def initial_stop(self, entry_price: float, side: str, atr: float | None = None) -> float:
+    def initial_stop(
+        self,
+        entry_price: float,
+        side: str,
+        atr: float | None = None,
+        *,
+        atr_mult: float | None = None,
+    ) -> float:
         """Return the initial stop price for a new position.
 
         When ``atr`` is supplied the stop is offset by ``atr_mult * atr`` to
-        incorporate market volatility.  If ``atr`` is ``None`` the stop falls
-        back to a fixed percentage distance based on :attr:`risk_pct`.
+        incorporate market volatility.  ``atr_mult`` defaults to the instance's
+        configured multiplier but can be overridden per-call to adapt stops to
+        different timeframes.  If ``atr`` is ``None`` the stop falls back to a
+        fixed percentage distance based on :attr:`risk_pct`.
         """
 
         if atr is not None:
-            delta = float(self.atr_mult) * float(atr)
+            mult = float(atr_mult) if atr_mult is not None else float(self.atr_mult)
+            delta = mult * float(atr)
         else:
             delta = float(entry_price) * float(self.risk_pct)
         if side.lower() in {"buy", "long"}:
