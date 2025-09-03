@@ -347,9 +347,14 @@ class RiskService:
         return self.rm.check_global_exposure(symbol, new_alloc)
 
     def initial_stop(
-        self, entry_price: float, side: str, atr: float | None = None
+        self,
+        entry_price: float,
+        side: str,
+        atr: float | None = None,
+        *,
+        atr_mult: float | None = None,
     ) -> float:
-        return self.rm.initial_stop(entry_price, side, atr)
+        return self.rm.initial_stop(entry_price, side, atr, atr_mult=atr_mult)
 
     def update_trailing(
         self,
@@ -370,9 +375,42 @@ class RiskService:
         if isinstance(trade, dict):
             price = trade.get("current_price")
             trail_done = trade.get("_trail_done")
+            trade["bars_held"] = int(trade.get("bars_held", 0)) + 1
+            max_hold = trade.get("max_hold")
+            if (
+                max_hold is not None
+                and int(trade["bars_held"]) >= int(max_hold)
+                and price is not None
+            ):
+                entry = trade.get("entry_price")
+                atr = trade.get("atr")
+                side = trade.get("side")
+                if entry is not None and atr is not None and side is not None:
+                    move = (
+                        float(price) - float(entry)
+                        if side.lower() == "buy"
+                        else float(entry) - float(price)
+                    )
+                    if move < 0.5 * float(atr):
+                        return "close"
         else:
             price = getattr(trade, "current_price", None)
             trail_done = getattr(trade, "_trail_done", False)
+            bars = int(getattr(trade, "bars_held", 0)) + 1
+            setattr(trade, "bars_held", bars)
+            max_hold = getattr(trade, "max_hold", None)
+            if max_hold is not None and bars >= int(max_hold) and price is not None:
+                entry = getattr(trade, "entry_price", None)
+                atr = getattr(trade, "atr", None)
+                side = getattr(trade, "side", None)
+                if entry is not None and atr is not None and side is not None:
+                    move = (
+                        float(price) - float(entry)
+                        if str(side).lower() == "buy"
+                        else float(entry) - float(price)
+                    )
+                    if move < 0.5 * float(atr):
+                        return "close"
         if price is not None and not trail_done:
             self.update_trailing(trade, float(price))
             if isinstance(trade, dict):

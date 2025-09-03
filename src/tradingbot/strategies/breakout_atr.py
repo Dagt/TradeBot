@@ -68,11 +68,30 @@ class BreakoutATR(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < max(self.ema_n, self.atr_n) + 2:
+        tf_mult = self._tf_multiplier(bar.get("timeframe"))
+
+        # Ajusta parámetros según el timeframe
+        if tf_mult <= 5:
+            ema_n = max(5, self.ema_n // 2)
+            atr_n = max(7, self.atr_n // 2)
+            stop_mult = 1.5
+            max_hold = 10
+        elif tf_mult >= 30:
+            ema_n = max(self.ema_n, 30)
+            atr_n = max(self.atr_n, 20)
+            stop_mult = 2.0
+            max_hold = 20
+        else:
+            ema_n = self.ema_n
+            atr_n = self.atr_n
+            stop_mult = 1.5
+            max_hold = 20
+
+        if len(df) < max(ema_n, atr_n) + 2:
             return None
 
-        atr_series = atr(df, self.atr_n).dropna()
-        if len(atr_series) < self.atr_n:
+        atr_series = atr(df, atr_n).dropna()
+        if len(atr_series) < atr_n:
             return None
 
         last_close = float(df["close"].iloc[-1])
@@ -81,7 +100,6 @@ class BreakoutATR(Strategy):
         # Expose current ATR so runners and the RiskManager can adapt sizing
         bar["atr"] = atr_val
 
-        tf_mult = self._tf_multiplier(bar.get("timeframe"))
         vol_q = max(0.0, min(1.0, self.base_vol_quantile / tf_mult))
 
         window = min(len(atr_series), self.atr_n * 5)
@@ -131,7 +149,7 @@ class BreakoutATR(Strategy):
             target_vol = atr_val
             bar["target_volatility"] = target_vol
 
-        upper, lower = keltner_channels(df, self.ema_n, self.atr_n, self.mult)
+        upper, lower = keltner_channels(df, ema_n, atr_n, self.mult)
 
         side: str | None = None
         if last_close > upper.iloc[-1]:
@@ -140,6 +158,13 @@ class BreakoutATR(Strategy):
             side = "sell"
         if side is None:
             return None
+
+        # Filtro de volumen
+        if "volume" in df:
+            vol_series = df["volume"]
+            avg_vol = vol_series.iloc[-20:].mean()
+            if vol_series.iloc[-1] <= avg_vol:
+                return None
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
@@ -157,13 +182,17 @@ class BreakoutATR(Strategy):
 
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)
-            stop = self.risk_service.initial_stop(last_close, side, atr_val)
+            stop = self.risk_service.initial_stop(
+                last_close, side, atr_val, atr_mult=stop_mult
+            )
             self.trade = {
                 "side": side,
                 "entry_price": last_close,
                 "qty": qty,
                 "stop": stop,
                 "atr": atr_val,
+                "bars_held": 0,
+                "max_hold": max_hold,
             }
 
         return self.finalize_signal(bar, last_close, sig)
