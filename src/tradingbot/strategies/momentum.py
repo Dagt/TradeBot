@@ -13,6 +13,7 @@ PARAM_INFO = {
     "min_volume": "Volumen mínimo requerido",
     "min_volatility": "Volatilidad mínima requerida",
     "vol_window": "Ventana para estimar la volatilidad",
+    "cooldown_bars": "Barras a esperar tras una pérdida",
 }
 
 
@@ -36,13 +37,19 @@ class Momentum(Strategy):
         self.rsi_n = kwargs.get("rsi_n", 14)
         self.atr_n = kwargs.get("atr_n", 14)
         self.use_rsi = kwargs.get("use_rsi", True)
-        self.use_roc = kwargs.get("use_roc", False)
+        # Always enable ROC confirmation
+        self.use_roc = True
         self.roc_n = kwargs.get("roc_n", 10)
         # Optional market activity filters
         self.min_volume = kwargs.get("min_volume")
         self.min_volatility = kwargs.get("min_volatility")
         self.vol_window = kwargs.get("vol_window", 20)
         self.risk_service = kwargs.get("risk_service")
+        # Cooldown management after losing trades
+        tf = kwargs.get("timeframe", "1m")
+        self.cooldown_bars = kwargs.get("cooldown_bars", 3 if tf in {"1m", "3m"} else 0)
+        self._cooldown = 0
+        self._last_rpnl = 0.0
         self._rq = RollingQuantileCache()
 
     def _tf_to_minutes(self, tf: str | None) -> int:
@@ -77,13 +84,22 @@ class Momentum(Strategy):
         df: pd.DataFrame = bar["window"]
 
         tf_min = self._tf_to_minutes(bar.get("timeframe"))
-        fast_n = max(2, int(math.ceil(self.fast_ema / tf_min)))
-        slow_n = max(2, int(math.ceil(self.slow_ema / tf_min)))
-        rsi_n = max(2, int(math.ceil(self.rsi_n / tf_min)))
-        atr_n = max(2, int(math.ceil(self.atr_n / tf_min)))
+        fast_n = max(5, int(math.ceil(self.fast_ema / tf_min)))
+        slow_n = max(5, int(math.ceil(self.slow_ema / tf_min)))
+        rsi_n = max(5, int(math.ceil(self.rsi_n / tf_min)))
+        atr_n = max(5, int(math.ceil(self.atr_n / tf_min)))
         vol_window = max(2, int(math.ceil(self.vol_window / tf_min)))
 
         if len(df) < max(slow_n, rsi_n, atr_n) + 2:
+            return None
+
+        if self.risk_service is not None:
+            rpnl = getattr(self.risk_service.pos, "realized_pnl", 0.0)
+            if rpnl < self._last_rpnl and abs(self.risk_service.pos.qty) < 1e-9:
+                self._cooldown = self.cooldown_bars
+            self._last_rpnl = rpnl
+        if self._cooldown > 0:
+            self._cooldown -= 1
             return None
 
         closes = df["close"]
@@ -98,7 +114,7 @@ class Momentum(Strategy):
         rsi_series = rsi(df, rsi_n)
         last_rsi = float(rsi_series.iloc[-1])
 
-        roc_val = float(closes.pct_change(self.roc_n).iloc[-1]) if self.use_roc else 0.0
+        roc_val = float(closes.pct_change(self.roc_n).iloc[-1])
 
         atr_series = atr(df, atr_n)
         atr_val = float(atr_series.iloc[-1])
@@ -137,23 +153,21 @@ class Momentum(Strategy):
             if pd.isna(vol) or vol < min_volatility:
                 return None
 
-        # Determinar reglas según timeframe
-        require_confirm = tf_min >= 15
+        # Momentum rules with RSI and ROC confirmation in all timeframes
         side: str | None = None
+        rsi_thresh = self.auto_threshold(symbol, last_rsi, n=rsi_n) if self.use_rsi else 50.0
         if prev_fast <= prev_slow and last_fast > last_slow:
             cond = slope > 0
-            if require_confirm and self.use_rsi:
-                cond = cond and last_rsi > 50
-            if require_confirm and self.use_roc:
-                cond = cond and roc_val > 0
+            if self.use_rsi:
+                cond &= last_rsi > rsi_thresh
+            cond &= roc_val > 0
             if cond:
                 side = "buy"
         elif prev_fast >= prev_slow and last_fast < last_slow:
             cond = slope < 0
-            if require_confirm and self.use_rsi:
-                cond = cond and last_rsi < 50
-            if require_confirm and self.use_roc:
-                cond = cond and roc_val < 0
+            if self.use_rsi:
+                cond &= last_rsi < rsi_thresh
+            cond &= roc_val < 0
             if cond:
                 side = "sell"
         if side is None:
@@ -173,7 +187,12 @@ class Momentum(Strategy):
             stop = self.risk_service.initial_stop(
                 price, side, atr_val, atr_mult=stop_mult
             )
-            max_hold = 10 if tf_min <= 5 else 20
+            if tf_min <= 3:
+                max_hold = 20
+            elif tf_min <= 5:
+                max_hold = 10
+            else:
+                max_hold = 20
             self.trade = {
                 "side": side,
                 "entry_price": price,
