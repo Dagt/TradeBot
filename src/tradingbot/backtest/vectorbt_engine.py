@@ -2,8 +2,10 @@
 
 This module exposes :func:`run_vectorbt` which evaluates a strategy for
 multiple parameter combinations using `vectorbt`_.  The strategy class must
-expose a static ``signal`` method that receives the close price series along
-with strategy parameters and returns entry and exit boolean series.
+expose a static ``signal`` method that receives the full OHLCV ``DataFrame``
+along with strategy parameters and returns entry and exit boolean Series.  By
+passing the entire dataset at once, indicators can be precomputed in a
+vectorised fashion avoiding per-bar recalculations.
 
 Example
 -------
@@ -11,7 +13,8 @@ Example
 >>> from tradingbot.backtest.vectorbt_engine import run_vectorbt
 >>> class MAStrategy:
 ...     @staticmethod
-...     def signal(close, fast, slow):
+...     def signal(df, fast, slow):
+...         close = df["close"]
 ...         fast_ma = vbt.MA.run(close, fast)
 ...         slow_ma = vbt.MA.run(close, slow)
 ...         entries = fast_ma.ma_crossed_above(slow_ma)
@@ -38,10 +41,11 @@ def run_vectorbt(
     Parameters
     ----------
     data:
-        Price data containing a ``close`` column.
+        OHLCV data. Must contain at least a ``close`` column but additional
+        columns are made available to the strategy's ``signal`` function.
     strategy_cls:
-        Strategy class exposing a static ``signal`` method that returns
-        entry and exit Series compatible with :func:`vectorbt.Portfolio.from_signals`.
+        Strategy class exposing a static ``signal`` method that returns entry
+        and exit Series compatible with :func:`vectorbt.Portfolio.from_signals`.
     params:
         Mapping of parameter name to an iterable of values.  All combinations are
         evaluated.
@@ -53,14 +57,19 @@ def run_vectorbt(
         ``sharpe_ratio``, ``max_drawdown`` and ``total_return``.
     """
 
-    close = data["close"]
+    param_names = list(params.keys())
     factory = vbt.IndicatorFactory(
-        input_names=["close"],
-        param_names=list(params.keys()),
+        input_names=["data"],
+        param_names=param_names,
         output_names=["entries", "exits"],
     )
-    indicator = factory.from_apply_func(strategy_cls.signal)
-    ind = indicator.run(close, **params)
+
+    def apply_func(df, *args):
+        param_map = dict(zip(param_names, args))
+        return strategy_cls.signal(df, **param_map)
+
+    indicator = factory.from_apply_func(apply_func)
+    ind = indicator.run(data, **params)
 
     # Try to infer frequency for annualised metrics
     freq = None
@@ -68,6 +77,7 @@ def run_vectorbt(
         freq = pd.infer_freq(data.index)
     if freq is None:
         freq = "1D"
+    close = data["close"]
     pf = vbt.Portfolio.from_signals(close, ind.entries, ind.exits, freq=freq)
 
     metrics = pd.concat(
@@ -94,8 +104,6 @@ def optimize_vectorbt_optuna(
 
     import optuna  # type: ignore
 
-    close = data["close"]
-
     def objective(trial: "optuna.trial.Trial") -> float:
         params: Dict[str, Any] = {}
         for name, space in param_space.items():
@@ -108,8 +116,9 @@ def optimize_vectorbt_optuna(
             else:
                 raise ValueError(f"unsupported param type: {t}")
 
-        entries, exits = strategy_cls.signal(close, **params)
+        entries, exits = strategy_cls.signal(data, **params)
         freq = pd.infer_freq(data.index) or "1D"
+        close = data["close"]
         pf = vbt.Portfolio.from_signals(close, entries, exits, freq=freq)
         metric_val = getattr(pf, metric)()
         return float(metric_val)
@@ -148,9 +157,10 @@ def walk_forward(
         else:
             best_params = {train_metrics.index.name or list(params.keys())[0]: best_idx}
 
-        entries, exits = strategy_cls.signal(test["close"], **best_params)
+        entries, exits = strategy_cls.signal(test, **best_params)
         freq = pd.infer_freq(test.index) or "1D"
-        pf = vbt.Portfolio.from_signals(test["close"], entries, exits, freq=freq)
+        close = test["close"]
+        pf = vbt.Portfolio.from_signals(close, entries, exits, freq=freq)
         returns = pf.returns().values
         metrics = {
             "start": test.index[0] if isinstance(test.index, pd.Index) else start,

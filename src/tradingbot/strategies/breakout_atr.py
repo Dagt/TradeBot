@@ -35,6 +35,50 @@ class BreakoutATR(Strategy):
     # Percentil usado para dimensionar el multiplicador del canal.
     _KC_MULT_QUANTILE = 0.8
 
+    @staticmethod
+    def signal(
+        df: pd.DataFrame,
+        ema_n: int = 20,
+        atr_n: int = 14,
+        mult: float = 1.0,
+        volume_factor: float = 1.5,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Vectorised breakout/ATR entry and exit signals.
+
+        Parameters
+        ----------
+        df:
+            OHLCV data frame. ``high``, ``low``, ``close`` and optionally
+            ``volume`` are used to compute indicators in a single pass.
+        ema_n:
+            Window for the EMA forming the channel mid-line.
+        atr_n:
+            Lookback window for the ATR.
+        mult:
+            Channel width multiplier applied to the ATR.
+        volume_factor:
+            Minimum multiple of the 20-bar average volume required for signals.
+
+        Returns
+        -------
+        tuple of pandas.Series
+            ``(entries, exits)`` boolean Series suitable for
+            :func:`vectorbt.Portfolio.from_signals`.
+        """
+
+        atr_series = atr(df, atr_n)
+        ema = df["close"].ewm(span=ema_n, adjust=False).mean()
+        upper = ema + mult * atr_series
+        lower = ema - mult * atr_series
+        entries = df["close"] > upper
+        exits = df["close"] < lower
+        if "volume" in df and volume_factor > 0:
+            avg_vol = df["volume"].rolling(20).mean()
+            vol_filter = df["volume"] > volume_factor * avg_vol
+            entries &= vol_filter
+            exits &= vol_filter
+        return entries.fillna(False), exits.fillna(False)
+
     def __init__(
         self,
         ema_n: int = 20,

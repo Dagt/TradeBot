@@ -354,7 +354,8 @@ def test_run_vectorbt_basic():
 
     class MAStrategy:
         @staticmethod
-        def signal(close, fast, slow):
+        def signal(df, fast, slow):
+            close = df["close"]
             fast_ma = vbt_local.MA.run(close, fast)
             slow_ma = vbt_local.MA.run(close, slow)
             entries = fast_ma.ma_crossed_above(slow_ma)
