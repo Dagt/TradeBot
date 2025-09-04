@@ -61,6 +61,16 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timefr
     assert trade["stop"] == pytest.approx(expected_stop)
 
 
+def test_breakout_atr_vector_signal(breakout_df_buy):
+    data = breakout_df_buy.copy()
+    data["volume"] = 100
+    entries, exits = BreakoutATR.signal(
+        data, ema_n=2, atr_n=2, mult=1.0, volume_factor=0
+    )
+    assert entries.iloc[-1]
+    assert not exits.iloc[-1]
+
+
 def test_order_flow_signals():
     df_buy = pd.DataFrame(
         {
