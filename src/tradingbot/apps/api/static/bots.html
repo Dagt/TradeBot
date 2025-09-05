@@ -102,7 +102,6 @@
         <div id="bot-strategy-params" class="param-grid"></div>
       </div>
       <button id="bot-start" style="margin-top:10px">Start</button>
-      <pre id="bot-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
     </div>
 
   <div class="card" style="margin-top:16px">
@@ -264,13 +263,12 @@ async function startBot(){
     if(Object.keys(params).length){
       try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
     }
-    try{
-      const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      const j = await r.json();
-      document.getElementById('bot-output').textContent = JSON.stringify(j,null,2);
-      refreshBots();
-  }catch(e){ document.getElementById('bot-output').textContent = String(e); }
-}
+      try{
+        const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        await r.json();
+        refreshBots();
+    }catch(e){ console.error(e); }
+  }
 
 async function refreshBots(){
   try{
