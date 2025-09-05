@@ -301,15 +301,6 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
-  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Halt">
-    <i class="fa-solid fa-hand"></i>
-  </button>
-  <button class="icon-btn danger" onclick="flattenBot(${b.pid})" title="Flatten">
-    <i class="fa-solid fa-bomb"></i>
-  </button>
-  <button class="icon-btn" onclick="reloadBot(${b.pid})" title="Reload">
-    <i class="fa-solid fa-rotate-right"></i>
-  </button>
   <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
     <i class="fa-solid fa-stop"></i>
   </button>
@@ -340,9 +331,6 @@ async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
-async function haltBot(pid){ await fetch(api(`/bots/${pid}/halt`), {method:'POST'}); refreshBots(); }
-async function flattenBot(pid){ await fetch(api(`/bots/${pid}/flatten`), {method:'POST'}); refreshBots(); }
-async function reloadBot(pid){ await fetch(api(`/bots/${pid}/reload`), {method:'POST'}); refreshBots(); }
 
 async function refreshRisk(){
   try{
