@@ -981,10 +981,14 @@ async def start_bot(cfg: BotConfig):
 
     params = _strategy_params.get(cfg.strategy, {})
     args = _build_bot_args(cfg, params)
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[3]
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     _BOTS[proc.pid] = {"process": proc, "config": cfg.dict()}
     return {"pid": proc.pid, "status": "started"}
