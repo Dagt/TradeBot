@@ -88,7 +88,10 @@ las tasas de cambio.
 
 ### Arbitraje entre Exchanges (`cross_exchange_arbitrage`)
 Compara el precio entre un mercado spot y uno de futuros (perpetuo) y opera
-cuando la diferencia supera un umbral.
+cuando la diferencia neta –descontando comisiones y slippage– supera un umbral.
+Un servicio de riesgo específico limita la exposición de cada operación y
+permite inyectar una latencia simulada para evaluar el deterioro de la
+oportunidad.
 
 ### Composite Signals (`composite_signals`)
 Combina múltiples subestrategias y emite una señal cuando hay consenso.

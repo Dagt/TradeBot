@@ -68,6 +68,28 @@ async def test_cross_exchange_arbitrage_no_trade_without_edge():
 
 
 @pytest.mark.asyncio
+async def test_cross_exchange_arbitrage_rejects_when_fees_erase_edge():
+    spot_trades = [{"ts": 0, "price": 100.0, "qty": 1.0, "side": "buy"}]
+    perp_trades = [{"ts": 0, "price": 101.0, "qty": 1.0, "side": "buy"}]
+    spot_ob = {"BTC/USDT": {"bids": [(99.0, 1.0)], "asks": [(100.0, 1.0)]}}
+    perp_ob = {"BTC/USDT": {"bids": [(101.0, 1.0)], "asks": [(102.0, 1.0)]}}
+    spot = MockAdapter("spot", spot_trades, spot_ob, {"USDT": 200.0})
+    perp = MockAdapter("perp", perp_trades, perp_ob, {"BTC": 1.0})
+    # fees large enough to wipe out the edge
+    cfg = CrossArbConfig(
+        symbol="BTC/USDT",
+        spot=spot,
+        perp=perp,
+        threshold=0.001,
+        fee_spot=0.02,
+        fee_perp=0.02,
+    )
+    await run_cross_exchange_arbitrage(cfg)
+    assert spot.orders == []
+    assert perp.orders == []
+
+
+@pytest.mark.asyncio
 async def test_cross_exchange_updates_risk_positions(monkeypatch):
     spot_trades = [{"ts": 0, "price": 100.0, "qty": 1.0, "side": "buy"}]
     perp_trades = [{"ts": 0, "price": 101.0, "qty": 1.0, "side": "buy"}]

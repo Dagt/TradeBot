@@ -45,48 +45,48 @@ def compute_edge(
 ) -> Optional[TriEdge]:
     """Compute the triangular arbitrage edge.
 
-    Parameters
-    ----------
-    prices:
-        Mapping with keys ``"bq"`` (BASE/QUOTE), ``"mq"`` (MID/QUOTE) and
-        ``"mb"`` (MID/BASE).
-    taker_fee_bps:
-        Commission of taker per leg in basis points (e.g. ``7.5`` → 0.075%).
-    buffer_bps:
-        Extra buffer to account for slippage per leg in basis points.
+    The returned :class:`TriEdge` reports both the gross edge (ignoring fees and
+    slippage) and the net edge after subtracting ``taker_fee_bps`` and
+    ``buffer_bps`` for each leg.  ``prices`` must contain the keys ``bq``
+    (BASE/QUOTE), ``mq`` (MID/QUOTE) and ``mb`` (MID/BASE).
     """
+
     if any(prices.get(k) in (None, 0) for k in ("bq", "mq", "mb")):
         return None
-
-    f = 1 - taker_fee_bps/10000.0
-    buf = 1 - buffer_bps/10000.0
 
     bq = float(prices["bq"])
     mq = float(prices["mq"])
     mb = float(prices["mb"])
 
-    # Ruta 1 ("b->m"): QUOTE -> BASE -> MID -> QUOTE
-    # 1) Comprar BASE con QUOTE a bq
+    # Gross edge without fees or buffers
+    base_qty_g = 1.0 / bq
+    mid_qty_g = base_qty_g / mb
+    quote_out_bm_g = mid_qty_g * mq
+    edge_bm_g = quote_out_bm_g - 1.0
+
+    mid_qty2_g = 1.0 / mq
+    base_qty2_g = mid_qty2_g / mb
+    quote_out_mb_g = base_qty2_g * bq
+    edge_mb_g = quote_out_mb_g - 1.0
+
+    # Net edge applying fees and buffer to each leg
+    f = 1 - taker_fee_bps / 10000.0
+    buf = 1 - buffer_bps / 10000.0
+
     base_qty = (1.0 * f * buf) / bq
-    # 2) Comprar MID con BASE a mb (precio MID/BASE)
     mid_qty = (base_qty * f * buf) / mb
-    # 3) Vender MID por QUOTE a mq
     quote_out_bm = mid_qty * mq * f * buf
     edge_bm = quote_out_bm - 1.0
 
-    # Ruta 2 ("m->b"): QUOTE -> MID -> BASE -> QUOTE
-    # 1) Comprar MID con QUOTE a mq
     mid_qty2 = (1.0 * f * buf) / mq
-    # 2) Vender MID por BASE a mb (recibes BASE = MID / mb)
     base_qty2 = (mid_qty2 * f * buf) / mb
-    # 3) Vender BASE por QUOTE a bq
     quote_out_mb = base_qty2 * bq * f * buf
     edge_mb = quote_out_mb - 1.0
 
     if edge_bm > edge_mb:
-        return TriEdge(direction="b->m", gross=edge_bm, net=edge_bm, prices=prices)
+        return TriEdge(direction="b->m", gross=edge_bm_g, net=edge_bm, prices=prices)
     else:
-        return TriEdge(direction="m->b", gross=edge_mb, net=edge_mb, prices=prices)
+        return TriEdge(direction="m->b", gross=edge_mb_g, net=edge_mb, prices=prices)
 
 liquidity = LiquidityFilterManager()
 
