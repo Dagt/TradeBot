@@ -24,6 +24,25 @@ class Broker:
         )
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
 
+    def update_last_price(self, symbol: str, px: float) -> None:
+        """Update last price on the underlying adapter if supported."""
+        upd = getattr(self.adapter, "update_last_price", None)
+        if upd:
+            upd(symbol, px)
+
+    def equity(self) -> float:
+        """Return account equity if the adapter exposes it."""
+        eq = getattr(self.adapter, "equity", None)
+        if callable(eq):
+            try:
+                return float(eq())
+            except Exception:
+                return 0.0
+        bal = getattr(self.adapter, "account", None)
+        if bal is not None and hasattr(bal, "equity"):
+            return float(getattr(bal, "equity", 0.0))
+        return 0.0
+
     async def place_limit(
         self,
         symbol: str,

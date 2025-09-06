@@ -17,10 +17,10 @@ class MockAdapter:
         for t in self._trades:
             yield t
 
-    async def place_order(self, symbol, side, type_, qty):
+    async def place_order(self, symbol, side, type_, qty, price=None, **kwargs):
         self.orders.append({"symbol": symbol, "side": side, "qty": qty})
-        price = self._trades[0]["price"]
-        return {"status": "filled", "price": price}
+        px = price if price is not None else self._trades[0]["price"]
+        return {"status": "filled", "price": px}
 
     async def fetch_balance(self):
         return self._balances

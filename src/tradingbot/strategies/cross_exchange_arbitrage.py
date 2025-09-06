@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from ..adapters.base import ExchangeAdapter
 from ..execution.balance import rebalance_between_exchanges
-from ..risk.portfolio_guard import GuardConfig, PortfolioGuard
-from ..risk.service import RiskService
+from ..risk.arbitrage_service import ArbitrageRiskService, ArbGuardConfig
 from ..broker.broker import Broker
 from ..config import settings
 
@@ -38,6 +37,10 @@ PARAM_INFO: dict[str, str] = {
     "rebalance_assets": "Activos a rebalancear periódicamente",
     "rebalance_threshold": "Desequilibrio mínimo para rebalancear",
     "latency": "Latencia simulada antes de enviar órdenes (s)",
+    "fee_spot": "Fee del tramo spot en decimal",
+    "fee_perp": "Fee del tramo perp en decimal",
+    "slippage_spot": "Slippage estimado del tramo spot en decimal",
+    "slippage_perp": "Slippage estimado del tramo perp en decimal",
 }
 
 
@@ -73,86 +76,41 @@ class CrossArbConfig:
     rebalance_assets: tuple[str, ...] = ()
     rebalance_threshold: float = 0.0
     latency: float = 0.0
+    fee_spot: float = 0.0
+    fee_perp: float = 0.0
+    slippage_spot: float = 0.0
+    slippage_perp: float = 0.0
+    risk_cfg: ArbGuardConfig = field(default_factory=ArbGuardConfig)
 
 
 async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     """Run a simple spot/perp cross exchange arbitrage loop.
 
-    The function listens to trade streams from both adapters. When the
-    difference between perp and spot price exceeds ``cfg.threshold`` it sends
-    offsetting market orders on each venue and optionally persists the
-    opportunity and resulting fills into TimescaleDB.
-
-    A simulated network latency can be injected via ``cfg.latency``. Prior to
-    submitting orders the required balances on both venues are verified.  In
-    addition, the notional of each trade is scaled by a ``strength`` factor
-    derived from how the spot/perp premium has evolved since the current
-    position was opened. A widening premium increases ``strength`` while a
-    contraction reduces it and can even flip the trade direction.
+    Prices from both venues are consumed concurrently.  When the premium between
+    perp and spot exceeds ``cfg.threshold`` **after** subtracting fees and
+    slippage the function sends offsetting IOC limit orders.  Position sizing and
+    exposure limits are delegated to :class:`ArbitrageRiskService`.
     """
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
     balances: Dict[str, float] = {cfg.spot.name: 0.0, cfg.perp.name: 0.0}
     trade_lock = asyncio.Lock()
-    # Track edge at which current position was opened to adapt trade strength
-    position_sign = 0  # +1 for spot buy/perp sell, -1 for opposite
-    entry_edge = 0.0
 
     engine = get_engine() if (cfg.persist_pg and _CAN_PG) else None
     if cfg.persist_pg and not _CAN_PG:
         log.warning("Persistencia habilitada pero Timescale no disponible.")
-    risk = RiskService(PortfolioGuard(GuardConfig(venue="cross")), risk_pct=0.0)
+    risk = ArbitrageRiskService(cfg.risk_cfg)
     spot_broker = Broker(cfg.spot)
     perp_broker = Broker(cfg.perp)
 
     async def maybe_trade() -> None:
-        nonlocal position_sign, entry_edge
         if last["spot"] is None or last["perp"] is None:
             return
-        # compute premium: perp vs spot
-        edge = (last["perp"] - last["spot"]) / last["spot"]
-        if abs(edge) < cfg.threshold:
-            return
         async with trade_lock:
-            # recompute inside lock to avoid race
             edge = (last["perp"] - last["spot"]) / last["spot"]
-            if abs(edge) < cfg.threshold:
-                return
+            fees = cfg.fee_spot + cfg.fee_perp
+            slippage = cfg.slippage_spot + cfg.slippage_perp
 
-            # adapt strength according to edge movement relative to entry
-            strength = abs(edge)
-            if position_sign != 0:
-                pnl_edge = (edge - entry_edge) * position_sign
-                strength += pnl_edge
-            ts = datetime.now(timezone.utc)
-
-            # persist opportunity
-            if engine is not None:
-                try:
-                    insert_cross_signal(
-                        engine,
-                        symbol=cfg.symbol,
-                        spot_exchange=cfg.spot.name,
-                        perp_exchange=cfg.perp.name,
-                        spot_px=last["spot"],
-                        perp_px=last["perp"],
-                        edge=edge,
-                    )
-                except Exception as e:  # pragma: no cover - logging only
-                    log.debug("No se pudo insertar cross_signal: %s", e)
-
-            # determine sides, flipping if strength turned negative
-            if strength >= 0:
-                spot_side, perp_side = ("buy", "sell") if edge > 0 else ("sell", "buy")
-                position = 1 if spot_side == "buy" else -1
-            else:
-                spot_side, perp_side = ("sell", "buy") if edge > 0 else ("buy", "sell")
-                position = -1 if spot_side == "buy" else 1
-                strength = -strength  # use absolute value after flipping
-            position_sign = position
-            entry_edge = edge
-
-            base, quote = cfg.symbol.split("/")
             fetch_spot = getattr(cfg.spot, "fetch_balance", None)
             fetch_perp = getattr(cfg.perp, "fetch_balance", None)
             bal_spot, bal_perp = {}, {}
@@ -165,31 +123,24 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                 bal_perp = bal_perp or {}
 
             equity = (
-                float(bal_spot.get(quote, 0.0))
-                + float(bal_spot.get(base, 0.0)) * last["spot"]
-                + float(bal_perp.get(quote, 0.0))
-                + float(bal_perp.get(base, 0.0)) * last["perp"]
+                float(bal_spot.get(cfg.symbol.split("/")[1], 0.0))
+                + float(bal_spot.get(cfg.symbol.split("/")[0], 0.0)) * last["spot"]
+                + float(bal_perp.get(cfg.symbol.split("/")[1], 0.0))
+                + float(bal_perp.get(cfg.symbol.split("/")[0], 0.0)) * last["perp"]
             )
             if equity <= 0:
                 equity = max(last["spot"], last["perp"])
-            risk.account.cash = equity
-            ok_s, _r1, delta_s = risk.check_order(
-                cfg.symbol,
-                spot_side,
-                last["spot"],
-                strength=strength,
+
+            notional, net_edge = await risk.evaluate(
+                cfg.symbol, edge, last["spot"], equity, fees=fees, slippage=slippage
             )
-            ok_p, _r2, delta_p = risk.check_order(
-                cfg.symbol,
-                perp_side,
-                last["perp"],
-                strength=strength,
-            )
-            if not (ok_s and ok_p):
+            if net_edge < cfg.threshold or notional <= 0:
                 return
-            qty = min(abs(delta_s), abs(delta_p))
-            if qty <= 0:
-                return
+
+            spot_side, perp_side = ("buy", "sell") if edge > 0 else ("sell", "buy")
+
+            qty = min(notional / last["spot"], notional / last["perp"])
+            base, quote = cfg.symbol.split("/")
 
             def _has(bal: dict, asset: str, needed: float) -> bool:
                 return float(bal.get(asset, 0.0)) >= needed
@@ -198,18 +149,20 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             asset_spot = quote if spot_side == "buy" else base
             need_perp = qty * last["perp"] if perp_side == "buy" else qty
             asset_perp = quote if perp_side == "buy" else base
-
-            if not (_has(bal_spot, asset_spot, need_spot) and _has(bal_perp, asset_perp, need_perp)):
+            if not (
+                _has(bal_spot, asset_spot, need_spot)
+                and _has(bal_perp, asset_perp, need_perp)
+            ):
                 log.debug("Trade skipped due to insufficient balance")
                 return
 
             if cfg.latency:
                 await asyncio.sleep(cfg.latency)
 
-            # execute offsetting orders
             tick = getattr(settings, "tick_size", 0.0)
             spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
             perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
+            ts = datetime.now(timezone.utc)
             resp_spot, resp_perp = await asyncio.gather(
                 spot_broker.place_limit(cfg.symbol, spot_side, spot_price, qty, tif="IOC"),
                 perp_broker.place_limit(cfg.symbol, perp_side, perp_price, qty, tif="IOC"),
@@ -218,11 +171,20 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             balances[cfg.spot.name] += qty if spot_side == "buy" else -qty
             balances[cfg.perp.name] += qty if perp_side == "buy" else -qty
 
-            risk.on_fill(cfg.symbol, spot_side, qty, venue=cfg.spot.name)
-            risk.on_fill(cfg.symbol, perp_side, qty, venue=cfg.perp.name)
+            await risk.on_fill(cfg.symbol, spot_side, qty)
+            await risk.on_fill(cfg.symbol, perp_side, qty)
 
             if engine is not None:
                 try:
+                    insert_cross_signal(
+                        engine,
+                        symbol=cfg.symbol,
+                        spot_exchange=cfg.spot.name,
+                        perp_exchange=cfg.perp.name,
+                        spot_px=last["spot"],
+                        perp_px=last["perp"],
+                        edge=edge,
+                    )
                     insert_fill(
                         engine,
                         ts=ts,
@@ -289,14 +251,14 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
                     else:
                         price_ref = last["spot"]
                     try:
-                            await rebalance_between_exchanges(
-                                asset,
-                                price=float(price_ref),
-                                venues=venues,
-                                risk=risk,
-                                engine=engine,
-                                threshold=cfg.rebalance_threshold,
-                            )
+                        await rebalance_between_exchanges(
+                            asset,
+                            price=float(price_ref),
+                            venues=venues,
+                            risk=risk,
+                            engine=engine,
+                            threshold=cfg.rebalance_threshold,
+                        )
                     except Exception as e:  # pragma: no cover - logging only
                         log.debug("No se pudo rebalancear %s: %s", asset, e)
 
