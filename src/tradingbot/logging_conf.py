@@ -13,8 +13,8 @@ except Exception:
     jsonlogger = None
 
 
-def setup_logging():
-    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+def setup_logging(level: str | None = None):
+    level = getattr(logging, (level or settings.log_level).upper(), logging.INFO)
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
 

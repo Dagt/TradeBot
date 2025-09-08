@@ -42,6 +42,7 @@ class TriConfig:
     persist_pg: bool = False  # <-- nuevo flag
 
 async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None):
+    log.info("Connecting to Binance WS for triangular route %s", cfg.route)
     syms = make_symbols(cfg.route)
     streams = [_stream_name(syms.bq), _stream_name(syms.mq), _stream_name(syms.mb)]
     url = BINANCE_WS + "/".join(streams)
