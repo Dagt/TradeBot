@@ -98,14 +98,15 @@ def test_cross_arbitrage_start(monkeypatch):
     assert "--notional" not in argv
 
 
-def test_dashboard_missing_bot_controls():
+def test_dashboard_bot_controls():
     client = TestClient(app)
     resp = client.get("/bots", headers={"Accept": "text/html"}, auth=("admin", "admin"))
     assert resp.status_code == 200
     html = resp.text
-    assert "haltBot" not in html
+    assert "haltBot" in html
+    assert "killBot" in html
     assert "flattenBot" not in html
     assert "reloadBot" not in html
-    for path in ["halt", "flatten", "reload"]:
+    for path in ["halt", "flatten", "reload", "kill"]:
         r = client.post(f"/bots/123/{path}", auth=("admin", "admin"))
         assert r.status_code == 404
