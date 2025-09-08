@@ -126,10 +126,18 @@
   <div class="card" style="margin-top:16px">
     <h2>Gestión de riesgo</h2>
     <div class="muted">Consultar exposiciones y eventos o ejecutar acciones</div>
+    <p class="muted" style="margin-top:8px">
+      Términos:
+      <code>total_notional</code><span class="help-icon" title="Valor notional total en USD de todas las posiciones abiertas">?</span>,
+      <code>items</code><span class="help-icon" title="Listado de posiciones por símbolo">?</span>,
+      <code>events</code><span class="help-icon" title="Historial reciente de eventos de riesgo">?</span>
+    </p>
     <button id="risk-refresh">Consultar</button>
     <button id="risk-halt">Halt</button>
     <button id="risk-reset">Reset</button>
-    <pre id="risk-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+    <div id="risk-exposure" style="overflow:auto;margin-top:8px"></div>
+    <div id="risk-events" style="overflow:auto;margin-top:8px"></div>
+    <pre id="risk-error" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
 <script>
@@ -330,15 +338,46 @@ async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'PO
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
 
+function renderExposure(data){
+  const div=document.getElementById('risk-exposure');
+  const items=data.items||[];
+  let html=`<div><strong>Total notional:</strong> ${Number(data.total_notional||0).toFixed(2)}</div>`;
+  if(items.length){
+    html+='<table><thead><tr><th>Symbol</th><th>Position</th><th>Precio</th><th>Notional USD</th></tr></thead><tbody>';
+    items.forEach(i=>{
+      html+=`<tr><td>${i.symbol}</td><td>${Number(i.position||0).toFixed(8)}</td><td>${Number(i.price||0).toFixed(4)}</td><td>${Number(i.notional_usd||0).toFixed(2)}</td></tr>`;
+    });
+    html+='</tbody></table>';
+  }
+  div.innerHTML=html;
+}
+
+function renderEvents(items){
+  const div=document.getElementById('risk-events');
+  if(!(items&&items.length)){
+    div.innerHTML='';
+    return;
+  }
+  let html='<table><thead><tr><th>Tiempo</th><th>Symbol</th><th>Tipo</th><th>Mensaje</th></tr></thead><tbody>';
+  items.forEach(ev=>{
+    const ts=ev.ts?new Date(ev.ts).toLocaleString():'';
+    html+=`<tr><td>${ts}</td><td>${ev.symbol||''}</td><td>${ev.kind||''}</td><td>${ev.message||''}</td></tr>`;
+  });
+  html+='</tbody></table>';
+  div.innerHTML=html;
+}
+
 async function refreshRisk(){
   try{
     const ex = await fetch(api('/risk/exposure'));
     const exj = await ex.json();
     const ev = await fetch(api('/risk/events?limit=20'));
     const evj = await ev.json();
-    document.getElementById('risk-output').textContent = JSON.stringify({exposure: exj, events: evj.items||evj.events||[]}, null,2);
+    renderExposure(exj);
+    renderEvents(evj.items||evj.events||[]);
+    document.getElementById('risk-error').textContent='';
   }catch(e){
-    document.getElementById('risk-output').textContent = String(e);
+    document.getElementById('risk-error').textContent = String(e);
   }
 }
 
@@ -347,7 +386,7 @@ async function haltRisk(){
     await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
     refreshRisk();
   }catch(e){
-    document.getElementById('risk-output').textContent = String(e);
+    document.getElementById('risk-error').textContent = String(e);
   }
 }
 
@@ -356,7 +395,7 @@ async function resetRisk(){
     await fetch(api('/risk/reset'), {method:'POST'});
     refreshRisk();
   }catch(e){
-    document.getElementById('risk-output').textContent = String(e);
+    document.getElementById('risk-error').textContent = String(e);
   }
 }
 
