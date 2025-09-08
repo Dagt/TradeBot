@@ -6,12 +6,14 @@ from types import SimpleNamespace
 import types, sys
 
 # runner_paper indirectly imports a module missing in tests; inject a stub
-binance_ws_stub = types.ModuleType("tradingbot.adapters.binance_ws")
-binance_ws_stub.BinanceWSAdapter = object
-sys.modules.setdefault("tradingbot.adapters.binance_ws", binance_ws_stub)
+binance_stub = types.ModuleType("tradingbot.adapters.binance")
+binance_stub.BinanceWSAdapter = object
+sys.modules.setdefault("tradingbot.adapters.binance", binance_stub)
 
 from tradingbot.live import runner_paper as rp
 from tradingbot.core import normalize
+
+sys.modules.pop("tradingbot.adapters.binance", None)
 
 
 class DummyWS:
