@@ -51,7 +51,10 @@ def test_bot_endpoints(monkeypatch):
 
     lst = client.get("/bots", auth=("admin", "admin"))
     assert lst.status_code == 200
-    assert any(b["pid"] == pid for b in lst.json()["bots"])
+    data = lst.json()["bots"]
+    assert any(b["pid"] == pid for b in data)
+    bot = next(b for b in data if b["pid"] == pid)
+    assert bot.get("risk_pct") == payload["risk_pct"]
 
     assert client.post(f"/bots/{pid}/pause", auth=("admin", "admin")).status_code == 200
     assert client.post(f"/bots/{pid}/resume", auth=("admin", "admin")).status_code == 200

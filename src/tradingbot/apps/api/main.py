@@ -1012,7 +1012,22 @@ def list_bots(request: Request):
     for pid, info in _BOTS.items():
         proc = info["process"]
         status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
-        items.append({"pid": pid, "status": status, "config": info["config"]})
+        cfg = info["config"]
+        stats = info.get("stats")
+        risk_pct = cfg.get("risk_pct")
+        if risk_pct is None and stats:
+            risk_pct = stats.get("risk_pct")
+        item = {
+            "pid": pid,
+            "status": status,
+            "config": cfg,
+            "risk_pct": risk_pct,
+        }
+        if stats:
+            item["stats"] = stats
+        if "last_error" in info:
+            item["last_error"] = info["last_error"]
+        items.append(item)
     return {"bots": items}
 
 
