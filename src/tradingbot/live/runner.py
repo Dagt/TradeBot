@@ -10,7 +10,7 @@ import time
 
 import pandas as pd
 
-from ..adapters.binance_ws import BinanceWSAdapter
+from ..adapters.binance import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..strategies import STRATEGIES

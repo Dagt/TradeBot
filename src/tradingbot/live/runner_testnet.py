@@ -23,7 +23,7 @@ from ..broker.broker import Broker
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
-from ..adapters.binance_ws import BinanceWSAdapter
+from ..adapters.binance import BinanceWSAdapter
 from ..adapters.binance_futures import BinanceFuturesAdapter
 from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter, BybitSpotAdapter
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter, OKXSpotAdapter

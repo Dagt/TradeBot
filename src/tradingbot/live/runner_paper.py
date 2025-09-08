@@ -7,7 +7,7 @@ import time
 import uvicorn
 
 from .runner import BarAggregator
-from ..adapters.binance_ws import BinanceWSAdapter
+from ..adapters.binance import BinanceWSAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..broker.broker import Broker
