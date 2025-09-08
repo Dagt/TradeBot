@@ -307,7 +307,7 @@ async function refreshBots(){
       <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
       <td>${(stats.inventory||0).toFixed(4)}</td>
       <td>${(stats.leverage||0).toFixed(2)}</td>
-      <td>${stats.risk_triggers||0}</td>
+      <td>${((stats.risk_pct||0)*100).toFixed(2)}%</td>
       <td>${b.last_error||''}</td>
       <td>
   <button class="icon-btn" onclick="pauseBot(${b.pid})" title="Pause">

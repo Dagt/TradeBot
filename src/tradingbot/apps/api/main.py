@@ -922,6 +922,49 @@ class BotConfig(BaseModel):
 
 _BOTS: dict[int, dict] = {}
 
+# Regex para detectar líneas de métricas en logs: "METRICS {json}"
+_METRIC_LINE = re.compile(r"METRICS?\s+(\{.*\})")
+
+
+def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
+    """Actualizar el buffer de métricas del bot ``pid``.
+
+    Permite recibir métricas vía IPC o ser reutilizada por el scrapper de logs.
+    ``stats`` puede ser un dict completo y ``kwargs`` métricas individuales.
+    """
+
+    info = _BOTS.get(pid)
+    if not info:
+        return
+    buf = info.setdefault("stats", {})
+    if stats:
+        buf.update(stats)
+    if kwargs:
+        buf.update(kwargs)
+
+
+async def _scrape_metrics(pid: int, proc: asyncio.subprocess.Process) -> None:
+    """Lee stdout del proceso buscando líneas de métricas en JSON."""
+
+    if not proc.stdout:
+        return
+    while True:
+        try:
+            line = await proc.stdout.readline()
+        except Exception:
+            break
+        if not line:
+            break
+        text = line.decode(errors="ignore").strip()
+        m = _METRIC_LINE.search(text)
+        if not m:
+            continue
+        try:
+            payload = json.loads(m.group(1))
+        except Exception:
+            continue
+        update_bot_stats(pid, payload)
+
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
     # Special runner for cross exchange arbitrage / cash and carry
@@ -993,7 +1036,13 @@ async def start_bot(cfg: BotConfig):
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
-    _BOTS[proc.pid] = {"process": proc, "config": cfg.dict()}
+    task = asyncio.create_task(_scrape_metrics(proc.pid, proc))
+    _BOTS[proc.pid] = {
+        "process": proc,
+        "config": cfg.dict(),
+        "stats": {},
+        "metrics_task": task,
+    }
     return {"pid": proc.pid, "status": "started"}
 
 
@@ -1012,7 +1061,15 @@ def list_bots(request: Request):
     for pid, info in _BOTS.items():
         proc = info["process"]
         status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
-        items.append({"pid": pid, "status": status, "config": info["config"]})
+        items.append(
+            {
+                "pid": pid,
+                "status": status,
+                "config": info["config"],
+                "stats": info.get("stats", {}),
+                "last_error": info.get("last_error"),
+            }
+        )
     return {"bots": items}
 
 
@@ -1070,5 +1127,8 @@ async def delete_bot(pid: int):
     if proc.returncode is None:
         proc.terminate()
         await proc.wait()
+    task = info.get("metrics_task")
+    if task:
+        task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 

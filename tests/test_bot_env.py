@@ -45,4 +45,30 @@ async def test_start_bot_inherits_env_and_running(monkeypatch):
         headers = {}
 
     status = api_main.list_bots(DummyReq())
-    assert status["bots"][0]["status"] == "running"
+    bot = status["bots"][0]
+    assert bot["status"] == "running"
+    assert bot["stats"] == {}
+
+
+@pytest.mark.asyncio
+async def test_update_bot_stats(monkeypatch):
+    async def fake_exec(*args, **kwargs):
+        return DummyProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(api_main, "_build_bot_args", lambda cfg, params=None: ["echo", "hi"])
+
+    api_main._BOTS.clear()
+
+    cfg = api_main.BotConfig(strategy="dummy")
+    await api_main.start_bot(cfg)
+    api_main.update_bot_stats(999, orders_sent=5, fills=2, inventory=1.5)
+
+    class DummyReq:
+        headers = {}
+
+    data = api_main.list_bots(DummyReq())
+    stats = data["bots"][0]["stats"]
+    assert stats["orders_sent"] == 5
+    assert stats["fills"] == 2
+    assert stats["inventory"] == 1.5
