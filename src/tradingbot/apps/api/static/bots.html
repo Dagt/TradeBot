@@ -307,8 +307,14 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
+  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Halt">
+    <i class="fa-solid fa-ban"></i>
+  </button>
   <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
     <i class="fa-solid fa-stop"></i>
+  </button>
+  <button class="icon-btn danger" onclick="killBot(${b.pid})" title="Kill">
+    <i class="fa-solid fa-skull"></i>
   </button>
   <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Delete">
     <i class="fa-solid fa-trash"></i>
@@ -336,6 +342,8 @@ async function runCli(){
 async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
+async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
+async function killBot(pid){ await fetch(api(`/bots/${pid}/kill`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
 
 function renderExposure(data){
