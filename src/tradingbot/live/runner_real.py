@@ -104,6 +104,7 @@ async def _run_symbol(
     config_path: str | None = None,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
+    log.info("Connecting to %s %s for %s", exchange, market, cfg.symbol)
     api_key, api_secret = _get_keys(exchange)
     exec_kwargs: Dict[str, Any] = {"api_key": api_key, "api_secret": api_secret}
     if market == "futures":
@@ -322,6 +323,7 @@ async def run_live_real(
     params: dict | None = None,
 ) -> None:
     """Run a simple live loop on a real crypto exchange."""
+    log.info("Starting real runner for %s %s", exchange, market)
 
     if not i_know_what_im_doing:
         raise ValueError("Real trading requires --i-know-what-im-doing flag")

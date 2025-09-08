@@ -41,6 +41,7 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         Configuration with symbol, adapters and trading params.
     """
 
+    log.info("Starting cross exchange runner for %s", getattr(cfg, "symbol", ""))
     router = ExecutionRouter([cfg.spot, cfg.perp])
     bus = EventBus()
     adapter = PaperAdapter()

@@ -71,6 +71,9 @@ async def _run_symbol(
     config_path: str | None = None,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
+    log.info(
+        "Connecting to %s %s testnet for %s", exchange, market, cfg.symbol
+    )
     ws_kwargs: Dict[str, Any] = {"testnet": True}
     exec_kwargs: Dict[str, Any] = {"testnet": True}
     if market == "futures":
@@ -222,6 +225,7 @@ async def run_live_testnet(
     params: dict | None = None,
 ) -> None:
     """Run a simple live loop on a crypto exchange testnet."""
+    log.info("Starting testnet runner for %s %s", exchange, market)
     if (exchange, market) not in ADAPTERS:
         raise ValueError(f"Unsupported combination {exchange} {market}")
     symbols = symbols or ["BTC/USDT"]

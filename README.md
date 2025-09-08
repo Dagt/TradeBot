@@ -52,6 +52,12 @@ exportarlas en la terminal antes de ejecutar el bot.
 
 ## Variables de entorno
 
+El nivel de logging puede ajustarse mediante la variable de entorno `LOG_LEVEL`:
+
+```bash
+export LOG_LEVEL=DEBUG
+```
+
 De forma predeterminada, Binance Futures opera contra el entorno real. Para
 volver a utilizar la testnet es necesario indicar explícitamente:
 

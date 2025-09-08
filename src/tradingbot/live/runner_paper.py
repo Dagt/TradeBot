@@ -47,7 +47,7 @@ async def run_paper(
     params: dict | None = None,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
-
+    log.info("Connecting to Binance WS in paper mode for %s", symbol)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
 

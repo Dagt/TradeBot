@@ -106,6 +106,7 @@ async def run_live_binance(
     Pipeline en vivo:
       WS Binance -> agregador 3m -> strategy -> Risk -> PaperAdapter
     """
+    log.info("Connecting to Binance WS for %s", symbol)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
     strat_cls = STRATEGIES.get(strategy_name)

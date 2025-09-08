@@ -39,6 +39,9 @@ def run_bot(
     daily_max_drawdown_pct: float = typer.Option(
         0.05, "--daily-max-drawdown-pct", help="Intraday max drawdown limit"
     ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", help="Logging level (e.g., INFO, DEBUG)"
+    ),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
     param: list[str] = typer.Option(
         [], "--param", help="Override strategy parameters as key=value pairs"
@@ -46,7 +49,7 @@ def run_bot(
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
-    setup_logging()
+    setup_logging(log_level)
     params = _parse_params(param) if isinstance(param, list) else {}
     from ...core.account import Account
     from ...risk.portfolio_guard import PortfolioGuard, GuardConfig
