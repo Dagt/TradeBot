@@ -21,6 +21,7 @@ from time import monotonic
 from contextlib import suppress
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
+from collections import deque
 
 try:  # pragma: no cover - ccxt is optional
     import ccxt  # type: ignore
@@ -921,6 +922,8 @@ class BotConfig(BaseModel):
 
 
 _BOTS: dict[int, dict] = {}
+_BOT_LOGS: dict[int, deque[str]] = {}
+_BOT_QUEUES: dict[int, list[asyncio.Queue[str]]] = {}
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -994,6 +997,25 @@ async def start_bot(cfg: BotConfig):
         env=env,
     )
     _BOTS[proc.pid] = {"process": proc, "config": cfg.dict()}
+    _BOT_LOGS[proc.pid] = deque(maxlen=1000)
+    _BOT_QUEUES.setdefault(proc.pid, [])
+
+    async def _capture_stream(pid: int, stream: asyncio.StreamReader) -> None:
+        try:
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                text = line.decode().rstrip()
+                _BOT_LOGS[pid].append(text)
+                for q in _BOT_QUEUES.get(pid, []):
+                    await q.put(text)
+        finally:
+            for q in _BOT_QUEUES.get(pid, []):
+                await q.put(None)
+
+    asyncio.create_task(_capture_stream(proc.pid, proc.stdout))
+    asyncio.create_task(_capture_stream(proc.pid, proc.stderr))
     return {"pid": proc.pid, "status": "started"}
 
 
@@ -1070,5 +1092,29 @@ async def delete_bot(pid: int):
     if proc.returncode is None:
         proc.terminate()
         await proc.wait()
+    _BOT_LOGS.pop(pid, None)
+    _BOT_QUEUES.pop(pid, None)
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
+
+
+@app.get("/bots/{pid}/logs")
+async def bot_logs(pid: int):
+    if pid not in _BOTS:
+        raise HTTPException(status_code=404, detail="bot not found")
+
+    async def event_stream():
+        q: asyncio.Queue[str | None] = asyncio.Queue()
+        _BOT_QUEUES.setdefault(pid, []).append(q)
+        try:
+            for line in _BOT_LOGS.get(pid, []):
+                yield f"data: {line}\n\n"
+            while True:
+                line = await q.get()
+                if line is None:
+                    break
+                yield f"data: {line}\n\n"
+        finally:
+            _BOT_QUEUES[pid].remove(q)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 

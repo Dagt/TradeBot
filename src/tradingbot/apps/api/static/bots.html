@@ -148,6 +148,13 @@
     <pre id="risk-error" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
   </div>
 
+  <div id="log-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;z-index:100;">
+    <div class="card" style="width:90%;max-height:80%;overflow:auto;position:relative;">
+      <button id="log-close" class="icon-btn" style="position:absolute;top:8px;right:8px"><i class="fa-solid fa-xmark"></i></button>
+      <pre id="log-output" class="mono" style="margin-top:40px;white-space:pre-wrap"></pre>
+    </div>
+  </div>
+
 <script>
 const api = (path) => `${location.origin}${path}`;
 
@@ -310,6 +317,9 @@ async function refreshBots(){
       <td>${stats.risk_triggers||0}</td>
       <td>${b.last_error||''}</td>
       <td>
+  <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
+    <i class="fa-solid fa-file-lines"></i>
+  </button>
   <button class="icon-btn" onclick="pauseBot(${b.pid})" title="Pause">
     <i class="fa-solid fa-pause"></i>
   </button>
@@ -354,6 +364,23 @@ async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'
 async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
 async function killBot(pid){ await fetch(api(`/bots/${pid}/kill`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+
+let logSource;
+function showLogs(pid){
+  const modal=document.getElementById('log-modal');
+  const pre=document.getElementById('log-output');
+  pre.textContent='';
+  modal.style.display='flex';
+  logSource=new EventSource(api(`/bots/${pid}/logs`));
+  logSource.onmessage=e=>{
+    pre.textContent+=e.data+'\n';
+    pre.scrollTop=pre.scrollHeight;
+  };
+}
+function closeLogs(){
+  if(logSource){logSource.close();logSource=null;}
+  document.getElementById('log-modal').style.display='none';
+}
 
 function renderExposure(data){
   const div=document.getElementById('risk-exposure');
@@ -430,6 +457,7 @@ document.getElementById('cli-run').addEventListener('click', runCli);
 document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
 document.getElementById('risk-halt').addEventListener('click', haltRisk);
 document.getElementById('risk-reset').addEventListener('click', resetRisk);
+document.getElementById('log-close').addEventListener('click', closeLogs);
 refreshRisk();
 </script>
 </body>
