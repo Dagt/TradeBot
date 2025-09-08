@@ -979,8 +979,22 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
 
 
 @app.post("/bots")
-async def start_bot(cfg: BotConfig):
-    """Launch a bot process using the provided configuration."""
+async def start_bot(cfg: BotConfig, request: Request):
+    """Launch a bot process using the provided configuration.
+
+    For backward compatibility, derive ``venue`` from legacy ``exchange`` and
+    ``market`` fields if provided in the request body.
+    """
+
+    if cfg.venue is None:
+        try:
+            data = await request.json()
+        except Exception:  # pragma: no cover - malformed JSON
+            data = {}
+        exchange = data.get("exchange")
+        market = data.get("market")
+        if exchange and market:
+            cfg.venue = f"{exchange}_{market}"
 
     params = _strategy_params.get(cfg.strategy, {})
     args = _build_bot_args(cfg, params)
