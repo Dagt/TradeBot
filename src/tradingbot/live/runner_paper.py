@@ -45,6 +45,7 @@ async def run_paper(
     corr_threshold: float = 0.8,
     risk_pct: float = 0.0,
     params: dict | None = None,
+    timeframe: str = "1m",
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
     log.info("Connecting to Binance WS in paper mode for %s", symbol)
@@ -86,7 +87,7 @@ async def run_paper(
 
     server = await _start_metrics(metrics_port)
 
-    agg = BarAggregator()
+    agg = BarAggregator(timeframe=timeframe)
     tick = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()

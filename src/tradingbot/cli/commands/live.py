@@ -27,6 +27,7 @@ def run_bot(
     testnet: bool = typer.Option(True, help="Use testnet endpoints"),
     leverage: int = typer.Option(1, help="Leverage for futures"),
     dry_run: bool = typer.Option(False, help="Dry run for futures testnet"),
+    timeframe: str = typer.Option("1m", "--timeframe", help="Bar timeframe (e.g., 1m,5m,15m)"),
     risk_pct: float = typer.Option(
         0.0,
         "--risk-pct",
@@ -74,6 +75,7 @@ def run_bot(
                 strategy_name=strategy,
                 config_path=config,
                 params=params,
+                timeframe=timeframe,
             )
         )
     else:
@@ -88,6 +90,7 @@ def run_bot(
                 strategy_name=strategy,
                 config_path=config,
                 params=params,
+                timeframe=timeframe,
             )
         )
 
@@ -107,6 +110,7 @@ def paper_run(
         callback=_parse_risk_pct,
         help="Risk manager loss percentage (0-1 or 0-100)",
     ),
+    timeframe: str = typer.Option("1m", "--timeframe", help="Bar timeframe (e.g., 1m,5m,15m)"),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
@@ -130,6 +134,7 @@ def paper_run(
             metrics_port=metrics_port,
             risk_pct=risk_pct,
             params=params,
+            timeframe=timeframe,
         )
     )
 
@@ -157,6 +162,7 @@ def real_run(
     daily_max_drawdown_pct: float = typer.Option(
         0.05, "--daily-max-drawdown-pct", help="Intraday max drawdown limit"
     ),
+    timeframe: str = typer.Option("1m", "--timeframe", help="Bar timeframe (e.g., 1m,5m,15m)"),
     i_know_what_im_doing: bool = typer.Option(
         False,
         "--i-know-what-im-doing",
@@ -190,6 +196,7 @@ def real_run(
             dry_run=dry_run,
             daily_max_loss_pct=daily_max_loss_pct,
             daily_max_drawdown_pct=daily_max_drawdown_pct,
+            timeframe=timeframe,
             i_know_what_im_doing=i_know_what_im_doing,
         )
     )

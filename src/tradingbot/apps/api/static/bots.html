@@ -86,6 +86,14 @@
         <input id="bot-daily-max-drawdown-pct" type="number" step="0.0001"/>
       </div>
       <div>
+        <label for="bot-timeframe">Timeframe</label>
+        <select id="bot-timeframe">
+          <option value="1m" selected>1m</option>
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+        </select>
+      </div>
+      <div>
         <label for="bot-env">Entorno</label>
         <select id="bot-env">
           <option value="live">Live</option>
@@ -244,6 +252,7 @@ async function startBot(){
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
   const config = document.getElementById('bot-config').value;
+  const timeframe = document.getElementById('bot-timeframe').value;
     const spot = document.getElementById('bot-spot').value;
     const perp = document.getElementById('bot-perp').value;
     const threshold = document.getElementById('bot-threshold').value;
@@ -257,7 +266,7 @@ async function startBot(){
       else if(t.includes('float') || t.includes('number')) v=parseFloat(v);
       params[el.dataset.name]=v;
     });
-    const payload = {strategy, pairs, exchange, market, testnet, dry_run};
+    const payload = {strategy, pairs, exchange, market, testnet, dry_run, timeframe};
     if(config) payload.config = config;
     if(risk_pct) payload.risk_pct = Number(risk_pct);
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct);
