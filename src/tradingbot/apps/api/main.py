@@ -917,6 +917,7 @@ class BotConfig(BaseModel):
     perp: str | None = None
     threshold: float | None = None
     config: str | None = None
+    timeframe: str | None = None
 
 
 _BOTS: dict[int, dict] = {}
@@ -963,6 +964,8 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
         args.extend(["--daily-max-loss-pct", str(cfg.daily_max_loss_pct)])
     if cfg.daily_max_drawdown_pct is not None:
         args.extend(["--daily-max-drawdown-pct", str(cfg.daily_max_drawdown_pct)])
+    if cfg.timeframe is not None:
+        args.extend(["--timeframe", cfg.timeframe])
     if cfg.testnet is not None:
         args.append("--testnet" if cfg.testnet else "--no-testnet")
     if cfg.dry_run is not None:

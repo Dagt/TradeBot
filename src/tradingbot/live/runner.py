@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Deque, Dict, Optional
 import time
 
@@ -40,27 +40,43 @@ class Bar:
     v: float
 
 class BarAggregator:
+    """Agrega trades en barras OHLCV para un timeframe configurable.
+
+    El timeframe debe expresarse como minutos (ej. ``"1m"``, ``"5m"``).
+    Se cierra una barra cuando cambia el periodo calculado para el trade
+    entrante.
     """
-    Agrega trades a barras de 1 minuto por timestamp (UTC).
-    Cierra barra cuando cambia el minuto ("mm") del trade entrante.
-    """
-    def __init__(self):
-        self.current_minute: Optional[datetime] = None
+
+    def __init__(self, timeframe: str = "1m") -> None:
+        if not timeframe.endswith("m"):
+            raise ValueError("timeframe must be specified in minutes, e.g. '1m'")
+        self.timeframe = timeframe
+        self._mins = int(timeframe[:-1]) or 1
+        self.current_period: Optional[datetime] = None
         self.cur: Optional[Bar] = None
         self.completed: Deque[Bar] = deque(maxlen=5000)
 
+    def _floor_ts(self, ts: datetime) -> datetime:
+        """Floor ``ts`` to the start of the current timeframe."""
+        return ts - timedelta(
+            minutes=ts.minute % self._mins,
+            seconds=ts.second,
+            microseconds=ts.microsecond,
+        )
+
     def on_trade(self, ts: datetime, px: float, qty: float) -> Optional[Bar]:
-        # Normaliza a minuto: YYYY-mm-dd HH:MM:00 UTC
-        minute = ts.replace(second=0, microsecond=0)
-        if self.current_minute is None:
-            self.current_minute = minute
-            self.cur = Bar(ts_open=minute, o=px, h=px, l=px, c=px, v=qty)
+        period = self._floor_ts(ts)
+        if self.current_period is None:
+            self.current_period = period
+            self.cur = Bar(ts_open=period, o=px, h=px, l=px, c=px, v=qty)
             return None
 
-        if minute == self.current_minute:
+        if period == self.current_period:
             b = self.cur
-            if px > b.h: b.h = px
-            if px < b.l: b.l = px
+            if px > b.h:
+                b.h = px
+            if px < b.l:
+                b.l = px
             b.c = px
             b.v += qty
             return None
@@ -69,8 +85,8 @@ class BarAggregator:
             closed = self.cur
             self.completed.append(closed)
             # nueva barra
-            self.current_minute = minute
-            self.cur = Bar(ts_open=minute, o=px, h=px, l=px, c=px, v=qty)
+            self.current_period = period
+            self.cur = Bar(ts_open=period, o=px, h=px, l=px, c=px, v=qty)
             return closed
 
     def last_n_bars_df(self, n: int) -> pd.DataFrame:
@@ -101,6 +117,7 @@ async def run_live_binance(
     strategy_name: str = "breakout_atr",
     config_path: str | None = None,
     params: dict | None = None,
+    timeframe: str = "1m",
 ) -> None:
     """
     Pipeline en vivo:
@@ -153,7 +170,7 @@ async def run_live_binance(
     if persist_pg and not _CAN_PG:
         log.warning("Persistencia Timescale no disponible (sqlalchemy/psycopg2 no cargados).")
 
-    agg = BarAggregator()
+    agg = BarAggregator(timeframe=timeframe)
     fills = 0
 
     tick = getattr(settings, "tick_size", 0.0)

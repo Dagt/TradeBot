@@ -102,6 +102,7 @@ async def _run_symbol(
     strategy_name: str,
     params: dict | None = None,
     config_path: str | None = None,
+    timeframe: str = "1m",
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     log.info("Connecting to %s %s for %s", exchange, market, cfg.symbol)
@@ -113,7 +114,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     cfg_app = load_config()
     tick_size = float(cfg_app.exchange_configs.get(venue, {}).get("tick_size", 0.0))
-    agg = BarAggregator()
+    agg = BarAggregator(timeframe=timeframe)
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
@@ -321,6 +322,7 @@ async def run_live_real(
     strategy_name: str = "breakout_atr",
     config_path: str | None = None,
     params: dict | None = None,
+    timeframe: str = "1m",
 ) -> None:
     """Run a simple live loop on a real crypto exchange."""
     log.info("Starting real runner for %s %s", exchange, market)
@@ -354,6 +356,7 @@ async def run_live_real(
             strategy_name=strategy_name,
             params=params,
             config_path=config_path,
+            timeframe=timeframe,
         )
         for c in cfgs
     ]
