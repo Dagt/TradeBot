@@ -305,6 +305,9 @@ async function refreshBots(){
       <td>${((b.risk_pct ?? 0)*100).toFixed(2)}%</td>
       <td>${b.last_error||''}</td>
       <td>
+  <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
+    <i class="fa-solid fa-file-lines"></i>
+  </button>
   <button class="icon-btn" onclick="pauseBot(${b.pid})" title="Pause">
     <i class="fa-solid fa-pause"></i>
   </button>
@@ -426,7 +429,33 @@ document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
 document.getElementById('risk-halt').addEventListener('click', haltRisk);
 document.getElementById('risk-reset').addEventListener('click', resetRisk);
 refreshRisk();
+
+let logSource=null;
+function showLogs(pid){
+  const dlg=document.getElementById('logs-dialog');
+  const pre=document.getElementById('logs-content');
+  pre.textContent='';
+  if(logSource){ logSource.close(); }
+  logSource=new EventSource(api(`/bots/${pid}/logs`));
+  logSource.onmessage=(e)=>{
+    pre.textContent+=e.data+'\n';
+    pre.scrollTop=pre.scrollHeight;
+  };
+  logSource.addEventListener('end', ()=>{ if(logSource){logSource.close();} });
+  dlg.showModal();
+}
+function closeLogs(){
+  if(logSource){ logSource.close(); logSource=null; }
+  document.getElementById('logs-dialog').close();
+}
 </script>
+
+<dialog id="logs-dialog" style="width:80vw;max-height:80vh;">
+  <pre id="logs-content" class="mono" style="max-height:70vh;overflow:auto;white-space:pre-wrap;margin:0"></pre>
+  <div style="text-align:right;margin-top:8px">
+    <button onclick="closeLogs()">Cerrar</button>
+  </div>
+</dialog>
 </body>
 </html>
 
