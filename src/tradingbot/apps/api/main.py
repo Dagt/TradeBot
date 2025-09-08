@@ -21,6 +21,7 @@ from time import monotonic
 from contextlib import suppress
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
+from collections import deque
 
 try:  # pragma: no cover - ccxt is optional
     import ccxt  # type: ignore
@@ -943,8 +944,16 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
         buf.update(kwargs)
 
 
-async def _scrape_metrics(pid: int, proc: asyncio.subprocess.Process) -> None:
-    """Lee stdout del proceso buscando líneas de métricas en JSON."""
+async def _scrape_metrics(
+    pid: int,
+    proc: asyncio.subprocess.Process,
+    log_buffer: deque[str] | None = None,
+    log_queue: asyncio.Queue[str] | None = None,
+) -> None:
+    """Lee stdout del proceso buscando líneas de métricas en JSON.
+
+    Además, almacena todas las líneas en los buffers de logs si se proporcionan.
+    """
 
     if not proc.stdout:
         return
@@ -955,7 +964,11 @@ async def _scrape_metrics(pid: int, proc: asyncio.subprocess.Process) -> None:
             break
         if not line:
             break
-        text = line.decode(errors="ignore").strip()
+        text = line.decode(errors="ignore").rstrip()
+        if log_buffer is not None:
+            log_buffer.append(text)
+        if log_queue is not None:
+            await log_queue.put(text)
         m = _METRIC_LINE.search(text)
         if not m:
             continue
@@ -964,6 +977,25 @@ async def _scrape_metrics(pid: int, proc: asyncio.subprocess.Process) -> None:
         except Exception:
             continue
         update_bot_stats(pid, payload)
+
+
+async def _capture_stderr(
+    proc: asyncio.subprocess.Process,
+    log_buffer: deque[str],
+    log_queue: asyncio.Queue[str],
+) -> None:
+    if not proc.stderr:
+        return
+    while True:
+        try:
+            line = await proc.stderr.readline()
+        except Exception:
+            break
+        if not line:
+            break
+        text = line.decode(errors="ignore").rstrip()
+        log_buffer.append(text)
+        await log_queue.put(text)
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1022,14 +1054,14 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
 
 
 @app.post("/bots")
-async def start_bot(cfg: BotConfig, request: Request):
+async def start_bot(cfg: BotConfig, request: Request = None):
     """Launch a bot process using the provided configuration.
 
     For backward compatibility, derive ``venue`` from legacy ``exchange`` and
     ``market`` fields if provided in the request body.
     """
 
-    if cfg.venue is None:
+    if cfg.venue is None and request is not None:
         try:
             data = await request.json()
         except Exception:  # pragma: no cover - malformed JSON
@@ -1050,12 +1082,22 @@ async def start_bot(cfg: BotConfig, request: Request):
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
-    task = asyncio.create_task(_scrape_metrics(proc.pid, proc))
+    log_buffer: deque[str] = deque(maxlen=1000)
+    log_queue: asyncio.Queue[str] = asyncio.Queue()
+    stdout_task = asyncio.create_task(
+        _scrape_metrics(proc.pid, proc, log_buffer, log_queue)
+    )
+    stderr_task = asyncio.create_task(
+        _capture_stderr(proc, log_buffer, log_queue)
+    )
     _BOTS[proc.pid] = {
         "process": proc,
         "config": cfg.dict(),
         "stats": {},
-        "metrics_task": task,
+        "metrics_task": stdout_task,
+        "stderr_task": stderr_task,
+        "log_buffer": log_buffer,
+        "log_queue": log_queue,
     }
     return {"pid": proc.pid, "status": "started"}
 
@@ -1085,6 +1127,34 @@ def list_bots(request: Request):
             }
         )
     return {"bots": items}
+
+
+@app.get("/bots/{pid}/logs")
+async def bot_logs(pid: int):
+    """Stream real-time logs from a bot using Server-Sent Events."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    buffer: deque[str] | None = info.get("log_buffer")
+    queue: asyncio.Queue[str] | None = info.get("log_queue")
+    proc: asyncio.subprocess.Process = info["process"]
+    if buffer is None or queue is None:
+        raise HTTPException(status_code=404, detail="logs not available")
+
+    async def event_gen():
+        for line in list(buffer):
+            yield format_sse("message", line)
+        while True:
+            if proc.returncode is not None and queue.empty():
+                break
+            try:
+                line = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            yield format_sse("message", line)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
 @app.post("/bots/{pid}/stop")
@@ -1144,5 +1214,8 @@ async def delete_bot(pid: int):
     task = info.get("metrics_task")
     if task:
         task.cancel()
+    err_task = info.get("stderr_task")
+    if err_task:
+        err_task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 
