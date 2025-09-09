@@ -47,6 +47,7 @@ def run_bot(
     param: list[str] = typer.Option(
         [], "--param", help="Override strategy parameters as key=value pairs"
     ),
+    metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
@@ -69,6 +70,7 @@ def run_bot(
                 config_path=config,
                 params=params,
                 timeframe=timeframe,
+                metrics_port=metrics_port,
             )
         )
     else:
@@ -89,6 +91,7 @@ def run_bot(
                 timeframe=timeframe,
                 strategy_name=strategy,
                 i_know_what_im_doing=True,
+                metrics_port=metrics_port,
             )
         )
 
