@@ -919,6 +919,7 @@ class BotConfig(BaseModel):
     threshold: float | None = None
     config: str | None = None
     timeframe: str | None = None
+    initial_cash: float | None = None
 
 
 _BOTS: dict[int, dict] = {}
@@ -1017,6 +1018,32 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
         if cfg.threshold is not None:
             args.extend(["--threshold", str(cfg.threshold)])
         # El tamaño se deriva del diferencial spot/perp; no requiere --notional
+        return args
+
+    if cfg.dry_run and not cfg.testnet:
+        if not cfg.pairs:
+            raise ValueError("pairs required for paper trading")
+        args = [
+            sys.executable,
+            "-m",
+            "tradingbot.cli",
+            "paper-run",
+            "--symbol",
+            normalize_symbol(cfg.pairs[0]),
+            "--strategy",
+            cfg.strategy,
+        ]
+        if cfg.risk_pct is not None:
+            args.extend(["--risk-pct", str(cfg.risk_pct)])
+        if cfg.timeframe is not None:
+            args.extend(["--timeframe", cfg.timeframe])
+        if cfg.config:
+            args.extend(["--config", cfg.config])
+        if params:
+            for k, v in params.items():
+                args.extend(["--param", f"{k}={v}"])
+        if cfg.initial_cash is not None:
+            args.extend(["--initial-cash", str(cfg.initial_cash)])
         return args
 
     args = [
