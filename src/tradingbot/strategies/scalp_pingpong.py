@@ -73,6 +73,7 @@ class ScalpPingPong(Strategy):
         params.pop("risk_service", None)
         self.cfg = cfg or ScalpPingPongConfig(**params)
         self.risk_service = kwargs.get("risk_service")
+        self.prefer_post_only = True
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
         returns = closes.pct_change().dropna()
@@ -100,6 +101,41 @@ class ScalpPingPong(Strategy):
         z = self._calc_zscore(closes, lookback)
         price = float(closes.iloc[-1])
 
+        spread_bps = 0.0
+        if {"bid", "ask"}.issubset(df.columns):
+            spread = float(df["ask"].iloc[-1] - df["bid"].iloc[-1])
+            spread_bps = spread / price * 10000 if price else 0.0
+        else:
+            high = float(df["high"].iloc[-1]) if "high" in df.columns else price
+            low = float(df["low"].iloc[-1]) if "low" in df.columns else price
+            spread_bps = (high - low) / price * 10000 if price else 0.0
+        bar["spread_bps"] = spread_bps
+
+        trade = getattr(self, "trade", None)
+        if trade:
+            trade["bars_held"] = trade.get("bars_held", 0) + 1
+            take1 = trade.get("take1")
+            if take1 is None:
+                take1 = (
+                    trade["entry_price"] + 0.5 * trade["atr"]
+                    if trade["side"] == "buy"
+                    else trade["entry_price"] - 0.5 * trade["atr"]
+                )
+                trade["take1"] = take1
+            if not trade.get("tp_hit") and (
+                (trade["side"] == "buy" and price >= take1)
+                or (trade["side"] == "sell" and price <= take1)
+            ):
+                trade["tp_hit"] = True
+                trade["qty"] = float(trade.get("qty", 0)) * 0.5
+                sig = Signal(trade["side"], 0.5, reduce_only=True)
+                return self.finalize_signal(bar, price, sig)
+            if trade["bars_held"] >= 6 and not trade.get("tp_hit"):
+                side = "sell" if trade["side"] == "buy" else "buy"
+                sig = Signal(side, 1.0, reduce_only=True)
+                self.trade = None
+                return self.finalize_signal(bar, price, sig)
+
         if bar.get("atr") is not None and price != 0:
             vol_bps = float(bar["atr"]) / abs(price) * 10000
         else:
@@ -109,32 +145,22 @@ class ScalpPingPong(Strategy):
                 else 0.0
             )
             vol_bps = vol * 10000
-        if vol_bps < self.cfg.min_volatility:
+        if vol_bps < self.cfg.min_volatility or spread_bps > 3 or vol_bps < 10:
             return None
+        bar["vol_bps"] = vol_bps
         vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor / 10000))
 
-        trend_dir = 0
-        if len(closes) >= trend_ma:
-            ma = closes.rolling(trend_ma).mean().iloc[-1]
-            if not pd.isna(ma) and ma != 0:
-                diff_pct = (price - ma) / ma * 100
-                if diff_pct > self.cfg.trend_threshold:
-                    trend_dir = 1
-                elif diff_pct < -self.cfg.trend_threshold:
-                    trend_dir = -1
-        elif len(closes) >= trend_rsi_n:
-            trsi = rsi(df, trend_rsi_n).iloc[-1]
-            if trsi > 50 + self.cfg.trend_threshold:
-                trend_dir = 1
-            elif trsi < 50 - self.cfg.trend_threshold:
-                trend_dir = -1
+        ma = closes.rolling(50).mean().iloc[-1]
+        trend_bias = 0
+        if not pd.isna(ma) and ma != 0:
+            diff_pct = (price - ma) / ma * 100
+            if diff_pct > 0.5:
+                trend_bias = 1
+            elif diff_pct < -0.5:
+                trend_bias = -1
 
-        z_buy = self.cfg.z_threshold + (
-            self.cfg.trend_threshold / 100 if trend_dir == -1 else 0
-        )
-        z_sell = self.cfg.z_threshold + (
-            self.cfg.trend_threshold / 100 if trend_dir == 1 else 0
-        )
+        z_buy = self.cfg.z_threshold + (0.1 if trend_bias == -1 else 0.0)
+        z_sell = self.cfg.z_threshold + (0.1 if trend_bias == 1 else 0.0)
 
         if z <= -z_buy:
             side = "buy"
@@ -144,8 +170,40 @@ class ScalpPingPong(Strategy):
             strength = min(1.0, abs(z) / z_sell)
         else:
             return None
-        size = min(1.0, strength * vol_size)
-        if size <= 0:
+
+        size = min(
+            1.0,
+            strength * vol_size * max(0.2, 1.0 - spread_bps / 10.0),
+        )
+        if size <= 0.0:
             return self.finalize_signal(bar, price, None)
         sig = Signal(side, size)
+
+        atr_val = bar.get("atr")
+        if atr_val is None:
+            atr_val = abs(price) * vol_bps / 10000
+
+        if self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(size, price)
+            stop = self.risk_service.initial_stop(
+                price, side, atr_val, atr_mult=1.5
+            )
+            self.trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+                "bars_held": 0,
+            }
+        else:
+            self.trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": size,
+                "stop": price - 1.5 * atr_val if side == "buy" else price + 1.5 * atr_val,
+                "atr": atr_val,
+                "bars_held": 0,
+            }
+
         return self.finalize_signal(bar, price, sig)
