@@ -33,23 +33,17 @@ async def _start_metrics(port: int) -> uvicorn.Server:
     """Launch the monitoring panel in the background."""
     config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
-    # Perform a manual bind to detect ``EADDRINUSE`` without triggering
-    # ``sys.exit`` inside Uvicorn's own ``bind_socket`` helper.
-    import socket
-    test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        test_sock.bind(("0.0.0.0", port))
-    except OSError:
-        test_sock.close()
-        raise
-    test_sock.close()
-    task = asyncio.create_task(server.serve())
+        task = asyncio.create_task(server.serve())
+    except SystemExit as exc:  # pragma: no cover - defensive
+        raise OSError(errno.EADDRINUSE) from exc
     while not server.started and not task.done():
         await asyncio.sleep(0.1)
     if task.done():
         exc = task.exception()
         if exc is not None:
+            if isinstance(exc, SystemExit):
+                raise OSError(errno.EADDRINUSE) from exc
             raise exc
     return server
 
@@ -110,6 +104,9 @@ async def run_paper(
     while True:
         try:
             server = await _start_metrics(port)
+            if port == 0 and server.servers:
+                actual = server.servers[0].sockets[0].getsockname()[1]
+                log.info("metrics server listening on port %s", actual)
             break
         except OSError as exc:
             if getattr(exc, "errno", None) == errno.EADDRINUSE:
@@ -117,6 +114,10 @@ async def run_paper(
                 port += 1
                 continue
             raise
+        except SystemExit as exc:  # pragma: no cover - defensive
+            log.warning("metrics port %s in use, trying %s", port, port + 1)
+            port += 1
+            continue
 
     agg = BarAggregator(timeframe=timeframe)
     tick = getattr(settings, "tick_size", 0.0)

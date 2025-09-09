@@ -14,6 +14,7 @@ The runner features a ``dry_run`` mode that executes orders using the
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from typing import Any, Callable, Dict, List, Tuple
 import time
 
 import pandas as pd
+import uvicorn
 
 from .runner import BarAggregator
 from ..config import settings
@@ -43,6 +45,7 @@ from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter, BybitS
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter, OKXSpotAdapter
 from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
+from monitoring import panel
 
 try:
     from ..storage.timescale import get_engine
@@ -51,6 +54,25 @@ except Exception:  # pragma: no cover
     _CAN_PG = False
 
 log = logging.getLogger(__name__)
+
+
+async def _start_metrics(port: int) -> uvicorn.Server:
+    """Launch the monitoring panel in the background."""
+    config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    try:
+        task = asyncio.create_task(server.serve())
+    except SystemExit as exc:  # pragma: no cover - defensive
+        raise OSError(errno.EADDRINUSE) from exc
+    while not server.started and not task.done():
+        await asyncio.sleep(0.1)
+    if task.done():
+        exc = task.exception()
+        if exc is not None:
+            if isinstance(exc, SystemExit):
+                raise OSError(errno.EADDRINUSE) from exc
+            raise exc
+    return server
 
 
 AdapterTuple = Tuple[Callable[[], Any], Callable[..., Any], str]
@@ -312,6 +334,7 @@ async def run_live_real(
     dry_run: bool = False,
     *,
     i_know_what_im_doing: bool,
+    metrics_port: int = 8000,
     total_cap_pct: float = 1.0,
     per_symbol_cap_pct: float = 0.5,
     soft_cap_pct: float = 0.10,
@@ -339,6 +362,24 @@ async def run_live_real(
         _SymbolConfig(symbol=s.upper().replace("-", "/"), risk_pct=risk_pct)
         for s in symbols
     ]
+    port = metrics_port
+    while True:
+        try:
+            server = await _start_metrics(port)
+            if port == 0 and server.servers:
+                actual = server.servers[0].sockets[0].getsockname()[1]
+                log.info("metrics server listening on port %s", actual)
+            break
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.EADDRINUSE:
+                log.warning("metrics port %s in use, trying %s", port, port + 1)
+                port += 1
+                continue
+            raise
+        except SystemExit as exc:  # pragma: no cover - defensive
+            log.warning("metrics port %s in use, trying %s", port, port + 1)
+            port += 1
+            continue
     tasks = [
         _run_symbol(
             exchange,
@@ -360,7 +401,10 @@ async def run_live_real(
         )
         for c in cfgs
     ]
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        server.should_exit = True
 
 
 __all__ = ["run_live_real"]
