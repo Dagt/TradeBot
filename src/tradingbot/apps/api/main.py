@@ -1123,6 +1123,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "process": proc,
             "config": cfg.dict(),
             "stats": {},
+            "status": "running",
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
             "log_buffer": log_buffer,
@@ -1145,7 +1146,9 @@ def list_bots(request: Request):
     items = []
     for pid, info in _BOTS.items():
         proc = info["process"]
-        status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
+        status = info.get(
+            "status", "running" if proc.returncode is None else f"stopped:{proc.returncode}"
+        )
         cfg = info["config"]
         stats = info.get("stats", {})
         risk_pct = cfg.get("risk_pct")
@@ -1204,7 +1207,24 @@ async def stop_bot(pid: int):
         raise HTTPException(status_code=400, detail="bot not running")
     proc.terminate()
     await proc.wait()
-    return {"pid": pid, "status": "stopped", "returncode": proc.returncode}
+    info["status"] = f"stopped:{proc.returncode}"
+    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
+
+
+@app.post("/bots/{pid}/kill")
+async def kill_bot(pid: int):
+    """Force kill a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.kill()
+    await proc.wait()
+    info["status"] = "killed"
+    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
 @app.post("/bots/{pid}/pause")
@@ -1218,7 +1238,8 @@ def pause_bot(pid: int):
     if proc.returncode is not None:
         raise HTTPException(status_code=400, detail="bot not running")
     proc.send_signal(signal.SIGSTOP)
-    return {"pid": pid, "status": "paused"}
+    info["status"] = "paused"
+    return {"pid": pid, "status": info["status"]}
 
 
 @app.post("/bots/{pid}/resume")
@@ -1232,7 +1253,8 @@ def resume_bot(pid: int):
     if proc.returncode is not None:
         raise HTTPException(status_code=400, detail="bot not running")
     proc.send_signal(signal.SIGCONT)
-    return {"pid": pid, "status": "running"}
+    info["status"] = "running"
+    return {"pid": pid, "status": info["status"]}
 
 
 @app.delete("/bots/{pid}")
