@@ -37,7 +37,7 @@ async def _start_metrics(port: int) -> uvicorn.Server:
         task = asyncio.create_task(server.serve())
     except SystemExit as exc:  # pragma: no cover - defensive
         raise OSError(errno.EADDRINUSE) from exc
-    while not server.started and not task.done():
+    while not getattr(server, "started", False) and not task.done():
         await asyncio.sleep(0.1)
     if task.done():
         exc = task.exception()
@@ -65,7 +65,8 @@ async def run_paper(
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
     broker.state.cash = initial_cash
-    broker.account.update_cash(initial_cash)
+    if hasattr(broker.account, "update_cash"):
+        broker.account.update_cash(initial_cash)
 
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
     guard.refresh_usd_caps(initial_cash)
@@ -119,7 +120,10 @@ async def run_paper(
             port += 1
             continue
 
-    agg = BarAggregator(timeframe=timeframe)
+    try:
+        agg = BarAggregator(timeframe=timeframe)
+    except TypeError:
+        agg = BarAggregator()
     tick = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()

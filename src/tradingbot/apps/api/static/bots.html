@@ -298,6 +298,7 @@ async function startBot(){
     if(Object.keys(params).length){
       try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
     }
+    payload.metrics_port = 0;
       try{
         const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         await r.json();
