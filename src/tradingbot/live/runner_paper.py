@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import errno
 import logging
 from datetime import datetime, timezone
 import time
@@ -32,7 +33,24 @@ async def _start_metrics(port: int) -> uvicorn.Server:
     """Launch the monitoring panel in the background."""
     config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
-    asyncio.create_task(server.serve())
+    # Perform a manual bind to detect ``EADDRINUSE`` without triggering
+    # ``sys.exit`` inside Uvicorn's own ``bind_socket`` helper.
+    import socket
+    test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        test_sock.bind(("0.0.0.0", port))
+    except OSError:
+        test_sock.close()
+        raise
+    test_sock.close()
+    task = asyncio.create_task(server.serve())
+    while not server.started and not task.done():
+        await asyncio.sleep(0.1)
+    if task.done():
+        exc = task.exception()
+        if exc is not None:
+            raise exc
     return server
 
 
@@ -87,7 +105,17 @@ async def run_paper(
     )
     exec_broker = Broker(router)
 
-    server = await _start_metrics(metrics_port)
+    port = metrics_port
+    while True:
+        try:
+            server = await _start_metrics(port)
+            break
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.EADDRINUSE:
+                log.warning("metrics port %s in use, trying %s", port, port + 1)
+                port += 1
+                continue
+            raise
 
     agg = BarAggregator(timeframe=timeframe)
     tick = getattr(settings, "tick_size", 0.0)
