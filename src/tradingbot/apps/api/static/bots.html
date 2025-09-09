@@ -386,7 +386,18 @@ async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
 async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
-async function killBot(pid){ await fetch(api(`/bots/${pid}/kill`), {method:'POST'}); refreshBots(); }
+async function killBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/kill`), {method:'POST'});
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      alert(j.detail || r.statusText || 'error');
+    }
+  }catch(e){
+    alert(String(e));
+  }
+  refreshBots();
+}
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
 
 function renderExposure(data){
