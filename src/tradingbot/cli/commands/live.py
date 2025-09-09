@@ -58,10 +58,9 @@ def run_bot(
 
     _guard = PortfolioGuard(GuardConfig(venue=venue))
     RiskService(_guard, account=Account(float("inf")), risk_pct=risk_pct)
+    exchange, market = venue.split("_", 1)
     if testnet:
         from ...live.runner_testnet import run_live_testnet
-
-        exchange, market = venue.split("_", 1)
         asyncio.run(
             run_live_testnet(
                 exchange=exchange,
@@ -79,18 +78,23 @@ def run_bot(
             )
         )
     else:
-        from ...live.runner import run_live_binance
+        from ...live.runner_real import run_live_real
 
         asyncio.run(
-            run_live_binance(
-                symbol=symbols[0],
+            run_live_real(
+                exchange=exchange,
+                market=market,
+                symbols=symbols,
                 risk_pct=risk_pct,
+                leverage=leverage,
+                dry_run=dry_run,
                 daily_max_loss_pct=daily_max_loss_pct,
                 daily_max_drawdown_pct=daily_max_drawdown_pct,
-                strategy_name=strategy,
                 config_path=config,
                 params=params,
                 timeframe=timeframe,
+                strategy_name=strategy,
+                i_know_what_im_doing=True,
             )
         )
 
