@@ -583,3 +583,13 @@ button.icon-btn.warn:hover {
   font-weight: 600;
   color: var(--text);
 }
+
+.env-dot{
+  display:inline-block;
+  width:8px;height:8px;
+  border-radius:50%;
+  margin-left:4px;
+}
+.env-live{ background:var(--success); }
+.env-testnet{ background:var(--warning); }
+.env-paper{ background:var(--primary); }

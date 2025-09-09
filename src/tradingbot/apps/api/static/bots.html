@@ -317,11 +317,16 @@ async function refreshBots(){
       const pairs=(b.config?.pairs||[]).join(',');
       const venue = b.config?.venue || '';
       const timeframe = b.config?.timeframe || '';
+      const env = b.config?.dry_run ? 'paper'
+                 : (b.config?.testnet ? 'testnet' : 'live');
       const tr=document.createElement('tr');
       tr.innerHTML=`<td>${b.pid}</td>
         <td>
           <div>${b.config?.strategy || ''}</div>
-          <div class="muted bot-meta">${venue} • ${timeframe}</div>
+          <div class="muted bot-meta">
+            ${venue} • ${timeframe}
+            <span class="env-dot env-${env}" title="${env}"></span>
+          </div>
         </td>
         <td>${pairs}</td><td>${b.status}</td>
         <td>${stats.orders_sent||0}/${stats.fills||0}</td>
