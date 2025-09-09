@@ -141,7 +141,7 @@ async def run_paper(
             if time.time() - last_purge >= purge_interval:
                 risk.purge([symbol])
                 last_purge = time.time()
-            risk.update_correlation(corr._returns.corr(), corr_threshold)
+            risk.update_correlation(corr.get_correlations(), corr_threshold)
             pos_qty, _ = risk.account.current_exposure(symbol)
             trade = risk.get_trade(symbol)
             if trade and abs(pos_qty) > risk.min_order_qty:
