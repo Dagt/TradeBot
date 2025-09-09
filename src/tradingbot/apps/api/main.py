@@ -1227,6 +1227,22 @@ async def kill_bot(pid: int):
     return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
+@app.post("/bots/{pid}/kill")
+async def kill_bot(pid: int):
+    """Forcefully kill a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.kill()
+    await proc.wait()
+    info["status"] = f"killed:{proc.returncode}"
+    return {"pid": pid, "status": info["status"]}
+
+
 @app.post("/bots/{pid}/pause")
 def pause_bot(pid: int):
     """Send SIGSTOP to a running bot process."""
