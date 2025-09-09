@@ -593,3 +593,15 @@ button.icon-btn.warn:hover {
 .env-live{ background:var(--success); }
 .env-testnet{ background:var(--warning); }
 .env-paper{ background:var(--primary); }
+
+#logs-dialog{
+    background: var(--panel-a);
+    color: var(--text);
+    border:1px solid var(--panel-border);
+    padding:12px;
+}
+#logs-content{
+    background: #000;
+    color: var(--text);
+    padding:8px;
+}
