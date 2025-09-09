@@ -247,6 +247,9 @@ async function loadStrategyParams(name){
   }
 
 async function startBot(){
+  const btn = document.getElementById('bot-start');
+  if(btn.disabled) return;
+  btn.disabled = true;
   const strategy = document.getElementById('bot-strategy').value;
   const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
   const venue = document.getElementById('bot-venue').value;
@@ -294,6 +297,7 @@ async function startBot(){
         await r.json();
         refreshBots();
     }catch(e){ console.error(e); }
+    finally{ btn.disabled = false; }
   }
 
 async function refreshBots(){
@@ -428,7 +432,7 @@ async function resetRisk(){
   }
 }
 
-document.getElementById('bot-start').addEventListener('click', startBot);
+document.getElementById('bot-start').onclick = startBot;
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-venue').addEventListener('change', updateVenueFields);
 document.getElementById('bot-env').addEventListener('change', updateEnvFields);

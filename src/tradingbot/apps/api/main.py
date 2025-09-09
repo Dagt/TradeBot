@@ -923,6 +923,7 @@ class BotConfig(BaseModel):
 
 
 _BOTS: dict[int, dict] = {}
+_launch_lock = asyncio.Lock()
 
 # Regex para detectar líneas de métricas en logs: "METRICS {json}"
 _METRIC_LINE = re.compile(r"METRICS?\s+(\{.*\})")
@@ -1088,45 +1089,46 @@ async def start_bot(cfg: BotConfig, request: Request = None):
     ``market`` fields if provided in the request body.
     """
 
-    if cfg.venue is None and request is not None:
-        try:
-            data = await request.json()
-        except Exception:  # pragma: no cover - malformed JSON
-            data = {}
-        exchange = data.get("exchange")
-        market = data.get("market")
-        if exchange and market:
-            cfg.venue = f"{exchange}_{market}"
+    async with _launch_lock:
+        if cfg.venue is None and request is not None:
+            try:
+                data = await request.json()
+            except Exception:  # pragma: no cover - malformed JSON
+                data = {}
+            exchange = data.get("exchange")
+            market = data.get("market")
+            if exchange and market:
+                cfg.venue = f"{exchange}_{market}"
 
-    params = _strategy_params.get(cfg.strategy, {})
-    args = _build_bot_args(cfg, params)
-    env = os.environ.copy()
-    repo_root = Path(__file__).resolve().parents[3]
-    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-    )
-    log_buffer: deque[str] = deque(maxlen=1000)
-    log_queue: asyncio.Queue[str] = asyncio.Queue()
-    stdout_task = asyncio.create_task(
-        _scrape_metrics(proc.pid, proc, log_buffer, log_queue)
-    )
-    stderr_task = asyncio.create_task(
-        _capture_stderr(proc, log_buffer, log_queue)
-    )
-    _BOTS[proc.pid] = {
-        "process": proc,
-        "config": cfg.dict(),
-        "stats": {},
-        "metrics_task": stdout_task,
-        "stderr_task": stderr_task,
-        "log_buffer": log_buffer,
-        "log_queue": log_queue,
-    }
-    return {"pid": proc.pid, "status": "started"}
+        params = _strategy_params.get(cfg.strategy, {})
+        args = _build_bot_args(cfg, params)
+        env = os.environ.copy()
+        repo_root = Path(__file__).resolve().parents[3]
+        env["PYTHONPATH"] = f"{repo_root}{os.pathsep}" + env.get("PYTHONPATH", "")
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        log_buffer: deque[str] = deque(maxlen=1000)
+        log_queue: asyncio.Queue[str] = asyncio.Queue()
+        stdout_task = asyncio.create_task(
+            _scrape_metrics(proc.pid, proc, log_buffer, log_queue)
+        )
+        stderr_task = asyncio.create_task(
+            _capture_stderr(proc, log_buffer, log_queue)
+        )
+        _BOTS[proc.pid] = {
+            "process": proc,
+            "config": cfg.dict(),
+            "stats": {},
+            "metrics_task": stdout_task,
+            "stderr_task": stderr_task,
+            "log_buffer": log_buffer,
+            "log_queue": log_queue,
+        }
+        return {"pid": proc.pid, "status": "started"}
 
 
 @app.get("/bots")

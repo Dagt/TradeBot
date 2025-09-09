@@ -27,6 +27,7 @@ def setup_logging(level: str | None = None):
             )
         )
 
+    logging.getLogger().handlers.clear()
     logging.basicConfig(level=level, handlers=handlers)
 
     if settings.log_json and jsonlogger is not None:
