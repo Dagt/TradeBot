@@ -169,7 +169,7 @@ async def _run_symbol(
         qty: float = float(t.get("qty") or 0.0)
         broker.update_last_price(cfg.symbol, px)
         risk.mark_price(cfg.symbol, px)
-        risk.update_correlation(corr._returns.corr(), corr_threshold)
+        risk.update_correlation(corr.get_correlations(), corr_threshold)
         halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)

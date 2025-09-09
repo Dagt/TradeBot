@@ -44,8 +44,8 @@ async def test_risk_service_correlation_limits_and_sizing():
     svc.account.cash = 1000.0
 
     _feed_correlated_prices(corr)
-    corr_df = corr._returns.corr()
-    exceeded = svc.update_correlation(corr_df, 0.8)
+    corr_pairs = corr.get_correlations()
+    exceeded = svc.update_correlation(corr_pairs, 0.8)
     await asyncio.sleep(0)
     assert exceeded == [("AAA", "BBB")]
 
