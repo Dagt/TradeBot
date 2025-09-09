@@ -1101,6 +1101,11 @@ async def start_bot(cfg: BotConfig, request: Request = None):
         if exchange and market:
             cfg.venue = f"{exchange}_{market}"
 
+    cfg_dict = cfg.dict()
+    for info in _BOTS.values():
+        if info.get("config") == cfg_dict:
+            raise HTTPException(status_code=409, detail="bot already running")
+
     params = _strategy_params.get(cfg.strategy, {})
     args = _build_bot_args(cfg, params)
     env = os.environ.copy()
@@ -1122,7 +1127,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
     )
     _BOTS[proc.pid] = {
         "process": proc,
-        "config": cfg.dict(),
+        "config": cfg_dict,
         "stats": {},
         "metrics_task": stdout_task,
         "stderr_task": stderr_task,

@@ -250,25 +250,28 @@ async function loadStrategyParams(name){
     updateVenueFields();
   }
 
-async function startBot(){
-  const strategy = document.getElementById('bot-strategy').value;
-  const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const venue = document.getElementById('bot-venue').value;
-  const risk_pct = document.getElementById('bot-risk-pct').value;
-  const daily_max_loss_pct = document.getElementById('bot-daily-max-loss-pct').value;
-  const daily_max_drawdown_pct = document.getElementById('bot-daily-max-drawdown-pct').value;
-  const leverage = document.getElementById('bot-leverage').value;
-  const env = document.getElementById('bot-env').value;
-  const initial_cash = document.getElementById('bot-initial-cash').value;
-  let metrics_port = document.getElementById('bot-metrics-port').value;
-  const testnet = env === 'testnet';
-  const dry_run = env === 'paper';
-  const config = document.getElementById('bot-config').value;
-  const timeframe = document.getElementById('bot-timeframe').value;
+async function startBot(e){
+  const btn = e?.currentTarget || document.getElementById('bot-start');
+  if(btn) btn.disabled = true;
+  try{
+    const strategy = document.getElementById('bot-strategy').value;
+    const pairs = document.getElementById('bot-pairs').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const venue = document.getElementById('bot-venue').value;
+    const risk_pct = document.getElementById('bot-risk-pct').value;
+    const daily_max_loss_pct = document.getElementById('bot-daily-max-loss-pct').value;
+    const daily_max_drawdown_pct = document.getElementById('bot-daily-max-drawdown-pct').value;
+    const leverage = document.getElementById('bot-leverage').value;
+    const env = document.getElementById('bot-env').value;
+    const initial_cash = document.getElementById('bot-initial-cash').value;
+    let metrics_port = document.getElementById('bot-metrics-port').value;
+    const testnet = env === 'testnet';
+    const dry_run = env === 'paper';
+    const config = document.getElementById('bot-config').value;
+    const timeframe = document.getElementById('bot-timeframe').value;
     const spot = document.getElementById('bot-spot').value;
     const perp = document.getElementById('bot-perp').value;
     const threshold = document.getElementById('bot-threshold').value;
-  const paramEls=document.querySelectorAll('#bot-strategy-params input');
+    const paramEls=document.querySelectorAll('#bot-strategy-params input');
     const params={};
     paramEls.forEach(el=>{
       if(!el.value) return;
@@ -282,7 +285,7 @@ async function startBot(){
       try{
         metrics_port = await getFreeMetricsPort();
         document.getElementById('bot-metrics-port').value = metrics_port;
-      }catch(e){ metrics_port = null; }
+      }catch(err){ metrics_port = null; }
     }
 
     const payload = {strategy, pairs, venue, testnet, dry_run, timeframe};
@@ -293,20 +296,23 @@ async function startBot(){
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct) / 100;
     if(daily_max_drawdown_pct) payload.daily_max_drawdown_pct = Number(daily_max_drawdown_pct) / 100;
     if(leverage) payload.leverage = Number(leverage);
-  if(strategy==='cross_arbitrage'){
-    payload.spot = spot;
+    if(strategy==='cross_arbitrage'){
+      payload.spot = spot;
       payload.perp = perp;
       if(threshold) payload.threshold = Number(threshold);
     }
     if(Object.keys(params).length){
-      try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
+      try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(err){}
     }
-      try{
-        const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-        await r.json();
-        refreshBots();
-    }catch(e){ console.error(e); }
+    try{
+      const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      await r.json();
+      refreshBots();
+    }catch(err){ console.error(err); }
+  } finally {
+    if(btn) btn.disabled = false;
   }
+}
 
 async function refreshBots(){
   try{
@@ -453,7 +459,9 @@ async function getFreeMetricsPort(){
   return port;
 }
 
-document.getElementById('bot-start').addEventListener('click', startBot);
+const startBtn=document.getElementById('bot-start');
+startBtn.removeEventListener('click', startBot);
+startBtn.addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-venue').addEventListener('change', updateVenueFields);
 document.getElementById('bot-env').addEventListener('change', updateEnvFields);
