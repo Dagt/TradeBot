@@ -45,6 +45,7 @@ services:
       - API_PASS=securepassword
     ports:
       - "8000:8000"
+      - "8001-8010:8001-8010"
     depends_on:
       - timescaledb
 
