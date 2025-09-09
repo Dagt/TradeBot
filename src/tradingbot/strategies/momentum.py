@@ -84,6 +84,8 @@ class Momentum(Strategy):
         df: pd.DataFrame = bar["window"]
 
         tf_min = self._tf_to_minutes(bar.get("timeframe"))
+        fast_n = max(5, int(math.ceil(self.fast_ema / tf_min)))
+        slow_n = max(5, int(math.ceil(self.slow_ema / tf_min)))
         rsi_n = max(5, int(math.ceil(self.rsi_n / tf_min)))
         atr_n = max(5, int(math.ceil(self.atr_n / tf_min)))
         vol_window = max(2, int(math.ceil(self.vol_window / tf_min)))
@@ -103,34 +105,16 @@ class Momentum(Strategy):
         closes = df["close"]
         price = float(closes.iloc[-1])
 
-        # --- Manage existing trade
-        trade = getattr(self, "trade", None)
-        if trade:
-            trade["bars_held"] = trade.get("bars_held", 0) + 1
-            take1 = trade.get("take1")
-            if take1 is None:
-                take1 = (
-                    trade["entry_price"] + 0.5 * trade["atr"]
-                    if trade["side"] == "buy"
-                    else trade["entry_price"] - 0.5 * trade["atr"]
-                )
-                trade["take1"] = take1
-            if not trade.get("tp_hit") and (
-                (trade["side"] == "buy" and price >= take1)
-                or (trade["side"] == "sell" and price <= take1)
-            ):
-                trade["tp_hit"] = True
-                trade["qty"] = float(trade.get("qty", 0)) * 0.5
-                sig = Signal(trade["side"], 0.5, reduce_only=True)
-                return self.finalize_signal(bar, price, sig)
-            if trade["bars_held"] >= 6 and not trade.get("tp_hit"):
-                side = "sell" if trade["side"] == "buy" else "buy"
-                sig = Signal(side, 1.0, reduce_only=True)
-                self.trade = None
-                return self.finalize_signal(bar, price, sig)
+        fast_ema = closes.ewm(span=fast_n, adjust=False).mean()
+        slow_ema = closes.ewm(span=slow_n, adjust=False).mean()
+        prev_fast, prev_slow = fast_ema.iloc[-2], slow_ema.iloc[-2]
+        last_fast, last_slow = float(fast_ema.iloc[-1]), float(slow_ema.iloc[-1])
+        slope = float(slow_ema.iloc[-1] - slow_ema.iloc[-2])
 
         rsi_series = rsi(df, rsi_n)
-        rsi_now = float(rsi_series.iloc[-1])
+        last_rsi = float(rsi_series.iloc[-1])
+
+        roc_val = float(closes.pct_change(self.roc_n).iloc[-1])
 
         atr_series = atr(df, atr_n)
         atr_val = float(atr_series.iloc[-1])
@@ -165,44 +149,29 @@ class Momentum(Strategy):
                 min_periods=1,
             )
             min_volatility = float(rq_vola.update(vol))
-        if min_volatility is not None and (pd.isna(vol) or vol < min_volatility):
-            return None
-
-        # --- Trend and regime filter
-        ema_fast = closes.ewm(span=100, adjust=False).mean()
-        ema_slope_ok = float(ema_fast.iloc[-1]) > float(ema_fast.iloc[-2])
-        adx_ok = True
-        if "adx" in df.columns:
-            adx_ok = float(df["adx"].iloc[-1]) > 20
-        if not (ema_slope_ok and adx_ok):
-            return None
-
-        # --- Dynamic RSI threshold
-        vol_bps = (
-            atr_val / price * 10000 if price else vol * 10000
-        )
-        thr = min(70.0, 50.0 + 0.5 * vol_bps / 1.0)
-        if rsi_now < thr and rsi_now > (100 - thr):
-            return None
-        side = "buy" if rsi_now >= thr else "sell"
-
-        # --- Microstructure guard for lower timeframes
-        spread_bps = 0.0
-        if {"bid", "ask"}.issubset(df.columns):
-            spread = float(df["ask"].iloc[-1] - df["bid"].iloc[-1])
-            spread_bps = spread / price * 10000 if price else 0.0
-        else:
-            high = float(df["high"].iloc[-1]) if "high" in df.columns else price
-            low = float(df["low"].iloc[-1]) if "low" in df.columns else price
-            spread_bps = (high - low) / price * 10000 if price else 0.0
-        bar["spread_bps"] = spread_bps
-        bar["vol_bps"] = vol_bps
-        tf = bar.get("timeframe", "")
-        if tf in ("1m", "3m", "5m", "15m"):
-            if spread_bps > 5 or vol_bps < 8:
+        if min_volatility is not None:
+            if pd.isna(vol) or vol < min_volatility:
                 return None
-        if tf == "1m":
-            setattr(self, "prefer_post_only", True)
+
+        # Momentum rules with RSI and ROC confirmation in all timeframes
+        side: str | None = None
+        rsi_thresh = self.auto_threshold(symbol, last_rsi, n=rsi_n) if self.use_rsi else 50.0
+        if prev_fast <= prev_slow and last_fast > last_slow:
+            cond = slope > 0
+            if self.use_rsi:
+                cond &= last_rsi > rsi_thresh
+            cond &= roc_val > 0
+            if cond:
+                side = "buy"
+        elif prev_fast >= prev_slow and last_fast < last_slow:
+            cond = slope < 0
+            if self.use_rsi:
+                cond &= last_rsi < rsi_thresh
+            cond &= roc_val < 0
+            if cond:
+                side = "sell"
+        if side is None:
+            return None
 
         if symbol:
             if not hasattr(self, "_last_atr"):
@@ -213,10 +182,17 @@ class Momentum(Strategy):
         sig = Signal(side, strength)
 
         if self.risk_service is not None:
+            stop_mult = 1.5 if tf_min <= 5 else 2.0
             qty = self.risk_service.calc_position_size(strength, price)
             stop = self.risk_service.initial_stop(
-                price, side, atr_val, atr_mult=1.5
+                price, side, atr_val, atr_mult=stop_mult
             )
+            if tf_min <= 3:
+                max_hold = 20
+            elif tf_min <= 5:
+                max_hold = 10
+            else:
+                max_hold = 20
             self.trade = {
                 "side": side,
                 "entry_price": price,
@@ -224,15 +200,7 @@ class Momentum(Strategy):
                 "stop": stop,
                 "atr": atr_val,
                 "bars_held": 0,
-            }
-        else:
-            self.trade = {
-                "side": side,
-                "entry_price": price,
-                "qty": strength,
-                "stop": price - 1.5 * atr_val if side == "buy" else price + 1.5 * atr_val,
-                "atr": atr_val,
-                "bars_held": 0,
+                "max_hold": max_hold,
             }
 
         return self.finalize_signal(bar, price, sig)
