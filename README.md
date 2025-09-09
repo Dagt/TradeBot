@@ -31,6 +31,18 @@ python -m tradingbot.cli --help
 
 Para una guía detallada de cada comando, consulte [docs/commands.md](docs/commands.md).
 
+## Modo paper trading
+
+Para probar estrategias sin riesgo se puede utilizar el modo *paper trading*.
+Este permite simular operaciones con un saldo virtual configurable mediante
+`--initial-cash`:
+
+```bash
+python -m tradingbot.cli live paper-run --initial-cash 5000
+```
+
+El ejemplo anterior inicia el bot con un balance virtual de `5000` unidades.
+
 ## Modo testnet en el CLI
 
 Para operar contra los entornos de prueba de los exchanges se puede

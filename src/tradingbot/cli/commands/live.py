@@ -111,6 +111,9 @@ def paper_run(
         help="Risk manager loss percentage (0-1 or 0-100)",
     ),
     timeframe: str = typer.Option("1m", "--timeframe", help="Bar timeframe (e.g., 1m,5m,15m)"),
+    initial_cash: float = typer.Option(
+        1000.0, "--initial-cash", help="Initial cash for paper trading"
+    ),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
@@ -135,6 +138,7 @@ def paper_run(
             risk_pct=risk_pct,
             params=params,
             timeframe=timeframe,
+            initial_cash=initial_cash,
         )
     )
 
