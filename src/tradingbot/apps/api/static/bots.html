@@ -143,7 +143,7 @@
       <code>events</code><span class="help-icon" title="Historial reciente de eventos de riesgo">?</span>
     </p>
     <button id="risk-refresh">Consultar</button>
-    <button id="risk-halt">Halt</button>
+  <button id="risk-halt" title="Global Halt (risk)">Halt</button>
     <button id="risk-reset">Reset</button>
     <div id="risk-exposure" style="overflow:auto;margin-top:8px"></div>
     <div id="risk-events" style="overflow:auto;margin-top:8px"></div>
@@ -350,7 +350,7 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
-  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Halt">
+  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Global Halt (risk)">
     <i class="fa-solid fa-ban"></i>
   </button>
   <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
@@ -385,7 +385,13 @@ async function runCli(){
 async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
 async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
 async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
-async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
+async function haltBot(pid){
+  try{
+    const r = await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})});
+    if(r.ok) alert('Risk halted');
+  }catch(e){ console.error(e); }
+  refreshBots();
+}
 async function killBot(pid){ await fetch(api(`/bots/${pid}/kill`), {method:'POST'}); refreshBots(); }
 async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
 
@@ -434,7 +440,8 @@ async function refreshRisk(){
 
 async function haltRisk(){
   try{
-    await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
+    const r = await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
+    if(r.ok) alert('Risk halted');
     refreshRisk();
   }catch(e){
     document.getElementById('risk-error').textContent = String(e);
@@ -468,6 +475,29 @@ document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
 document.getElementById('risk-halt').addEventListener('click', haltRisk);
 document.getElementById('risk-reset').addEventListener('click', resetRisk);
 refreshRisk();
+
+async function checkRiskStatus(){
+  try{
+    const r = await fetch(api('/risk/status'));
+    const j = await r.json();
+    let ind = document.getElementById('risk-indicator');
+    if(!ind){
+      const header = document.querySelector('header');
+      if(header){
+        ind = document.createElement('span');
+        ind.id = 'risk-indicator';
+        ind.title = 'Risk disabled';
+        ind.style = 'margin-left:8px;color:red;display:none;';
+        ind.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
+        header.appendChild(ind);
+      }
+    }
+    if(ind) ind.style.display = j.enabled === false ? '' : 'none';
+  }catch(e){}
+}
+
+checkRiskStatus();
+setInterval(checkRiskStatus, 5000);
 
 let logSource=null;
 function showLogs(pid){

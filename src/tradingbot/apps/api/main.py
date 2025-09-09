@@ -283,6 +283,14 @@ def risk_reset():
     rm.reset()
     return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
+
+@app.get("/risk/status")
+def risk_status():
+    rm = getattr(app.state, "risk_service", None)
+    if rm is None:
+        raise HTTPException(status_code=500, detail="risk manager not configured")
+    return {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}
+
 @app.get("/pnl/summary")
 def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     if not _CAN_PG:
