@@ -103,6 +103,10 @@
         <label for="bot-initial-cash">Initial cash</label>
         <input id="bot-initial-cash" type="number" step="0.01"/>
       </div>
+      <div>
+        <label for="bot-metrics-port">Metrics port</label>
+        <input id="bot-metrics-port" type="number" step="1" placeholder="auto"/>
+      </div>
       <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
         <span>Configurar parámetros</span>
         <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
@@ -256,6 +260,7 @@ async function startBot(){
   const leverage = document.getElementById('bot-leverage').value;
   const env = document.getElementById('bot-env').value;
   const initial_cash = document.getElementById('bot-initial-cash').value;
+  let metrics_port = document.getElementById('bot-metrics-port').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
   const config = document.getElementById('bot-config').value;
@@ -273,8 +278,16 @@ async function startBot(){
       else if(t.includes('float') || t.includes('number')) v=parseFloat(v);
       params[el.dataset.name]=v;
     });
+    if(!metrics_port){
+      try{
+        metrics_port = await getFreeMetricsPort();
+        document.getElementById('bot-metrics-port').value = metrics_port;
+      }catch(e){ metrics_port = null; }
+    }
+
     const payload = {strategy, pairs, venue, testnet, dry_run, timeframe};
     if(env==='paper' && initial_cash) payload.initial_cash = Number(initial_cash);
+    if(metrics_port) payload.metrics_port = Number(metrics_port);
     if(config) payload.config = config;
     if(risk_pct) payload.risk_pct = Number(risk_pct) / 100;
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct) / 100;
@@ -425,6 +438,19 @@ async function resetRisk(){
   }catch(e){
     document.getElementById('risk-error').textContent = String(e);
   }
+}
+
+async function getFreeMetricsPort(){
+  const r = await fetch(api('/bots'));
+  const j = await r.json();
+  const used = new Set();
+  (j.bots||[]).forEach(b=>{
+    const p = b.config?.metrics_port;
+    if(p) used.add(p);
+  });
+  let port = 8000;
+  while(used.has(port)) port++;
+  return port;
 }
 
 document.getElementById('bot-start').addEventListener('click', startBot);
