@@ -4,6 +4,10 @@ TradeBot incluye paneles de Grafana para visualizar el estado del bot y los
 resultados de las operaciones. Los archivos de cada dashboard se encuentran
 en `monitoring/grafana/dashboards`.
 
+Por defecto, la API expone sus métricas en `http://localhost:8000/metrics`.
+Si se ejecutan varios bots, cada uno tomará el primer puerto libre del rango
+`8001-8010`, quedando accesibles desde `http://localhost:<puerto>/metrics`.
+
 ## Variables de consulta
 Para los paneles que acceden a datos de mercado desde PostgreSQL se añadieron
 variables que permiten filtrar las consultas:

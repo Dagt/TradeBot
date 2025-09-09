@@ -150,7 +150,8 @@ Ejecuta el bot en modo en vivo (testnet o real).
 Corre una estrategia en modo paper (sin dinero real) y expone métricas.
 - `--symbol`: par a operar (por defecto `BTC/USDT`).
 - `--strategy`: nombre de la estrategia (`breakout_atr`).
-- `--metrics-port`: puerto para las métricas (8000).
+- `--metrics-port`: puerto para las métricas (8000; los bots adicionales usan el
+  primer puerto libre del rango `8001-8010`).
 - `--config`: ruta a un archivo YAML con parámetros opcionales.
 
 ## `real-run`
