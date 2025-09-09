@@ -1129,7 +1129,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "log_buffer": log_buffer,
             "log_queue": log_queue,
         }
-        return {"pid": proc.pid, "status": "started"}
+        return {"pid": proc.pid, "status": "running"}
 
 
 @app.get("/bots")
@@ -1145,10 +1145,6 @@ def list_bots(request: Request):
 
     items = []
     for pid, info in _BOTS.items():
-        proc = info["process"]
-        status = info.get(
-            "status", "running" if proc.returncode is None else f"stopped:{proc.returncode}"
-        )
         cfg = info["config"]
         stats = info.get("stats", {})
         risk_pct = cfg.get("risk_pct")
@@ -1157,7 +1153,7 @@ def list_bots(request: Request):
         items.append(
             {
                 "pid": pid,
-                "status": status,
+                "status": info.get("status"),
                 "config": cfg,
                 "stats": stats,
                 "risk_pct": risk_pct,
@@ -1207,7 +1203,7 @@ async def stop_bot(pid: int):
         raise HTTPException(status_code=400, detail="bot not running")
     proc.terminate()
     await proc.wait()
-    info["status"] = f"stopped:{proc.returncode}"
+    info["status"] = "stopped"
     return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
@@ -1225,22 +1221,6 @@ async def kill_bot(pid: int):
     await proc.wait()
     info["status"] = "killed"
     return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
-
-
-@app.post("/bots/{pid}/kill")
-async def kill_bot(pid: int):
-    """Forcefully kill a running bot process."""
-
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
-    proc.kill()
-    await proc.wait()
-    info["status"] = f"killed:{proc.returncode}"
-    return {"pid": pid, "status": info["status"]}
 
 
 @app.post("/bots/{pid}/pause")
