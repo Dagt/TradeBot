@@ -97,6 +97,10 @@
           <option value="testnet" selected>Testnet</option>
         </select>
       </div>
+      <div id="field-initial-cash" style="display:none">
+        <label for="bot-initial-cash">Initial cash</label>
+        <input id="bot-initial-cash" type="number" step="0.01"/>
+      </div>
       <div id="field-toggle-params" style="display:flex;align-items:center;gap:4px">
         <span>Configurar parámetros</span>
         <label class="switch"><input id="bot-toggle-params" type="checkbox"><span class="slider"></span></label>
@@ -222,6 +226,11 @@ async function loadStrategyParams(name){
     lev.style.display = (!cross && venue.endsWith('_futures')) ? '' : 'none';
   }
 
+  function updateEnvFields(){
+    const env=document.getElementById('bot-env').value;
+    document.getElementById('field-initial-cash').style.display = env==='paper' ? '' : 'none';
+  }
+
   async function updateForm(){
     const strat=document.getElementById('bot-strategy').value;
     const cross=strat==='cross_arbitrage';
@@ -244,6 +253,7 @@ async function startBot(){
   const daily_max_drawdown_pct = document.getElementById('bot-daily-max-drawdown-pct').value;
   const leverage = document.getElementById('bot-leverage').value;
   const env = document.getElementById('bot-env').value;
+  const initial_cash = document.getElementById('bot-initial-cash').value;
   const testnet = env === 'testnet';
   const dry_run = env === 'paper';
   const config = document.getElementById('bot-config').value;
@@ -262,6 +272,7 @@ async function startBot(){
       params[el.dataset.name]=v;
     });
     const payload = {strategy, pairs, venue, testnet, dry_run, timeframe};
+    if(env==='paper' && initial_cash) payload.initial_cash = Number(initial_cash);
     if(config) payload.config = config;
     if(risk_pct) payload.risk_pct = Number(risk_pct);
     if(daily_max_loss_pct) payload.daily_max_loss_pct = Number(daily_max_loss_pct);
@@ -417,11 +428,13 @@ async function resetRisk(){
 document.getElementById('bot-start').addEventListener('click', startBot);
 document.getElementById('bot-strategy').addEventListener('change', updateForm);
 document.getElementById('bot-venue').addEventListener('change', updateVenueFields);
+document.getElementById('bot-env').addEventListener('change', updateEnvFields);
 document.getElementById('bot-toggle-params').addEventListener('change', e => {
   document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
 updateVenueFields();
+updateEnvFields();
 refreshBots();
 setInterval(refreshBots,5000);
 document.getElementById('cli-run').addEventListener('click', runCli);
