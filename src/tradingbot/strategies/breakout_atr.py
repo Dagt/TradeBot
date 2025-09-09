@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
-from ..data.features import atr, keltner_channels, calc_ofi
+from ..data.features import atr, keltner_channels
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
 
@@ -122,59 +122,22 @@ class BreakoutATR(Strategy):
         df: pd.DataFrame = bar["window"]
         tf_mult = self._tf_multiplier(bar.get("timeframe"))
 
-        if len(df) < 2:
-            return None
-        last_close = float(df["close"].iloc[-1])
-
-        # --- Basic microstructure guard
-        spread_bps = 0.0
-        if {"bid", "ask"}.issubset(df.columns):
-            spread = float(df["ask"].iloc[-1] - df["bid"].iloc[-1])
-            spread_bps = spread / last_close * 10000 if last_close else 0.0
-        else:
-            high = float(df["high"].iloc[-1]) if "high" in df.columns else last_close
-            low = float(df["low"].iloc[-1]) if "low" in df.columns else last_close
-            spread_bps = (high - low) / last_close * 10000 if last_close else 0.0
-        bar["spread_bps"] = spread_bps
-        if spread_bps > 5:
-            return None
-
-        # --- Manage existing position: partials and time-stop
-        trade = getattr(self, "trade", None)
-        if trade:
-            trade["bars_held"] = trade.get("bars_held", 0) + 1
-            take1 = trade.get("take1")
-            if take1 is None:
-                take1 = (
-                    trade["entry_price"] + 0.5 * trade["atr"]
-                    if trade["side"] == "buy"
-                    else trade["entry_price"] - 0.5 * trade["atr"]
-                )
-                trade["take1"] = take1
-            if not trade.get("tp_hit") and (
-                (trade["side"] == "buy" and last_close >= take1)
-                or (trade["side"] == "sell" and last_close <= take1)
-            ):
-                trade["tp_hit"] = True
-                trade["qty"] = float(trade.get("qty", 0)) * 0.5
-                sig = Signal(trade["side"], 0.5, reduce_only=True)
-                return self.finalize_signal(bar, last_close, sig)
-            if trade["bars_held"] >= 6 and not trade.get("tp_hit"):
-                side = "sell" if trade["side"] == "buy" else "buy"
-                sig = Signal(side, 1.0, reduce_only=True)
-                self.trade = None
-                return self.finalize_signal(bar, last_close, sig)
-
         # Ajusta parámetros según el timeframe
         if tf_mult <= 3:
             ema_n = 15
             atr_n = 10
+            stop_mult = 1.5
+            max_hold = 10
         elif tf_mult >= 30:
             ema_n = max(self.ema_n, 30)
             atr_n = max(self.atr_n, 20)
+            stop_mult = 2.0
+            max_hold = 20
         else:
             ema_n = self.ema_n
             atr_n = self.atr_n
+            stop_mult = 1.5
+            max_hold = 20
 
         if len(df) < max(ema_n, atr_n) + 2:
             return None
@@ -194,11 +157,9 @@ class BreakoutATR(Strategy):
 
         last_close = float(df["close"].iloc[-1])
         atr_val = float(atr_series.iloc[-1])
-        vol_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
+        atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
+        # Expose current ATR so runners and the RiskManager can adapt sizing
         bar["atr"] = atr_val
-        bar["vol_bps"] = vol_bps
-        if vol_bps < 8:
-            return None
 
         if tf_mult <= 1:
             vol_q = 0.3
@@ -218,6 +179,7 @@ class BreakoutATR(Strategy):
                 min_periods=self.atr_n * 2,
             )
             atr_quant = float(rq_atr.update(atr_val))
+            atr_bps_series = atr_series / df["close"].abs().loc[atr_series.index] * 10000
             rq_bps = self._rq.get(
                 symbol,
                 "atr_bps",
@@ -225,8 +187,8 @@ class BreakoutATR(Strategy):
                 q=vol_q,
                 min_periods=self.atr_n * 2,
             )
-            vol_bps_quant = float(rq_bps.update(vol_bps))
-            if atr_val < atr_quant or vol_bps < vol_bps_quant:
+            atr_bps_quant = float(rq_bps.update(atr_bps))
+            if atr_val < atr_quant or atr_bps < atr_bps_quant:
                 return None
 
             rq_mult = self._rq.get(
@@ -253,32 +215,22 @@ class BreakoutATR(Strategy):
             target_vol = atr_val
             bar["target_volatility"] = target_vol
 
-        tf = getattr(self, "timeframe", "")
-        k_mult = 1.0
-        if tf in ("1m", "3m", "5m"):
-            k_mult = 1.3
-        upper, lower = keltner_channels(df, ema_n, atr_n, self.mult * k_mult)
+        upper, lower = keltner_channels(df, ema_n, atr_n, self.mult)
 
-        prev_close = float(df["close"].iloc[-2])
-        bull_break = (last_close > upper.iloc[-1]) and (prev_close <= upper.iloc[-2])
-        bear_break = (last_close < lower.iloc[-1]) and (prev_close >= lower.iloc[-2])
-        if not (bull_break or bear_break):
+        side: str | None = None
+        if last_close > upper.iloc[-1]:
+            side = "buy"
+        elif last_close < lower.iloc[-1]:
+            side = "sell"
+        if side is None:
             return None
-        side = "buy" if bull_break else "sell"
 
-        ofi_val = 0.0
-        if {"bid_qty", "ask_qty"}.issubset(df.columns):
-            ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
-        vol_spike = True
+        # Filtro de volumen
         if "volume" in df:
-            vol_spike = (
-                df["volume"].iloc[-1]
-                > df["volume"].rolling(20).median().iloc[-2] * 1.5
-            )
-        if side == "buy" and (ofi_val < 0 or not vol_spike):
-            return None
-        if side == "sell" and (ofi_val > 0 or not vol_spike):
-            return None
+            vol_series = df["volume"]
+            avg_vol = vol_series.iloc[-20:].mean()
+            if vol_series.iloc[-1] <= self.volume_factor * avg_vol:
+                return None
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
@@ -302,7 +254,7 @@ class BreakoutATR(Strategy):
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, last_close)
             stop = self.risk_service.initial_stop(
-                last_close, side, atr_val, atr_mult=1.5
+                last_close, side, atr_val, atr_mult=stop_mult
             )
             self.trade = {
                 "side": side,
@@ -311,17 +263,7 @@ class BreakoutATR(Strategy):
                 "stop": stop,
                 "atr": atr_val,
                 "bars_held": 0,
-            }
-        else:
-            self.trade = {
-                "side": side,
-                "entry_price": last_close,
-                "qty": strength,
-                "stop": last_close - 1.5 * atr_val
-                if side == "buy"
-                else last_close + 1.5 * atr_val,
-                "atr": atr_val,
-                "bars_held": 0,
+                "max_hold": max_hold,
             }
 
         return self.finalize_signal(bar, last_close, sig)
