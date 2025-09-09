@@ -311,6 +311,7 @@ button.btn-xs{ padding: 4px 8px; font-size: 12px }
 .ok{ color:var(--success) }
 .warn{ color:var(--warning) }
 .muted{ color:var(--muted) }
+.bot-meta{ font-size:12px; }
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
 
 /* ====== Helpers ====== */
