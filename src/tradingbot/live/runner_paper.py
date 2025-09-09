@@ -71,6 +71,7 @@ async def run_paper(
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
     broker.state.cash = initial_cash
+    broker.account.update_cash(initial_cash)
 
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
     guard.refresh_usd_caps(initial_cash)
