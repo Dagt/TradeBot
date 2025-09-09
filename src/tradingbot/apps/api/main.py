@@ -920,7 +920,6 @@ class BotConfig(BaseModel):
     config: str | None = None
     timeframe: str | None = None
     initial_cash: float | None = None
-    metrics_port: int | None = None
 
 
 _BOTS: dict[int, dict] = {}
@@ -1045,8 +1044,6 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
                 args.extend(["--param", f"{k}={v}"])
         if cfg.initial_cash is not None:
             args.extend(["--initial-cash", str(cfg.initial_cash)])
-        if cfg.metrics_port is not None:
-            args.extend(["--metrics-port", str(cfg.metrics_port)])
         return args
 
     args = [
