@@ -46,14 +46,16 @@ async def run_paper(
     risk_pct: float = 0.0,
     params: dict | None = None,
     timeframe: str = "1m",
+    initial_cash: float = 1000.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
     log.info("Connecting to Binance WS in paper mode for %s", symbol)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
+    broker.state.cash = initial_cash
 
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
-    guard.refresh_usd_caps(1000.0)
+    guard.refresh_usd_caps(initial_cash)
     corr = CorrelationService()
     risk = RiskService(
         guard,
