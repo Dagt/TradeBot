@@ -433,6 +433,7 @@ document.getElementById('bot-toggle-params').addEventListener('change', e => {
   document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
 });
 loadStrategies();
+loadStrategyParams(document.getElementById('bot-strategy').value);
 updateVenueFields();
 updateEnvFields();
 refreshBots();
