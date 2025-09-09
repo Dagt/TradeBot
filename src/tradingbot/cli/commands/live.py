@@ -52,12 +52,6 @@ def run_bot(
 
     setup_logging(log_level)
     params = _parse_params(param) if isinstance(param, list) else {}
-    from ...core.account import Account
-    from ...risk.portfolio_guard import PortfolioGuard, GuardConfig
-    from ...risk.service import RiskService
-
-    _guard = PortfolioGuard(GuardConfig(venue=venue))
-    RiskService(_guard, account=Account(float("inf")), risk_pct=risk_pct)
     exchange, market = venue.split("_", 1)
     if testnet:
         from ...live.runner_testnet import run_live_testnet
