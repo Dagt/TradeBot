@@ -65,10 +65,10 @@
         <label for="bot-config">Config YAML</label>
         <input id="bot-config" placeholder="config.yaml"/>
       </div>
-      <div>
-        <label for="bot-risk-pct">Risk %</label>
-        <input id="bot-risk-pct" type="number" step="0.01" required/>
-      </div>
+      <div id="field-risk-pct">
+  <label for="bot-risk-pct">Risk %</label>
+  <input id="bot-risk-pct" type="number" step="0.01" required/>
+</div>
       <div>
         <label for="bot-daily-max-loss-pct">Daily max loss %
           <span class="help-icon" title="Pérdida diaria máxima permitida (porcentaje del equity)">?</span>
@@ -234,17 +234,23 @@ async function loadStrategyParams(name){
   }
 
   async function updateForm(){
-    const strat=document.getElementById('bot-strategy').value;
-    const cross=strat==='cross_arbitrage';
-    ['field-venue','field-risk-pct'].forEach(id=>{
-      document.getElementById(id).style.display = cross ? 'none' : '';
-    });
-    ['field-spot','field-perp','field-threshold'].forEach(id=>{
-      document.getElementById(id).style.display = cross ? '' : 'none';
-    });
-    await loadStrategyParams(strat);
-    updateVenueFields();
-  }
+  const strat = document.getElementById('bot-strategy').value;
+  const cross = strat === 'cross_arbitrage';
+
+  ['field-venue','field-risk-pct'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.style.display = cross ? 'none' : '';
+  });
+
+  ['field-spot','field-perp','field-threshold'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.style.display = cross ? '' : 'none';
+  });
+
+  await loadStrategyParams(strat);
+  updateVenueFields();
+}
+
 
 async function startBot(){
   const btn = document.getElementById('bot-start');
