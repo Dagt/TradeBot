@@ -4,8 +4,10 @@ import errno
 import logging
 from datetime import datetime, timezone
 import time
+import functools
 
 import uvicorn
+import websockets
 
 from .runner import BarAggregator
 from ..adapters.binance import BinanceWSAdapter
@@ -62,6 +64,10 @@ async def run_paper(
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
     log.info("Connecting to Binance WS in paper mode for %s", symbol)
+    # Allow slight delays without dropping the connection
+    settings.adapter_ping_interval = max(getattr(settings, "adapter_ping_interval", 20.0), 30.0)
+    ping_timeout = max(getattr(settings, "ping_timeout", 20.0), 30.0)
+    websockets.connect = functools.partial(websockets.connect, ping_timeout=ping_timeout)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter()
     broker.state.cash = initial_cash
@@ -146,7 +152,6 @@ async def run_paper(
             if time.time() - last_purge >= purge_interval:
                 risk.purge([symbol])
                 last_purge = time.time()
-            risk.update_correlation(corr.get_correlations(), corr_threshold)
             pos_qty, _ = risk.account.current_exposure(symbol)
             trade = risk.get_trade(symbol)
             if trade and abs(pos_qty) > risk.min_order_qty:
@@ -203,7 +208,9 @@ async def run_paper(
             closed = agg.on_trade(ts, px, qty)
             if closed is None:
                 continue
-            df = agg.last_n_bars_df(200)
+            correlations = await asyncio.to_thread(corr.get_correlations)
+            risk.update_correlation(correlations, corr_threshold)
+            df = await asyncio.to_thread(agg.last_n_bars_df, 200)
             if len(df) < 140:
                 continue
             bar = {"window": df, "symbol": symbol}
