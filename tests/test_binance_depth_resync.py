@@ -20,7 +20,7 @@ async def test_depth_update_gap_resync(monkeypatch, cls):
         json.dumps({"data": {"b": [["1", "1"]], "a": [["2", "1"]], "pu": 20, "u": 21, "T": 2}})
     ]
 
-    async def fake_ws_messages(url):
+    async def fake_ws_messages(url, subscribe=None, ping_timeout=None):
         calls["ws"] += 1
         msgs = first_msgs if calls["ws"] == 1 else second_msgs
         for m in msgs:

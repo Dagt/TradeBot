@@ -95,7 +95,9 @@ class BybitFuturesAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
                 price = float(t.get("p"))
@@ -109,7 +111,9 @@ class BybitFuturesAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = normalize(symbol)
         sub = {"op": "subscribe", "args": [f"orderbook.1.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             data = msg.get("data") or {}
             if not data:

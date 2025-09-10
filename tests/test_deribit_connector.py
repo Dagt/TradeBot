@@ -202,7 +202,7 @@ async def test_deribit_ws_adapter_parsing(monkeypatch, caplog):
 async def test_deribit_ws_adapter_channel_mismatch():
     adapter = DeribitWSAdapter()
 
-    async def fake_messages(url, sub):
+    async def fake_messages(url, sub, ping_timeout=None):
         yield json.dumps({"params": {"channel": "other", "data": []}})
 
     adapter._ws_messages = fake_messages
