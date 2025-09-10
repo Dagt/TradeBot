@@ -4,6 +4,7 @@ import errno
 import logging
 from datetime import datetime, timezone
 import time
+import contextlib
 import uvicorn
 
 from sqlalchemy.exc import OperationalError
@@ -46,12 +47,12 @@ WS_ADAPTERS = {
 }
 
 
-async def _start_metrics(port: int) -> uvicorn.Server:
+async def _start_metrics(port: int) -> tuple[uvicorn.Server, asyncio.Task[None]]:
     """Launch the monitoring panel in the background."""
     config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
     try:
-        task = asyncio.create_task(server.serve())
+        task: asyncio.Task[None] = asyncio.create_task(server.serve())
     except SystemExit as exc:  # pragma: no cover - defensive
         raise OSError(errno.EADDRINUSE) from exc
     while not getattr(server, "started", False) and not task.done():
@@ -62,7 +63,7 @@ async def _start_metrics(port: int) -> uvicorn.Server:
             if isinstance(exc, SystemExit):
                 raise OSError(errno.EADDRINUSE) from exc
             raise exc
-    return server
+    return server, task
 
 
 async def run_paper(
@@ -135,10 +136,11 @@ async def run_paper(
     )
     exec_broker = Broker(router)
 
+    metrics_task: asyncio.Task[None] | None = None
     port = metrics_port
     while True:
         try:
-            server = await _start_metrics(port)
+            server, metrics_task = await _start_metrics(port)
             if port == 0 and server.servers:
                 actual = server.servers[0].sockets[0].getsockname()[1]
                 log.info("metrics server listening on port %s", actual)
@@ -288,4 +290,8 @@ async def run_paper(
                 break
     finally:
         server.should_exit = True
+        if metrics_task is not None:
+            metrics_task.cancel()
+            with contextlib.suppress(Exception):
+                await metrics_task
 
