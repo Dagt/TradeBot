@@ -45,6 +45,26 @@
   </div>
 
   <div class="card" style="margin-top:16px">
+    <h2>Balances</h2>
+    <table id="bal-table">
+      <thead>
+        <tr><th>Exchange</th><th>USDT</th><th>BTC</th></tr>
+      </thead>
+      <tbody id="bal-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Tickers</h2>
+    <table id="tick-table">
+      <thead>
+        <tr><th>Exchange</th><th>BTC/USDT</th><th>ETH/USDT</th><th>XRP/USDT</th></tr>
+      </thead>
+      <tbody id="tick-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <h2>Credenciales</h2>
     <div class="grid3" style="margin-top:10px">
       <div>
@@ -172,8 +192,52 @@ async function refreshMarket(){
       document.getElementById('m-basis').classList.add('warn');
     }else{
       document.getElementById('m-basis').classList.remove('warn');
-    }
+  }
   }catch(e){}
+}
+
+async function refreshBalances(){
+  const body=document.getElementById('bal-body');
+  if(!body) return;
+  body.innerHTML='';
+  for(const ex of allowedExchanges){
+    let usdt='—';
+    let btc='—';
+    try{
+      const r=await fetch(api(`/balances/${ex}`));
+      const j=await r.json();
+      if(j && j.USDT!=null) usdt=Number(j.USDT).toFixed(2);
+      if(j && j.BTC!=null) btc=Number(j.BTC).toFixed(6);
+    }catch(e){}
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ex}</td><td>${usdt}</td><td>${btc}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+const tickerSymbols=['BTC/USDT','ETH/USDT','XRP/USDT'];
+
+async function refreshTickers(){
+  const body=document.getElementById('tick-body');
+  if(!body) return;
+  body.innerHTML='';
+  for(const ex of allowedExchanges){
+    let row='';
+    try{
+      const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
+      const j=await r.json();
+      for(const sym of tickerSymbols){
+        const t=j[sym]||j[sym.replace('/','')]||{};
+        const p=t.last??t.price??t.close;
+        row+=`<td>${p!=null?Number(p).toFixed(4):'—'}</td>`;
+      }
+    }catch(e){
+      row=tickerSymbols.map(()=>'<td>—</td>').join('');
+    }
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ex}</td>${row}`;
+    body.appendChild(tr);
+  }
 }
 
 async function saveConfig(){
@@ -204,6 +268,10 @@ refreshMetrics();
 setInterval(refreshMetrics, 5000);
 refreshMarket();
 setInterval(refreshMarket, 5000);
+refreshBalances();
+setInterval(refreshBalances, 5000);
+refreshTickers();
+setInterval(refreshTickers, 5000);
 
 async function refreshLogs(){
   try{
