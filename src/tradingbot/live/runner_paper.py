@@ -11,6 +11,11 @@ import websockets
 
 from .runner import BarAggregator
 from ..adapters.binance import BinanceWSAdapter
+from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
+from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter
+from ..adapters.bybit_futures import BybitFuturesAdapter
+from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter
+from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..broker.broker import Broker
@@ -29,6 +34,16 @@ except Exception:  # pragma: no cover
     _CAN_PG = False
 
 log = logging.getLogger(__name__)
+
+
+WS_ADAPTERS = {
+    ("binance", "spot"): BinanceSpotWSAdapter,
+    ("binance", "futures"): BinanceWSAdapter,
+    ("bybit", "spot"): BybitSpotWSAdapter,
+    ("bybit", "futures"): BybitFuturesAdapter,
+    ("okx", "spot"): OKXSpotWSAdapter,
+    ("okx", "futures"): OKXFuturesAdapter,
+}
 
 
 async def _start_metrics(port: int) -> uvicorn.Server:
@@ -54,6 +69,7 @@ async def run_paper(
     symbol: str = "BTC/USDT",
     strategy_name: str = "breakout_atr",
     *,
+    venue: str = "binance_spot",
     config_path: str | None = None,
     metrics_port: int = 8000,
     corr_threshold: float = 0.8,
@@ -63,12 +79,16 @@ async def run_paper(
     initial_cash: float = 1000.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
-    log.info("Connecting to Binance WS in paper mode for %s", symbol)
+    exchange, market = venue.split("_", 1)
+    ws_cls = WS_ADAPTERS.get((exchange, market))
+    if ws_cls is None:
+        raise ValueError(f"unsupported venue: {venue}")
+    log.info("Connecting to %s %s WS in paper mode for %s", exchange.capitalize(), market, symbol)
     # Allow slight delays without dropping the connection
     settings.adapter_ping_interval = max(getattr(settings, "adapter_ping_interval", 20.0), 30.0)
     ping_timeout = max(getattr(settings, "ping_timeout", 20.0), 30.0)
     websockets.connect = functools.partial(websockets.connect, ping_timeout=ping_timeout)
-    adapter = BinanceWSAdapter()
+    adapter = ws_cls()
     broker = PaperAdapter()
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
