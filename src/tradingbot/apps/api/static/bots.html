@@ -386,39 +386,49 @@ async function runCli(){
 async function stopBot(pid){
   try{
     const r = await fetch(api(`/bots/${pid}/stop`), {method:'POST'});
-    const j = await r.json().catch(()=>({}));
-    alert(j.status || j.detail || r.statusText);
-  }catch(e){ alert(String(e)); }
+    console.log('stopBot', pid, r.status);
+  }catch(e){
+    console.log('stopBot error', e);
+  }
   refreshBots();
 }
 async function pauseBot(pid){
   try{
     const r = await fetch(api(`/bots/${pid}/pause`), {method:'POST'});
-    const j = await r.json().catch(()=>({}));
-    alert(j.status || j.detail || r.statusText);
-  }catch(e){ alert(String(e)); }
+    console.log('pauseBot', pid, r.status);
+  }catch(e){
+    console.log('pauseBot error', e);
+  }
   refreshBots();
 }
 async function resumeBot(pid){
   try{
     const r = await fetch(api(`/bots/${pid}/resume`), {method:'POST'});
-    const j = await r.json().catch(()=>({}));
-    alert(j.status || j.detail || r.statusText);
-  }catch(e){ alert(String(e)); }
-  refreshBots();
-}
-async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
-async function killBot(pid){
-  try{
-    const r = await fetch(api(`/bots/${pid}/kill`), {method:'POST'});
-    const j = await r.json().catch(()=>({}));
-    alert(j.status || j.detail || r.statusText);
+    console.log('resumeBot', pid, r.status);
   }catch(e){
-    alert(String(e));
+    console.log('resumeBot error', e);
   }
   refreshBots();
 }
-async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+async function haltBot(pid){
+  await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})});
+  console.log('haltBot', pid);
+  refreshBots();
+}
+async function killBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/kill`), {method:'POST'});
+    console.log('killBot', pid, r.status);
+  }catch(e){
+    console.log('killBot error', e);
+  }
+  refreshBots();
+}
+async function deleteBot(pid){
+  await fetch(api(`/bots/${pid}`), {method:'DELETE'});
+  console.log('deleteBot', pid);
+  refreshBots();
+}
 
 function renderExposure(data){
   const div=document.getElementById('risk-exposure');
@@ -467,6 +477,7 @@ async function haltRisk(){
   try{
     await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
     refreshRisk();
+    refreshBots();
   }catch(e){
     document.getElementById('risk-error').textContent = String(e);
   }
