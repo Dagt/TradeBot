@@ -204,6 +204,11 @@ th{
 tbody tr{ transition: background .15s }
 tbody tr:hover{ background: rgba(255,255,255,.03) }
 
+#bal-table td:nth-child(n+2), #bal-table th:nth-child(n+2),
+#tick-table td:nth-child(n+2), #tick-table th:nth-child(n+2){
+  text-align:right;
+}
+
 /* ====== Controles ====== */
 textarea,input,select{
   width:100%;
