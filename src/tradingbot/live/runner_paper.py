@@ -89,7 +89,8 @@ async def run_paper(
     # global settings. Configure per-adapter ping timing instead.
     adapter = ws_cls()
     adapter.ping_interval = max(getattr(adapter, "ping_interval", 20.0), 30.0)
-    adapter.ping_timeout = max(getattr(adapter, "ping_timeout", 20.0), 30.0)
+    timeout = getattr(adapter, "ping_timeout", 20.0) or 20.0
+    adapter.ping_timeout = max(timeout, 30.0)
     broker = PaperAdapter()
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
