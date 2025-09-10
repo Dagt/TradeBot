@@ -134,6 +134,18 @@
   </div>
 
   <div class="card" style="margin-top:16px">
+    <h2>Secrets</h2>
+    <div class="grid5" style="margin-top:10px">
+      <input id="sec-key" placeholder="KEY"/>
+      <input id="sec-value" placeholder="value"/>
+      <button id="sec-set">Set</button>
+      <button id="sec-show">Show</button>
+      <button id="sec-del">Delete</button>
+    </div>
+    <pre id="sec-output" class="mono" style="margin-top:8px; white-space:pre-wrap"></pre>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <h2>Gestión de riesgo</h2>
     <div class="muted">Consultar exposiciones y eventos o ejecutar acciones</div>
     <p class="muted" style="margin-top:8px">
@@ -380,6 +392,38 @@ async function runCli(){
   }
 }
 
+async function setSecret(){
+  const key=document.getElementById('sec-key').value;
+  const value=document.getElementById('sec-value').value;
+  try{
+    await fetch(api(`/secrets/${encodeURIComponent(key)}`), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({value})});
+    document.getElementById('sec-output').textContent='ok';
+  }catch(e){
+    document.getElementById('sec-output').textContent=String(e);
+  }
+}
+
+async function showSecret(){
+  const key=document.getElementById('sec-key').value;
+  try{
+    const r=await fetch(api(`/secrets/${encodeURIComponent(key)}`));
+    const j=await r.json();
+    document.getElementById('sec-output').textContent=j.value||'';
+  }catch(e){
+    document.getElementById('sec-output').textContent=String(e);
+  }
+}
+
+async function delSecret(){
+  const key=document.getElementById('sec-key').value;
+  try{
+    await fetch(api(`/secrets/${encodeURIComponent(key)}`), {method:'DELETE'});
+    document.getElementById('sec-output').textContent='deleted';
+  }catch(e){
+    document.getElementById('sec-output').textContent=String(e);
+  }
+}
+
 async function stopBot(pid){
   try{
     const r = await fetch(api(`/bots/${pid}/stop`), {method:'POST'});
@@ -498,6 +542,9 @@ updateEnvFields();
 refreshBots();
 setInterval(refreshBots,5000);
 document.getElementById('cli-run').addEventListener('click', runCli);
+document.getElementById('sec-set').addEventListener('click', setSecret);
+document.getElementById('sec-show').addEventListener('click', showSecret);
+document.getElementById('sec-del').addEventListener('click', delSecret);
 document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
 document.getElementById('risk-halt').addEventListener('click', haltRisk);
 document.getElementById('risk-reset').addEventListener('click', resetRisk);
