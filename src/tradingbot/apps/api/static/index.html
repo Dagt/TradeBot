@@ -11,6 +11,27 @@
 <body>
   <h1>Monitoreo</h1>
   <div class="muted" id="health">Comprobando estado…</div>
+  <div class="grid2" style="margin:14px 0 10px">
+    <div class="card card-sm">
+      <h2>Balances</h2>
+      <table id="bal-table">
+        <thead>
+          <tr><th>Exchange</th><th>USDT</th><th>BTC</th></tr>
+        </thead>
+        <tbody id="bal-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card card-sm">
+      <h2>Tickers</h2>
+      <table id="tick-table">
+        <thead>
+          <tr><th>Exchange</th><th>BTC/USDT</th><th>ETH/USDT</th><th>XRP/USDT</th></tr>
+        </thead>
+        <tbody id="tick-body"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="grid5" style="margin:14px 0 10px">
     <div class="kv"><div class="k">Reject Rate</div><div class="v" id="m-reject">—</div></div>
     <div class="kv"><div class="k">Latency p90 (s)</div><div class="v" id="m-lat90">—</div></div>
@@ -42,26 +63,6 @@
     <div class="kv"><div class="k">Funding</div><div class="v" id="m-funding-now">—</div></div>
     <div class="kv"><div class="k">Próx Funding</div><div class="v" id="m-funding-next">—</div></div>
     <div class="kv"><div class="k">Basis</div><div class="v" id="m-basis">—</div></div>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-    <h2>Balances</h2>
-    <table id="bal-table">
-      <thead>
-        <tr><th>Exchange</th><th>USDT</th><th>BTC</th></tr>
-      </thead>
-      <tbody id="bal-body"></tbody>
-    </table>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-    <h2>Tickers</h2>
-    <table id="tick-table">
-      <thead>
-        <tr><th>Exchange</th><th>BTC/USDT</th><th>ETH/USDT</th><th>XRP/USDT</th></tr>
-      </thead>
-      <tbody id="tick-body"></tbody>
-    </table>
   </div>
 
   <div class="card" style="margin-top:16px">
