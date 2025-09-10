@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
+from ..utils.metrics import ORDER_SENT
 
 
 class Broker:
@@ -138,6 +139,7 @@ class Broker:
                     or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
                 ):
                     kwargs["signal_ts"] = signal_ts
+            ORDER_SENT.inc()
             res = await self.adapter.place_order(**kwargs)
             qty_filled = float(
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
@@ -184,3 +186,23 @@ class Broker:
             "order_id": last_res.get("order_id"),
             "price": last_res.get("price", price),
         }
+
+    async def place_market(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        signal_ts: float | None = None,
+    ) -> dict:
+        """Place a market order and track submission metrics."""
+
+        kwargs = {
+            "symbol": symbol,
+            "side": side,
+            "type_": "market",
+            "qty": qty,
+        }
+        if signal_ts is not None:
+            kwargs["signal_ts"] = signal_ts
+        ORDER_SENT.inc()
+        return await self.adapter.place_order(**kwargs)

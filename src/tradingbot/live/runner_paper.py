@@ -18,6 +18,7 @@ from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED
 from ..broker.broker import Broker
 from ..config import settings
 from ..risk.service import load_positions
@@ -226,6 +227,10 @@ async def run_paper(
                             break
                     continue
             closed = agg.on_trade(ts, px, qty)
+            latency = (datetime.now(timezone.utc) - ts).total_seconds()
+            MARKET_LATENCY.observe(latency)
+            AGG_COMPLETED.set(len(agg.completed))
+            log.debug("bars accumulated=%d", len(agg.completed))
             if closed is None:
                 continue
             correlations = await asyncio.to_thread(corr.get_correlations)
