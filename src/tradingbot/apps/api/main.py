@@ -1045,6 +1045,8 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
             "--strategy",
             cfg.strategy,
         ]
+        if cfg.venue:
+            args.extend(["--venue", cfg.venue])
         if cfg.risk_pct is not None:
             args.extend(["--risk-pct", str(cfg.risk_pct)])
         if cfg.timeframe is not None:

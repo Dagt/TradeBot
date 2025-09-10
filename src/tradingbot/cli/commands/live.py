@@ -100,6 +100,7 @@ def run_bot(
 def paper_run(
     symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    venue: str = typer.Option("binance_spot", "--venue", help="Trading venue"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
     param: list[str] = typer.Option(
@@ -134,6 +135,7 @@ def paper_run(
         run_paper(
             symbol=symbol,
             strategy_name=strategy,
+            venue=venue,
             config_path=config,
             metrics_port=metrics_port,
             risk_pct=risk_pct,
