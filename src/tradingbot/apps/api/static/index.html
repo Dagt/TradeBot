@@ -253,27 +253,34 @@ async function refreshTickers(){
   if(!body) return;
   body.innerHTML='';
   const exs=allowedExchanges.filter(ex=>localStorage.getItem('key:'+ex)&&localStorage.getItem('secret:'+ex));
-  for(const ex of exs){
-    let row='';
-    try{
-      const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
-      const j=await r.json();
-      if(!r.ok||j.error){
-        console.warn('ticker_error',ex,j.error||j.detail);
-        row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
-      }else{
-        for(const sym of tickerSymbols){
-          const t=j[sym]||j[sym.replace('/','')]||{};
-          const p=t.last??t.price??t.close;
-          row+=`<td>${p!=null?Number(p).toFixed(4):'N/A'}</td>`;
+  const requests = exs.map(ex => (
+    async () => {
+      let row='';
+      try{
+        const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
+        const j=await r.json();
+        if(!r.ok||j.error){
+          console.warn('ticker_error',ex,j.error||j.detail);
+          row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
+        }else{
+          for(const sym of tickerSymbols){
+            const t=j[sym]||j[sym.replace('/','')]||{};
+            const p=t.last??t.price??t.close;
+            row+=`<td>${p!=null?Number(p).toFixed(4):'N/A'}</td>`;
+          }
         }
+      }catch(e){
+        console.warn('ticker_fetch_error',ex,e);
+        row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
       }
-    }catch(e){
-      console.warn('ticker_fetch_error',ex,e);
-      row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
+      return `<td>${ex}</td>${row}`;
     }
+  )());
+
+  const rows = await Promise.all(requests);
+  for(const row of rows){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${ex}</td>${row}`;
+    tr.innerHTML=row;
     body.appendChild(tr);
   }
 }

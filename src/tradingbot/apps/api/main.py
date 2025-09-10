@@ -191,26 +191,32 @@ async def get_tickers(exchange: str, symbols: str = Query(...)):
         raise HTTPException(status_code=404, detail="unsupported exchange")
     conn = cls()
     prices: dict[str, float | None] = {}
-    for raw in symbols.split(","):
-        sym = raw.strip()
-        if not sym:
-            continue
-        norm = normalize_symbol(sym)
-        try:
-            data = await conn.rest.fetch_ticker(sym)
-            price = (
-                data.get("last")
-                or data.get("close")
-                or data.get("price")
-                or data.get("bid")
-                or data.get("ask")
-            )
-            prices[norm] = float(price) if price is not None else None
-        except Exception as e:  # pragma: no cover - network issues
-            logger.warning("ticker_error", extra={"exchange": exchange, "symbol": sym, "err": str(e)})
-            prices[norm] = None
-    with suppress(Exception):
-        await conn.rest.close()
+    try:
+        await conn.rest.load_markets()
+        for raw in symbols.split(","):
+            sym = raw.strip()
+            if not sym:
+                continue
+            norm = normalize_symbol(sym)
+            exchange_sym = sym
+            with suppress(Exception):
+                exchange_sym = conn.rest.market(sym)["symbol"]
+            try:
+                data = await conn.rest.fetch_ticker(exchange_sym)
+                price = (
+                    data.get("last")
+                    or data.get("close")
+                    or data.get("price")
+                    or data.get("bid")
+                    or data.get("ask")
+                )
+                prices[norm] = float(price) if price is not None else None
+            except Exception as e:  # pragma: no cover - network issues
+                logger.warning("ticker_error", extra={"exchange": exchange, "symbol": sym, "err": str(e)})
+                prices[norm] = None
+    finally:
+        with suppress(Exception):
+            await conn.rest.close()
     return prices
 
 
