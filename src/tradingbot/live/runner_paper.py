@@ -106,7 +106,7 @@ async def run_paper(
         account=broker.account,
         risk_pct=risk_pct,
     )
-    risk.allow_short = False
+    risk.allow_short = market != "spot"
     engine = None
     if _CAN_PG:
         while True:
