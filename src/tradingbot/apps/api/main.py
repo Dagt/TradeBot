@@ -1104,6 +1104,23 @@ async def _capture_stderr(
                 pass
 
 
+async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
+    """Esperar la finalización del proceso y actualizar su estado."""
+
+    await proc.wait()
+    info = _BOTS.get(pid)
+    if not info:
+        return
+    code = proc.returncode
+    info["status"] = "stopped" if code == 0 else "error"
+    if code:
+        log_buffer: deque[str] | None = info.get("log_buffer")
+        if log_buffer:
+            info["last_error"] = log_buffer[-1]
+        else:
+            info["last_error"] = f"exit code {code}"
+
+
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
     # Special runner for cross exchange arbitrage / cash and carry
     if cfg.strategy == "cross_arbitrage":
@@ -1229,6 +1246,9 @@ async def start_bot(cfg: BotConfig, request: Request = None):
         stderr_task = asyncio.create_task(
             _capture_stderr(proc.pid, proc, log_buffer)
         )
+        monitor_task = asyncio.create_task(
+            _monitor_bot(proc.pid, proc)
+        )
         _BOTS[proc.pid] = {
             "process": proc,
             "config": cfg.dict(),
@@ -1236,6 +1256,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "status": "running",
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
+            "monitor_task": monitor_task,
             "log_buffer": log_buffer,
         }
         return {"pid": proc.pid, "status": "running"}
@@ -1385,5 +1406,8 @@ async def delete_bot(pid: int):
     err_task = info.get("stderr_task")
     if err_task:
         err_task.cancel()
+    mon_task = info.get("monitor_task")
+    if mon_task:
+        mon_task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 

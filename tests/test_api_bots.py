@@ -1,7 +1,8 @@
 import asyncio
+import time
 from fastapi.testclient import TestClient
 
-from tradingbot.apps.api.main import app
+from tradingbot.apps.api.main import app, _BOTS
 
 
 def test_bot_endpoints(monkeypatch):
@@ -112,3 +113,39 @@ def test_dashboard_bot_controls():
     for path in ["halt", "flatten", "reload", "kill"]:
         r = client.post(f"/bots/123/{path}", auth=("admin", "admin"))
         assert r.status_code == 404
+
+
+def test_monitor_updates_status(monkeypatch):
+    client = TestClient(app)
+    _BOTS.clear()
+
+    class DummyProc:
+        def __init__(self):
+            self.pid = 555
+            self.returncode = None
+            self.stdout = None
+            self.stderr = None
+
+        async def wait(self):
+            self.returncode = 1
+
+    async def fake_exec(*args, **kwargs):
+        return DummyProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    payload = {
+        "strategy": "dummy",
+        "pairs": ["BTC/USDT"],
+    }
+
+    resp = client.post("/bots", json=payload, auth=("admin", "admin"))
+    assert resp.status_code == 200
+    pid = resp.json()["pid"]
+    info = _BOTS[pid]
+    for _ in range(100):
+        if info["status"] != "running":
+            break
+        time.sleep(0.01)
+    assert info["status"] == "error"
+    assert info["last_error"]
