@@ -283,21 +283,31 @@ async function refreshBalances(){
 
 async function refreshTickers(){
   const exs=Object.keys(tickCells);
-  const promises=exs.map(async ex=>{
+  // prepare placeholders
+  exs.forEach(ex=>{
     const cells=tickCells[ex];
     tickerSymbols.forEach(sym=>{
       cells[sym].textContent='...';
       cells[sym].classList.add('muted');
     });
+  });
+
+  const requests=exs.map(ex=>
+    fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`))
+      .then(async r=>({ex, ok:r.ok, data:await r.json()}))
+      .catch(err=>({ex, ok:false, error:err}))
+  );
+
+  const results=await Promise.all(requests);
+  for(const {ex, ok, data, error} of results){
+    const cells=tickCells[ex];
     try{
-      const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
-      const j=await r.json();
-      if(!r.ok||j.error){
-        console.warn('ticker_error',ex,j.error||j.detail);
+      if(!ok||data.error){
+        console.warn('ticker_error',ex,(data&&data.error)||error);
         tickerSymbols.forEach(sym=>{cells[sym].textContent='N/A';});
       }else{
         for(const sym of tickerSymbols){
-          const t=j[sym]||j[sym.replace('/','')]||{};
+          const t=data[sym]||data[sym.replace('/','')]||{};
           const p=t.last??t.price??t.close;
           cells[sym].textContent=p!=null?Number(p).toFixed(4):'N/A';
         }
@@ -308,8 +318,7 @@ async function refreshTickers(){
     }finally{
       tickerSymbols.forEach(sym=>cells[sym].classList.remove('muted'));
     }
-  });
-  await Promise.all(promises);
+  }
 }
 
 async function saveConfig(){
