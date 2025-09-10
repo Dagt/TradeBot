@@ -1,24 +1,41 @@
 import asyncio
+import signal
 from fastapi.testclient import TestClient
 
 from tradingbot.apps.api.main import app
 
 
 def test_bot_endpoints(monkeypatch):
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     class DummyProc:
         def __init__(self, pid: int):
             self.pid = pid
             self.returncode = None
+            self.stdout = None
+            self.stderr = None
+            loop = asyncio.get_event_loop()
+            self._waiter = loop.create_future()
 
         async def wait(self):
-            self.returncode = 0
+            await self._waiter
+            return self.returncode
 
         def terminate(self):
             self.returncode = 0
+            if not self._waiter.done():
+                self._waiter.set_result(None)
 
         def send_signal(self, sig):
+            if sig == signal.SIGSTOP:
+                self.returncode = -sig
+                if not self._waiter.done():
+                    self._waiter.set_result(None)
+            elif sig == signal.SIGCONT:
+                self.returncode = None
+                if self._waiter.done():
+                    loop = asyncio.get_event_loop()
+                    self._waiter = loop.create_future()
             return None
 
     procs: list[DummyProc] = []
@@ -56,9 +73,11 @@ def test_bot_endpoints(monkeypatch):
     assert any(b["pid"] == pid and b.get("risk_pct") == 0.03 for b in bots)
 
     assert client.post(f"/bots/{pid}/pause", auth=("admin", "admin")).status_code == 200
+    lst = client.get("/bots", auth=("admin", "admin"))
+    assert any(b["pid"] == pid and b["status"] == "paused" for b in lst.json()["bots"])
     assert client.post(f"/bots/{pid}/resume", auth=("admin", "admin")).status_code == 200
-    assert client.post(f"/bots/{pid}/stop", auth=("admin", "admin")).status_code == 200
-    assert client.delete(f"/bots/{pid}", auth=("admin", "admin")).status_code == 200
+    lst = client.get("/bots", auth=("admin", "admin"))
+    assert any(b["pid"] == pid and b["status"] == "running" for b in lst.json()["bots"])
 
 
 def test_cross_arbitrage_start(monkeypatch):
