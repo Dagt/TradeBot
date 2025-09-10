@@ -41,6 +41,7 @@ from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 from ...core.symbols import normalize as normalize_symbol
+from ...connectors import BinanceConnector, OKXConnector, BybitConnector
 
 # Persistencia
 try:
@@ -58,6 +59,12 @@ except Exception:
 
 security = HTTPBasic()
 logger = logging.getLogger(__name__)
+
+CONNECTORS = {
+    "binance": BinanceConnector,
+    "okx": OKXConnector,
+    "bybit": BybitConnector,
+}
 
 
 def _check_basic_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
@@ -124,6 +131,66 @@ def ccxt_exchanges(include_testnet: bool = Query(True)):
             if include_testnet:
                 live.append(f"{key}_testnet")
     return live
+
+
+@app.get("/balances/{exchange}")
+async def get_balances(exchange: str):
+    """Return account balances for one or multiple exchanges."""
+    if ccxt is None:
+        raise HTTPException(status_code=503, detail="ccxt not available")
+    exchanges = [e.strip() for e in exchange.split(",") if e.strip()]
+    results: dict[str, dict] = {}
+    for ex in exchanges:
+        key = ex.split("_")[0].lower()
+        cls = CONNECTORS.get(key)
+        if cls is None:
+            raise HTTPException(status_code=404, detail=f"unsupported exchange: {ex}")
+        conn = cls()
+        try:
+            results[ex] = await conn.fetch_balance()
+        except Exception as e:  # pragma: no cover - network issues
+            logger.warning("balance_error", extra={"exchange": ex, "err": str(e)})
+            results[ex] = {"error": str(e)}
+        finally:
+            with suppress(Exception):
+                await conn.rest.close()
+    if len(results) == 1 and exchange == exchanges[0]:
+        return results[exchanges[0]]
+    return results
+
+
+@app.get("/tickers/{exchange}")
+async def get_tickers(exchange: str, symbols: str = Query(...)):
+    """Return ticker price for each requested symbol."""
+    if ccxt is None:
+        raise HTTPException(status_code=503, detail="ccxt not available")
+    key = exchange.split("_")[0].lower()
+    cls = CONNECTORS.get(key)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="unsupported exchange")
+    conn = cls()
+    prices: dict[str, float | None] = {}
+    for raw in symbols.split(","):
+        sym = raw.strip()
+        if not sym:
+            continue
+        norm = normalize_symbol(sym)
+        try:
+            data = await conn.rest.fetch_ticker(sym)
+            price = (
+                data.get("last")
+                or data.get("close")
+                or data.get("price")
+                or data.get("bid")
+                or data.get("ask")
+            )
+            prices[norm] = float(price) if price is not None else None
+        except Exception as e:  # pragma: no cover - network issues
+            logger.warning("ticker_error", extra={"exchange": exchange, "symbol": sym, "err": str(e)})
+            prices[norm] = None
+    with suppress(Exception):
+        await conn.rest.close()
+    return prices
 
 
 @app.get("/venues/{name}/kinds")
