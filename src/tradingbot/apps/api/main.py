@@ -1038,6 +1038,11 @@ class BotConfig(BaseModel):
 _BOTS: dict[int, dict] = {}
 _launch_lock = asyncio.Lock()
 
+# Seconds to retain finished bot info and logs before purging.
+# Allows a short window for clients to fetch final logs or status.
+# Set ``BOT_LOG_RETENTION`` environment variable to override.
+BOT_LOG_RETENTION: float = float(os.getenv("BOT_LOG_RETENTION", "1"))
+
 # Regex para detectar líneas de métricas en logs: "METRICS {json}"
 _METRIC_LINE = re.compile(r"METRICS?\s+(\{.*\})")
 
@@ -1121,6 +1126,43 @@ async def _capture_stderr(
                 queue.put_nowait(text)
             except asyncio.QueueFull:
                 pass
+
+
+async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process, retention: float | None = None) -> None:
+    """Monitor a bot process and purge its record once finished.
+
+    Parameters
+    ----------
+    pid:
+        Process identifier for lookup in ``_BOTS``.
+    proc:
+        The subprocess running the bot.
+    retention:
+        Optional override for how many seconds to keep the bot's info
+        after it finishes. Defaults to ``BOT_LOG_RETENTION``.
+    """
+
+    try:
+        await proc.wait()
+    finally:
+        info = _BOTS.get(pid)
+        if not info:
+            return
+        # Preserve existing status if stop/kill updated it already
+        if info.get("status") == "running":
+            info["status"] = "finished"
+        info["returncode"] = proc.returncode
+        # Cancel log scraping tasks
+        for name in ("metrics_task", "stderr_task"):
+            task = info.get(name)
+            if task:
+                task.cancel()
+                with suppress(Exception):
+                    await task
+        wait_secs = BOT_LOG_RETENTION if retention is None else retention
+        if wait_secs > 0:
+            await asyncio.sleep(wait_secs)
+        _BOTS.pop(pid, None)
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1248,6 +1290,9 @@ async def start_bot(cfg: BotConfig, request: Request = None):
         stderr_task = asyncio.create_task(
             _capture_stderr(proc.pid, proc, log_buffer)
         )
+        monitor_task = asyncio.create_task(
+            _monitor_bot(proc.pid, proc)
+        )
         _BOTS[proc.pid] = {
             "process": proc,
             "config": cfg.dict(),
@@ -1255,6 +1300,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "status": "running",
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
+             "monitor_task": monitor_task,
             "log_buffer": log_buffer,
         }
         return {"pid": proc.pid, "status": "running"}
@@ -1404,5 +1450,8 @@ async def delete_bot(pid: int):
     err_task = info.get("stderr_task")
     if err_task:
         err_task.cancel()
+    mon_task = info.get("monitor_task")
+    if mon_task:
+        mon_task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
 
