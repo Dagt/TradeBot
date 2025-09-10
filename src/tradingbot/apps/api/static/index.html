@@ -21,15 +21,9 @@
         <tbody id="bal-body"></tbody>
       </table>
     </div>
-
-    <div class="card card-sm">
-      <h2>Tickers</h2>
-      <table id="tick-table">
-        <thead>
-          <tr><th>Exchange</th><th>BTC/USDT</th><th>ETH/USDT</th><th>XRP/USDT</th></tr>
-        </thead>
-        <tbody id="tick-body"></tbody>
-      </table>
+    <div id="ticker-card" class="card card-sm">
+      <span id="ticker-pair"></span>
+      <span id="ticker-price"></span>
     </div>
   </div>
   <div class="grid5" style="margin:14px 0 10px">
@@ -223,30 +217,20 @@ async function refreshMarket(){
 }
 
 const balCells={};
-const tickCells={};
-const tickerSymbols=['BTC/USDT','ETH/USDT','XRP/USDT'];
+const tickerPairs=['BTC/USDT','ETH/USDT','XRP/USDT','BNB/USDT','SOL/USDT'];
+let tickerIndex=0;
 
-function initTables(){
+function initBalances(){
   const balBody=document.getElementById('bal-body');
-  const tickBody=document.getElementById('tick-body');
-  if(!balBody||!tickBody) return;
+  if(!balBody) return;
   balBody.innerHTML='';
-  tickBody.innerHTML='';
   Object.keys(balCells).forEach(k=>delete balCells[k]);
-  Object.keys(tickCells).forEach(k=>delete tickCells[k]);
   const exs=allowedExchanges.filter(ex=>localStorage.getItem('key:'+ex)&&localStorage.getItem('secret:'+ex));
   for(const ex of exs){
     const btr=document.createElement('tr');
     btr.innerHTML=`<td>${ex}</td><td class="muted">...</td><td class="muted">...</td>`;
     balCells[ex]={usdt:btr.children[1], btc:btr.children[2]};
     balBody.appendChild(btr);
-
-    const ttr=document.createElement('tr');
-    ttr.innerHTML=`<td>${ex}</td>`+tickerSymbols.map(()=>'<td class="muted">...</td>').join('');
-    const tds=ttr.querySelectorAll('td');
-    tickCells[ex]={};
-    tickerSymbols.forEach((sym,i)=>{tickCells[ex][sym]=tds[i+1];});
-    tickBody.appendChild(ttr);
   }
 }
 
@@ -281,43 +265,36 @@ async function refreshBalances(){
   await Promise.all(promises);
 }
 
-async function refreshTickers(){
-  const exs=Object.keys(tickCells);
-  // prepare placeholders
-  exs.forEach(ex=>{
-    const cells=tickCells[ex];
-    tickerSymbols.forEach(sym=>{
-      cells[sym].textContent='...';
-      cells[sym].classList.add('muted');
-    });
-  });
-
-  const requests=exs.map(ex=>
-    fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`))
-      .then(async r=>({ex, ok:r.ok, data:await r.json()}))
-      .catch(err=>({ex, ok:false, error:err}))
+async function cycleTickers(){
+  const exs=allowedExchanges.filter(ex=>localStorage.getItem('key:'+ex)&&localStorage.getItem('secret:'+ex));
+  if(exs.length===0) return;
+  const pair=tickerPairs[tickerIndex];
+  tickerIndex=(tickerIndex+1)%tickerPairs.length;
+  const reqs=exs.map(ex=>
+    fetch(api(`/tickers/${ex}?symbols=${pair}`))
+      .then(r=>r.ok?r.json():null)
+      .catch(()=>null)
   );
-
-  const results=await Promise.all(requests);
-  for(const {ex, ok, data, error} of results){
-    const cells=tickCells[ex];
-    try{
-      if(!ok||data.error){
-        console.warn('ticker_error',ex,(data&&data.error)||error);
-        tickerSymbols.forEach(sym=>{cells[sym].textContent='N/A';});
-      }else{
-        for(const sym of tickerSymbols){
-          const t=data[sym]||data[sym.replace('/','')]||{};
-          const p=t.last??t.price??t.close;
-          cells[sym].textContent=p!=null?Number(p).toFixed(4):'N/A';
-        }
-      }
-    }catch(e){
-      console.warn('ticker_fetch_error',ex,e);
-      tickerSymbols.forEach(sym=>{cells[sym].textContent='N/A';});
-    }finally{
-      tickerSymbols.forEach(sym=>cells[sym].classList.remove('muted'));
-    }
+  const datas=await Promise.all(reqs);
+  const prices=[];
+  for(const data of datas){
+    if(!data) continue;
+    const t=data[pair]||data[pair.replace('/','')]||{};
+    const p=t.last??t.price??t.close;
+    if(p!=null) prices.push(Number(p));
+  }
+  if(prices.length>0){
+    const price=prices.reduce((a,b)=>a+b,0)/prices.length;
+    const pairEl=document.getElementById('ticker-pair');
+    const priceEl=document.getElementById('ticker-price');
+    pairEl.style.opacity=0;
+    priceEl.style.opacity=0;
+    setTimeout(()=>{
+      pairEl.textContent=pair;
+      priceEl.textContent=price.toFixed(4);
+      pairEl.style.opacity=1;
+      priceEl.style.opacity=1;
+    },50);
   }
 }
 
@@ -350,7 +327,7 @@ async function saveConfig(){
     }catch(e){ output = String(e); }
   }
   document.getElementById('cfg-output').textContent = output || 'Credenciales guardadas';
-  initTables();
+  initBalances();
 }
 
 loadExchanges();
@@ -360,11 +337,11 @@ refreshMetrics();
 setInterval(refreshMetrics, 5000);
 refreshMarket();
 setInterval(refreshMarket, 5000);
-initTables();
+initBalances();
 refreshBalances();
 setInterval(refreshBalances, 5000);
-refreshTickers();
-setInterval(refreshTickers, 5000);
+cycleTickers();
+setInterval(cycleTickers, 7000);
 
 async function refreshLogs(){
   try{

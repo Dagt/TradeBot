@@ -111,6 +111,25 @@ nav a:hover{
   margin-top:8px;
 }
 
+#ticker-card{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+}
+#ticker-pair{
+  font-size:24px;
+  color:var(--primary-2);
+  font-weight:600;
+  transition:opacity .3s;
+}
+#ticker-price{
+  font-size:24px;
+  color:var(--primary);
+  font-weight:600;
+  transition:opacity .3s;
+}
+
 /* pequeñas tarjetas KPI */
 .kv{
   background: linear-gradient(145deg, #0f1622, #152232);
