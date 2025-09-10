@@ -10,6 +10,7 @@ import time
 import pandas as pd
 import uvicorn
 
+from sqlalchemy.exc import OperationalError
 from .runner import BarAggregator
 from ..config import settings
 from ..config.hydra_conf import load_config
@@ -150,7 +151,15 @@ async def _run_symbol(
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
         guard.refresh_usd_caps(0.0)
-    engine = get_engine() if _CAN_PG else None
+    engine = None
+    if _CAN_PG:
+        while True:
+            try:
+                engine = get_engine()
+                break
+            except OperationalError:
+                log.warning("QuestDB no disponible, reintentando en 5s")
+                await asyncio.sleep(5)
     if engine is not None:
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():

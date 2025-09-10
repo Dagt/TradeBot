@@ -87,6 +87,7 @@ services:
 
   questdb:
     image: questdb/questdb:latest
+    restart: unless-stopped
     ports:
       - "9001:9000"   # REST API
       - "8812:8812"   # PostgreSQL wire protocol
