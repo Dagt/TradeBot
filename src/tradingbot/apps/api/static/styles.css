@@ -106,6 +106,10 @@ nav a:hover{
   box-shadow: 0 16px 30px rgba(0,0,0,.45);
   border-color: #3b4a63;
 }
+.card-sm{
+  padding:8px;
+  margin-top:8px;
+}
 
 /* pequeñas tarjetas KPI */
 .kv{
@@ -123,9 +127,11 @@ nav a:hover{
 .grid3{ display:grid; grid-template-columns: repeat(3,1fr); gap:12px }
 .grid4{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px }
 .grid5{ display:grid; grid-template-columns: repeat(5,1fr); gap:12px }
+.grid2{ display:grid; grid-template-columns: repeat(2,1fr); gap:12px }
 @media (max-width: 1200px){ .grid5{ grid-template-columns: repeat(3,1fr) } }
 @media (max-width: 900px){ .grid4, .grid3, .grid5{ grid-template-columns: repeat(2,1fr) } }
-@media (max-width: 600px){ .grid4, .grid3, .grid5{ grid-template-columns: 1fr } }
+@media (max-width: 900px){ .grid2{ grid-template-columns: 1fr } }
+@media (max-width: 600px){ .grid4, .grid3, .grid5, .grid2{ grid-template-columns: 1fr } }
 
 
 /* Grid compacto */
@@ -194,8 +200,8 @@ nav a:hover{
 
 
 /* ====== Tablas ====== */
-table{ width:100%; border-collapse:collapse; font-size:14px }
-th,td{ padding:10px 8px; border-bottom:1px solid #253346 }
+table{ width:100%; border-collapse:collapse; font-size:12px }
+th,td{ padding:4px 6px; border-bottom:1px solid #253346 }
 th{
   background:#0f1622;
   position:sticky; top:0; z-index:1;
