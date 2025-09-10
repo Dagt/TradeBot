@@ -328,15 +328,25 @@ async function saveConfig(){
   let output = '';
   if(key && sec){
     try{
-      const r = await fetch(api('/cli/run'), {
+      const pref = ex.toUpperCase();
+      const rKey = await fetch(api(`/secrets/${pref}_API_KEY`), {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({command: `secrets set ${ex} ${key} ${sec}`})
+        body: JSON.stringify({value: key})
       });
-      const j = await r.json();
-      output = (j.stdout||'') + (j.stderr ? '\n'+j.stderr : '');
-      localStorage.setItem('key:'+ex, key);
-      localStorage.setItem('secret:'+ex, sec);
+      const rSec = await fetch(api(`/secrets/${pref}_API_SECRET`), {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({value: sec})
+      });
+      const jKey = await rKey.json().catch(() => ({}));
+      const jSec = await rSec.json().catch(() => ({}));
+      if(rKey.ok && rSec.ok && jKey.status==='ok' && jSec.status==='ok'){
+        localStorage.setItem('key:'+ex, key);
+        localStorage.setItem('secret:'+ex, sec);
+      }else{
+        output = (jKey.detail||jKey.error||'') + (jSec.detail||jSec.error ? `\n${jSec.detail||jSec.error}` : '');
+      }
     }catch(e){ output = String(e); }
   }
   document.getElementById('cfg-output').textContent = output || 'Credenciales guardadas';
