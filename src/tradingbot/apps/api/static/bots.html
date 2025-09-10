@@ -351,9 +351,6 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
-  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Halt">
-    <i class="fa-solid fa-ban"></i>
-  </button>
   <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
     <i class="fa-solid fa-stop"></i>
   </button>
@@ -408,11 +405,6 @@ async function resumeBot(pid){
   }catch(e){
     console.log('resumeBot error', e);
   }
-  refreshBots();
-}
-async function haltBot(pid){
-  await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})});
-  console.log('haltBot', pid);
   refreshBots();
 }
 async function killBot(pid){
