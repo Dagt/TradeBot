@@ -1128,18 +1128,11 @@ async def _capture_stderr(
                 pass
 
 
-async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process, retention: float | None = None) -> None:
-    """Monitor a bot process and purge its record once finished.
+async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
+    """Monitor a bot process and update its status when it finishes.
 
-    Parameters
-    ----------
-    pid:
-        Process identifier for lookup in ``_BOTS``.
-    proc:
-        The subprocess running the bot.
-    retention:
-        Optional override for how many seconds to keep the bot's info
-        after it finishes. Defaults to ``BOT_LOG_RETENTION``.
+    The bot is removed from ``_BOTS`` after ``BOT_LOG_RETENTION`` seconds so
+    clients can still fetch logs for a short while after termination.
     """
 
     try:
@@ -1150,7 +1143,11 @@ async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process, retention: fl
             return
         # Preserve existing status if stop/kill updated it already
         if info.get("status") == "running":
-            info["status"] = "finished"
+            if proc.returncode == 0:
+                info["status"] = "stopped"
+            else:
+                info["status"] = "error"
+                info["last_error"] = f"return code {proc.returncode}"
         info["returncode"] = proc.returncode
         # Cancel log scraping tasks
         for name in ("metrics_task", "stderr_task"):
@@ -1159,9 +1156,8 @@ async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process, retention: fl
                 task.cancel()
                 with suppress(Exception):
                     await task
-        wait_secs = BOT_LOG_RETENTION if retention is None else retention
-        if wait_secs > 0:
-            await asyncio.sleep(wait_secs)
+        if BOT_LOG_RETENTION > 0:
+            await asyncio.sleep(BOT_LOG_RETENTION)
         _BOTS.pop(pid, None)
 
 
