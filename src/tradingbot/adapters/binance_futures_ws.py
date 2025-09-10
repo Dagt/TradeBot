@@ -67,7 +67,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def stream_trades_multi(self, symbols: Iterable[str], channel: str = "aggTrade") -> AsyncIterator[dict]:
         streams = "/".join(_stream_name(normalize(s), channel) for s in symbols)
         url = self.ws_base + streams
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             stream = (msg.get("stream") or "")
             d = msg.get("data") or {}
@@ -94,14 +94,14 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
-        messages = self._ws_messages(url)
+        messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
         last_uid: int | None = None
         while True:
             try:
                 raw = await asyncio.wait_for(messages.__anext__(), 15)
             except asyncio.TimeoutError:
                 log.warning("No message received on %s for 15s", stream)
-                messages = self._ws_messages(url)
+                messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                 last_uid = None
                 continue
             msg = json.loads(raw)
@@ -125,7 +125,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                         }
                     except Exception as e:  # pragma: no cover - logging only
                         log.warning("Failed to resync order book: %s", e)
-                messages = self._ws_messages(url)
+                messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                 last_uid = None
                 continue
             bids = d.get("b") or d.get("bids") or []
@@ -147,7 +147,9 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
         """Stream best bid/ask updates using the ``bookTicker`` feed."""
 
         stream = _stream_name(normalize(symbol), "bookTicker")
-        async for raw in self._ws_messages(self.ws_base + stream):
+        async for raw in self._ws_messages(
+            self.ws_base + stream, ping_timeout=self.ping_timeout
+        ):
             d = json.loads(raw).get("data") or {}
             yield {
                 "symbol": symbol,
@@ -192,7 +194,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
 
         stream = _stream_name(normalize(symbol), "markPrice@1s")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             d = msg.get("data") or msg
             rate = d.get("r") or d.get("fundingRate")
@@ -245,7 +247,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
             stream = f"!openInterest@arr@{interval}"
         url = self.ws_base + stream
 
-        messages = self._ws_messages(url)
+        messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
         first = True
         timeouts = 0
         backoff = 1
@@ -262,7 +264,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                         per_symbol = False
                         stream = f"!openInterest@arr@{interval}"
                         url = self.ws_base + stream
-                        messages = self._ws_messages(url)
+                        messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                         first = True
                         timeouts = 0
                         log.info("Falling back to aggregated open interest stream")
@@ -270,7 +272,7 @@ class BinanceFuturesWSAdapter(ExchangeAdapter):
                     raise NotImplementedError(
                         "openInterest channel unavailable on Binance"
                     )
-                messages = self._ws_messages(url)
+                messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
                 continue

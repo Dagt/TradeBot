@@ -45,7 +45,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol))
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             d = msg.get("data") or {}
             price = d.get("p")
@@ -67,7 +67,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
         """
         streams = "/".join(_stream_name(normalize(s)) for s in symbols)
         url = self.ws_base + streams
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             stream = (msg.get("stream") or "")
             data = msg.get("data") or {}
@@ -107,14 +107,14 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _stream_name(normalize(symbol), f"depth{depth}@100ms")
         url = self.ws_base + stream
-        messages = self._ws_messages(url)
+        messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
         last_uid: int | None = None
         while True:
             try:
                 raw = await asyncio.wait_for(messages.__anext__(), 15)
             except asyncio.TimeoutError:
                 log.warning("No message received on %s for 15s", stream)
-                messages = self._ws_messages(url)
+                messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                 last_uid = None
                 continue
             msg = json.loads(raw)
@@ -138,7 +138,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
                         }
                     except Exception as e:  # pragma: no cover - logging only
                         log.warning("Failed to resync order book: %s", e)
-                messages = self._ws_messages(url)
+                messages = self._ws_messages(url, ping_timeout=self.ping_timeout)
                 last_uid = None
                 continue
             ts_ms = d.get("T") or d.get("E")
@@ -161,7 +161,7 @@ class BinanceSpotWSAdapter(ExchangeAdapter):
 
         stream = _stream_name(normalize(symbol), "bookTicker")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             d = msg.get("data") or msg
             bid = d.get("b")

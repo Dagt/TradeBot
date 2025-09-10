@@ -52,7 +52,9 @@ class BybitWSAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"publicTrade.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
                 price_raw = t.get("p")
@@ -83,7 +85,9 @@ class BybitWSAdapter(ExchangeAdapter):
         bids: dict[float, float] = {}
         asks: dict[float, float] = {}
 
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             data_raw = msg.get("data") or {}
             if isinstance(data_raw, list):
@@ -132,7 +136,9 @@ class BybitWSAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"tickers.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             data = msg.get("data") or {}
             bid_px = data.get("bid1Price")
@@ -163,7 +169,9 @@ class BybitWSAdapter(ExchangeAdapter):
         sub_depth = 50 if depth <= 50 else 200
         sub = {"op": "subscribe", "args": [f"orderbook.{sub_depth}.{sym}"]}
 
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             data_raw = msg.get("data") or {}
             if isinstance(data_raw, list):
@@ -191,7 +199,9 @@ class BybitWSAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"fundingRate.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             if msg.get("op") == "subscribe" and not msg.get("success", True):
                 raise NotImplementedError("fundingRate stream not supported")
@@ -215,7 +225,9 @@ class BybitWSAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self.normalize_symbol(symbol)
         sub = {"op": "subscribe", "args": [f"openInterest.{sym}"]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             if msg.get("op") == "subscribe" and not msg.get("success", True):
                 raise NotImplementedError("openInterest stream not supported")

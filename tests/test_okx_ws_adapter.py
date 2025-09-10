@@ -114,7 +114,7 @@ async def test_subscription_format(method, args, channel, msg):
     adapter = OKXWSAdapter()
     captured: dict[str, dict] = {}
 
-    async def fake_messages(url, sub):
+    async def fake_messages(url, sub, ping_timeout=None):
         captured["sub"] = json.loads(sub)
         yield msg
 
@@ -140,7 +140,7 @@ async def test_stream_bba_discard_invalid(caplog):
         json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]})
     ]
 
-    async def fake_messages(url, sub):
+    async def fake_messages(url, sub, ping_timeout=None):
         for e in events:
             yield e
 

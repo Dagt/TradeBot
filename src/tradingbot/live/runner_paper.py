@@ -4,10 +4,7 @@ import errno
 import logging
 from datetime import datetime, timezone
 import time
-import functools
-
 import uvicorn
-import websockets
 
 from sqlalchemy.exc import OperationalError
 
@@ -88,10 +85,12 @@ async def run_paper(
         raise ValueError(f"unsupported venue: {venue}")
     log.info("Connecting to %s %s WS in paper mode for %s", exchange.capitalize(), market, symbol)
     # Allow slight delays without dropping the connection
-    settings.adapter_ping_interval = max(getattr(settings, "adapter_ping_interval", 20.0), 30.0)
+    settings.adapter_ping_interval = max(
+        getattr(settings, "adapter_ping_interval", 20.0), 30.0
+    )
     ping_timeout = max(getattr(settings, "ping_timeout", 20.0), 30.0)
-    websockets.connect = functools.partial(websockets.connect, ping_timeout=ping_timeout)
     adapter = ws_cls()
+    adapter.ping_timeout = ping_timeout
     broker = PaperAdapter()
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):

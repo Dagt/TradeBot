@@ -66,7 +66,9 @@ class DeribitWSAdapter(ExchangeAdapter):
 
         while True:
             try:
-                async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
+                async for raw in self._ws_messages(
+                    self.ws_url, json.dumps(sub), ping_timeout=self.ping_timeout
+                ):
                     msg = json.loads(raw)
                     if msg.get("error"):
                         log.error("WS subscription error: %s", msg)
@@ -122,7 +124,9 @@ class DeribitWSAdapter(ExchangeAdapter):
             "id": 1,
         }
 
-        async for raw in self._ws_messages(self.ws_url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            self.ws_url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             if msg.get("error"):
                 log.error("WS subscription error: %s", msg)
