@@ -1169,28 +1169,40 @@ async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
 
     try:
         await proc.wait()
-    finally:
-        info = _BOTS.get(pid)
-        if not info:
-            return
-        # Preserve existing status if stop/kill updated it already
-        if info.get("status") == "running":
-            if proc.returncode == 0:
-                info["status"] = "stopped"
-            else:
-                info["status"] = "error"
-                info["last_error"] = f"return code {proc.returncode}"
-        info["returncode"] = proc.returncode
-        # Cancel log scraping tasks
-        for name in ("metrics_task", "stderr_task"):
-            task = info.get(name)
-            if task:
-                task.cancel()
-                with suppress(Exception):
-                    await task
-        if BOT_LOG_RETENTION > 0:
+    except asyncio.CancelledError:
+        return
+
+    info = _BOTS.get(pid)
+    if not info:
+        return
+    # If the bot was intentionally paused we keep its info and restart
+    # monitoring once it resumes.
+    if info.get("status") == "paused":
+        info["returncode"] = None
+        proc.returncode = None
+        info["monitor_task"] = None
+        return
+    # Preserve existing status if stop/kill updated it already
+    if info.get("status") == "running":
+        if proc.returncode == 0:
+            info["status"] = "stopped"
+        else:
+            info["status"] = "error"
+            info["last_error"] = f"return code {proc.returncode}"
+    info["returncode"] = proc.returncode
+    # Cancel log scraping tasks
+    for name in ("metrics_task", "stderr_task"):
+        task = info.get(name)
+        if task:
+            task.cancel()
+            with suppress(Exception):
+                await task
+    if BOT_LOG_RETENTION > 0:
+        try:
             await asyncio.sleep(BOT_LOG_RETENTION)
-        _BOTS.pop(pid, None)
+        except asyncio.CancelledError:
+            pass
+    _BOTS.pop(pid, None)
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1441,23 +1453,25 @@ def pause_bot(pid: int):
     proc: asyncio.subprocess.Process = info["process"]
     if proc.returncode is not None:
         raise HTTPException(status_code=400, detail="bot not running")
-    proc.send_signal(signal.SIGSTOP)
     info["status"] = "paused"
+    proc.send_signal(signal.SIGSTOP)
     return {"pid": pid, "status": info["status"]}
 
 
 @app.post("/bots/{pid}/resume")
-def resume_bot(pid: int):
+async def resume_bot(pid: int):
     """Send SIGCONT to resume a paused bot."""
 
     info = _BOTS.get(pid)
     if not info:
         raise HTTPException(status_code=404, detail="bot not found")
+    if info.get("status") != "paused":
+        raise HTTPException(status_code=400, detail="bot not paused")
     proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
     proc.send_signal(signal.SIGCONT)
     info["status"] = "running"
+    monitor_task = asyncio.create_task(_monitor_bot(pid, proc))
+    info["monitor_task"] = monitor_task
     return {"pid": pid, "status": info["status"]}
 
 
