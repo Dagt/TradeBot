@@ -172,26 +172,39 @@ async def get_tickers(exchange: str, symbols: str = Query(...)):
         raise HTTPException(status_code=404, detail="unsupported exchange")
     conn = cls()
     prices: dict[str, float | None] = {}
-    for raw in symbols.split(","):
-        sym = raw.strip()
-        if not sym:
-            continue
-        norm = normalize_symbol(sym)
-        try:
-            data = await conn.rest.fetch_ticker(sym)
-            price = (
-                data.get("last")
-                or data.get("close")
-                or data.get("price")
-                or data.get("bid")
-                or data.get("ask")
-            )
-            prices[norm] = float(price) if price is not None else None
-        except Exception as e:  # pragma: no cover - network issues
-            logger.warning("ticker_error", extra={"exchange": exchange, "symbol": sym, "err": str(e)})
-            prices[norm] = None
-    with suppress(Exception):
-        await conn.rest.close()
+    try:
+        await conn.rest.load_markets()
+        available = set(getattr(conn.rest, "symbols", []))
+        for raw in symbols.split(","):
+            sym = raw.strip()
+            if not sym:
+                continue
+            norm = normalize_symbol(sym)
+            ex_sym = sym
+            if sym not in available:
+                ex_sym = next(
+                    (m for m in available if m.split(":")[0] == sym),
+                    sym,
+                )
+            try:
+                data = await conn.rest.fetch_ticker(ex_sym)
+                price = (
+                    data.get("last")
+                    or data.get("close")
+                    or data.get("price")
+                    or data.get("bid")
+                    or data.get("ask")
+                )
+                prices[norm] = float(price) if price is not None else None
+            except Exception as e:  # pragma: no cover - network issues
+                logger.warning(
+                    "ticker_error",
+                    extra={"exchange": exchange, "symbol": ex_sym, "err": str(e)},
+                )
+                prices[norm] = None
+    finally:
+        with suppress(Exception):
+            await conn.rest.close()
     return prices
 
 

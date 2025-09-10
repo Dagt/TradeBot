@@ -246,17 +246,25 @@ async function refreshTickers(){
   const body=document.getElementById('tick-body');
   if(!body) return;
   body.innerHTML='';
-  for(const ex of allowedExchanges){
+  const requests = allowedExchanges.map(async ex => {
+    try {
+      const r = await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
+      const j = await r.json();
+      return {ex, data: j};
+    } catch (e) {
+      return {ex, data: null};
+    }
+  });
+  const results = await Promise.all(requests);
+  for(const {ex, data} of results){
     let row='';
-    try{
-      const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
-      const j=await r.json();
+    if(data){
       for(const sym of tickerSymbols){
-        const t=j[sym]||j[sym.replace('/','')]||{};
+        const t=data[sym]||data[sym.replace('/','')]||{};
         const p=t.last??t.price??t.close;
         row+=`<td>${p!=null?Number(p).toFixed(4):'—'}</td>`;
       }
-    }catch(e){
+    }else{
       row=tickerSymbols.map(()=>'<td>—</td>').join('');
     }
     const tr=document.createElement('tr');
