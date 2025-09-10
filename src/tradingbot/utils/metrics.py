@@ -167,6 +167,12 @@ MARKET_LATENCY = Histogram(
     "Latency of market data processing in seconds",
 )
 
+# Completed bars accumulated by the bar aggregator
+AGG_COMPLETED = Gauge(
+    "aggregated_bars",
+    "Number of completed bars accumulated by the bar aggregator",
+)
+
 # End-to-end order processing latency
 E2E_LATENCY = Histogram(
     "e2e_latency_seconds",
