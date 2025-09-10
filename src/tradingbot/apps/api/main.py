@@ -25,8 +25,11 @@ from collections import deque
 
 try:  # pragma: no cover - ccxt is optional
     import ccxt  # type: ignore
+    from ccxt.base.errors import AuthenticationError  # type: ignore
 except Exception:  # pragma: no cover - if ccxt is missing
     ccxt = None
+    class AuthenticationError(Exception):
+        pass
 
 from monitoring.metrics import (
     router as metrics_router,
@@ -148,8 +151,24 @@ async def get_balances(exchange: str):
         if cls is None:
             raise HTTPException(status_code=404, detail=f"unsupported exchange: {ex}")
         conn = cls()
+        api_key, api_secret = secrets_utils.get_api_credentials(key)
+        if not api_key or not api_secret:
+            logger.warning("missing_credentials", extra={"exchange": ex})
+            results[ex] = {"error": "missing_credentials"}
+            with suppress(Exception):
+                await conn.rest.close()
+            if len(exchanges) == 1:
+                raise HTTPException(status_code=403, detail="missing credentials")
+            continue
+        conn.rest.apiKey = api_key
+        conn.rest.secret = api_secret
         try:
             results[ex] = await conn.fetch_balance()
+        except AuthenticationError as e:  # pragma: no cover - auth issues
+            logger.warning("balance_auth_error", extra={"exchange": ex, "err": str(e)})
+            results[ex] = {"error": str(e)}
+            if len(exchanges) == 1:
+                raise HTTPException(status_code=403, detail="authentication failed")
         except Exception as e:  # pragma: no cover - network issues
             logger.warning("balance_error", extra={"exchange": ex, "err": str(e)})
             results[ex] = {"error": str(e)}
