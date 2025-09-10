@@ -222,60 +222,94 @@ async function refreshMarket(){
   }catch(e){}
 }
 
-async function refreshBalances(){
-  const body=document.getElementById('bal-body');
-  if(!body) return;
-  body.innerHTML='';
+const balCells={};
+const tickCells={};
+const tickerSymbols=['BTC/USDT','ETH/USDT','XRP/USDT'];
+
+function initTables(){
+  const balBody=document.getElementById('bal-body');
+  const tickBody=document.getElementById('tick-body');
+  if(!balBody||!tickBody) return;
+  balBody.innerHTML='';
+  tickBody.innerHTML='';
+  Object.keys(balCells).forEach(k=>delete balCells[k]);
+  Object.keys(tickCells).forEach(k=>delete tickCells[k]);
   const exs=allowedExchanges.filter(ex=>localStorage.getItem('key:'+ex)&&localStorage.getItem('secret:'+ex));
   for(const ex of exs){
-    let usdt='N/A';
-    let btc='N/A';
+    const btr=document.createElement('tr');
+    btr.innerHTML=`<td>${ex}</td><td class="muted">...</td><td class="muted">...</td>`;
+    balCells[ex]={usdt:btr.children[1], btc:btr.children[2]};
+    balBody.appendChild(btr);
+
+    const ttr=document.createElement('tr');
+    ttr.innerHTML=`<td>${ex}</td>`+tickerSymbols.map(()=>'<td class="muted">...</td>').join('');
+    const tds=ttr.querySelectorAll('td');
+    tickCells[ex]={};
+    tickerSymbols.forEach((sym,i)=>{tickCells[ex][sym]=tds[i+1];});
+    tickBody.appendChild(ttr);
+  }
+}
+
+async function refreshBalances(){
+  const exs=Object.keys(balCells);
+  const promises=exs.map(async ex=>{
+    const cells=balCells[ex];
+    cells.usdt.textContent='...';
+    cells.btc.textContent='...';
+    cells.usdt.classList.add('muted');
+    cells.btc.classList.add('muted');
     try{
       const r=await fetch(api(`/balances/${ex}`));
       const j=await r.json();
       if(!r.ok||j.error||j.USDT==null||j.BTC==null){
         console.warn('balance_error',ex,j.error||j.detail);
+        cells.usdt.textContent='N/A';
+        cells.btc.textContent='N/A';
       }else{
-        usdt=Number(j.USDT).toFixed(2);
-        btc=Number(j.BTC).toFixed(6);
+        cells.usdt.textContent=Number(j.USDT).toFixed(2);
+        cells.btc.textContent=Number(j.BTC).toFixed(6);
       }
-    }catch(e){ console.warn('balance_fetch_error',ex,e); }
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${ex}</td><td>${usdt}</td><td>${btc}</td>`;
-    body.appendChild(tr);
-  }
+    }catch(e){
+      console.warn('balance_fetch_error',ex,e);
+      cells.usdt.textContent='N/A';
+      cells.btc.textContent='N/A';
+    }finally{
+      cells.usdt.classList.remove('muted');
+      cells.btc.classList.remove('muted');
+    }
+  });
+  await Promise.all(promises);
 }
 
-const tickerSymbols=['BTC/USDT','ETH/USDT','XRP/USDT'];
-
 async function refreshTickers(){
-  const body=document.getElementById('tick-body');
-  if(!body) return;
-  body.innerHTML='';
-  const exs=allowedExchanges.filter(ex=>localStorage.getItem('key:'+ex)&&localStorage.getItem('secret:'+ex));
-  for(const ex of exs){
-    let row='';
+  const exs=Object.keys(tickCells);
+  const promises=exs.map(async ex=>{
+    const cells=tickCells[ex];
+    tickerSymbols.forEach(sym=>{
+      cells[sym].textContent='...';
+      cells[sym].classList.add('muted');
+    });
     try{
       const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
       const j=await r.json();
       if(!r.ok||j.error){
         console.warn('ticker_error',ex,j.error||j.detail);
-        row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
+        tickerSymbols.forEach(sym=>{cells[sym].textContent='N/A';});
       }else{
         for(const sym of tickerSymbols){
           const t=j[sym]||j[sym.replace('/','')]||{};
           const p=t.last??t.price??t.close;
-          row+=`<td>${p!=null?Number(p).toFixed(4):'N/A'}</td>`;
+          cells[sym].textContent=p!=null?Number(p).toFixed(4):'N/A';
         }
       }
     }catch(e){
       console.warn('ticker_fetch_error',ex,e);
-      row=tickerSymbols.map(()=>'<td>N/A</td>').join('');
+      tickerSymbols.forEach(sym=>{cells[sym].textContent='N/A';});
+    }finally{
+      tickerSymbols.forEach(sym=>cells[sym].classList.remove('muted'));
     }
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${ex}</td>${row}`;
-    body.appendChild(tr);
-  }
+  });
+  await Promise.all(promises);
 }
 
 async function saveConfig(){
@@ -297,6 +331,7 @@ async function saveConfig(){
     }catch(e){ output = String(e); }
   }
   document.getElementById('cfg-output').textContent = output || 'Credenciales guardadas';
+  initTables();
 }
 
 loadExchanges();
@@ -306,6 +341,7 @@ refreshMetrics();
 setInterval(refreshMetrics, 5000);
 refreshMarket();
 setInterval(refreshMarket, 5000);
+initTables();
 refreshBalances();
 setInterval(refreshBalances, 5000);
 refreshTickers();
