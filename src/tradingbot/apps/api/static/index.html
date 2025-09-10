@@ -45,6 +45,26 @@
   </div>
 
   <div class="card" style="margin-top:16px">
+    <h2>Balances</h2>
+    <table id="bal-table">
+      <thead>
+        <tr><th>Exchange</th><th>USDT</th><th>BTC</th></tr>
+      </thead>
+      <tbody id="bal-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Tickers</h2>
+    <table id="tick-table">
+      <thead>
+        <tr><th>Exchange</th><th>BTC/USDT</th><th>ETH/USDT</th><th>XRP/USDT</th></tr>
+      </thead>
+      <tbody id="tick-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <h2>Credenciales</h2>
     <div class="grid3" style="margin-top:10px">
       <div>
@@ -85,6 +105,11 @@ const allowedExchanges = [
   'bybit_futures',
   'bybit_futures_testnet',
 ];
+
+// Track whether the backend has emitted any trading events. If no events have
+// occurred yet (orders_sent, fills, etc.), metrics returning 0 are rendered as
+// "N/A" to indicate insufficient data.
+let metricsHaveEvents = false;
 
 function updateCredInputs(){
   const ex = document.getElementById('cfg-exchange').value;
@@ -135,26 +160,37 @@ async function refreshMetrics(){
   try{
     const r = await fetch(api('/metrics'));
     const j = await r.json();
-    document.getElementById('m-reject').textContent = ((j.order_reject_rate||0)*100).toFixed(2)+'%';
-    document.getElementById('m-ws-up').textContent = ((j.ws_uptime||0)*100).toFixed(2)+'%';
-    document.getElementById('m-ws-rec').textContent = (j.ws_reconnections_per_hour||0).toFixed(2);
-    document.getElementById('m-book-lag').textContent = (j.book_lag_ms||0).toFixed(1);
-    document.getElementById('m-cpu').textContent = (j.cpu_percent||0).toFixed(1);
-    document.getElementById('m-mem').textContent = ((j.memory_bytes||0)/1048576).toFixed(1);
-    document.getElementById('m-fds').textContent = j.fd_count||0;
-    document.getElementById('m-uptime').textContent = (j.process_uptime_seconds||0).toFixed(0);
-    document.getElementById('m-ingest').textContent = (j.ingest_rate||0).toFixed(1);
-    document.getElementById('m-backlog').textContent = j.persist_backlog||0;
-    document.getElementById('m-err-4xx').textContent = j.errors_4xx||0;
-    document.getElementById('m-err-5xx').textContent = j.errors_5xx||0;
-    document.getElementById('m-err-timeout').textContent = j.errors_timeout||0;
-    document.getElementById('m-err-throttle').textContent = j.errors_throttling||0;
-    document.getElementById('m-err-auth').textContent = j.errors_auth||0;
+    // Determine if any event-driven metrics have been recorded so far. When no
+    // events exist, zero values represent missing data rather than true zeros.
+    metricsHaveEvents = (j.orders_sent||0) > 0 || (j.fills||0) > 0 || (j.risk_events||0) > 0;
+
+    const show = (id, val, decimals = 2, suffix = '') => {
+      const num = Number(val) || 0;
+      document.getElementById(id).textContent = (!metricsHaveEvents && num === 0)
+        ? 'N/A'
+        : num.toFixed(decimals) + suffix;
+    };
+
+    show('m-reject', (j.order_reject_rate||0)*100, 2, '%');
+    show('m-ws-up', (j.ws_uptime||0)*100, 2, '%');
+    show('m-ws-rec', j.ws_reconnections_per_hour, 2);
+    show('m-book-lag', j.book_lag_ms, 1);
+    show('m-cpu', j.cpu_percent, 1);
+    show('m-mem', (j.memory_bytes||0)/1048576, 1);
+    show('m-fds', j.fd_count, 0);
+    show('m-uptime', j.process_uptime_seconds, 0);
+    show('m-ingest', j.ingest_rate, 1);
+    show('m-backlog', j.persist_backlog, 0);
+    show('m-err-4xx', j.errors_4xx, 0);
+    show('m-err-5xx', j.errors_5xx, 0);
+    show('m-err-timeout', j.errors_timeout, 0);
+    show('m-err-throttle', j.errors_throttling, 0);
+    show('m-err-auth', j.errors_auth, 0);
     try{
       const l = await fetch(api('/metrics/latency'));
       const lj = await l.json();
-      document.getElementById('m-lat90').textContent = (lj.p90||0).toFixed(3);
-      document.getElementById('m-lat99').textContent = (lj.p99||0).toFixed(3);
+      show('m-lat90', lj.p90, 3);
+      show('m-lat99', lj.p99, 3);
     }catch(e){}
   }catch(e){}
 }
@@ -163,17 +199,70 @@ async function refreshMarket(){
   try{
     const r = await fetch(api('/metrics/market'));
     const j = await r.json();
-    document.getElementById('m-spread').textContent = (j.spread||0).toFixed(4);
-    document.getElementById('m-depth').textContent = (j.depth||0).toFixed(0);
-    document.getElementById('m-funding-now').textContent = (j.funding_current||0).toFixed(4);
-    document.getElementById('m-funding-next').textContent = (j.funding_next||0).toFixed(4);
-    document.getElementById('m-basis').textContent = (j.basis||0).toFixed(4);
+    // Reuse the metricsHaveEvents flag so market metrics can also display
+    // "N/A" when the system has not yet produced any events.
+    const show = (id, val, decimals = 4) => {
+      const num = Number(val) || 0;
+      document.getElementById(id).textContent = (!metricsHaveEvents && num === 0)
+        ? 'N/A'
+        : num.toFixed(decimals);
+    };
+
+    show('m-spread', j.spread, 4);
+    show('m-depth', j.depth, 0);
+    show('m-funding-now', j.funding_current, 4);
+    show('m-funding-next', j.funding_next, 4);
+    show('m-basis', j.basis, 4);
     if(j.basis_alert){
       document.getElementById('m-basis').classList.add('warn');
     }else{
       document.getElementById('m-basis').classList.remove('warn');
-    }
+  }
   }catch(e){}
+}
+
+async function refreshBalances(){
+  const body=document.getElementById('bal-body');
+  if(!body) return;
+  body.innerHTML='';
+  for(const ex of allowedExchanges){
+    let usdt='—';
+    let btc='—';
+    try{
+      const r=await fetch(api(`/balances/${ex}`));
+      const j=await r.json();
+      if(j && j.USDT!=null) usdt=Number(j.USDT).toFixed(2);
+      if(j && j.BTC!=null) btc=Number(j.BTC).toFixed(6);
+    }catch(e){}
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ex}</td><td>${usdt}</td><td>${btc}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+const tickerSymbols=['BTC/USDT','ETH/USDT','XRP/USDT'];
+
+async function refreshTickers(){
+  const body=document.getElementById('tick-body');
+  if(!body) return;
+  body.innerHTML='';
+  for(const ex of allowedExchanges){
+    let row='';
+    try{
+      const r=await fetch(api(`/tickers/${ex}?symbols=${tickerSymbols.join(',')}`));
+      const j=await r.json();
+      for(const sym of tickerSymbols){
+        const t=j[sym]||j[sym.replace('/','')]||{};
+        const p=t.last??t.price??t.close;
+        row+=`<td>${p!=null?Number(p).toFixed(4):'—'}</td>`;
+      }
+    }catch(e){
+      row=tickerSymbols.map(()=>'<td>—</td>').join('');
+    }
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${ex}</td>${row}`;
+    body.appendChild(tr);
+  }
 }
 
 async function saveConfig(){
@@ -204,6 +293,10 @@ refreshMetrics();
 setInterval(refreshMetrics, 5000);
 refreshMarket();
 setInterval(refreshMarket, 5000);
+refreshBalances();
+setInterval(refreshBalances, 5000);
+refreshTickers();
+setInterval(refreshTickers, 5000);
 
 async function refreshLogs(){
   try{
