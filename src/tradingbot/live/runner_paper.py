@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 import time
 import contextlib
+import json
 import uvicorn
 
 from sqlalchemy.exc import OperationalError
@@ -253,7 +254,7 @@ async def run_paper(
             if signal is None:
                 continue
             signal_ts = getattr(signal, "signal_ts", time.time())
-            allowed, _reason, delta = risk.check_order(
+            allowed, reason, delta = risk.check_order(
                 symbol,
                 signal.side,
                 closed.c,
@@ -261,7 +262,14 @@ async def run_paper(
                 volatility=bar.get("atr") or bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
             )
-            if not allowed or abs(delta) <= 0:
+            if not allowed:
+                log.warning("orden bloqueada: %s", reason)
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "risk_check_reject", "reason": reason}),
+                )
+                continue
+            if abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
             qty = abs(delta)
@@ -269,6 +277,12 @@ async def run_paper(
             price = price if price is not None else _limit_price(side)
             notional = qty * price
             if not risk.register_order(symbol, notional):
+                reason = getattr(risk, "last_kill_reason", "register_reject")
+                log.warning("registro de orden bloqueado: %s", reason)
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "register_order_reject", "reason": reason}),
+                )
                 continue
             prev_rpnl = broker.state.realized_pnl
             resp = await exec_broker.place_limit(
