@@ -39,7 +39,7 @@ app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 app.add_typer(data.app)
 app.add_typer(backtesting.app)
 app.add_typer(live.app)
-app.add_typer(secrets.app)
+app.add_typer(secrets.app, name="secrets")
 
 
 def main() -> int:
