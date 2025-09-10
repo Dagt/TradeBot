@@ -254,25 +254,25 @@ async function refreshBalances(){
   const exs=Object.keys(balCells);
   const promises=exs.map(async ex=>{
     const cells=balCells[ex];
-    cells.usdt.textContent='...';
-    cells.btc.textContent='...';
     cells.usdt.classList.add('muted');
     cells.btc.classList.add('muted');
     try{
       const r=await fetch(api(`/balances/${ex}`));
       const j=await r.json();
-      if(!r.ok||j.error||j.USDT==null||j.BTC==null){
+      if(!r.ok||j.error){
         console.warn('balance_error',ex,j.error||j.detail);
-        cells.usdt.textContent='N/A';
-        cells.btc.textContent='N/A';
+        cells.usdt.classList.add('error');
+        cells.btc.classList.add('error');
       }else{
-        cells.usdt.textContent=Number(j.USDT).toFixed(2);
-        cells.btc.textContent=Number(j.BTC).toFixed(6);
+        cells.usdt.classList.remove('error');
+        cells.btc.classList.remove('error');
+        cells.usdt.textContent=j.USDT!=null?Number(j.USDT).toFixed(2):'0';
+        cells.btc.textContent=j.BTC!=null?Number(j.BTC).toFixed(6):'0';
       }
     }catch(e){
       console.warn('balance_fetch_error',ex,e);
-      cells.usdt.textContent='N/A';
-      cells.btc.textContent='N/A';
+      cells.usdt.classList.add('error');
+      cells.btc.classList.add('error');
     }finally{
       cells.usdt.classList.remove('muted');
       cells.btc.classList.remove('muted');
