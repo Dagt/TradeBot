@@ -951,7 +951,6 @@ async def _scrape_metrics(
     pid: int,
     proc: asyncio.subprocess.Process,
     log_buffer: deque[str] | None = None,
-    log_queue: asyncio.Queue[str] | None = None,
 ) -> None:
     """Lee stdout del proceso buscando líneas de métricas en JSON.
 
@@ -970,8 +969,13 @@ async def _scrape_metrics(
         text = line.decode(errors="ignore").rstrip()
         if log_buffer is not None:
             log_buffer.append(text)
-        if log_queue is not None:
-            await log_queue.put(text)
+        info = _BOTS.get(pid)
+        queue = info.get("log_queue") if info else None
+        if queue is not None:
+            try:
+                queue.put_nowait(text)
+            except asyncio.QueueFull:
+                pass
         m = _METRIC_LINE.search(text)
         if not m:
             continue
@@ -983,9 +987,9 @@ async def _scrape_metrics(
 
 
 async def _capture_stderr(
+    pid: int,
     proc: asyncio.subprocess.Process,
     log_buffer: deque[str],
-    log_queue: asyncio.Queue[str],
 ) -> None:
     if not proc.stderr:
         return
@@ -998,7 +1002,13 @@ async def _capture_stderr(
             break
         text = line.decode(errors="ignore").rstrip()
         log_buffer.append(text)
-        await log_queue.put(text)
+        info = _BOTS.get(pid)
+        queue = info.get("log_queue") if info else None
+        if queue is not None:
+            try:
+                queue.put_nowait(text)
+            except asyncio.QueueFull:
+                pass
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1118,12 +1128,11 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             env=env,
         )
         log_buffer: deque[str] = deque(maxlen=1000)
-        log_queue: asyncio.Queue[str] = asyncio.Queue()
         stdout_task = asyncio.create_task(
-            _scrape_metrics(proc.pid, proc, log_buffer, log_queue)
+            _scrape_metrics(proc.pid, proc, log_buffer)
         )
         stderr_task = asyncio.create_task(
-            _capture_stderr(proc, log_buffer, log_queue)
+            _capture_stderr(proc.pid, proc, log_buffer)
         )
         _BOTS[proc.pid] = {
             "process": proc,
@@ -1133,7 +1142,6 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
             "log_buffer": log_buffer,
-            "log_queue": log_queue,
         }
         return {"pid": proc.pid, "status": "running"}
 
@@ -1179,20 +1187,26 @@ async def bot_logs(pid: int):
     buffer: deque[str] | None = info.get("log_buffer")
     queue: asyncio.Queue[str] | None = info.get("log_queue")
     proc: asyncio.subprocess.Process = info["process"]
-    if buffer is None or queue is None:
+    if buffer is None:
         raise HTTPException(status_code=404, detail="logs not available")
+    if queue is None:
+        queue = asyncio.Queue(maxsize=1000)
+        info["log_queue"] = queue
 
     async def event_gen():
-        for line in list(buffer):
-            yield format_sse("message", line)
-        while True:
-            if proc.returncode is not None and queue.empty():
-                break
-            try:
-                line = await asyncio.wait_for(queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            yield format_sse("message", line)
+        try:
+            for line in list(buffer):
+                yield format_sse("message", line)
+            while True:
+                if proc.returncode is not None and queue.empty():
+                    break
+                try:
+                    line = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                yield format_sse("message", line)
+        finally:
+            info["log_queue"] = None
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
