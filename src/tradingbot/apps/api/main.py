@@ -41,6 +41,7 @@ from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 from ...core.symbols import normalize as normalize_symbol
+from ...utils import secrets as secrets_utils
 
 # Persistencia
 try:
@@ -158,6 +159,30 @@ def orders(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_orders(_ENGINE, limit=limit)}
+
+
+class SecretItem(BaseModel):
+    value: str
+
+
+@app.get("/secrets/{key}")
+def get_secret(key: str):
+    val = secrets_utils.read_secret(key)
+    if val is None:
+        raise HTTPException(status_code=404, detail="secret not found")
+    return {"value": val}
+
+
+@app.post("/secrets/{key}")
+def set_secret(key: str, payload: SecretItem):
+    secrets_utils.set_secret(key, payload.value)
+    return {"status": "ok"}
+
+
+@app.delete("/secrets/{key}")
+def delete_secret(key: str):
+    secrets_utils.delete_secret(key)
+    return {"status": "deleted"}
 
 
 @app.get("/orders/history")

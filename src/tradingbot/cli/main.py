@@ -15,7 +15,7 @@ from tradingbot.utils.time_sync import check_ntp_offset
 
 # Import utilities to ensure Typer patches and helpers are available
 from . import utils as _utils  # noqa: F401
-from .commands import backtesting, data, live
+from .commands import backtesting, data, live, secrets
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 app.add_typer(data.app)
 app.add_typer(backtesting.app)
 app.add_typer(live.app)
+app.add_typer(secrets.app)
 
 
 def main() -> int:
