@@ -44,7 +44,12 @@ from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 from ...core.symbols import normalize as normalize_symbol
-from ...connectors import BinanceConnector, OKXConnector, BybitConnector
+from ...connectors import (
+    BinanceConnector,
+    BinanceFuturesConnector,
+    OKXConnector,
+    BybitConnector,
+)
 from ...utils import secrets as secrets_utils
 
 
@@ -67,8 +72,13 @@ logger = logging.getLogger(__name__)
 
 CONNECTORS = {
     "binance": BinanceConnector,
+    "binance_testnet": BinanceConnector,
     "okx": OKXConnector,
+    "okx_testnet": OKXConnector,
     "bybit": BybitConnector,
+    "bybit_testnet": BybitConnector,
+    "binance_futures": BinanceFuturesConnector,
+    "binance_futures_testnet": BinanceFuturesConnector,
 }
 
 
@@ -146,12 +156,14 @@ async def get_balances(exchange: str):
     exchanges = [e.strip() for e in exchange.split(",") if e.strip()]
     results: dict[str, dict] = {}
     for ex in exchanges:
-        key = ex.split("_")[0].lower()
+        key = ex.lower()
         cls = CONNECTORS.get(key)
         if cls is None:
             raise HTTPException(status_code=404, detail=f"unsupported exchange: {ex}")
         conn = cls()
-        api_key, api_secret = secrets_utils.get_api_credentials(key)
+        testnet = key.endswith("_testnet")
+        base_key = key[:-8] if testnet else key
+        api_key, api_secret = secrets_utils.get_api_credentials(base_key)
         if not api_key or not api_secret:
             logger.warning("missing_credentials", extra={"exchange": ex})
             results[ex] = {"error": "missing_credentials"}
@@ -162,6 +174,9 @@ async def get_balances(exchange: str):
             continue
         conn.rest.apiKey = api_key
         conn.rest.secret = api_secret
+        if testnet:
+            with suppress(Exception):
+                conn.rest.set_sandbox_mode(True)
         try:
             results[ex] = await conn.fetch_balance()
         except AuthenticationError as e:  # pragma: no cover - auth issues
@@ -185,11 +200,15 @@ async def get_tickers(exchange: str, symbols: str = Query(...)):
     """Return ticker price for each requested symbol."""
     if ccxt is None:
         raise HTTPException(status_code=503, detail="ccxt not available")
-    key = exchange.split("_")[0].lower()
+    key = exchange.lower()
     cls = CONNECTORS.get(key)
     if cls is None:
         raise HTTPException(status_code=404, detail="unsupported exchange")
     conn = cls()
+    testnet = key.endswith("_testnet")
+    if testnet:
+        with suppress(Exception):
+            conn.rest.set_sandbox_mode(True)
     prices: dict[str, float | None] = {}
     # Ensure markets are loaded so that symbols can be mapped to the
     # exchange-specific format (e.g. ``BTC/USDT:USDT`` on Bybit).
@@ -204,14 +223,17 @@ async def get_tickers(exchange: str, symbols: str = Query(...)):
         except Exception:
             mapped = norm
         try:
-            data = await conn.rest.fetch_ticker(mapped)
-            price = (
-                data.get("last")
-                or data.get("close")
-                or data.get("price")
-                or data.get("bid")
-                or data.get("ask")
-            )
+            if hasattr(conn, "fetch_ticker"):
+                price = await conn.fetch_ticker(mapped)  # type: ignore[func-returns-value]
+            else:
+                data = await conn.rest.fetch_ticker(mapped)
+                price = (
+                    data.get("last")
+                    or data.get("close")
+                    or data.get("price")
+                    or data.get("bid")
+                    or data.get("ask")
+                )
             prices[norm] = float(price) if price is not None else None
         except Exception as e:  # pragma: no cover - network issues
             logger.warning(
