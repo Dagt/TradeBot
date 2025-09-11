@@ -25,8 +25,13 @@ from collections import deque
 
 try:  # pragma: no cover - ccxt is optional
     import ccxt  # type: ignore
+    from ccxt.base.errors import AuthenticationError  # type: ignore
 except Exception:  # pragma: no cover - if ccxt is missing
     ccxt = None
+
+    class AuthenticationError(Exception):
+        pass
+
 
 from monitoring.metrics import (
     router as metrics_router,
@@ -36,11 +41,19 @@ from monitoring.metrics import (
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
-from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY, TRADING_PNL
 from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
 from ...core.symbols import normalize as normalize_symbol
+from ...connectors import (
+    BinanceConnector,
+    BinanceFuturesConnector,
+    OKXConnector,
+    BybitConnector,
+)
+from ...utils import secrets as secrets_utils
+
 
 # Persistencia
 try:
@@ -50,6 +63,7 @@ try:
         select_recent_orders,
         select_order_history,
     )
+
     _CAN_PG = True
     _ENGINE = get_engine()
 except Exception:
@@ -58,6 +72,17 @@ except Exception:
 
 security = HTTPBasic()
 logger = logging.getLogger(__name__)
+
+CONNECTORS = {
+    "binance": BinanceConnector,
+    "binance_testnet": BinanceConnector,
+    "okx": OKXConnector,
+    "okx_testnet": OKXConnector,
+    "bybit": BybitConnector,
+    "bybit_testnet": BybitConnector,
+    "binance_futures": BinanceFuturesConnector,
+    "binance_futures_testnet": BinanceFuturesConnector,
+}
 
 
 def _check_basic_auth(credentials: HTTPBasicCredentials = Depends(security)) -> None:
@@ -77,7 +102,10 @@ app = FastAPI(title="TradingBot API", dependencies=[Depends(_check_basic_auth)])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(metrics_router)
@@ -93,6 +121,7 @@ async def _metrics_middleware(request: Request, call_next):
     REQUEST_LATENCY.labels(request.method, endpoint).observe(elapsed)
     REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     return response
+
 
 @app.get("/health")
 def health():
@@ -126,6 +155,104 @@ def ccxt_exchanges(include_testnet: bool = Query(True)):
     return live
 
 
+@app.get("/balances/{exchange}")
+async def get_balances(exchange: str):
+    """Return account balances for one or multiple exchanges."""
+    if ccxt is None:
+        raise HTTPException(status_code=503, detail="ccxt not available")
+    exchanges = [e.strip() for e in exchange.split(",") if e.strip()]
+    results: dict[str, dict] = {}
+    for ex in exchanges:
+        key = ex.lower()
+        cls = CONNECTORS.get(key)
+        if cls is None:
+            raise HTTPException(status_code=404, detail=f"unsupported exchange: {ex}")
+        conn = cls()
+        testnet = key.endswith("_testnet")
+        base_key = key[:-8] if testnet else key
+        api_key, api_secret = secrets_utils.get_api_credentials(base_key)
+        if not api_key or not api_secret:
+            logger.warning("missing_credentials", extra={"exchange": ex})
+            results[ex] = {"error": "missing_credentials"}
+            with suppress(Exception):
+                await conn.rest.close()
+            if len(exchanges) == 1:
+                raise HTTPException(status_code=403, detail="missing credentials")
+            continue
+        conn.rest.apiKey = api_key
+        conn.rest.secret = api_secret
+        if testnet:
+            with suppress(Exception):
+                conn.rest.set_sandbox_mode(True)
+        try:
+            results[ex] = await conn.fetch_balance()
+        except AuthenticationError as e:  # pragma: no cover - auth issues
+            logger.warning("balance_auth_error", extra={"exchange": ex, "err": str(e)})
+            results[ex] = {"error": str(e)}
+            if len(exchanges) == 1:
+                raise HTTPException(status_code=403, detail="authentication failed")
+        except Exception as e:  # pragma: no cover - network issues
+            logger.warning("balance_error", extra={"exchange": ex, "err": str(e)})
+            results[ex] = {"error": str(e)}
+        finally:
+            with suppress(Exception):
+                await conn.rest.close()
+    if len(results) == 1 and exchange == exchanges[0]:
+        return results[exchanges[0]]
+    return results
+
+
+@app.get("/tickers/{exchange}")
+async def get_tickers(exchange: str, symbols: str = Query(...)):
+    """Return ticker price for each requested symbol."""
+    if ccxt is None:
+        raise HTTPException(status_code=503, detail="ccxt not available")
+    key = exchange.lower()
+    cls = CONNECTORS.get(key)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="unsupported exchange")
+    conn = cls()
+    testnet = key.endswith("_testnet")
+    if testnet:
+        with suppress(Exception):
+            conn.rest.set_sandbox_mode(True)
+    prices: dict[str, float | None] = {}
+    # Ensure markets are loaded so that symbols can be mapped to the
+    # exchange-specific format (e.g. ``BTC/USDT:USDT`` on Bybit).
+    await conn.rest.load_markets()  # pragma: no cover - network issues
+    for raw in symbols.split(","):
+        sym = raw.strip()
+        if not sym:
+            continue
+        norm = normalize_symbol(sym)
+        try:
+            mapped = conn.rest.market_id(norm)
+        except Exception:
+            mapped = norm
+        try:
+            if hasattr(conn, "fetch_ticker"):
+                price = await conn.fetch_ticker(mapped)  # type: ignore[func-returns-value]
+            else:
+                data = await conn.rest.fetch_ticker(mapped)
+                price = (
+                    data.get("last")
+                    or data.get("close")
+                    or data.get("price")
+                    or data.get("bid")
+                    or data.get("ask")
+                )
+            prices[norm] = float(price) if price is not None else None
+        except Exception as e:  # pragma: no cover - network issues
+            logger.warning(
+                "ticker_error",
+                extra={"exchange": exchange, "symbol": sym, "err": str(e)},
+            )
+            prices[norm] = None
+    with suppress(Exception):
+        await conn.rest.close()
+    return prices
+
+
 @app.get("/venues/{name}/kinds")
 def venue_kinds(name: str):
     """Return available streaming kinds for the given venue."""
@@ -134,6 +261,7 @@ def venue_kinds(name: str):
     if cls is None:
         raise HTTPException(status_code=404, detail="venue not found")
     return {"kinds": get_supported_kinds(cls)}
+
 
 @app.get("/logs")
 def logs(lines: int = Query(200, ge=1, le=1000)):
@@ -147,17 +275,43 @@ def logs(lines: int = Query(200, ge=1, le=1000)):
         return {"items": [], "warning": "unable to read log file"}
     return {"items": content[-lines:]}
 
+
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_tri_signals(_ENGINE, limit=limit)}
 
+
 @app.get("/orders")
 def orders(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_orders(_ENGINE, limit=limit)}
+
+
+class SecretItem(BaseModel):
+    value: str
+
+
+@app.get("/secrets/{key}")
+def get_secret(key: str):
+    val = secrets_utils.read_secret(key)
+    if val is None:
+        raise HTTPException(status_code=404, detail="secret not found")
+    return {"value": val}
+
+
+@app.post("/secrets/{key}")
+def set_secret(key: str, payload: SecretItem):
+    secrets_utils.set_secret(key, payload.value)
+    return {"status": "ok"}
+
+
+@app.delete("/secrets/{key}")
+def delete_secret(key: str):
+    secrets_utils.delete_secret(key)
+    return {"status": "deleted"}
 
 
 @app.get("/orders/history")
@@ -176,23 +330,47 @@ def orders_history(
         )
     }
 
+
 @app.get("/tri/summary")
 def tri_summary(limit: int = Query(200, ge=1, le=5000)):
     if not _CAN_PG:
-        return {"summary": {"count": 0, "avg_edge": None, "last_edge": None, "avg_notional": None}}
+        return {
+            "summary": {
+                "count": 0,
+                "avg_edge": None,
+                "last_edge": None,
+                "avg_notional": None,
+            }
+        }
     rows = select_recent_tri_signals(_ENGINE, limit=limit)
     if not rows:
-        return {"summary": {"count": 0, "avg_edge": None, "last_edge": None, "avg_notional": None}}
+        return {
+            "summary": {
+                "count": 0,
+                "avg_edge": None,
+                "last_edge": None,
+                "avg_notional": None,
+            }
+        }
     count = len(rows)
     avg_edge = sum(r["edge"] for r in rows) / count
     last_edge = rows[0]["edge"]
     avg_notional = sum(float(r["notional_quote"]) for r in rows) / count
-    return {"summary": {"count": count, "avg_edge": avg_edge, "last_edge": last_edge, "avg_notional": avg_notional}}
+    return {
+        "summary": {
+            "count": count,
+            "avg_edge": avg_edge,
+            "last_edge": last_edge,
+            "avg_notional": avg_notional,
+        }
+    }
+
 
 # --- Static dashboard ---
 _static_dir = Path(__file__).parent / "static"
 _static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 # Servir index.html en "/"
 @app.get("/")
@@ -202,6 +380,7 @@ def index():
         return Response(content=html, media_type="text/html")
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
+
 
 # Servir stats.html en "/stats"
 @app.get("/stats")
@@ -232,29 +411,41 @@ def backtest_page():
     except Exception:
         return {"message": "Sube el dashboard en /static/backtest.html"}
 
+
 # Compatibilidad: redirige "/monitor" a "/stats"
 @app.get("/monitor")
 def monitor_redirect():
     return RedirectResponse("/stats")
+
 
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
         return {"venue": venue, "total_notional": 0.0, "items": []}
     from ...storage.timescale import select_latest_portfolio
+
     rows = select_latest_portfolio(_ENGINE, venue=venue)
     total = sum(float(r["notional_usd"] or 0.0) for r in rows)
     items = [
-        {"symbol": r["symbol"], "position": float(r["position"]), "price": float(r["price"]), "notional_usd": float(r["notional_usd"])}
+        {
+            "symbol": r["symbol"],
+            "position": float(r["position"]),
+            "price": float(r["price"]),
+            "notional_usd": float(r["notional_usd"]),
+        }
         for r in rows
     ]
     return {"venue": venue, "total_notional": total, "items": items}
 
+
 @app.get("/risk/events")
-def risk_events(venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1, le=200)):
+def risk_events(
+    venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1, le=200)
+):
     if not _CAN_PG:
         return {"venue": venue, "items": []}
     from ...storage.timescale import select_recent_risk_events
+
     items = select_recent_risk_events(_ENGINE, venue=venue, limit=limit)
     return {"venue": venue, "items": items}
 
@@ -283,39 +474,64 @@ def risk_reset():
     rm.reset()
     return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
+
 @app.get("/pnl/summary")
 def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     if not _CAN_PG:
-        return {"venue": venue, "symbol": symbol, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
+        return {
+            "venue": venue,
+            "symbol": symbol,
+            "items": [],
+            "totals": {"upnl": 0, "rpnl": 0, "fees": 0, "net_pnl": 0},
+        }
     from ...storage.timescale import select_pnl_summary
+
     symbol = normalize_symbol(symbol) if symbol else None
     return select_pnl_summary(_ENGINE, venue=venue, symbol=symbol)
+
 
 @app.get("/pnl/timeseries")
 def pnl_timeseries(
     venue: str = "binance_spot_testnet",
     symbol: str | None = Query(None),
     bucket: str = Query("1 minute"),
-    hours: int = Query(6, ge=1, le=168)   # hasta 7 días
+    hours: int = Query(6, ge=1, le=168),  # hasta 7 días
 ):
     if not _CAN_PG:
-        return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": []}
+        return {
+            "venue": venue,
+            "symbol": symbol,
+            "bucket": bucket,
+            "hours": hours,
+            "points": [],
+        }
     from ...storage.timescale import select_pnl_timeseries
+
     symbol = normalize_symbol(symbol) if symbol else None
-    points = select_pnl_timeseries(_ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours)
-    return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": points}
+    points = select_pnl_timeseries(
+        _ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours
+    )
+    return {
+        "venue": venue,
+        "symbol": symbol,
+        "bucket": bucket,
+        "hours": hours,
+        "points": points,
+    }
+
 
 @app.get("/fills/recent")
 def fills_recent(
     venue: str = "binance_spot_testnet",
     symbol: str | None = Query(None),
-    limit: int = Query(100, ge=1, le=500)
+    limit: int = Query(100, ge=1, le=500),
 ):
     if not _CAN_PG:
         return {"venue": venue, "items": []}
     symbol = normalize_symbol(symbol) if symbol else None
     items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
     return {"venue": venue, "symbol": symbol, "items": items}
+
 
 @app.get("/fills/summary")
 def fills_summary(
@@ -326,9 +542,11 @@ def fills_summary(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": []}
     from ...storage.timescale import select_fills_summary
+
     symbol = normalize_symbol(symbol) if symbol else None
     items = select_fills_summary(_ENGINE, venue=venue, symbol=symbol, strategy=strategy)
     return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": items}
+
 
 @app.get("/positions/rebuild_preview")
 def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
@@ -338,38 +556,47 @@ def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
         return {"venue": venue, "from_fills": {}, "current": []}
     from ...storage.timescale import rebuild_positions_from_fills, select_pnl_summary
+
     recalced = rebuild_positions_from_fills(_ENGINE, venue=venue)
     current = select_pnl_summary(_ENGINE, venue=venue)["items"]
     return {"venue": venue, "from_fills": recalced, "current": current}
+
 
 @app.get("/fills/slippage")
 def fills_slippage(
     venue: str = "binance_spot_testnet",
     hours: int = Query(6, ge=1, le=168),
-    symbol: str | None = Query(None)
+    symbol: str | None = Query(None),
 ):
     if not _CAN_PG:
-        return {"venue": venue, "hours": hours, "symbol": symbol, "global": {}, "buy": {}, "sell": {}}
+        return {
+            "venue": venue,
+            "hours": hours,
+            "symbol": symbol,
+            "global": {},
+            "buy": {},
+            "sell": {},
+        }
     from ...storage.timescale import select_slippage
+
     symbol = normalize_symbol(symbol) if symbol else None
     return select_slippage(_ENGINE, venue=venue, symbol=symbol, hours=hours)
 
 
 @app.get("/pnl/intraday")
-def pnl_intraday(
-    venue: str = "binance_spot_testnet",
-    symbol: str | None = Query(None)
-):
+def pnl_intraday(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     """Return intraday net PnL for the last 24h."""
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "net": 0.0, "points": []}
     from ...storage.timescale import select_pnl_timeseries
+
     symbol = normalize_symbol(symbol) if symbol else None
     points = select_pnl_timeseries(
         _ENGINE, venue=venue, symbol=symbol, bucket="1 hour", hours=24
     )
     net = sum(p.get("net", 0.0) for p in points)
     return {"venue": venue, "symbol": symbol, "net": net, "points": points}
+
 
 # --- Strategy control endpoints -------------------------------------------------
 _strategies_state: dict[str, str] = {}
@@ -466,7 +693,10 @@ def strategy_schema(name: str):
         for f in dataclasses.fields(CrossArbConfig):
             if f.name in _INTERNAL_KEYS:
                 continue
-            if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
+            if (
+                f.default is dataclasses.MISSING
+                and f.default_factory is dataclasses.MISSING
+            ):
                 default = None
             else:
                 default = (
@@ -580,9 +810,16 @@ def strategy_schema(name: str):
                         if field_name in _INTERNAL_KEYS:
                             continue
                         default = getattr(v, field_name)
-                        if field_name not in param_info and field_name not in doc_params:
+                        if (
+                            field_name not in param_info
+                            and field_name not in doc_params
+                        ):
                             continue
-                        desc = param_info.get(field_name) or doc_params.get(field_name) or ""
+                        desc = (
+                            param_info.get(field_name)
+                            or doc_params.get(field_name)
+                            or ""
+                        )
                         params.append(
                             {
                                 "name": field_name,
@@ -664,6 +901,7 @@ def update_strategy_params(name: str, params: dict):
 
 # By default, CLI commands run without a timeout. Clients may specify one if desired.
 DEFAULT_CLI_TIMEOUT: int | None = None
+
 
 class CLIRequest(BaseModel):
     """Payload for running a command via the CLI.
@@ -783,7 +1021,11 @@ async def _stream_process(
 
     try:
         while running:
-            if timeout is not None and time.perf_counter() - start > timeout and proc.returncode is None:
+            if (
+                timeout is not None
+                and time.perf_counter() - start > timeout
+                and proc.returncode is None
+            ):
                 proc.terminate()
 
             try:
@@ -814,7 +1056,11 @@ async def _stream_process(
                     except asyncio.QueueEmpty:
                         break
                 status_payload = json.dumps(
-                    {"job_id": job_id, "status": "finished", "returncode": proc.returncode}
+                    {
+                        "job_id": job_id,
+                        "status": "finished",
+                        "returncode": proc.returncode,
+                    }
                 )
                 yield format_sse("status", status_payload)
                 running = False
@@ -920,10 +1166,16 @@ class BotConfig(BaseModel):
     config: str | None = None
     timeframe: str | None = None
     initial_cash: float | None = None
+    metrics_port: int | None = None
 
 
 _BOTS: dict[int, dict] = {}
 _launch_lock = asyncio.Lock()
+
+# Seconds to retain finished bot info and logs before purging.
+# Allows a short window for clients to fetch final logs or status.
+# Set ``BOT_LOG_RETENTION`` environment variable to override.
+BOT_LOG_RETENTION: float = float(os.getenv("BOT_LOG_RETENTION", "1"))
 
 # Regex para detectar líneas de métricas en logs: "METRICS {json}"
 _METRIC_LINE = re.compile(r"METRICS?\s+(\{.*\})")
@@ -940,17 +1192,105 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
     if not info:
         return
     buf = info.setdefault("stats", {})
+    data: dict = {}
     if stats:
-        buf.update(stats)
+        data.update(stats)
     if kwargs:
-        buf.update(kwargs)
+        data.update(kwargs)
+
+    event = data.pop("event", None)
+    pnl_val = None
+    if event in {"order", "fill", "trade"}:
+        pnl_val = data.pop("pnl", None)
+    if event == "order":
+        buf["orders_sent"] = buf.get("orders_sent", 0) + 1
+    elif event == "fill":
+        qty = float(data.get("qty", 0.0))
+        buf["fills"] = buf.get("fills", 0) + 1
+        fee = float(data.get("fee", 0.0))
+        buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
+        slip = float(data.get("slippage_bps", 0.0))
+        if slip:
+            tot = buf.get("_slip_tot", 0.0) + slip
+            cnt = buf.get("_slip_cnt", 0) + 1
+            buf["_slip_tot"] = tot
+            buf["_slip_cnt"] = cnt
+            buf["slippage_bps"] = tot / cnt
+        maker = bool(data.get("maker"))
+        if maker:
+            buf["_maker_qty"] = buf.get("_maker_qty", 0.0) + qty
+        else:
+            buf["_taker_qty"] = buf.get("_taker_qty", 0.0) + qty
+        mqty = buf.get("_maker_qty", 0.0)
+        tqty = buf.get("_taker_qty", 0.0)
+        if tqty > 0:
+            buf["maker_taker_ratio"] = mqty / tqty
+        else:
+            buf["maker_taker_ratio"] = mqty
+        if pnl_val is not None:
+            try:
+                pnl = float(pnl_val)
+            except (TypeError, ValueError):
+                pnl = 0.0
+            buf["pnl"] = buf.get("pnl", 0.0) + pnl
+        trades_buf = info.setdefault("trades", deque(maxlen=100))
+        trade_data = {
+            "ts": data.get("ts", time.time()),
+            "side": data.get("side"),
+            "price": data.get("price"),
+            "qty": qty,
+            "fee": fee,
+        }
+        trades_buf.append(trade_data)
+    elif event == "cancel":
+        buf["cancels"] = buf.get("cancels", 0) + 1
+    elif event == "trade":
+        trades_buf = info.setdefault("trades", deque(maxlen=100))
+        trade_payload = dict(data)
+        duration = data.get("duration")
+        if duration is not None:
+            try:
+                dur = float(duration)
+            except (TypeError, ValueError):
+                dur = None
+            if dur is not None:
+                tot = buf.get("_dur_tot", 0.0) + dur
+                cnt = buf.get("_dur_cnt", 0) + 1
+                buf["_dur_tot"] = tot
+                buf["_dur_cnt"] = cnt
+                buf["avg_trade_duration"] = tot / cnt
+        if pnl_val is not None:
+            trade_payload["pnl"] = pnl_val
+        trades_buf.append(trade_payload)
+        info["market_trades"] = info.get("market_trades", 0) + 1
+        if pnl_val is None:
+            pnl_val = TRADING_PNL._value.get()
+        try:
+            pnl = float(pnl_val)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        prev = buf.get("_last_pnl")
+        if prev is not None:
+            buf["pnl"] = buf.get("pnl", 0.0) + (pnl - prev)
+        else:
+            buf["pnl"] = buf.get("pnl", 0.0) + pnl
+        buf["_last_pnl"] = pnl
+
+    if data:
+        buf.update(data)
+
+    orders = buf.get("orders_sent", 0)
+    fills = buf.get("fills", 0)
+    cancels = buf.get("cancels", 0)
+    if orders:
+        buf["hit_rate"] = fills / orders
+        buf["cancel_ratio"] = cancels / orders
 
 
 async def _scrape_metrics(
     pid: int,
     proc: asyncio.subprocess.Process,
     log_buffer: deque[str] | None = None,
-    log_queue: asyncio.Queue[str] | None = None,
 ) -> None:
     """Lee stdout del proceso buscando líneas de métricas en JSON.
 
@@ -969,8 +1309,13 @@ async def _scrape_metrics(
         text = line.decode(errors="ignore").rstrip()
         if log_buffer is not None:
             log_buffer.append(text)
-        if log_queue is not None:
-            await log_queue.put(text)
+        info = _BOTS.get(pid)
+        queue = info.get("log_queue") if info else None
+        if queue is not None:
+            try:
+                queue.put_nowait(text)
+            except asyncio.QueueFull:
+                pass
         m = _METRIC_LINE.search(text)
         if not m:
             continue
@@ -982,9 +1327,9 @@ async def _scrape_metrics(
 
 
 async def _capture_stderr(
+    pid: int,
     proc: asyncio.subprocess.Process,
     log_buffer: deque[str],
-    log_queue: asyncio.Queue[str],
 ) -> None:
     if not proc.stderr:
         return
@@ -997,7 +1342,58 @@ async def _capture_stderr(
             break
         text = line.decode(errors="ignore").rstrip()
         log_buffer.append(text)
-        await log_queue.put(text)
+        info = _BOTS.get(pid)
+        queue = info.get("log_queue") if info else None
+        if queue is not None:
+            try:
+                queue.put_nowait(text)
+            except asyncio.QueueFull:
+                pass
+
+
+async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
+    """Monitor a bot process and update its status when it finishes.
+
+    The bot is removed from ``_BOTS`` after ``BOT_LOG_RETENTION`` seconds so
+    clients can still fetch logs for a short while after termination.
+    """
+
+    try:
+        await proc.wait()
+    except asyncio.CancelledError:
+        return
+
+    info = _BOTS.get(pid)
+    if not info:
+        return
+    # If the bot was intentionally paused we keep its info and restart
+    # monitoring once it resumes.
+    if info.get("status") == "paused":
+        info["returncode"] = None
+        proc.returncode = None
+        info["monitor_task"] = None
+        return
+    # Preserve existing status if stop/kill updated it already
+    if info.get("status") == "running":
+        if proc.returncode == 0:
+            info["status"] = "stopped"
+        else:
+            info["status"] = "error"
+            info["last_error"] = f"return code {proc.returncode}"
+    info["returncode"] = proc.returncode
+    # Cancel log scraping tasks
+    for name in ("metrics_task", "stderr_task"):
+        task = info.get(name)
+        if task:
+            task.cancel()
+            with suppress(Exception):
+                await task
+    if BOT_LOG_RETENTION > 0:
+        try:
+            await asyncio.sleep(BOT_LOG_RETENTION)
+        except asyncio.CancelledError:
+            pass
+    _BOTS.pop(pid, None)
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1034,6 +1430,8 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
             "--strategy",
             cfg.strategy,
         ]
+        if cfg.venue:
+            args.extend(["--venue", cfg.venue])
         if cfg.risk_pct is not None:
             args.extend(["--risk-pct", str(cfg.risk_pct)])
         if cfg.timeframe is not None:
@@ -1045,6 +1443,8 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
                 args.extend(["--param", f"{k}={v}"])
         if cfg.initial_cash is not None:
             args.extend(["--initial-cash", str(cfg.initial_cash)])
+        if cfg.metrics_port is not None:
+            args.extend(["--metrics-port", str(cfg.metrics_port)])
         return args
 
     args = [
@@ -1078,6 +1478,8 @@ def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
     if params:
         for k, v in params.items():
             args.extend(["--param", f"{k}={v}"])
+    if cfg.metrics_port is not None:
+        args.extend(["--metrics-port", str(cfg.metrics_port)])
     return args
 
 
@@ -1100,6 +1502,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             if exchange and market:
                 cfg.venue = f"{exchange}_{market}"
 
+        cfg.metrics_port = cfg.metrics_port or 0
         params = _strategy_params.get(cfg.strategy, {})
         args = _build_bot_args(cfg, params)
         env = os.environ.copy()
@@ -1112,23 +1515,20 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             env=env,
         )
         log_buffer: deque[str] = deque(maxlen=1000)
-        log_queue: asyncio.Queue[str] = asyncio.Queue()
-        stdout_task = asyncio.create_task(
-            _scrape_metrics(proc.pid, proc, log_buffer, log_queue)
-        )
-        stderr_task = asyncio.create_task(
-            _capture_stderr(proc, log_buffer, log_queue)
-        )
+        stdout_task = asyncio.create_task(_scrape_metrics(proc.pid, proc, log_buffer))
+        stderr_task = asyncio.create_task(_capture_stderr(proc.pid, proc, log_buffer))
+        monitor_task = asyncio.create_task(_monitor_bot(proc.pid, proc))
         _BOTS[proc.pid] = {
             "process": proc,
             "config": cfg.dict(),
             "stats": {},
+            "status": "running",
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
+            "monitor_task": monitor_task,
             "log_buffer": log_buffer,
-            "log_queue": log_queue,
         }
-        return {"pid": proc.pid, "status": "started"}
+        return {"pid": proc.pid, "status": "running"}
 
 
 @app.get("/bots")
@@ -1144,8 +1544,6 @@ def list_bots(request: Request):
 
     items = []
     for pid, info in _BOTS.items():
-        proc = info["process"]
-        status = "running" if proc.returncode is None else f"stopped:{proc.returncode}"
         cfg = info["config"]
         stats = info.get("stats", {})
         risk_pct = cfg.get("risk_pct")
@@ -1154,7 +1552,7 @@ def list_bots(request: Request):
         items.append(
             {
                 "pid": pid,
-                "status": status,
+                "status": info.get("status"),
                 "config": cfg,
                 "stats": stats,
                 "risk_pct": risk_pct,
@@ -1174,22 +1572,39 @@ async def bot_logs(pid: int):
     buffer: deque[str] | None = info.get("log_buffer")
     queue: asyncio.Queue[str] | None = info.get("log_queue")
     proc: asyncio.subprocess.Process = info["process"]
-    if buffer is None or queue is None:
+    if buffer is None:
         raise HTTPException(status_code=404, detail="logs not available")
+    if queue is None:
+        queue = asyncio.Queue(maxsize=1000)
+        info["log_queue"] = queue
 
     async def event_gen():
-        for line in list(buffer):
-            yield format_sse("message", line)
-        while True:
-            if proc.returncode is not None and queue.empty():
-                break
-            try:
-                line = await asyncio.wait_for(queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            yield format_sse("message", line)
+        try:
+            for line in list(buffer):
+                yield format_sse("message", line)
+            while True:
+                if proc.returncode is not None and queue.empty():
+                    break
+                try:
+                    line = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                yield format_sse("message", line)
+        finally:
+            info["log_queue"] = None
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.get("/bots/{pid}/trades")
+def bot_trades(pid: int):
+    """Return recent trade events for a bot."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    trades = list(info.get("trades", []))
+    return {"pid": pid, "trades": trades}
 
 
 @app.post("/bots/{pid}/stop")
@@ -1204,7 +1619,24 @@ async def stop_bot(pid: int):
         raise HTTPException(status_code=400, detail="bot not running")
     proc.terminate()
     await proc.wait()
-    return {"pid": pid, "status": "stopped", "returncode": proc.returncode}
+    info["status"] = "stopped"
+    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
+
+
+@app.post("/bots/{pid}/kill")
+async def kill_bot(pid: int):
+    """Force kill a running bot process."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    proc: asyncio.subprocess.Process = info["process"]
+    if proc.returncode is not None:
+        raise HTTPException(status_code=400, detail="bot not running")
+    proc.kill()
+    await proc.wait()
+    info["status"] = "killed"
+    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
 @app.post("/bots/{pid}/pause")
@@ -1217,40 +1649,48 @@ def pause_bot(pid: int):
     proc: asyncio.subprocess.Process = info["process"]
     if proc.returncode is not None:
         raise HTTPException(status_code=400, detail="bot not running")
+    info["status"] = "paused"
     proc.send_signal(signal.SIGSTOP)
-    return {"pid": pid, "status": "paused"}
+    return {"pid": pid, "status": info["status"]}
 
 
 @app.post("/bots/{pid}/resume")
-def resume_bot(pid: int):
+async def resume_bot(pid: int):
     """Send SIGCONT to resume a paused bot."""
 
     info = _BOTS.get(pid)
     if not info:
         raise HTTPException(status_code=404, detail="bot not found")
+    if info.get("status") != "paused":
+        raise HTTPException(status_code=400, detail="bot not paused")
     proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
     proc.send_signal(signal.SIGCONT)
-    return {"pid": pid, "status": "running"}
+    info["status"] = "running"
+    monitor_task = asyncio.create_task(_monitor_bot(pid, proc))
+    info["monitor_task"] = monitor_task
+    return {"pid": pid, "status": info["status"]}
 
 
 @app.delete("/bots/{pid}")
 async def delete_bot(pid: int):
-    """Remove process information and terminate if still running."""
+    """Terminate a bot if running and remove its entry."""
 
-    info = _BOTS.pop(pid, None)
+    info = _BOTS.get(pid)
     if not info:
         raise HTTPException(status_code=404, detail="bot not found")
+
     proc: asyncio.subprocess.Process = info["process"]
     if proc.returncode is None:
-        proc.terminate()
-        await proc.wait()
+        await stop_bot(pid)
+
+    info = _BOTS.pop(pid, None) or info
     task = info.get("metrics_task")
     if task:
         task.cancel()
     err_task = info.get("stderr_task")
     if err_task:
         err_task.cancel()
+    mon_task = info.get("monitor_task")
+    if mon_task:
+        mon_task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
-

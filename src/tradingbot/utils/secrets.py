@@ -21,6 +21,38 @@ def _load_env_file(path: Path) -> Dict[str, str]:
         os.environ.setdefault(k, v)
     return data
 
+
+def _write_env_file(path: Path, data: Dict[str, str]) -> None:
+    """Persist dictionary to ``path`` in ``KEY=VALUE`` format."""
+    if not data:
+        path.write_text("")
+        return
+    content = "\n".join(f"{k}={v}" for k, v in data.items()) + "\n"
+    path.write_text(content)
+
+
+def read_secret(key: str, path: Path = Path(".env")) -> Optional[str]:
+    """Read a secret value from ``path`` without falling back to ~/.secrets."""
+    data = _load_env_file(path)
+    return data.get(key)
+
+
+def set_secret(key: str, value: str, path: Path = Path(".env")) -> None:
+    """Store ``key=value`` in ``path`` and update ``os.environ``."""
+    data = _load_env_file(path)
+    data[key] = value
+    _write_env_file(path, data)
+    os.environ[key] = value
+
+
+def delete_secret(key: str, path: Path = Path(".env")) -> None:
+    """Remove ``key`` from ``path`` and ``os.environ`` if present."""
+    data = _load_env_file(path)
+    if key in data:
+        del data[key]
+        _write_env_file(path, data)
+    os.environ.pop(key, None)
+
 # Cargar .env al importar el módulo
 _load_env_file(Path(".env"))
 

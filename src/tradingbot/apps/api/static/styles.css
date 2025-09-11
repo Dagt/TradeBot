@@ -106,6 +106,29 @@ nav a:hover{
   box-shadow: 0 16px 30px rgba(0,0,0,.45);
   border-color: #3b4a63;
 }
+.card-sm{
+  padding:8px;
+  margin-top:8px;
+}
+
+#ticker-card{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+}
+#ticker-pair{
+  font-size:24px;
+  color:var(--primary-2);
+  font-weight:600;
+  transition:opacity .3s;
+}
+#ticker-price{
+  font-size:24px;
+  color:var(--primary);
+  font-weight:600;
+  transition:opacity .3s;
+}
 
 /* pequeñas tarjetas KPI */
 .kv{
@@ -117,15 +140,17 @@ nav a:hover{
 }
 .kv:hover{ background:#1a2941 }
 .kv .k{ font-size:12px; color:var(--muted) }
-.kv .v{ font-size:20px; margin-top:4px; font-weight:600 }
+.kv .v{ font-size:20px; margin-top:4px; font-weight:600; transition: color .25s ease }
 
 /* Grids responsivas */
 .grid3{ display:grid; grid-template-columns: repeat(3,1fr); gap:12px }
 .grid4{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px }
 .grid5{ display:grid; grid-template-columns: repeat(5,1fr); gap:12px }
+.grid2{ display:grid; grid-template-columns: repeat(2,1fr); gap:12px }
 @media (max-width: 1200px){ .grid5{ grid-template-columns: repeat(3,1fr) } }
 @media (max-width: 900px){ .grid4, .grid3, .grid5{ grid-template-columns: repeat(2,1fr) } }
-@media (max-width: 600px){ .grid4, .grid3, .grid5{ grid-template-columns: 1fr } }
+@media (max-width: 900px){ .grid2{ grid-template-columns: 1fr } }
+@media (max-width: 600px){ .grid4, .grid3, .grid5, .grid2{ grid-template-columns: 1fr } }
 
 
 /* Grid compacto */
@@ -194,8 +219,8 @@ nav a:hover{
 
 
 /* ====== Tablas ====== */
-table{ width:100%; border-collapse:collapse; font-size:14px }
-th,td{ padding:10px 8px; border-bottom:1px solid #253346 }
+table{ width:100%; border-collapse:collapse; font-size:12px }
+th,td{ padding:4px 6px; border-bottom:1px solid #253346; transition: color .25s ease }
 th{
   background:#0f1622;
   position:sticky; top:0; z-index:1;
@@ -203,6 +228,18 @@ th{
 }
 tbody tr{ transition: background .15s }
 tbody tr:hover{ background: rgba(255,255,255,.03) }
+
+#tbl-bots th, #tbl-bots td{
+  text-align:center;
+}
+#tbl-bots th:nth-child(2), #tbl-bots td:nth-child(2){
+  text-align:left;
+}
+
+#bal-table td:nth-child(n+2), #bal-table th:nth-child(n+2),
+#tick-table td:nth-child(n+2), #tick-table th:nth-child(n+2){
+  text-align:right;
+}
 
 /* ====== Controles ====== */
 textarea,input,select{
@@ -310,7 +347,9 @@ button.btn-xs{ padding: 4px 8px; font-size: 12px }
 .sell{ color:var(--danger) }
 .ok{ color:var(--success) }
 .warn{ color:var(--warning) }
+.error{ color:var(--danger) }
 .muted{ color:var(--muted) }
+.bot-meta{ font-size:12px; }
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
 
 /* ====== Helpers ====== */
@@ -581,4 +620,26 @@ button.icon-btn.warn:hover {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+
+.env-dot{
+  display:inline-block;
+  width:8px;height:8px;
+  border-radius:50%;
+  margin-right:4px;
+}
+.env-live{ background:var(--success); }
+.env-testnet{ background:var(--warning); }
+.env-paper{ background:var(--primary); }
+
+#logs-dialog{
+    background: var(--panel-a);
+    color: var(--text);
+    border:1px solid var(--panel-border);
+    padding:12px;
+}
+#logs-content{
+    background: #000;
+    color: var(--text);
+    padding:8px;
 }

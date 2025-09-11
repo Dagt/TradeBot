@@ -15,7 +15,7 @@ async def test_stream_order_book_ignores_zero_or_none(caplog):
     adapter.state = type("S", (), {"order_book": {}, "last_px": {}})()
     adapter.ws_public_url = "wss://example"
 
-    async def fake_messages(url, sub):
+    async def fake_messages(url, sub, ping_timeout=None):
         yield json.dumps(
             {"data": [{"bidPx": None, "askPx": "3", "bidSz": "1", "askSz": "1", "ts": "0"}]}
         )
@@ -47,7 +47,7 @@ async def test_stream_bba_skips_missing_sides():
     msg1 = json.dumps({"data": [{"bids": [], "asks": [["3", "4"]], "ts": "0"}]})
     msg2 = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "1"}]})
 
-    async def fake_messages(url, sub):
+    async def fake_messages(url, sub, ping_timeout=None):
         yield msg1
         yield msg2
 

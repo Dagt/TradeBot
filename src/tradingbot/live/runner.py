@@ -118,11 +118,13 @@ async def run_live_binance(
     config_path: str | None = None,
     params: dict | None = None,
     timeframe: str = "1m",
+    venue: str = "binance_futures",
 ) -> None:
     """
     Pipeline en vivo:
       WS Binance -> agregador 3m -> strategy -> Risk -> PaperAdapter
     """
+    exchange, market = venue.split("_", 1)
     log.info("Connecting to Binance WS for %s", symbol)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
@@ -141,7 +143,7 @@ async def run_live_binance(
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
         per_symbol_cap_pct=per_symbol_cap_pct,
-        venue="binance",
+        venue=exchange,
         soft_cap_pct=soft_cap_pct,
         soft_cap_grace_sec=soft_cap_grace_sec,
     ))
@@ -149,7 +151,7 @@ async def run_live_binance(
         daily_max_loss_pct=daily_max_loss_pct,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
         halt_action="close_all",
-    ), venue="binance")
+    ), venue=exchange)
     pg_engine = get_engine() if (persist_pg and _CAN_PG) else None
     risk = RiskService(
         guard,
@@ -158,7 +160,7 @@ async def run_live_binance(
         account=broker.account,
         risk_pct=risk_pct,
     )
-    risk.allow_short = False
+    risk.allow_short = market != "spot"
     guard.refresh_usd_caps(broker.equity({}))
     strat.risk_service = risk
     if pg_engine is not None:

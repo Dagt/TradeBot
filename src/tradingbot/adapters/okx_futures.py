@@ -129,7 +129,9 @@ class OKXFuturesAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "trades", "instId": sym}]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             for t in msg.get("data", []) or []:
                 price = float(t.get("px"))
@@ -158,7 +160,9 @@ class OKXFuturesAdapter(ExchangeAdapter):
         if channel is None:
             raise ValueError(f"depth must be one of {sorted(self.DEPTH_TO_CHANNEL)}")
         sub = {"op": "subscribe", "args": [{"channel": channel, "instId": sym}]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
                 if channel == "bbo-tbt":
@@ -192,7 +196,9 @@ class OKXFuturesAdapter(ExchangeAdapter):
         url = self.ws_public_url
         sym = self._normalize(symbol)
         sub = {"op": "subscribe", "args": [{"channel": "books5", "instId": sym}]}
-        async for raw in self._ws_messages(url, json.dumps(sub)):
+        async for raw in self._ws_messages(
+            url, json.dumps(sub), ping_timeout=self.ping_timeout
+        ):
             msg = json.loads(raw)
             for d in msg.get("data", []) or []:
                 bids = d.get("bids", [])

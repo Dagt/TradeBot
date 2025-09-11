@@ -48,6 +48,9 @@ class ExchangeAdapter(ABC):
         self.max_backoff = getattr(
             settings, f"{name}_max_backoff", settings.adapter_max_backoff
         )
+        self.ping_timeout = getattr(
+            settings, f"{name}_ping_timeout", getattr(settings, "ping_timeout", None)
+        )
         self._fee_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
@@ -191,12 +194,20 @@ class ExchangeAdapter(ABC):
             except Exception:  # pragma: no cover - network issues
                 break
 
-    async def _ws_messages(self, url: str, subscribe: str | None = None) -> AsyncIterator[str]:
+    async def _ws_messages(
+        self,
+        url: str,
+        subscribe: str | None = None,
+        ping_timeout: float | None = None,
+    ) -> AsyncIterator[str]:
         backoff = 1.0
         successes = 0
         while True:
             try:
-                async with websockets.connect(url, ping_interval=None) as ws:
+                timeout = self.ping_timeout if ping_timeout is None else ping_timeout
+                async with websockets.connect(
+                    url, ping_interval=None, ping_timeout=timeout
+                ) as ws:
                     if subscribe:
                         await ws.send(subscribe)
                     successes += 1

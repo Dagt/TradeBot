@@ -47,6 +47,7 @@ def run_bot(
     param: list[str] = typer.Option(
         [], "--param", help="Override strategy parameters as key=value pairs"
     ),
+    metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
 ) -> None:
     """Run the live trading bot with configurable venue and symbols."""
 
@@ -69,6 +70,7 @@ def run_bot(
                 config_path=config,
                 params=params,
                 timeframe=timeframe,
+                metrics_port=metrics_port,
             )
         )
     else:
@@ -89,6 +91,7 @@ def run_bot(
                 timeframe=timeframe,
                 strategy_name=strategy,
                 i_know_what_im_doing=True,
+                metrics_port=metrics_port,
             )
         )
 
@@ -97,6 +100,7 @@ def run_bot(
 def paper_run(
     symbol: str = typer.Option("BTC/USDT", "--symbol", help="Trading symbol"),
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    venue: str = typer.Option("binance_spot", "--venue", help="Trading venue"),
     metrics_port: int = typer.Option(8000, help="Port to expose metrics"),
     config: str | None = typer.Option(None, "--config", help="YAML config for the strategy"),
     param: list[str] = typer.Option(
@@ -131,6 +135,7 @@ def paper_run(
         run_paper(
             symbol=symbol,
             strategy_name=strategy,
+            venue=venue,
             config_path=config,
             metrics_port=metrics_port,
             risk_pct=risk_pct,

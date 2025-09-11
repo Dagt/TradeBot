@@ -290,7 +290,7 @@ async def test_binance_futures_ws_stream_funding():
 
     msg = json.dumps({"data": {"r": "0.01", "i": "100", "E": 0}})
 
-    async def _fake_messages(url):
+    async def _fake_messages(url, subscribe=None, ping_timeout=None):
         yield msg
 
     ws._ws_messages = _fake_messages
@@ -309,7 +309,7 @@ async def test_binance_futures_ws_open_interest_timeout_recovery(monkeypatch, ca
     msg = json.dumps({"data": {"oi": "100", "E": 0, "s": "BTCUSDT"}})
     calls = {"per": 0, "arr": 0}
 
-    async def _fake_messages(url):
+    async def _fake_messages(url, subscribe=None, ping_timeout=None):
         if "!openInterest@arr@" in url:
             calls["arr"] += 1
             yield msg
@@ -419,7 +419,7 @@ async def test_okx_stream_bba(monkeypatch, adapter_cls):
         adapter.ws_public_url = "wss://example"
         msg = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "0"}]})
 
-        async def fake_messages(url, sub):
+        async def fake_messages(url, sub, ping_timeout=None):
             yield msg
 
         adapter._ws_messages = fake_messages
@@ -454,7 +454,7 @@ async def test_okx_stream_bba_handles_empty(monkeypatch, adapter_cls):
         msg1 = json.dumps({"data": [{"bids": [], "asks": [], "ts": "0"}]})
         msg2 = json.dumps({"data": [{"bids": [["1", "2"]], "asks": [["3", "4"]], "ts": "1"}]})
 
-        async def fake_messages(url, sub):
+        async def fake_messages(url, sub, ping_timeout=None):
             yield msg1
             yield msg2
 

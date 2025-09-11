@@ -119,7 +119,7 @@
     <div class="muted">Auto-refresh 5s</div>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
       <table id="tbl-bots">
-        <thead><tr><th>PID</th><th>Estrategia</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Error</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders</th><th>Fills</th><th>PnL</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -298,6 +298,7 @@ async function startBot(){
     if(Object.keys(params).length){
       try{ await fetch(api(`/strategies/${strategy}/params`), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params)}); }catch(e){}
     }
+    payload.metrics_port = 0;
       try{
         const r = await fetch(api('/bots'), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         await r.json();
@@ -315,20 +316,30 @@ async function refreshBots(){
     (j.bots||[]).forEach(b=>{
       const stats=b.stats||{};
       const pairs=(b.config?.pairs||[]).join(',');
+      const venue = b.config?.venue || '';
+      const timeframe = b.config?.timeframe || '';
+      const env = b.config?.dry_run ? 'paper'
+                 : (b.config?.testnet ? 'testnet' : 'live');
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${b.pid}</td><td>${b.config?.strategy||''}</td><td>${pairs}</td><td>${b.status}</td>
-      <td>${stats.orders_sent||0}/${stats.fills||0}</td>
-      <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
-      <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
-      <td>${(stats.fees_usd||0).toFixed(2)}</td>
-      <td>${(stats.slippage_bps||0).toFixed(2)}</td>
-      <td>${((stats.hit_rate||0)*100).toFixed(1)}%</td>
-      <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
-      <td>${(stats.inventory||0).toFixed(4)}</td>
-      <td>${(stats.leverage||0).toFixed(2)}</td>
-      <td>${((b.risk_pct ?? 0)*100).toFixed(2)}%</td>
-      <td>${b.last_error||''}</td>
-      <td>
+      tr.innerHTML=`<td>${b.pid}</td>
+        <td>
+          <div>${b.config?.strategy || ''}</div>
+          <div class="muted bot-meta"><span class="env-dot env-${env}" title="${env}"></span> ${venue} • ${timeframe}</div>
+        </td>
+        <td>${pairs}</td><td>${b.status}</td>
+        <td>${stats.orders_sent||0}</td>
+        <td>${stats.fills||0}</td>
+        <td>${(stats.pnl||0).toFixed(2)}</td>
+        <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
+        <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
+        <td>${(stats.fees_usd||0).toFixed(2)}</td>
+        <td>${(stats.slippage_bps||0).toFixed(2)}</td>
+        <td>${((stats.hit_rate||0)*100).toFixed(1)}%</td>
+        <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
+        <td>${(stats.inventory||0).toFixed(4)}</td>
+        <td>${(stats.leverage||0).toFixed(2)}</td>
+        <td>${((b.risk_pct ?? 0)*100).toFixed(2)}%</td>
+        <td>
   <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
     <i class="fa-solid fa-file-lines"></i>
   </button>
@@ -338,16 +349,10 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
-  <button class="icon-btn warn" onclick="haltBot(${b.pid})" title="Halt">
-    <i class="fa-solid fa-ban"></i>
-  </button>
-  <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
-    <i class="fa-solid fa-stop"></i>
-  </button>
   <button class="icon-btn danger" onclick="killBot(${b.pid})" title="Kill">
     <i class="fa-solid fa-skull"></i>
   </button>
-  <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Delete">
+  <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Stop & Delete">
     <i class="fa-solid fa-trash"></i>
   </button>
 </td>
@@ -370,12 +375,65 @@ async function runCli(){
   }
 }
 
-async function stopBot(pid){ await fetch(api(`/bots/${pid}/stop`), {method:'POST'}); refreshBots(); }
-async function pauseBot(pid){ await fetch(api(`/bots/${pid}/pause`), {method:'POST'}); refreshBots(); }
-async function resumeBot(pid){ await fetch(api(`/bots/${pid}/resume`), {method:'POST'}); refreshBots(); }
-async function haltBot(pid){ await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:`bot ${pid}`})}); refreshBots(); }
-async function killBot(pid){ await fetch(api(`/bots/${pid}/kill`), {method:'POST'}); refreshBots(); }
-async function deleteBot(pid){ await fetch(api(`/bots/${pid}`), {method:'DELETE'}); refreshBots(); }
+async function stopBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/stop`), {method:'POST'});
+    console.log('stopBot', pid, r.status);
+  }catch(e){
+    console.log('stopBot error', e);
+  }
+  refreshBots();
+}
+
+async function haltBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/halt`), {method:'POST'});
+    console.log('haltBot', pid, r.status);
+  }catch(e){
+    console.log('haltBot error', e);
+  }
+  refreshBots();
+}
+async function pauseBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/pause`), {method:'POST'});
+    console.log('pauseBot', pid, r.status);
+  }catch(e){
+    console.log('pauseBot error', e);
+  }
+  refreshBots();
+}
+async function resumeBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/resume`), {method:'POST'});
+    console.log('resumeBot', pid, r.status);
+  }catch(e){
+    console.log('resumeBot error', e);
+  }
+  refreshBots();
+}
+async function killBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/kill`), {method:'POST'});
+    console.log('killBot', pid, r.status);
+  }catch(e){
+    console.log('killBot error', e);
+  }
+  refreshBots();
+}
+async function deleteBot(pid){
+  try{
+    const stop = await fetch(api(`/bots/${pid}/stop`), {method:'POST'});
+    console.log('stopBot', pid, stop.status);
+    if(stop.ok){
+      await fetch(api(`/bots/${pid}`), {method:'DELETE'});
+      console.log('deleteBot', pid);
+    }
+  }catch(e){
+    console.log('deleteBot error', e);
+  }
+  refreshBots();
+}
 
 function renderExposure(data){
   const div=document.getElementById('risk-exposure');
@@ -424,6 +482,7 @@ async function haltRisk(){
   try{
     await fetch(api('/risk/halt'), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason:'dashboard'})});
     refreshRisk();
+    refreshBots();
   }catch(e){
     document.getElementById('risk-error').textContent = String(e);
   }
@@ -438,24 +497,24 @@ async function resetRisk(){
   }
 }
 
-document.getElementById('bot-start').onclick = startBot;
-document.getElementById('bot-strategy').addEventListener('change', updateForm);
-document.getElementById('bot-venue').addEventListener('change', updateVenueFields);
-document.getElementById('bot-env').addEventListener('change', updateEnvFields);
-document.getElementById('bot-toggle-params').addEventListener('change', e => {
-  document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
-});
-loadStrategies();
-loadStrategyParams(document.getElementById('bot-strategy').value);
-updateVenueFields();
-updateEnvFields();
-refreshBots();
-setInterval(refreshBots,5000);
-document.getElementById('cli-run').addEventListener('click', runCli);
-document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
-document.getElementById('risk-halt').addEventListener('click', haltRisk);
-document.getElementById('risk-reset').addEventListener('click', resetRisk);
-refreshRisk();
+  document.getElementById('bot-start').onclick = startBot;
+  document.getElementById('bot-strategy').addEventListener('change', updateForm);
+  document.getElementById('bot-venue').addEventListener('change', updateVenueFields);
+  document.getElementById('bot-env').addEventListener('change', updateEnvFields);
+  document.getElementById('bot-toggle-params').addEventListener('change', e => {
+    document.getElementById('bot-param-card').style.display = e.target.checked ? 'block' : 'none';
+  });
+  loadStrategies();
+  loadStrategyParams(document.getElementById('bot-strategy').value);
+  updateVenueFields();
+  updateEnvFields();
+  refreshBots();
+  setInterval(refreshBots,5000);
+  document.getElementById('cli-run').addEventListener('click', runCli);
+  document.getElementById('risk-refresh').addEventListener('click', refreshRisk);
+  document.getElementById('risk-halt').addEventListener('click', haltRisk);
+  document.getElementById('risk-reset').addEventListener('click', resetRisk);
+  refreshRisk();
 
 let logSource=null;
 function showLogs(pid){
@@ -477,8 +536,8 @@ function closeLogs(){
 }
 </script>
 
-<dialog id="logs-dialog" style="width:80vw;max-height:80vh;">
-  <pre id="logs-content" class="mono" style="max-height:70vh;overflow:auto;white-space:pre-wrap;margin:0"></pre>
+<dialog id="logs-dialog">
+  <pre id="logs-content" class="mono"></pre>
   <div style="text-align:right;margin-top:8px">
     <button onclick="closeLogs()">Cerrar</button>
   </div>

@@ -55,7 +55,7 @@ class BinanceWSAdapter(ExchangeAdapter):
     async def stream_trades(self, symbol: str) -> AsyncIterator[dict]:
         stream = _binance_symbol_stream(normalize(symbol))
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             d = msg.get("data") or {}
             price = float(d.get("p")) if d.get("p") is not None else None
@@ -70,7 +70,7 @@ class BinanceWSAdapter(ExchangeAdapter):
     async def stream_order_book(self, symbol: str, depth: int = 10) -> AsyncIterator[dict]:
         stream = _binance_symbol_stream(normalize(symbol)).replace("@trade", f"@depth{depth}@100ms")
         url = self.ws_base + stream
-        async for raw in self._ws_messages(url):
+        async for raw in self._ws_messages(url, ping_timeout=self.ping_timeout):
             msg = json.loads(raw)
             d = msg.get("data") or msg
             bids = d.get("bids") or d.get("b") or []

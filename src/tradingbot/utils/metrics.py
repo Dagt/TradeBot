@@ -1,3 +1,5 @@
+import asyncio
+
 from prometheus_client import Counter, Histogram, Gauge
 
 # Latency of HTTP requests by method and endpoint
@@ -167,6 +169,12 @@ MARKET_LATENCY = Histogram(
     "Latency of market data processing in seconds",
 )
 
+# Completed bars accumulated by the bar aggregator
+AGG_COMPLETED = Gauge(
+    "aggregated_bars",
+    "Number of completed bars accumulated by the bar aggregator",
+)
+
 # End-to-end order processing latency
 E2E_LATENCY = Histogram(
     "e2e_latency_seconds",
@@ -184,3 +192,45 @@ ORDERBOOK_INSERT_FAILURES = Counter(
     "orderbook_insert_failures_total",
     "Total order book persistence failures",
 )
+
+
+def start_pnl_position_updater(broker, interval: float = 5.0) -> None:
+    """Launch background task updating PnL and position gauges.
+
+    Parameters
+    ----------
+    broker:
+        Trading broker or adapter exposing ``state.realized_pnl`` and a
+        mapping ``state.pos`` with position objects containing ``qty``.
+    interval:
+        Seconds between metric updates.
+    """
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover - no running loop
+        return
+
+    async def _runner() -> None:
+        while True:
+            try:
+                TRADING_PNL.set(getattr(broker.state, "realized_pnl", 0.0))
+
+                positions = getattr(broker.state, "pos", {}) or {}
+                for sym, pos in positions.items():
+                    qty = getattr(pos, "qty", 0.0)
+                    OPEN_POSITIONS.labels(symbol=sym).set(qty)
+
+                existing = {
+                    sample.labels["symbol"]
+                    for metric in OPEN_POSITIONS.collect()
+                    for sample in metric.samples
+                    if sample.name == "open_position"
+                }
+                for sym in existing - positions.keys():
+                    OPEN_POSITIONS.labels(symbol=sym).set(0.0)
+            except Exception:  # pragma: no cover - best effort
+                pass
+            await asyncio.sleep(interval)
+
+    loop.create_task(_runner())

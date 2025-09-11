@@ -1,7 +1,15 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
+
+# Project root directory
+BASE_DIR = Path(__file__).resolve().parents[3]
+
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
+
     env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
     log_file: str | None = None
@@ -131,9 +139,5 @@ class Settings(BaseSettings):
     # Deribit Perpetuos BTC/ETH
     deribit_perp_maker_fee_bps: float = 0.0
     deribit_perp_taker_fee_bps: float = 5.0
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 settings = Settings()

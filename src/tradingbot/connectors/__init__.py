@@ -2,6 +2,7 @@ from .base import Trade, OrderBook, Funding, Basis, OpenInterest, ExchangeConnec
 from .binance import BinanceConnector
 from .bybit import BybitConnector
 from .okx import OKXConnector
+from .binance_futures import BinanceFuturesConnector
 from .deribit import DeribitConnector
 from .kaiko import KaikoConnector
 from .coinapi import CoinAPIConnector
@@ -16,6 +17,7 @@ __all__ = [
     "BinanceConnector",
     "BybitConnector",
     "OKXConnector",
+    "BinanceFuturesConnector",
     "DeribitConnector",
     "KaikoConnector",
     "CoinAPIConnector",
