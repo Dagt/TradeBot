@@ -31,6 +31,8 @@ services:
     volumes:
       - ./src:/app/src
       - ./monitoring:/app/monitoring
+    env_file:
+      - .env
     environment:
       - SENTRY_ENABLED=${SENTRY_ENABLED:-false}
       - SENTRY_DSN=${SENTRY_DSN:-}
