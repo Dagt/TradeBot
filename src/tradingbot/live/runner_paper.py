@@ -204,8 +204,15 @@ async def run_paper(
     if rest is not None and warmup_total > 0:
         try:
             log.info("Loading %d historical bars for warm-up", warmup_total)
-            sym_norm = rest.normalize_symbol(symbol) if hasattr(rest, "normalize_symbol") else symbol
-            bars = await rest.rest.fetch_ohlcv(sym_norm, timeframe=timeframe, limit=warmup_total)
+            sym_norm = (
+                rest.normalize_symbol(symbol)
+                if hasattr(rest, "normalize_symbol")
+                else symbol
+            )
+            client = rest.rest if hasattr(rest, "rest") else rest
+            bars = await client.fetch_ohlcv(
+                sym_norm, timeframe=timeframe, limit=warmup_total
+            )
             for ts_ms, o, h, l, c, v in bars:
                 ts_bar = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
                 agg.completed.append(Bar(ts_open=ts_bar, o=o, h=h, l=l, c=c, v=v))
