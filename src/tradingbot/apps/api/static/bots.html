@@ -119,7 +119,7 @@
     <div class="muted">Auto-refresh 5s</div>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
       <table id="tbl-bots">
-        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Error</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -336,10 +336,7 @@ async function refreshBots(){
       tr.innerHTML=`<td>${b.pid}</td>
         <td>
           <div>${b.config?.strategy || ''}</div>
-          <div class="muted bot-meta">
-            ${venue} • ${timeframe}
-            <span class="env-dot env-${env}" title="${env}"></span>
-          </div>
+          <div class="muted bot-meta"><span class="env-dot env-${env}" title="${env}"></span> ${venue} • ${timeframe}</div>
         </td>
         <td>${pairs}</td><td>${b.status}</td>
         <td>${stats.orders_sent||0}/${stats.fills||0}</td>
@@ -352,7 +349,6 @@ async function refreshBots(){
         <td>${(stats.inventory||0).toFixed(4)}</td>
         <td>${(stats.leverage||0).toFixed(2)}</td>
         <td>${((b.risk_pct ?? 0)*100).toFixed(2)}%</td>
-        <td>${b.last_error||''}</td>
         <td>
   <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
     <i class="fa-solid fa-file-lines"></i>
@@ -433,6 +429,16 @@ async function stopBot(pid){
     console.log('stopBot', pid, r.status);
   }catch(e){
     console.log('stopBot error', e);
+  }
+  refreshBots();
+}
+
+async function haltBot(pid){
+  try{
+    const r = await fetch(api(`/bots/${pid}/halt`), {method:'POST'});
+    console.log('haltBot', pid, r.status);
+  }catch(e){
+    console.log('haltBot error', e);
   }
   refreshBots();
 }

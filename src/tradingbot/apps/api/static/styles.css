@@ -229,6 +229,13 @@ th{
 tbody tr{ transition: background .15s }
 tbody tr:hover{ background: rgba(255,255,255,.03) }
 
+#tbl-bots th, #tbl-bots td{
+  text-align:center;
+}
+#tbl-bots th:nth-child(2), #tbl-bots td:nth-child(2){
+  text-align:left;
+}
+
 #bal-table td:nth-child(n+2), #bal-table th:nth-child(n+2),
 #tick-table td:nth-child(n+2), #tick-table th:nth-child(n+2){
   text-align:right;
@@ -619,7 +626,7 @@ button.icon-btn.warn:hover {
   display:inline-block;
   width:8px;height:8px;
   border-radius:50%;
-  margin-left:4px;
+  margin-right:4px;
 }
 .env-live{ background:var(--success); }
 .env-testnet{ background:var(--warning); }
