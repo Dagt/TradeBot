@@ -181,7 +181,14 @@ async def run_paper(
             qty = float(t.get("qty", 0.0))
             log.info(
                 "METRICS %s",
-                json.dumps({"event": "trade", "price": px, "qty": qty}),
+                json.dumps(
+                    {
+                        "event": "trade",
+                        "price": px,
+                        "qty": qty,
+                        "pnl": broker.state.realized_pnl,
+                    }
+                ),
             )
             broker.update_last_price(symbol, px)
             risk.mark_price(symbol, px)
