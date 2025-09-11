@@ -10,12 +10,16 @@ import uvicorn
 
 from sqlalchemy.exc import OperationalError
 
-from .runner import BarAggregator
+from .runner import Bar, BarAggregator
 from ..adapters.binance import BinanceWSAdapter
+from ..adapters.binance_spot import BinanceSpotAdapter
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
+from ..adapters.binance_futures import BinanceFuturesAdapter
 from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter
+from ..adapters.bybit_spot import BybitSpotAdapter
 from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter
+from ..adapters.okx_spot import OKXSpotAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
@@ -28,6 +32,7 @@ from ..risk.service import RiskService
 from ..risk.correlation_service import CorrelationService
 from ..strategies import STRATEGIES
 from monitoring import panel
+from ..core.symbols import normalize
 
 try:
     from ..storage.timescale import get_engine
@@ -45,6 +50,15 @@ WS_ADAPTERS = {
     ("bybit", "spot"): BybitSpotWSAdapter,
     ("bybit", "futures"): BybitFuturesAdapter,
     ("okx", "spot"): OKXSpotWSAdapter,
+    ("okx", "futures"): OKXFuturesAdapter,
+}
+
+REST_ADAPTERS = {
+    ("binance", "spot"): BinanceSpotAdapter,
+    ("binance", "futures"): BinanceFuturesAdapter,
+    ("bybit", "spot"): BybitSpotAdapter,
+    ("bybit", "futures"): BybitFuturesAdapter,
+    ("okx", "spot"): OKXSpotAdapter,
     ("okx", "futures"): OKXFuturesAdapter,
 }
 
@@ -98,6 +112,14 @@ async def run_paper(
     adapter.ping_interval = max(getattr(adapter, "ping_interval", 20.0), 30.0)
     timeout = getattr(adapter, "ping_timeout", 20.0) or 20.0
     adapter.ping_timeout = max(timeout, 30.0)
+
+    rest = getattr(adapter, "rest", None)
+    if rest is None:
+        rest_cls = REST_ADAPTERS.get((exchange, market))
+        if rest_cls is not None:
+            rest = rest_cls()
+            if hasattr(adapter, "rest"):
+                adapter.rest = rest
     broker = PaperAdapter()
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
@@ -173,10 +195,24 @@ async def run_paper(
             port += 1
             continue
 
+    warmup_total = getattr(strat, "warmup_bars", 140)
     try:
         agg = BarAggregator(timeframe=timeframe)
     except TypeError:
         agg = BarAggregator()
+
+    if rest is not None and warmup_total > 0:
+        try:
+            log.info("Loading %d historical bars for warm-up", warmup_total)
+            sym_norm = rest.normalize_symbol(symbol) if hasattr(rest, "normalize_symbol") else symbol
+            bars = await rest.rest.fetch_ohlcv(sym_norm, timeframe=timeframe, limit=warmup_total)
+            for ts_ms, o, h, l, c, v in bars:
+                ts_bar = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
+                agg.completed.append(Bar(ts_open=ts_bar, o=o, h=h, l=l, c=c, v=v))
+            log.info("Pre-loaded %d/%d bars", len(agg.completed), warmup_total)
+        except Exception as e:  # pragma: no cover - best effort
+            log.warning("Failed to pre-load historical bars: %s", e)
+
     tick = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()
@@ -190,9 +226,9 @@ async def run_paper(
         best_ask = asks[0][0] if asks else last
         return (best_ask - tick) if side == "buy" else (best_bid + tick)
 
-    last_progress = -1
+    last_progress = len(agg.completed)
     last_log = 0
-    prev_bars = -1
+    prev_bars = len(agg.completed)
 
     try:
         async for t in adapter.stream_trades(symbol):
@@ -371,7 +407,6 @@ async def run_paper(
             MARKET_LATENCY.observe(latency)
             AGG_COMPLETED.set(bars)
             log.debug("bars accumulated=%d", bars)
-            warmup_total = 140
             if bars != prev_bars and bars < warmup_total and bars % 10 == 0:
                 log.info("Warm-up progress %d/%d", bars, warmup_total)
                 prev_bars = bars
@@ -382,9 +417,9 @@ async def run_paper(
             df = await asyncio.to_thread(agg.last_n_bars_df, 200)
             progress = len(df)
             now = time.monotonic()
-            if progress < 140:
+            if progress < warmup_total:
                 if progress != last_progress or now - last_log >= 5:
-                    log.info("Warm-up progress %d/140", progress)
+                    log.info("Warm-up progress %d/%d", progress, warmup_total)
                     last_progress, last_log = progress, now
                 continue
             bar = {"window": df, "symbol": symbol}
