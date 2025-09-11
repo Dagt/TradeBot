@@ -1554,15 +1554,17 @@ async def resume_bot(pid: int):
 
 @app.delete("/bots/{pid}")
 async def delete_bot(pid: int):
-    """Remove process information and terminate if still running."""
+    """Terminate a bot if running and remove its entry."""
 
-    info = _BOTS.pop(pid, None)
+    info = _BOTS.get(pid)
     if not info:
         raise HTTPException(status_code=404, detail="bot not found")
+
     proc: asyncio.subprocess.Process = info["process"]
     if proc.returncode is None:
-        proc.terminate()
-        await proc.wait()
+        await stop_bot(pid)
+
+    info = _BOTS.pop(pid, None) or info
     task = info.get("metrics_task")
     if task:
         task.cancel()
