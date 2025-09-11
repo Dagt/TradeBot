@@ -119,7 +119,7 @@
     <div class="muted">Auto-refresh 5s</div>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
       <table id="tbl-bots">
-        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>Trades</th><th>PnL</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders/Fills</th><th>PnL</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -328,7 +328,6 @@ async function refreshBots(){
         </td>
         <td>${pairs}</td><td>${b.status}</td>
         <td>${stats.orders_sent||0}/${stats.fills||0}</td>
-        <td>${stats.trades_processed||0}</td>
         <td>${(stats.pnl||0).toFixed(2)}</td>
         <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
         <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
@@ -342,9 +341,6 @@ async function refreshBots(){
         <td>
   <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
     <i class="fa-solid fa-file-lines"></i>
-  </button>
-  <button class="icon-btn" onclick="showTrades(${b.pid})" title="Trades">
-    <i class="fa-solid fa-list"></i>
   </button>
   <button class="icon-btn" onclick="pauseBot(${b.pid})" title="Pause">
     <i class="fa-solid fa-pause"></i>
@@ -532,41 +528,12 @@ function closeLogs(){
   if(logSource){ logSource.close(); logSource=null; }
   document.getElementById('logs-dialog').close();
 }
-
-async function showTrades(pid){
-  try{
-    const r = await fetch(api(`/bots/${pid}/trades`));
-    const j = await r.json();
-    const tbody=document.querySelector('#trades-dialog tbody');
-    tbody.innerHTML='';
-    (j.trades||[]).forEach(t=>{
-      const tr=document.createElement('tr');
-      const ts=new Date((t.ts||0)*1000).toLocaleTimeString();
-      tr.innerHTML=`<td>${ts}</td><td>${t.side||''}</td><td>${t.price||0}</td><td>${t.qty||0}</td><td>${(t.fee||0).toFixed? (t.fee||0).toFixed(2) : t.fee||0}</td>`;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('trades-dialog').showModal();
-  }catch(e){}
-}
-function closeTrades(){
-  document.getElementById('trades-dialog').close();
-}
 </script>
 
 <dialog id="logs-dialog">
   <pre id="logs-content" class="mono"></pre>
   <div style="text-align:right;margin-top:8px">
     <button onclick="closeLogs()">Cerrar</button>
-  </div>
-</dialog>
-
-<dialog id="trades-dialog">
-  <table class="mono">
-    <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Qty</th><th>Fee</th></tr></thead>
-    <tbody></tbody>
-  </table>
-  <div style="text-align:right;margin-top:8px">
-    <button onclick="closeTrades()">Cerrar</button>
   </div>
 </dialog>
 </body>

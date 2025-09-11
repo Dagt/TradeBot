@@ -14,5 +14,5 @@ def test_update_bot_stats_events():
     assert stats["fees_usd"] == 0.2
     assert stats["hit_rate"] == 1.0
     assert stats["slippage_bps"] == 5
-    assert stats["trades_processed"] == 2
     assert stats["pnl"] == 7
+    assert "trades_processed" not in stats
