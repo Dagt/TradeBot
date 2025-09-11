@@ -10,7 +10,7 @@ import uvicorn
 
 from sqlalchemy.exc import OperationalError
 
-from .runner import BarAggregator
+from .runner import BarAggregator, Bar
 from ..adapters.binance import BinanceWSAdapter
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter
@@ -80,6 +80,7 @@ async def run_paper(
     params: dict | None = None,
     timeframe: str = "1m",
     initial_cash: float = 1000.0,
+    warmup_bars: int = 140,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
     exchange, market = venue.split("_", 1)
@@ -177,6 +178,36 @@ async def run_paper(
         agg = BarAggregator(timeframe=timeframe)
     except TypeError:
         agg = BarAggregator()
+
+    # Pre-populate the aggregator with historical bars if requested
+    if warmup_bars > 0:
+        rest = getattr(adapter, "rest", None)
+        close_rest = False
+        if rest is None:
+            try:
+                import ccxt.async_support as ccxt  # type: ignore
+
+                rest_cls = getattr(ccxt, exchange)
+                rest = rest_cls({"enableRateLimit": True})
+                close_rest = True
+            except Exception as exc:  # pragma: no cover - best effort
+                log.warning("warm-up skipped: %s", exc)
+                rest = None
+        if rest is not None:
+            try:
+                ohlcvs = await rest.fetch_ohlcv(
+                    symbol, timeframe=timeframe, limit=warmup_bars
+                )
+                for ts_ms, o, h, l, c, v in ohlcvs:
+                    ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+                    agg.completed.append(Bar(ts_open=ts, o=o, h=h, l=l, c=c, v=v))
+            except Exception as exc:  # pragma: no cover - best effort
+                log.warning("warm-up fetch failed: %s", exc)
+            finally:
+                if close_rest:
+                    with contextlib.suppress(Exception):
+                        await rest.close()
+
     tick = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()
@@ -192,7 +223,7 @@ async def run_paper(
 
     last_progress = -1
     last_log = 0
-    prev_bars = -1
+    prev_bars = len(getattr(agg, "completed", []))
 
     try:
         async for t in adapter.stream_trades(symbol):
@@ -371,9 +402,8 @@ async def run_paper(
             MARKET_LATENCY.observe(latency)
             AGG_COMPLETED.set(bars)
             log.debug("bars accumulated=%d", bars)
-            warmup_total = 140
-            if bars != prev_bars and bars < warmup_total and bars % 10 == 0:
-                log.info("Warm-up progress %d/%d", bars, warmup_total)
+            if bars != prev_bars and bars < warmup_bars and bars % 10 == 0:
+                log.info("Warm-up progress %d/%d", bars, warmup_bars)
                 prev_bars = bars
             if closed is None:
                 continue
@@ -382,9 +412,9 @@ async def run_paper(
             df = await asyncio.to_thread(agg.last_n_bars_df, 200)
             progress = len(df)
             now = time.monotonic()
-            if progress < 140:
+            if progress < warmup_bars:
                 if progress != last_progress or now - last_log >= 5:
-                    log.info("Warm-up progress %d/140", progress)
+                    log.info("Warm-up progress %d/%d", progress, warmup_bars)
                     last_progress, last_log = progress, now
                 continue
             bar = {"window": df, "symbol": symbol}

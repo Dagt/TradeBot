@@ -116,6 +116,12 @@ def paper_run(
     initial_cash: float = typer.Option(
         1000.0, "--initial-cash", help="Initial cash for paper trading"
     ),
+    warmup_bars: int = typer.Option(
+        140,
+        "--warmup-bars",
+        envvar="WARMUP_BARS",
+        help="Number of bars to warm up before trading",
+    ),
 ) -> None:
     """Run a strategy in paper trading mode with metrics."""
 
@@ -142,6 +148,7 @@ def paper_run(
             params=params,
             timeframe=timeframe,
             initial_cash=initial_cash,
+            warmup_bars=warmup_bars,
         )
     )
 

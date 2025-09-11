@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from collections import deque
 
 import types, sys
 
@@ -22,6 +23,9 @@ class DummyWS:
 
 
 class DummyAgg:
+    def __init__(self, timeframe="1m"):
+        self.completed = deque()
+
     def on_trade(self, ts, px, qty):
         return SimpleNamespace(c=px)
 
@@ -120,6 +124,11 @@ class DummyBroker:
         return 1000.0
 
 
+class DummyCorr:
+    def get_correlations(self):
+        return {}
+
+
 class DummyServer:
     def __init__(self, config):
         self.should_exit = False
@@ -141,13 +150,14 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
     monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(rp, "CorrelationService", lambda *a, **k: DummyCorr())
     monkeypatch.setattr(
         rp,
         "settings",
         types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
     )
 
-    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy", warmup_bars=0)
 
     sym, side, price, qty, pfill, oexp = DummyExecBroker.last_args
     assert sym == normalize("BTC-USDT")
