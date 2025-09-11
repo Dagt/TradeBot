@@ -192,6 +192,7 @@ async def run_paper(
 
     last_progress = -1
     last_log = 0
+    prev_bars = -1
 
     try:
         async for t in adapter.stream_trades(symbol):
@@ -366,13 +367,14 @@ async def run_paper(
                     continue
             closed = agg.on_trade(ts, px, qty)
             latency = (datetime.now(timezone.utc) - ts).total_seconds()
-            MARKET_LATENCY.observe(latency)
-            AGG_COMPLETED.set(len(agg.completed))
-            log.debug("bars accumulated=%d", len(agg.completed))
-            warmup_total = 140
             bars = len(agg.completed)
-            if bars < warmup_total and bars % 10 == 0:
+            MARKET_LATENCY.observe(latency)
+            AGG_COMPLETED.set(bars)
+            log.debug("bars accumulated=%d", bars)
+            warmup_total = 140
+            if bars != prev_bars and bars < warmup_total and bars % 10 == 0:
                 log.info("Warm-up progress %d/%d", bars, warmup_total)
+                prev_bars = bars
             if closed is None:
                 continue
             correlations = await asyncio.to_thread(corr.get_correlations)
