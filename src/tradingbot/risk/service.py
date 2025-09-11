@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 from threading import Lock
+import time
 
 import pandas as pd
 import numpy as np
@@ -685,6 +686,7 @@ class RiskService:
                     "entry_price": self._entry_price,
                 }
             )
+            trade.setdefault("opened_at", time.time())
             if atr is not None:
                 trade["atr"] = float(atr)
             entry_price = trade.get("entry_price")
