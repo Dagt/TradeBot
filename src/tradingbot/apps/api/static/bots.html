@@ -348,13 +348,10 @@ async function refreshBots(){
   <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
     <i class="fa-solid fa-play"></i>
   </button>
-  <button class="icon-btn" onclick="stopBot(${b.pid})" title="Stop">
-    <i class="fa-solid fa-stop"></i>
-  </button>
   <button class="icon-btn danger" onclick="killBot(${b.pid})" title="Kill">
     <i class="fa-solid fa-skull"></i>
   </button>
-  <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Delete">
+  <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Stop & Delete">
     <i class="fa-solid fa-trash"></i>
   </button>
 </td>
@@ -424,8 +421,16 @@ async function killBot(pid){
   refreshBots();
 }
 async function deleteBot(pid){
-  await fetch(api(`/bots/${pid}`), {method:'DELETE'});
-  console.log('deleteBot', pid);
+  try{
+    const stop = await fetch(api(`/bots/${pid}/stop`), {method:'POST'});
+    console.log('stopBot', pid, stop.status);
+    if(stop.ok){
+      await fetch(api(`/bots/${pid}`), {method:'DELETE'});
+      console.log('deleteBot', pid);
+    }
+  }catch(e){
+    console.log('deleteBot error', e);
+  }
   refreshBots();
 }
 
