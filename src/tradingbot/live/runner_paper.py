@@ -179,7 +179,7 @@ async def run_paper(
             ts = t.get("ts") or datetime.now(timezone.utc)
             px = float(t.get("price"))
             qty = float(t.get("qty", 0.0))
-            log.info(
+            log.debug(
                 "METRICS %s",
                 json.dumps(
                     {
@@ -315,6 +315,10 @@ async def run_paper(
             MARKET_LATENCY.observe(latency)
             AGG_COMPLETED.set(len(agg.completed))
             log.debug("bars accumulated=%d", len(agg.completed))
+            warmup_total = 140
+            bars = len(agg.completed)
+            if bars < warmup_total and bars % 10 == 0:
+                log.info("Warm-up progress %d/%d", bars, warmup_total)
             if closed is None:
                 continue
             correlations = await asyncio.to_thread(corr.get_correlations)
