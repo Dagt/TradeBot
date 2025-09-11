@@ -27,10 +27,10 @@ def test_api_secret_crud(tmp_path, monkeypatch):
     assert resp.status_code == 200
 
 
-def test_bots_html_has_secrets_form(tmp_path, monkeypatch):
+def test_bots_html_has_no_secrets_section(tmp_path, monkeypatch):
     main = reload_app(tmp_path, monkeypatch)
     client = TestClient(main.app)
 
     resp = client.get("/static/bots.html", auth=("u", "p"))
     assert resp.status_code == 200
-    assert "Secrets" in resp.text
+    assert "Secrets" not in resp.text
