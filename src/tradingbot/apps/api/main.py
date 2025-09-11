@@ -1136,7 +1136,7 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
     elif event == "trade":
         trades_buf = info.setdefault("trades", deque(maxlen=100))
         trades_buf.append(data)
-        buf["trades_processed"] = buf.get("trades_processed", 0) + 1
+        info["market_trades"] = info.get("market_trades", 0) + 1
         pnl_val = data.get("pnl")
         if pnl_val is None:
             pnl_val = TRADING_PNL._value.get()
