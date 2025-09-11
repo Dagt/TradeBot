@@ -159,7 +159,9 @@ async def run_paper(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
-    params = params or {}
+    params = dict(params or {})
+    leverage_value = params.pop("leverage", 1)
+    log.info("METRICS %s", json.dumps({"leverage": leverage_value}))
     strat = (
         strat_cls(config_path=config_path, **params)
         if (config_path or params)
@@ -200,6 +202,8 @@ async def run_paper(
         agg = BarAggregator(timeframe=timeframe)
     except TypeError:
         agg = BarAggregator()
+    if not hasattr(agg, "completed"):
+        agg.completed = []
 
     if rest is not None and warmup_total > 0:
         try:
