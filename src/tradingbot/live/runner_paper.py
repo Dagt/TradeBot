@@ -190,6 +190,9 @@ async def run_paper(
         best_ask = asks[0][0] if asks else last
         return (best_ask - tick) if side == "buy" else (best_bid + tick)
 
+    last_progress = -1
+    last_log = 0
+
     try:
         async for t in adapter.stream_trades(symbol):
             ts = t.get("ts") or datetime.now(timezone.utc)
@@ -375,7 +378,12 @@ async def run_paper(
             correlations = await asyncio.to_thread(corr.get_correlations)
             risk.update_correlation(correlations, corr_threshold)
             df = await asyncio.to_thread(agg.last_n_bars_df, 200)
-            if len(df) < 140:
+            progress = len(df)
+            now = time.monotonic()
+            if progress < 140:
+                if progress != last_progress or now - last_log >= 5:
+                    log.info("Warm-up progress %d/140", progress)
+                    last_progress, last_log = progress, now
                 continue
             bar = {"window": df, "symbol": symbol}
             signal = strat.on_bar(bar)
