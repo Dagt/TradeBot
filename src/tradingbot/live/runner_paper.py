@@ -330,6 +330,18 @@ async def run_paper(
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
+                    opened_at = trade.get("opened_at")
+                    duration = time.time() - opened_at if opened_at else 0.0
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "trade",
+                                "duration": duration,
+                                "pnl": delta_rpnl,
+                            }
+                        ),
+                    )
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
                         log.error("[HALT] motivo=%s", reason)
