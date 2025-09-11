@@ -284,15 +284,17 @@ async def run_paper(
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
+                    exec_price = float(resp.get("price", price))
                     risk.account.update_open_order(
                         symbol, close_side, filled_qty + pending_qty
                     )
-                    risk.on_fill(symbol, close_side, filled_qty, venue="paper")
+                    risk.on_fill(
+                        symbol, close_side, filled_qty, price=exec_price, venue="paper"
+                    )
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
                     if filled_qty > 0:
-                        exec_price = float(resp.get("price", price))
                         slippage = (
                             ((exec_price - price) / price) * 10000 if price else 0.0
                         )
@@ -360,16 +362,18 @@ async def run_paper(
                         )
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
+                        exec_price = float(resp.get("price", price))
                         risk.account.update_open_order(
                             symbol, side, filled_qty + pending_qty
                         )
-                        risk.on_fill(symbol, side, filled_qty, venue="paper")
+                        risk.on_fill(
+                            symbol, side, filled_qty, price=exec_price, venue="paper"
+                        )
                         delta_rpnl = (
                             resp.get("realized_pnl", broker.state.realized_pnl)
                             - prev_rpnl
                         )
                         if filled_qty > 0:
-                            exec_price = float(resp.get("price", price))
                             slippage = (
                                 ((exec_price - price) / price) * 10000 if price else 0.0
                             )
@@ -482,11 +486,13 @@ async def run_paper(
             )
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
+            exec_price = float(resp.get("price", price))
             risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
-            risk.on_fill(symbol, side, filled_qty, venue="paper")
+            risk.on_fill(
+                symbol, side, filled_qty, price=exec_price, venue="paper"
+            )
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if filled_qty > 0:
-                exec_price = float(resp.get("price", price))
                 slippage = ((exec_price - price) / price) * 10000 if price else 0.0
                 maker = exec_price == price
                 fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
