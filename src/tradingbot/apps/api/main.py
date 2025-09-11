@@ -1090,10 +1090,62 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
     if not info:
         return
     buf = info.setdefault("stats", {})
+    data: dict = {}
     if stats:
-        buf.update(stats)
+        data.update(stats)
     if kwargs:
-        buf.update(kwargs)
+        data.update(kwargs)
+
+    event = data.pop("event", None)
+    if event == "order":
+        buf["orders_sent"] = buf.get("orders_sent", 0) + 1
+    elif event == "fill":
+        qty = float(data.get("qty", 0.0))
+        buf["fills"] = buf.get("fills", 0) + 1
+        fee = float(data.get("fee", 0.0))
+        buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
+        slip = float(data.get("slippage_bps", 0.0))
+        if slip:
+            tot = buf.get("_slip_tot", 0.0) + slip
+            cnt = buf.get("_slip_cnt", 0) + 1
+            buf["_slip_tot"] = tot
+            buf["_slip_cnt"] = cnt
+            buf["slippage_bps"] = tot / cnt
+        maker = bool(data.get("maker"))
+        if maker:
+            buf["_maker_qty"] = buf.get("_maker_qty", 0.0) + qty
+        else:
+            buf["_taker_qty"] = buf.get("_taker_qty", 0.0) + qty
+        mqty = buf.get("_maker_qty", 0.0)
+        tqty = buf.get("_taker_qty", 0.0)
+        if tqty > 0:
+            buf["maker_taker_ratio"] = mqty / tqty
+        else:
+            buf["maker_taker_ratio"] = mqty
+        trades_buf = info.setdefault("trades", deque(maxlen=100))
+        trade_data = {
+            "ts": data.get("ts", time.time()),
+            "side": data.get("side"),
+            "price": data.get("price"),
+            "qty": qty,
+            "fee": fee,
+        }
+        trades_buf.append(trade_data)
+    elif event == "cancel":
+        buf["cancels"] = buf.get("cancels", 0) + 1
+    elif event == "trade":
+        trades_buf = info.setdefault("trades", deque(maxlen=100))
+        trades_buf.append(data)
+
+    if data:
+        buf.update(data)
+
+    orders = buf.get("orders_sent", 0)
+    fills = buf.get("fills", 0)
+    cancels = buf.get("cancels", 0)
+    if orders:
+        buf["hit_rate"] = fills / orders
+        buf["cancel_ratio"] = cancels / orders
 
 
 async def _scrape_metrics(
@@ -1409,6 +1461,17 @@ async def bot_logs(pid: int):
             info["log_queue"] = None
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.get("/bots/{pid}/trades")
+def bot_trades(pid: int):
+    """Return recent trade events for a bot."""
+
+    info = _BOTS.get(pid)
+    if not info:
+        raise HTTPException(status_code=404, detail="bot not found")
+    trades = list(info.get("trades", []))
+    return {"pid": pid, "trades": trades}
 
 
 @app.post("/bots/{pid}/stop")
