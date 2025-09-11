@@ -209,6 +209,8 @@ async def run_paper(
                 if hasattr(rest, "normalize_symbol")
                 else symbol
             )
+            if isinstance(rest, (OKXSpotAdapter, OKXFuturesAdapter)):
+                sym_norm = sym_norm.replace("-", "/")
             client = rest.rest if hasattr(rest, "rest") else rest
             bars = await client.fetch_ohlcv(
                 sym_norm, timeframe=timeframe, limit=warmup_total
