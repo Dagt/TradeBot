@@ -4,7 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+# Project root directory
+BASE_DIR = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
