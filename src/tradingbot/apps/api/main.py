@@ -28,8 +28,10 @@ try:  # pragma: no cover - ccxt is optional
     from ccxt.base.errors import AuthenticationError  # type: ignore
 except Exception:  # pragma: no cover - if ccxt is missing
     ccxt = None
+
     class AuthenticationError(Exception):
         pass
+
 
 from monitoring.metrics import (
     router as metrics_router,
@@ -61,6 +63,7 @@ try:
         select_recent_orders,
         select_order_history,
     )
+
     _CAN_PG = True
     _ENGINE = get_engine()
 except Exception:
@@ -99,7 +102,10 @@ app = FastAPI(title="TradingBot API", dependencies=[Depends(_check_basic_auth)])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(metrics_router)
@@ -115,6 +121,7 @@ async def _metrics_middleware(request: Request, call_next):
     REQUEST_LATENCY.labels(request.method, endpoint).observe(elapsed)
     REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()
     return response
+
 
 @app.get("/health")
 def health():
@@ -255,6 +262,7 @@ def venue_kinds(name: str):
         raise HTTPException(status_code=404, detail="venue not found")
     return {"kinds": get_supported_kinds(cls)}
 
+
 @app.get("/logs")
 def logs(lines: int = Query(200, ge=1, le=1000)):
     """Return recent lines from the log file."""
@@ -267,11 +275,13 @@ def logs(lines: int = Query(200, ge=1, le=1000)):
         return {"items": [], "warning": "unable to read log file"}
     return {"items": content[-lines:]}
 
+
 @app.get("/tri/signals")
 def tri_signals(limit: int = Query(100, ge=1, le=1000)):
     if not _CAN_PG:
         return {"items": [], "warning": "Timescale/SQLAlchemy no disponible"}
     return {"items": select_recent_tri_signals(_ENGINE, limit=limit)}
+
 
 @app.get("/orders")
 def orders(limit: int = Query(100, ge=1, le=1000)):
@@ -320,23 +330,47 @@ def orders_history(
         )
     }
 
+
 @app.get("/tri/summary")
 def tri_summary(limit: int = Query(200, ge=1, le=5000)):
     if not _CAN_PG:
-        return {"summary": {"count": 0, "avg_edge": None, "last_edge": None, "avg_notional": None}}
+        return {
+            "summary": {
+                "count": 0,
+                "avg_edge": None,
+                "last_edge": None,
+                "avg_notional": None,
+            }
+        }
     rows = select_recent_tri_signals(_ENGINE, limit=limit)
     if not rows:
-        return {"summary": {"count": 0, "avg_edge": None, "last_edge": None, "avg_notional": None}}
+        return {
+            "summary": {
+                "count": 0,
+                "avg_edge": None,
+                "last_edge": None,
+                "avg_notional": None,
+            }
+        }
     count = len(rows)
     avg_edge = sum(r["edge"] for r in rows) / count
     last_edge = rows[0]["edge"]
     avg_notional = sum(float(r["notional_quote"]) for r in rows) / count
-    return {"summary": {"count": count, "avg_edge": avg_edge, "last_edge": last_edge, "avg_notional": avg_notional}}
+    return {
+        "summary": {
+            "count": count,
+            "avg_edge": avg_edge,
+            "last_edge": last_edge,
+            "avg_notional": avg_notional,
+        }
+    }
+
 
 # --- Static dashboard ---
 _static_dir = Path(__file__).parent / "static"
 _static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 # Servir index.html en "/"
 @app.get("/")
@@ -346,6 +380,7 @@ def index():
         return Response(content=html, media_type="text/html")
     except Exception:
         return {"message": "Sube el dashboard en /static/index.html"}
+
 
 # Servir stats.html en "/stats"
 @app.get("/stats")
@@ -376,29 +411,41 @@ def backtest_page():
     except Exception:
         return {"message": "Sube el dashboard en /static/backtest.html"}
 
+
 # Compatibilidad: redirige "/monitor" a "/stats"
 @app.get("/monitor")
 def monitor_redirect():
     return RedirectResponse("/stats")
+
 
 @app.get("/risk/exposure")
 def risk_exposure(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
         return {"venue": venue, "total_notional": 0.0, "items": []}
     from ...storage.timescale import select_latest_portfolio
+
     rows = select_latest_portfolio(_ENGINE, venue=venue)
     total = sum(float(r["notional_usd"] or 0.0) for r in rows)
     items = [
-        {"symbol": r["symbol"], "position": float(r["position"]), "price": float(r["price"]), "notional_usd": float(r["notional_usd"])}
+        {
+            "symbol": r["symbol"],
+            "position": float(r["position"]),
+            "price": float(r["price"]),
+            "notional_usd": float(r["notional_usd"]),
+        }
         for r in rows
     ]
     return {"venue": venue, "total_notional": total, "items": items}
 
+
 @app.get("/risk/events")
-def risk_events(venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1, le=200)):
+def risk_events(
+    venue: str = "binance_spot_testnet", limit: int = Query(50, ge=1, le=200)
+):
     if not _CAN_PG:
         return {"venue": venue, "items": []}
     from ...storage.timescale import select_recent_risk_events
+
     items = select_recent_risk_events(_ENGINE, venue=venue, limit=limit)
     return {"venue": venue, "items": items}
 
@@ -427,39 +474,64 @@ def risk_reset():
     rm.reset()
     return {"risk": {"enabled": rm.enabled, "last_kill_reason": rm.last_kill_reason}}
 
+
 @app.get("/pnl/summary")
 def pnl_summary(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     if not _CAN_PG:
-        return {"venue": venue, "symbol": symbol, "items": [], "totals": {"upnl":0,"rpnl":0,"fees":0,"net_pnl":0}}
+        return {
+            "venue": venue,
+            "symbol": symbol,
+            "items": [],
+            "totals": {"upnl": 0, "rpnl": 0, "fees": 0, "net_pnl": 0},
+        }
     from ...storage.timescale import select_pnl_summary
+
     symbol = normalize_symbol(symbol) if symbol else None
     return select_pnl_summary(_ENGINE, venue=venue, symbol=symbol)
+
 
 @app.get("/pnl/timeseries")
 def pnl_timeseries(
     venue: str = "binance_spot_testnet",
     symbol: str | None = Query(None),
     bucket: str = Query("1 minute"),
-    hours: int = Query(6, ge=1, le=168)   # hasta 7 días
+    hours: int = Query(6, ge=1, le=168),  # hasta 7 días
 ):
     if not _CAN_PG:
-        return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": []}
+        return {
+            "venue": venue,
+            "symbol": symbol,
+            "bucket": bucket,
+            "hours": hours,
+            "points": [],
+        }
     from ...storage.timescale import select_pnl_timeseries
+
     symbol = normalize_symbol(symbol) if symbol else None
-    points = select_pnl_timeseries(_ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours)
-    return {"venue": venue, "symbol": symbol, "bucket": bucket, "hours": hours, "points": points}
+    points = select_pnl_timeseries(
+        _ENGINE, venue=venue, symbol=symbol, bucket=bucket, hours=hours
+    )
+    return {
+        "venue": venue,
+        "symbol": symbol,
+        "bucket": bucket,
+        "hours": hours,
+        "points": points,
+    }
+
 
 @app.get("/fills/recent")
 def fills_recent(
     venue: str = "binance_spot_testnet",
     symbol: str | None = Query(None),
-    limit: int = Query(100, ge=1, le=500)
+    limit: int = Query(100, ge=1, le=500),
 ):
     if not _CAN_PG:
         return {"venue": venue, "items": []}
     symbol = normalize_symbol(symbol) if symbol else None
     items = select_recent_fills(_ENGINE, venue=venue, symbol=symbol, limit=limit)
     return {"venue": venue, "symbol": symbol, "items": items}
+
 
 @app.get("/fills/summary")
 def fills_summary(
@@ -470,9 +542,11 @@ def fills_summary(
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": []}
     from ...storage.timescale import select_fills_summary
+
     symbol = normalize_symbol(symbol) if symbol else None
     items = select_fills_summary(_ENGINE, venue=venue, symbol=symbol, strategy=strategy)
     return {"venue": venue, "symbol": symbol, "strategy": strategy, "items": items}
+
 
 @app.get("/positions/rebuild_preview")
 def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
@@ -482,38 +556,47 @@ def positions_rebuild_preview(venue: str = "binance_spot_testnet"):
     if not _CAN_PG:
         return {"venue": venue, "from_fills": {}, "current": []}
     from ...storage.timescale import rebuild_positions_from_fills, select_pnl_summary
+
     recalced = rebuild_positions_from_fills(_ENGINE, venue=venue)
     current = select_pnl_summary(_ENGINE, venue=venue)["items"]
     return {"venue": venue, "from_fills": recalced, "current": current}
+
 
 @app.get("/fills/slippage")
 def fills_slippage(
     venue: str = "binance_spot_testnet",
     hours: int = Query(6, ge=1, le=168),
-    symbol: str | None = Query(None)
+    symbol: str | None = Query(None),
 ):
     if not _CAN_PG:
-        return {"venue": venue, "hours": hours, "symbol": symbol, "global": {}, "buy": {}, "sell": {}}
+        return {
+            "venue": venue,
+            "hours": hours,
+            "symbol": symbol,
+            "global": {},
+            "buy": {},
+            "sell": {},
+        }
     from ...storage.timescale import select_slippage
+
     symbol = normalize_symbol(symbol) if symbol else None
     return select_slippage(_ENGINE, venue=venue, symbol=symbol, hours=hours)
 
 
 @app.get("/pnl/intraday")
-def pnl_intraday(
-    venue: str = "binance_spot_testnet",
-    symbol: str | None = Query(None)
-):
+def pnl_intraday(venue: str = "binance_spot_testnet", symbol: str | None = Query(None)):
     """Return intraday net PnL for the last 24h."""
     if not _CAN_PG:
         return {"venue": venue, "symbol": symbol, "net": 0.0, "points": []}
     from ...storage.timescale import select_pnl_timeseries
+
     symbol = normalize_symbol(symbol) if symbol else None
     points = select_pnl_timeseries(
         _ENGINE, venue=venue, symbol=symbol, bucket="1 hour", hours=24
     )
     net = sum(p.get("net", 0.0) for p in points)
     return {"venue": venue, "symbol": symbol, "net": net, "points": points}
+
 
 # --- Strategy control endpoints -------------------------------------------------
 _strategies_state: dict[str, str] = {}
@@ -610,7 +693,10 @@ def strategy_schema(name: str):
         for f in dataclasses.fields(CrossArbConfig):
             if f.name in _INTERNAL_KEYS:
                 continue
-            if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
+            if (
+                f.default is dataclasses.MISSING
+                and f.default_factory is dataclasses.MISSING
+            ):
                 default = None
             else:
                 default = (
@@ -724,9 +810,16 @@ def strategy_schema(name: str):
                         if field_name in _INTERNAL_KEYS:
                             continue
                         default = getattr(v, field_name)
-                        if field_name not in param_info and field_name not in doc_params:
+                        if (
+                            field_name not in param_info
+                            and field_name not in doc_params
+                        ):
                             continue
-                        desc = param_info.get(field_name) or doc_params.get(field_name) or ""
+                        desc = (
+                            param_info.get(field_name)
+                            or doc_params.get(field_name)
+                            or ""
+                        )
                         params.append(
                             {
                                 "name": field_name,
@@ -808,6 +901,7 @@ def update_strategy_params(name: str, params: dict):
 
 # By default, CLI commands run without a timeout. Clients may specify one if desired.
 DEFAULT_CLI_TIMEOUT: int | None = None
+
 
 class CLIRequest(BaseModel):
     """Payload for running a command via the CLI.
@@ -927,7 +1021,11 @@ async def _stream_process(
 
     try:
         while running:
-            if timeout is not None and time.perf_counter() - start > timeout and proc.returncode is None:
+            if (
+                timeout is not None
+                and time.perf_counter() - start > timeout
+                and proc.returncode is None
+            ):
                 proc.terminate()
 
             try:
@@ -958,7 +1056,11 @@ async def _stream_process(
                     except asyncio.QueueEmpty:
                         break
                 status_payload = json.dumps(
-                    {"job_id": job_id, "status": "finished", "returncode": proc.returncode}
+                    {
+                        "job_id": job_id,
+                        "status": "finished",
+                        "returncode": proc.returncode,
+                    }
                 )
                 yield format_sse("status", status_payload)
                 running = False
@@ -1097,6 +1199,9 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
         data.update(kwargs)
 
     event = data.pop("event", None)
+    pnl_val = None
+    if event in {"order", "fill", "trade"}:
+        pnl_val = data.pop("pnl", None)
     if event == "order":
         buf["orders_sent"] = buf.get("orders_sent", 0) + 1
     elif event == "fill":
@@ -1122,6 +1227,12 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
             buf["maker_taker_ratio"] = mqty / tqty
         else:
             buf["maker_taker_ratio"] = mqty
+        if pnl_val is not None:
+            try:
+                pnl = float(pnl_val)
+            except (TypeError, ValueError):
+                pnl = 0.0
+            buf["pnl"] = buf.get("pnl", 0.0) + pnl
         trades_buf = info.setdefault("trades", deque(maxlen=100))
         trade_data = {
             "ts": data.get("ts", time.time()),
@@ -1135,9 +1246,11 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
         buf["cancels"] = buf.get("cancels", 0) + 1
     elif event == "trade":
         trades_buf = info.setdefault("trades", deque(maxlen=100))
-        trades_buf.append(data)
+        trade_payload = dict(data)
+        if pnl_val is not None:
+            trade_payload["pnl"] = pnl_val
+        trades_buf.append(trade_payload)
         info["market_trades"] = info.get("market_trades", 0) + 1
-        pnl_val = data.get("pnl")
         if pnl_val is None:
             pnl_val = TRADING_PNL._value.get()
         try:
@@ -1390,15 +1503,9 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             env=env,
         )
         log_buffer: deque[str] = deque(maxlen=1000)
-        stdout_task = asyncio.create_task(
-            _scrape_metrics(proc.pid, proc, log_buffer)
-        )
-        stderr_task = asyncio.create_task(
-            _capture_stderr(proc.pid, proc, log_buffer)
-        )
-        monitor_task = asyncio.create_task(
-            _monitor_bot(proc.pid, proc)
-        )
+        stdout_task = asyncio.create_task(_scrape_metrics(proc.pid, proc, log_buffer))
+        stderr_task = asyncio.create_task(_capture_stderr(proc.pid, proc, log_buffer))
+        monitor_task = asyncio.create_task(_monitor_bot(proc.pid, proc))
         _BOTS[proc.pid] = {
             "process": proc,
             "config": cfg.dict(),
@@ -1406,7 +1513,7 @@ async def start_bot(cfg: BotConfig, request: Request = None):
             "status": "running",
             "metrics_task": stdout_task,
             "stderr_task": stderr_task,
-             "monitor_task": monitor_task,
+            "monitor_task": monitor_task,
             "log_buffer": log_buffer,
         }
         return {"pid": proc.pid, "status": "running"}
@@ -1573,4 +1680,3 @@ async def delete_bot(pid: int):
     if mon_task:
         mon_task.cancel()
     return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
-

@@ -31,6 +31,7 @@ from monitoring import panel
 
 try:
     from ..storage.timescale import get_engine
+
     _CAN_PG = True
 except Exception:  # pragma: no cover
     _CAN_PG = False
@@ -85,7 +86,12 @@ async def run_paper(
     ws_cls = WS_ADAPTERS.get((exchange, market))
     if ws_cls is None:
         raise ValueError(f"unsupported venue: {venue}")
-    log.info("Connecting to %s %s WS in paper mode for %s", exchange.capitalize(), market, symbol)
+    log.info(
+        "Connecting to %s %s WS in paper mode for %s",
+        exchange.capitalize(),
+        market,
+        symbol,
+    )
     # Allow slight delays without dropping the connection without mutating
     # global settings. Configure per-adapter ping timing instead.
     adapter = ws_cls()
@@ -97,7 +103,9 @@ async def run_paper(
     if hasattr(broker.account, "update_cash"):
         broker.account.update_cash(initial_cash)
 
-    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper"))
+    guard = PortfolioGuard(
+        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper")
+    )
     guard.refresh_usd_caps(initial_cash)
     corr = CorrelationService()
     risk = RiskService(
@@ -120,14 +128,21 @@ async def run_paper(
         pos_map = load_positions(engine, guard.cfg.venue)
         for sym, data in pos_map.items():
             risk.update_position(
-                guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
+                guard.cfg.venue,
+                sym,
+                data.get("qty", 0.0),
+                entry_price=data.get("avg_price"),
             )
 
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
-    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    strat = (
+        strat_cls(config_path=config_path, **params)
+        if (config_path or params)
+        else strat_cls()
+    )
     strat.risk_service = risk
 
     router = ExecutionRouter(
@@ -174,6 +189,7 @@ async def run_paper(
         best_bid = bids[0][0] if bids else last
         best_ask = asks[0][0] if asks else last
         return (best_ask - tick) if side == "buy" else (best_bid + tick)
+
     try:
         async for t in adapter.stream_trades(symbol):
             ts = t.get("ts") or datetime.now(timezone.utc)
@@ -213,6 +229,8 @@ async def run_paper(
                                 "side": close_side,
                                 "price": price,
                                 "qty": abs(pos_qty),
+                                "fee": 0.0,
+                                "pnl": broker.state.realized_pnl,
                             }
                         ),
                     )
@@ -226,13 +244,22 @@ async def run_paper(
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
-                    risk.account.update_open_order(symbol, close_side, filled_qty + pending_qty)
+                    risk.account.update_open_order(
+                        symbol, close_side, filled_qty + pending_qty
+                    )
                     risk.on_fill(symbol, close_side, filled_qty, venue="paper")
+                    delta_rpnl = (
+                        resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    )
                     if filled_qty > 0:
                         exec_price = float(resp.get("price", price))
-                        slippage = ((exec_price - price) / price) * 10000 if price else 0.0
+                        slippage = (
+                            ((exec_price - price) / price) * 10000 if price else 0.0
+                        )
                         maker = exec_price == price
-                        fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                        fee_bps = (
+                            exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                        )
                         fee = filled_qty * exec_price * (fee_bps / 10000.0)
                         log.info(
                             "METRICS %s",
@@ -243,22 +270,31 @@ async def run_paper(
                                     "price": exec_price,
                                     "qty": filled_qty,
                                     "fee": fee,
+                                    "pnl": delta_rpnl,
                                     "slippage_bps": slippage,
                                     "maker": maker,
                                 }
                             ),
                         )
-                    delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    delta_rpnl = (
+                        resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    )
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
                         log.error("[HALT] motivo=%s", reason)
                         break
                     continue
                 if decision in {"scale_in", "scale_out"}:
-                    target = risk.calc_position_size(trade.get("strength", 1.0), px, clamp=False)
+                    target = risk.calc_position_size(
+                        trade.get("strength", 1.0), px, clamp=False
+                    )
                     delta_qty = target - abs(pos_qty)
                     if abs(delta_qty) > risk.min_order_qty:
-                        side = trade["side"] if delta_qty > 0 else ("sell" if trade["side"] == "buy" else "buy")
+                        side = (
+                            trade["side"]
+                            if delta_qty > 0
+                            else ("sell" if trade["side"] == "buy" else "buy")
+                        )
                         prev_rpnl = broker.state.realized_pnl
                         price = _limit_price(side)
                         log.info(
@@ -269,6 +305,8 @@ async def run_paper(
                                     "side": side,
                                     "price": price,
                                     "qty": abs(delta_qty),
+                                    "fee": 0.0,
+                                    "pnl": broker.state.realized_pnl,
                                 }
                             ),
                         )
@@ -282,13 +320,25 @@ async def run_paper(
                         )
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
-                        risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+                        risk.account.update_open_order(
+                            symbol, side, filled_qty + pending_qty
+                        )
                         risk.on_fill(symbol, side, filled_qty, venue="paper")
+                        delta_rpnl = (
+                            resp.get("realized_pnl", broker.state.realized_pnl)
+                            - prev_rpnl
+                        )
                         if filled_qty > 0:
                             exec_price = float(resp.get("price", price))
-                            slippage = ((exec_price - price) / price) * 10000 if price else 0.0
+                            slippage = (
+                                ((exec_price - price) / price) * 10000 if price else 0.0
+                            )
                             maker = exec_price == price
-                            fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                            fee_bps = (
+                                exec_broker.maker_fee_bps
+                                if maker
+                                else broker.taker_fee_bps
+                            )
                             fee = filled_qty * exec_price * (fee_bps / 10000.0)
                             log.info(
                                 "METRICS %s",
@@ -299,12 +349,13 @@ async def run_paper(
                                         "price": exec_price,
                                         "qty": filled_qty,
                                         "fee": fee,
+                                        "pnl": delta_rpnl,
                                         "slippage_bps": slippage,
                                         "maker": maker,
                                     }
                                 ),
                             )
-                        delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+
                         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                         if halted:
                             log.error("[HALT] motivo=%s", reason)
@@ -360,7 +411,16 @@ async def run_paper(
             prev_rpnl = broker.state.realized_pnl
             log.info(
                 "METRICS %s",
-                json.dumps({"event": "order", "side": side, "price": price, "qty": qty}),
+                json.dumps(
+                    {
+                        "event": "order",
+                        "side": side,
+                        "price": price,
+                        "qty": qty,
+                        "fee": 0.0,
+                        "pnl": broker.state.realized_pnl,
+                    }
+                ),
             )
             resp = await exec_broker.place_limit(
                 symbol,
@@ -375,6 +435,7 @@ async def run_paper(
             pending_qty = float(resp.get("pending_qty", 0.0))
             risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
             risk.on_fill(symbol, side, filled_qty, venue="paper")
+            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if filled_qty > 0:
                 exec_price = float(resp.get("price", price))
                 slippage = ((exec_price - price) / price) * 10000 if price else 0.0
@@ -390,12 +451,12 @@ async def run_paper(
                             "price": exec_price,
                             "qty": filled_qty,
                             "fee": fee,
+                            "pnl": delta_rpnl,
                             "slippage_bps": slippage,
                             "maker": maker,
                         }
                     ),
                 )
-            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
             if halted:
                 log.error("[HALT] motivo=%s", reason)
@@ -406,4 +467,3 @@ async def run_paper(
             metrics_task.cancel()
             with contextlib.suppress(Exception):
                 await metrics_task
-
