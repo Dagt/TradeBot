@@ -296,6 +296,8 @@ async def run_paper(
                     risk.on_fill(
                         symbol, close_side, filled_qty, price=exec_price, venue="paper"
                     )
+                    cur_qty = risk.account.current_exposure(symbol)[0]
+                    log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
@@ -374,6 +376,8 @@ async def run_paper(
                         risk.on_fill(
                             symbol, side, filled_qty, price=exec_price, venue="paper"
                         )
+                        cur_qty = risk.account.current_exposure(symbol)[0]
+                        log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
                         delta_rpnl = (
                             resp.get("realized_pnl", broker.state.realized_pnl)
                             - prev_rpnl
@@ -496,6 +500,8 @@ async def run_paper(
             risk.on_fill(
                 symbol, side, filled_qty, price=exec_price, venue="paper"
             )
+            cur_qty = risk.account.current_exposure(symbol)[0]
+            log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if filled_qty > 0:
                 slippage = ((exec_price - price) / price) * 10000 if price else 0.0
