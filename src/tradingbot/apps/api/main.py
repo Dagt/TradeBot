@@ -39,7 +39,7 @@ from monitoring.metrics import (
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
-from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY, TRADING_PNL
 from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
@@ -1136,6 +1136,20 @@ def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
     elif event == "trade":
         trades_buf = info.setdefault("trades", deque(maxlen=100))
         trades_buf.append(data)
+        buf["trades_processed"] = buf.get("trades_processed", 0) + 1
+        pnl_val = data.get("pnl")
+        if pnl_val is None:
+            pnl_val = TRADING_PNL._value.get()
+        try:
+            pnl = float(pnl_val)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        prev = buf.get("_last_pnl")
+        if prev is not None:
+            buf["pnl"] = buf.get("pnl", 0.0) + (pnl - prev)
+        else:
+            buf["pnl"] = buf.get("pnl", 0.0) + pnl
+        buf["_last_pnl"] = pnl
 
     if data:
         buf.update(data)
