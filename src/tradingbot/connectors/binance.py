@@ -27,8 +27,17 @@ from ..execution.venue_adapter import translate_order_flags
 class BinanceConnector(ExchangeConnector):
     name = "binance"
 
+    WS_BASE = "wss://stream.binance.com:9443/ws"
+    WS_BASE_TESTNET = "wss://testnet.binance.vision/ws"
+
+    def _ws_base(self) -> str:
+        """Return websocket base depending on CCXT testnet option."""
+        client = getattr(self, "rest", None)
+        options = getattr(client, "options", {}) if client else {}
+        return self.WS_BASE_TESTNET if options.get("testnet") else self.WS_BASE
+
     def _ws_url(self, symbol: str) -> str:
-        return f"wss://stream.binance.com:9443/ws/{symbol.lower()}@depth"
+        return f"{self._ws_base()}/{symbol.lower()}@depth"
 
     def _ws_subscribe(self, symbol: str) -> str:
         return json.dumps(
@@ -48,7 +57,7 @@ class BinanceConnector(ExchangeConnector):
         )
 
     def _ws_trades_url(self, symbol: str) -> str:
-        return f"wss://stream.binance.com:9443/ws/{symbol.lower()}@trade"
+        return f"{self._ws_base()}/{symbol.lower()}@trade"
 
     def _ws_trades_subscribe(self, symbol: str) -> str:
         return json.dumps(
