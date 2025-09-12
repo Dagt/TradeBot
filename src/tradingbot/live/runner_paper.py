@@ -299,7 +299,6 @@ async def run_paper(
                     close_side = "sell" if pos_qty > 0 else "buy"
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(close_side)
-                    from ..execution.order_sizer import adjust_qty
                     qty_close = adjust_qty(abs(pos_qty), price, min_notional, step_size)
                     if qty_close <= 0:
                         continue
