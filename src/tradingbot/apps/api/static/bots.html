@@ -158,7 +158,7 @@ const api = (path) => `${location.origin}${path}`;
       const r = await fetch(api('/strategies/status'));
       const j = await r.json();
       const sel = document.getElementById('bot-strategy');
-      sel.innerHTML='';
+      sel.replaceChildren();
       Object.keys(j.strategies || {}).forEach(s=>{
         const o=document.createElement('option');
         o.value=s; o.textContent=s; sel.appendChild(o);
@@ -169,7 +169,7 @@ const api = (path) => `${location.origin}${path}`;
 
 async function loadStrategyParams(name){
   const container=document.getElementById('bot-strategy-params');
-  container.innerHTML='';
+  container.replaceChildren();
   const card=document.getElementById('bot-param-card');
   card.style.display='none';
   const toggle=document.getElementById('bot-toggle-params');
@@ -312,7 +312,7 @@ async function refreshBots(){
     const r = await fetch(api('/bots'));
     const j = await r.json();
     const body = document.querySelector('#tbl-bots tbody');
-    body.innerHTML='';
+    body.replaceChildren();
     (j.bots||[]).forEach(b=>{
       const stats=b.stats||{};
       const pairs=(b.config?.pairs||[]).join(',');
@@ -321,42 +321,102 @@ async function refreshBots(){
       const env = b.config?.dry_run ? 'paper'
                  : (b.config?.testnet ? 'testnet' : 'live');
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${b.pid}</td>
-        <td>
-          <div>${b.config?.strategy || ''}</div>
-          <div class="muted bot-meta"><span class="env-dot env-${env}" title="${env}"></span> ${venue} • ${timeframe}</div>
-        </td>
-        <td>${pairs}</td><td>${b.status}</td>
-        <td>${stats.orders_sent||0}</td>
-        <td>${stats.fills||0}</td>
-        <td>${(stats.pnl||0).toFixed(2)}</td>
-        <td>${((stats.cancel_ratio||0)*100).toFixed(1)}%</td>
-        <td>${(stats.maker_taker_ratio||0).toFixed(2)}</td>
-        <td>${(stats.fees_usd||0).toFixed(2)}</td>
-        <td>${(stats.slippage_bps||0).toFixed(2)}</td>
-        <td>${((stats.hit_rate||0)*100).toFixed(1)}%</td>
-        <td>${(stats.avg_trade_duration||0).toFixed(1)}</td>
-        <td>${(stats.inventory||0).toFixed(4)}</td>
-        <td>${(stats.leverage||0).toFixed(2)}</td>
-        <td>${((b.risk_pct ?? 0)*100).toFixed(2)}%</td>
-        <td>
-  <button class="icon-btn" onclick="showLogs(${b.pid})" title="Logs">
-    <i class="fa-solid fa-file-lines"></i>
-  </button>
-  <button class="icon-btn" onclick="pauseBot(${b.pid})" title="Pause">
-    <i class="fa-solid fa-pause"></i>
-  </button>
-  <button class="icon-btn" onclick="resumeBot(${b.pid})" title="Resume">
-    <i class="fa-solid fa-play"></i>
-  </button>
-  <button class="icon-btn danger" onclick="killBot(${b.pid})" title="Kill">
-    <i class="fa-solid fa-skull"></i>
-  </button>
-  <button class="icon-btn danger" onclick="deleteBot(${b.pid})" title="Stop & Delete">
-    <i class="fa-solid fa-trash"></i>
-  </button>
-</td>
-`;
+
+      const tdPid=document.createElement('td');
+      tdPid.textContent=String(b.pid);
+      tr.appendChild(tdPid);
+
+      const tdStrategy=document.createElement('td');
+      const divName=document.createElement('div');
+      divName.textContent=b.config?.strategy || '';
+      tdStrategy.appendChild(divName);
+      const divMeta=document.createElement('div');
+      divMeta.className='muted bot-meta';
+      const spanEnv=document.createElement('span');
+      spanEnv.className=`env-dot env-${env}`;
+      spanEnv.title=env;
+      divMeta.appendChild(spanEnv);
+      divMeta.appendChild(document.createTextNode(` ${venue} • ${timeframe}`));
+      tdStrategy.appendChild(divMeta);
+      tr.appendChild(tdStrategy);
+
+      const tdPairs=document.createElement('td');
+      tdPairs.textContent=pairs;
+      tr.appendChild(tdPairs);
+
+      const tdStatus=document.createElement('td');
+      tdStatus.textContent=b.status;
+      tr.appendChild(tdStatus);
+
+      const cells=[
+        stats.orders_sent||0,
+        stats.fills||0,
+        (stats.pnl||0).toFixed(2),
+        `${((stats.cancel_ratio||0)*100).toFixed(1)}%`,
+        (stats.maker_taker_ratio||0).toFixed(2),
+        (stats.fees_usd||0).toFixed(2),
+        (stats.slippage_bps||0).toFixed(2),
+        `${((stats.hit_rate||0)*100).toFixed(1)}%`,
+        (stats.avg_trade_duration||0).toFixed(1),
+        (stats.inventory||0).toFixed(4),
+        (stats.leverage||0).toFixed(2),
+        `${((b.risk_pct ?? 0)*100).toFixed(2)}%`
+      ];
+      cells.forEach(v=>{
+        const td=document.createElement('td');
+        td.textContent=String(v);
+        tr.appendChild(td);
+      });
+
+      const tdActions=document.createElement('td');
+
+      const btnLogs=document.createElement('button');
+      btnLogs.className='icon-btn';
+      btnLogs.onclick=()=>showLogs(b.pid);
+      btnLogs.title='Logs';
+      const iconLogs=document.createElement('i');
+      iconLogs.className='fa-solid fa-file-lines';
+      btnLogs.appendChild(iconLogs);
+      tdActions.appendChild(btnLogs);
+
+      const btnPause=document.createElement('button');
+      btnPause.className='icon-btn';
+      btnPause.onclick=()=>pauseBot(b.pid);
+      btnPause.title='Pause';
+      const iconPause=document.createElement('i');
+      iconPause.className='fa-solid fa-pause';
+      btnPause.appendChild(iconPause);
+      tdActions.appendChild(btnPause);
+
+      const btnResume=document.createElement('button');
+      btnResume.className='icon-btn';
+      btnResume.onclick=()=>resumeBot(b.pid);
+      btnResume.title='Resume';
+      const iconResume=document.createElement('i');
+      iconResume.className='fa-solid fa-play';
+      btnResume.appendChild(iconResume);
+      tdActions.appendChild(btnResume);
+
+      const btnKill=document.createElement('button');
+      btnKill.className='icon-btn danger';
+      btnKill.onclick=()=>killBot(b.pid);
+      btnKill.title='Kill';
+      const iconKill=document.createElement('i');
+      iconKill.className='fa-solid fa-skull';
+      btnKill.appendChild(iconKill);
+      tdActions.appendChild(btnKill);
+
+      const btnDelete=document.createElement('button');
+      btnDelete.className='icon-btn danger';
+      btnDelete.onclick=()=>deleteBot(b.pid);
+      btnDelete.title='Stop & Delete';
+      const iconDelete=document.createElement('i');
+      iconDelete.className='fa-solid fa-trash';
+      btnDelete.appendChild(iconDelete);
+      tdActions.appendChild(btnDelete);
+
+      tr.appendChild(tdActions);
+
       body.appendChild(tr);
     });
   }catch(e){}
@@ -438,30 +498,77 @@ async function deleteBot(pid){
 function renderExposure(data){
   const div=document.getElementById('risk-exposure');
   const items=data.items||[];
-  let html=`<div><strong>Total notional:</strong> ${Number(data.total_notional||0).toFixed(2)}</div>`;
+  div.replaceChildren();
+  const total=document.createElement('div');
+  const strong=document.createElement('strong');
+  strong.textContent='Total notional:';
+  total.appendChild(strong);
+  total.appendChild(document.createTextNode(` ${Number(data.total_notional||0).toFixed(2)}`));
+  div.appendChild(total);
+
   if(items.length){
-    html+='<table><thead><tr><th>Symbol</th><th>Position</th><th>Precio</th><th>Notional USD</th></tr></thead><tbody>';
-    items.forEach(i=>{
-      html+=`<tr><td>${i.symbol}</td><td>${Number(i.position||0).toFixed(8)}</td><td>${Number(i.price||0).toFixed(4)}</td><td>${Number(i.notional_usd||0).toFixed(2)}</td></tr>`;
+    const table=document.createElement('table');
+    const thead=document.createElement('thead');
+    const trHead=document.createElement('tr');
+    ['Symbol','Position','Precio','Notional USD'].forEach(h=>{
+      const th=document.createElement('th');
+      th.textContent=h;
+      trHead.appendChild(th);
     });
-    html+='</tbody></table>';
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    const tbody=document.createElement('tbody');
+    items.forEach(i=>{
+      const tr=document.createElement('tr');
+      const vals=[
+        i.symbol,
+        Number(i.position||0).toFixed(8),
+        Number(i.price||0).toFixed(4),
+        Number(i.notional_usd||0).toFixed(2)
+      ];
+      vals.forEach(v=>{
+        const td=document.createElement('td');
+        td.textContent=String(v);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    div.appendChild(table);
   }
-  div.innerHTML=html;
 }
 
 function renderEvents(items){
   const div=document.getElementById('risk-events');
   if(!(items&&items.length)){
-    div.innerHTML='';
+    div.replaceChildren();
     return;
   }
-  let html='<table><thead><tr><th>Tiempo</th><th>Symbol</th><th>Tipo</th><th>Mensaje</th></tr></thead><tbody>';
-  items.forEach(ev=>{
-    const ts=ev.ts?new Date(ev.ts).toLocaleString():'';
-    html+=`<tr><td>${ts}</td><td>${ev.symbol||''}</td><td>${ev.kind||''}</td><td>${ev.message||''}</td></tr>`;
+  div.replaceChildren();
+  const table=document.createElement('table');
+  const thead=document.createElement('thead');
+  const trHead=document.createElement('tr');
+  ['Tiempo','Symbol','Tipo','Mensaje'].forEach(h=>{
+    const th=document.createElement('th');
+    th.textContent=h;
+    trHead.appendChild(th);
   });
-  html+='</tbody></table>';
-  div.innerHTML=html;
+  thead.appendChild(trHead);
+  table.appendChild(thead);
+  const tbody=document.createElement('tbody');
+  items.forEach(ev=>{
+    const tr=document.createElement('tr');
+    const ts=ev.ts?new Date(ev.ts).toLocaleString():'';
+    [ts, ev.symbol||'', ev.kind||'', ev.message||''].forEach(v=>{
+      const td=document.createElement('td');
+      td.textContent=String(v);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  div.appendChild(table);
 }
 
 async function refreshRisk(){
