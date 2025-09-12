@@ -45,40 +45,27 @@
         <label for="fl-symbol">Símbolo</label>
         <input id="fl-symbol" placeholder="BTCUSDT"/>
       </div>
+      <div>
+        <label for="fl-venue">Exchange/Entorno</label>
+        <select id="fl-venue"></select>
+      </div>
       <div style="display:flex;align-items:end;">
         <button id="fl-apply">Aplicar</button>
       </div>
     </div>
-  </div>  
-  <div class="row" style="margin-top:20px">
-    <div class="card">
-      <h2>PnL Spot (6h)</h2>
-      <canvas id="chart-pnl-spot" height="120"></canvas>
-    </div>
-    <div class="card">
-      <h2>PnL Futuros (6h)</h2>
-      <canvas id="chart-pnl-fut" height="120"></canvas>
-    </div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>PnL (6h)</h2>
+    <canvas id="chart-pnl" height="120"></canvas>
   </div>
   <div class="card" style="margin-top:16px">
-      <h2>PnL por símbolo (Spot)</h2>
-      <div class="muted">Realizado, no realizado y neto</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-pnl-spot">
-          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h2>PnL por símbolo (Futuros)</h2>
-      <div class="muted">Realizado, no realizado y neto</div>
-      <div style="overflow:auto; max-height: 40vh; margin-top:10px">
-        <table id="tbl-pnl-fut">
-          <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
-          <tbody></tbody>
-        </table>
+    <h2>PnL por símbolo</h2>
+    <div class="muted">Realizado, no realizado y neto</div>
+    <div style="overflow:auto; max-height: 40vh; margin-top:10px">
+      <table id="tbl-pnl">
+        <thead><tr><th>symbol</th><th>qty</th><th>avg</th><th>UPnL</th><th>RPnL</th><th>fees</th><th>net</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
   <div class="card" style="margin-top:16px">
@@ -170,49 +157,35 @@ async function refreshPositions(){
   }catch(e){}
 }
 let currentSymbol='';
+let currentVenue='binance_spot_testnet';
+const VENUES=['binance_spot_testnet','binance_futures_um_testnet','binance_spot','binance_futures_um'];
+function populateVenue(){
+  const sel=document.getElementById('fl-venue');
+  sel.innerHTML='';
+  VENUES.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+  const urlVenue=new URLSearchParams(location.search).get('venue');
+  currentVenue=urlVenue||VENUES[0];
+  sel.value=currentVenue;
+}
 function buildPnlChart(ctx, labels, upnl, rpnl, net){
   new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
 }
-async function refreshPnlSpot(){
+async function refreshPnl(){
   try{
     const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
-    const r=await fetch(`/pnl/timeseries?venue=binance_spot_testnet&bucket=1%20minute&hours=6${sym}`);
+    const r=await fetch(`/pnl/timeseries?venue=${currentVenue}&bucket=1%20minute&hours=6${sym}`);
     const j=await r.json();
     const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
     const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl-spot').getContext('2d'),labels,upnl,rpnl,net);
+    buildPnlChart(document.getElementById('chart-pnl').getContext('2d'),labels,upnl,rpnl,net);
   }catch(e){}
 }
-async function refreshPnlFut(){
+async function refreshPnlSummary(){
   try{
     const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
-    const r=await fetch(`/pnl/timeseries?venue=binance_futures_um_testnet&bucket=1%20minute&hours=6${sym}`);
+    const r=await fetch(`/pnl/summary?venue=${currentVenue}${sym}`);
     const j=await r.json();
-    const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
-    const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
-  }catch(e){}
-}
-async function refreshPnlSummarySpot(){
-  try{
-    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
-    const r=await fetch(`/pnl/summary?venue=binance_spot_testnet${sym}`);
-    const j=await r.json();
-    const body=document.querySelector('#tbl-pnl-spot tbody');
-    body.innerHTML='';
-    (j.items||[]).forEach(it=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${it.symbol}</td><td>${Number(it.qty).toFixed(4)}</td><td>${Number(it.avg_price).toFixed(4)}</td><td>${Number(it.upnl||0).toFixed(2)}</td><td>${Number(it.realized_pnl||0).toFixed(2)}</td><td>${Number(it.fees_paid||0).toFixed(2)}</td><td>${Number(it.total_pnl||0).toFixed(2)}</td>`;
-      body.appendChild(tr);
-    });
-  }catch(e){}
-}
-async function refreshPnlSummaryFut(){
-  try{
-    const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
-    const r=await fetch(`/pnl/summary?venue=binance_futures_um_testnet${sym}`);
-    const j=await r.json();
-    const body=document.querySelector('#tbl-pnl-fut tbody');
+    const body=document.querySelector('#tbl-pnl tbody');
     body.innerHTML='';
     (j.items||[]).forEach(it=>{
       const tr=document.createElement('tr');
@@ -224,18 +197,16 @@ async function refreshPnlSummaryFut(){
 async function refreshFillsSummary(){
   try{
     const sym=currentSymbol?`&symbol=${currentSymbol}`:'';
-    const venues=['binance_spot_testnet','binance_futures_um_testnet'];
     const body=document.querySelector('#tbl-fills-summary tbody');
     body.innerHTML='';
-    for(const v of venues){
-      const r=await fetch(`/fills/summary?venue=${v}${sym}`);
-      const j=await r.json();
-      (j.items||[]).forEach(it=>{
-        const tr=document.createElement('tr');
-        tr.innerHTML=`<td>${v}</td><td>${it.strategy}</td><td>${it.symbol}</td><td>${it.fills}</td><td>${Number(it.notional||0).toFixed(2)}</td><td>${Number(it.fees||0).toFixed(2)}</td>`;
-        body.appendChild(tr);
-      });
-    }
+    const v=currentVenue;
+    const r=await fetch(`/fills/summary?venue=${v}${sym}`);
+    const j=await r.json();
+    (j.items||[]).forEach(it=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${v}</td><td>${it.strategy}</td><td>${it.symbol}</td><td>${it.fills}</td><td>${Number(it.notional||0).toFixed(2)}</td><td>${Number(it.fees||0).toFixed(2)}</td>`;
+      body.appendChild(tr);
+    });
   }catch(e){}
 }
 async function refreshExecution(){
@@ -279,31 +250,27 @@ async function refreshRiskStats(){
 }
 function applyFilters(){
   currentSymbol=document.getElementById('fl-symbol').value.trim();
-  refreshPnlSpot();
-  refreshPnlFut();
-  refreshPnlSummarySpot();
-  refreshPnlSummaryFut();
+  currentVenue=document.getElementById('fl-venue').value;
+  refreshPnl();
+  refreshPnlSummary();
   refreshFillsSummary();
   refreshExecution();
   refreshSignals();
   refreshRiskStats();
 }
+populateVenue();
 refreshMetrics();
 refreshPositions();
-refreshPnlSpot();
-refreshPnlFut();
-refreshPnlSummarySpot();
-refreshPnlSummaryFut();
+refreshPnl();
+refreshPnlSummary();
 refreshFillsSummary();
 refreshExecution();
 refreshSignals();
 refreshRiskStats();
 setInterval(refreshMetrics,5000);
 setInterval(refreshPositions,5000);
-setInterval(refreshPnlSpot,10000);
-setInterval(refreshPnlFut,10000);
-setInterval(refreshPnlSummarySpot,10000);
-setInterval(refreshPnlSummaryFut,10000);
+setInterval(refreshPnl,10000);
+setInterval(refreshPnlSummary,10000);
 setInterval(refreshFillsSummary,10000);
 setInterval(refreshExecution,10000);
 setInterval(refreshSignals,10000);
