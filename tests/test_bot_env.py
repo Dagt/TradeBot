@@ -25,6 +25,7 @@ class DummyProc:
 @pytest.mark.asyncio
 async def test_start_bot_inherits_env_and_running(monkeypatch):
     monkeypatch.setenv("PGUSER", "alice")
+    monkeypatch.setattr(api_main, "BOT_LOG_RETENTION", 0)
 
     captured: dict[str, object] = {}
 
@@ -50,7 +51,7 @@ async def test_start_bot_inherits_env_and_running(monkeypatch):
     class DummyReq:
         headers = {}
 
-    status = api_main.list_bots(DummyReq())
+    status = await api_main.list_bots(DummyReq())
     bot = status["bots"][0]
     assert bot["status"] == "running"
     assert bot["stats"] == {}
@@ -63,6 +64,7 @@ async def test_start_bot_inherits_env_and_running(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_bot_stats(monkeypatch):
     captured: dict[str, object] = {}
+    monkeypatch.setattr(api_main, "BOT_LOG_RETENTION", 0)
 
     async def fake_exec(*args, **kwargs):
         proc = DummyProc()
@@ -76,12 +78,12 @@ async def test_update_bot_stats(monkeypatch):
 
     cfg = api_main.BotConfig(strategy="dummy")
     await api_main.start_bot(cfg)
-    api_main.update_bot_stats(999, orders_sent=5, fills=2, inventory=1.5)
+    await api_main.update_bot_stats(999, orders_sent=5, fills=2, inventory=1.5)
 
     class DummyReq:
         headers = {}
 
-    data = api_main.list_bots(DummyReq())
+    data = await api_main.list_bots(DummyReq())
     stats = data["bots"][0]["stats"]
     assert stats["orders_sent"] == 5
     assert stats["fills"] == 2
@@ -116,5 +118,5 @@ async def test_finished_bot_removed(monkeypatch):
     class DummyReq:
         headers = {}
 
-    data = api_main.list_bots(DummyReq())
+    data = await api_main.list_bots(DummyReq())
     assert data["bots"] == []

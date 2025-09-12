@@ -1,11 +1,13 @@
+import pytest
 import tradingbot.apps.api.main as api_main
 
 
-def test_update_bot_stats_events():
+@pytest.mark.asyncio
+async def test_update_bot_stats_events():
     api_main._BOTS.clear()
     api_main._BOTS[1] = {"stats": {}}
-    api_main.update_bot_stats(1, {"event": "order"})
-    api_main.update_bot_stats(
+    await api_main.update_bot_stats(1, {"event": "order"})
+    await api_main.update_bot_stats(
         1,
         {
             "event": "fill",
@@ -17,8 +19,8 @@ def test_update_bot_stats_events():
             "pnl": 2,
         },
     )
-    api_main.update_bot_stats(1, {"event": "trade", "pnl": 5})
-    api_main.update_bot_stats(1, {"event": "trade", "pnl": 7})
+    await api_main.update_bot_stats(1, {"event": "trade", "pnl": 5})
+    await api_main.update_bot_stats(1, {"event": "trade", "pnl": 7})
     stats = api_main._BOTS[1]["stats"]
     assert stats["orders_sent"] == 1
     assert stats["fills"] == 1

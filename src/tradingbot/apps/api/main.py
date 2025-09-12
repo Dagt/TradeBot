@@ -1169,122 +1169,129 @@ class BotConfig(BaseModel):
     metrics_port: int | None = None
 
 
+# In-memory store for running bots. Consider moving to persistent storage to
+# avoid race conditions and allow recovery after restarts.
 _BOTS: dict[int, dict] = {}
+
 _launch_lock = asyncio.Lock()
+# Protects access to ``_BOTS`` as it is mutated from multiple coroutines.
+_bots_lock = asyncio.Lock()
 
 # Seconds to retain finished bot info and logs before purging.
 # Allows a short window for clients to fetch final logs or status.
 # Set ``BOT_LOG_RETENTION`` environment variable to override.
-BOT_LOG_RETENTION: float = float(os.getenv("BOT_LOG_RETENTION", "1"))
+# Default increased to allow log inspection after bot shutdown.
+BOT_LOG_RETENTION: float = float(os.getenv("BOT_LOG_RETENTION", "60"))
 
 # Regex para detectar líneas de métricas en logs: "METRICS {json}"
 _METRIC_LINE = re.compile(r"METRICS?\s+(\{.*\})")
 
 
-def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
+async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> None:
     """Actualizar el buffer de métricas del bot ``pid``.
 
     Permite recibir métricas vía IPC o ser reutilizada por el scrapper de logs.
     ``stats`` puede ser un dict completo y ``kwargs`` métricas individuales.
     """
 
-    info = _BOTS.get(pid)
-    if not info:
-        return
-    buf = info.setdefault("stats", {})
-    data: dict = {}
-    if stats:
-        data.update(stats)
-    if kwargs:
-        data.update(kwargs)
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            return
+        buf = info.setdefault("stats", {})
+        data: dict = {}
+        if stats:
+            data.update(stats)
+        if kwargs:
+            data.update(kwargs)
 
-    event = data.pop("event", None)
-    pnl_val = None
-    if event in {"order", "fill", "trade"}:
-        pnl_val = data.pop("pnl", None)
-    if event == "order":
-        buf["orders_sent"] = buf.get("orders_sent", 0) + 1
-    elif event == "fill":
-        qty = float(data.get("qty", 0.0))
-        buf["fills"] = buf.get("fills", 0) + 1
-        fee = float(data.get("fee", 0.0))
-        buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
-        slip = float(data.get("slippage_bps", 0.0))
-        if slip:
-            tot = buf.get("_slip_tot", 0.0) + slip
-            cnt = buf.get("_slip_cnt", 0) + 1
-            buf["_slip_tot"] = tot
-            buf["_slip_cnt"] = cnt
-            buf["slippage_bps"] = tot / cnt
-        maker = bool(data.get("maker"))
-        if maker:
-            buf["_maker_qty"] = buf.get("_maker_qty", 0.0) + qty
-        else:
-            buf["_taker_qty"] = buf.get("_taker_qty", 0.0) + qty
-        mqty = buf.get("_maker_qty", 0.0)
-        tqty = buf.get("_taker_qty", 0.0)
-        if tqty > 0:
-            buf["maker_taker_ratio"] = mqty / tqty
-        else:
-            buf["maker_taker_ratio"] = mqty
-        if pnl_val is not None:
+        event = data.pop("event", None)
+        pnl_val = None
+        if event in {"order", "fill", "trade"}:
+            pnl_val = data.pop("pnl", None)
+        if event == "order":
+            buf["orders_sent"] = buf.get("orders_sent", 0) + 1
+        elif event == "fill":
+            qty = float(data.get("qty", 0.0))
+            buf["fills"] = buf.get("fills", 0) + 1
+            fee = float(data.get("fee", 0.0))
+            buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
+            slip = float(data.get("slippage_bps", 0.0))
+            if slip:
+                tot = buf.get("_slip_tot", 0.0) + slip
+                cnt = buf.get("_slip_cnt", 0) + 1
+                buf["_slip_tot"] = tot
+                buf["_slip_cnt"] = cnt
+                buf["slippage_bps"] = tot / cnt
+            maker = bool(data.get("maker"))
+            if maker:
+                buf["_maker_qty"] = buf.get("_maker_qty", 0.0) + qty
+            else:
+                buf["_taker_qty"] = buf.get("_taker_qty", 0.0) + qty
+            mqty = buf.get("_maker_qty", 0.0)
+            tqty = buf.get("_taker_qty", 0.0)
+            if tqty > 0:
+                buf["maker_taker_ratio"] = mqty / tqty
+            else:
+                buf["maker_taker_ratio"] = mqty
+            if pnl_val is not None:
+                try:
+                    pnl = float(pnl_val)
+                except (TypeError, ValueError):
+                    pnl = 0.0
+                buf["pnl"] = buf.get("pnl", 0.0) + pnl
+            trades_buf = info.setdefault("trades", deque(maxlen=100))
+            trade_data = {
+                "ts": data.get("ts", time.time()),
+                "side": data.get("side"),
+                "price": data.get("price"),
+                "qty": qty,
+                "fee": fee,
+            }
+            trades_buf.append(trade_data)
+        elif event == "cancel":
+            buf["cancels"] = buf.get("cancels", 0) + 1
+        elif event == "trade":
+            trades_buf = info.setdefault("trades", deque(maxlen=100))
+            trade_payload = dict(data)
+            duration = data.get("duration")
+            if duration is not None:
+                try:
+                    dur = float(duration)
+                except (TypeError, ValueError):
+                    dur = None
+                if dur is not None:
+                    tot = buf.get("_dur_tot", 0.0) + dur
+                    cnt = buf.get("_dur_cnt", 0) + 1
+                    buf["_dur_tot"] = tot
+                    buf["_dur_cnt"] = cnt
+                    buf["avg_trade_duration"] = tot / cnt
+            if pnl_val is not None:
+                trade_payload["pnl"] = pnl_val
+            trades_buf.append(trade_payload)
+            info["market_trades"] = info.get("market_trades", 0) + 1
+            if pnl_val is None:
+                pnl_val = TRADING_PNL._value.get()
             try:
                 pnl = float(pnl_val)
             except (TypeError, ValueError):
                 pnl = 0.0
-            buf["pnl"] = buf.get("pnl", 0.0) + pnl
-        trades_buf = info.setdefault("trades", deque(maxlen=100))
-        trade_data = {
-            "ts": data.get("ts", time.time()),
-            "side": data.get("side"),
-            "price": data.get("price"),
-            "qty": qty,
-            "fee": fee,
-        }
-        trades_buf.append(trade_data)
-    elif event == "cancel":
-        buf["cancels"] = buf.get("cancels", 0) + 1
-    elif event == "trade":
-        trades_buf = info.setdefault("trades", deque(maxlen=100))
-        trade_payload = dict(data)
-        duration = data.get("duration")
-        if duration is not None:
-            try:
-                dur = float(duration)
-            except (TypeError, ValueError):
-                dur = None
-            if dur is not None:
-                tot = buf.get("_dur_tot", 0.0) + dur
-                cnt = buf.get("_dur_cnt", 0) + 1
-                buf["_dur_tot"] = tot
-                buf["_dur_cnt"] = cnt
-                buf["avg_trade_duration"] = tot / cnt
-        if pnl_val is not None:
-            trade_payload["pnl"] = pnl_val
-        trades_buf.append(trade_payload)
-        info["market_trades"] = info.get("market_trades", 0) + 1
-        if pnl_val is None:
-            pnl_val = TRADING_PNL._value.get()
-        try:
-            pnl = float(pnl_val)
-        except (TypeError, ValueError):
-            pnl = 0.0
-        prev = buf.get("_last_pnl")
-        if prev is not None:
-            buf["pnl"] = buf.get("pnl", 0.0) + (pnl - prev)
-        else:
-            buf["pnl"] = buf.get("pnl", 0.0) + pnl
-        buf["_last_pnl"] = pnl
+            prev = buf.get("_last_pnl")
+            if prev is not None:
+                buf["pnl"] = buf.get("pnl", 0.0) + (pnl - prev)
+            else:
+                buf["pnl"] = buf.get("pnl", 0.0) + pnl
+            buf["_last_pnl"] = pnl
 
-    if data:
-        buf.update(data)
+        if data:
+            buf.update(data)
 
-    orders = buf.get("orders_sent", 0)
-    fills = buf.get("fills", 0)
-    cancels = buf.get("cancels", 0)
-    if orders:
-        buf["hit_rate"] = fills / orders
-        buf["cancel_ratio"] = cancels / orders
+        orders = buf.get("orders_sent", 0)
+        fills = buf.get("fills", 0)
+        cancels = buf.get("cancels", 0)
+        if orders:
+            buf["hit_rate"] = fills / orders
+            buf["cancel_ratio"] = cancels / orders
 
 
 async def _scrape_metrics(
@@ -1309,8 +1316,9 @@ async def _scrape_metrics(
         text = line.decode(errors="ignore").rstrip()
         if log_buffer is not None:
             log_buffer.append(text)
-        info = _BOTS.get(pid)
-        queue = info.get("log_queue") if info else None
+        async with _bots_lock:
+            info = _BOTS.get(pid)
+            queue = info.get("log_queue") if info else None
         if queue is not None:
             try:
                 queue.put_nowait(text)
@@ -1323,7 +1331,7 @@ async def _scrape_metrics(
             payload = json.loads(m.group(1))
         except Exception:
             continue
-        update_bot_stats(pid, payload)
+        await update_bot_stats(pid, payload)
 
 
 async def _capture_stderr(
@@ -1342,8 +1350,9 @@ async def _capture_stderr(
             break
         text = line.decode(errors="ignore").rstrip()
         log_buffer.append(text)
-        info = _BOTS.get(pid)
-        queue = info.get("log_queue") if info else None
+        async with _bots_lock:
+            info = _BOTS.get(pid)
+            queue = info.get("log_queue") if info else None
         if queue is not None:
             try:
                 queue.put_nowait(text)
@@ -1363,27 +1372,25 @@ async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
     except asyncio.CancelledError:
         return
 
-    info = _BOTS.get(pid)
-    if not info:
-        return
-    # If the bot was intentionally paused we keep its info and restart
-    # monitoring once it resumes.
-    if info.get("status") == "paused":
-        info["returncode"] = None
-        proc.returncode = None
-        info["monitor_task"] = None
-        return
-    # Preserve existing status if stop/kill updated it already
-    if info.get("status") == "running":
-        if proc.returncode == 0:
-            info["status"] = "stopped"
-        else:
-            info["status"] = "error"
-            info["last_error"] = f"return code {proc.returncode}"
-    info["returncode"] = proc.returncode
-    # Cancel log scraping tasks
-    for name in ("metrics_task", "stderr_task"):
-        task = info.get(name)
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            return
+        if info.get("status") == "paused":
+            info["returncode"] = None
+            proc.returncode = None
+            info["monitor_task"] = None
+            return
+        if info.get("status") == "running":
+            if proc.returncode == 0:
+                info["status"] = "stopped"
+            else:
+                info["status"] = "error"
+                info["last_error"] = f"return code {proc.returncode}"
+        info["returncode"] = proc.returncode
+        tasks = [info.get("metrics_task"), info.get("stderr_task")]
+
+    for task in tasks:
         if task:
             task.cancel()
             with suppress(Exception):
@@ -1393,7 +1400,8 @@ async def _monitor_bot(pid: int, proc: asyncio.subprocess.Process) -> None:
             await asyncio.sleep(BOT_LOG_RETENTION)
         except asyncio.CancelledError:
             pass
-    _BOTS.pop(pid, None)
+    async with _bots_lock:
+        _BOTS.pop(pid, None)
 
 
 def _build_bot_args(cfg: BotConfig, params: dict | None = None) -> list[str]:
@@ -1518,21 +1526,22 @@ async def start_bot(cfg: BotConfig, request: Request = None):
         stdout_task = asyncio.create_task(_scrape_metrics(proc.pid, proc, log_buffer))
         stderr_task = asyncio.create_task(_capture_stderr(proc.pid, proc, log_buffer))
         monitor_task = asyncio.create_task(_monitor_bot(proc.pid, proc))
-        _BOTS[proc.pid] = {
-            "process": proc,
-            "config": cfg.dict(),
-            "stats": {},
-            "status": "running",
-            "metrics_task": stdout_task,
-            "stderr_task": stderr_task,
-            "monitor_task": monitor_task,
-            "log_buffer": log_buffer,
-        }
+        async with _bots_lock:
+            _BOTS[proc.pid] = {
+                "process": proc,
+                "config": cfg.dict(),
+                "stats": {},
+                "status": "running",
+                "metrics_task": stdout_task,
+                "stderr_task": stderr_task,
+                "monitor_task": monitor_task,
+                "log_buffer": log_buffer,
+            }
         return {"pid": proc.pid, "status": "running"}
 
 
 @app.get("/bots")
-def list_bots(request: Request):
+async def list_bots(request: Request):
     """Return information about running bot processes."""
 
     if "text/html" in request.headers.get("accept", ""):
@@ -1543,7 +1552,9 @@ def list_bots(request: Request):
             return HTMLResponse(content="Bots dashboard not found", status_code=404)
 
     items = []
-    for pid, info in _BOTS.items():
+    async with _bots_lock:
+        bots_snapshot = list(_BOTS.items())
+    for pid, info in bots_snapshot:
         cfg = info["config"]
         stats = info.get("stats", {})
         risk_pct = cfg.get("risk_pct")
@@ -1565,18 +1576,18 @@ def list_bots(request: Request):
 @app.get("/bots/{pid}/logs")
 async def bot_logs(pid: int):
     """Stream real-time logs from a bot using Server-Sent Events."""
-
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    buffer: deque[str] | None = info.get("log_buffer")
-    queue: asyncio.Queue[str] | None = info.get("log_queue")
-    proc: asyncio.subprocess.Process = info["process"]
-    if buffer is None:
-        raise HTTPException(status_code=404, detail="logs not available")
-    if queue is None:
-        queue = asyncio.Queue(maxsize=1000)
-        info["log_queue"] = queue
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        buffer: deque[str] | None = info.get("log_buffer")
+        queue: asyncio.Queue[str] | None = info.get("log_queue")
+        proc: asyncio.subprocess.Process = info["process"]
+        if buffer is None:
+            raise HTTPException(status_code=404, detail="logs not available")
+        if queue is None:
+            queue = asyncio.Queue(maxsize=1000)
+            info["log_queue"] = queue
 
     async def event_gen():
         try:
@@ -1591,106 +1602,114 @@ async def bot_logs(pid: int):
                     continue
                 yield format_sse("message", line)
         finally:
-            info["log_queue"] = None
+            async with _bots_lock:
+                info["log_queue"] = None
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
 @app.get("/bots/{pid}/trades")
-def bot_trades(pid: int):
+async def bot_trades(pid: int):
     """Return recent trade events for a bot."""
 
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    trades = list(info.get("trades", []))
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        trades = list(info.get("trades", []))
     return {"pid": pid, "trades": trades}
 
 
 @app.post("/bots/{pid}/stop")
 async def stop_bot(pid: int):
     """Terminate a running bot process."""
-
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
-    proc.terminate()
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        proc: asyncio.subprocess.Process = info["process"]
+        if proc.returncode is not None:
+            raise HTTPException(status_code=400, detail="bot not running")
+        proc.terminate()
     await proc.wait()
-    info["status"] = "stopped"
-    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
+    async with _bots_lock:
+        info["status"] = "stopped"
+        return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
 @app.post("/bots/{pid}/kill")
 async def kill_bot(pid: int):
     """Force kill a running bot process."""
-
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
-    proc.kill()
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        proc: asyncio.subprocess.Process = info["process"]
+        if proc.returncode is not None:
+            raise HTTPException(status_code=400, detail="bot not running")
+        proc.kill()
     await proc.wait()
-    info["status"] = "killed"
-    return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
+    async with _bots_lock:
+        info["status"] = "killed"
+        return {"pid": pid, "status": info["status"], "returncode": proc.returncode}
 
 
 @app.post("/bots/{pid}/pause")
-def pause_bot(pid: int):
+async def pause_bot(pid: int):
     """Send SIGSTOP to a running bot process."""
 
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is not None:
-        raise HTTPException(status_code=400, detail="bot not running")
-    info["status"] = "paused"
-    proc.send_signal(signal.SIGSTOP)
-    return {"pid": pid, "status": info["status"]}
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        proc: asyncio.subprocess.Process = info["process"]
+        if proc.returncode is not None:
+            raise HTTPException(status_code=400, detail="bot not running")
+        info["status"] = "paused"
+        proc.send_signal(signal.SIGSTOP)
+        return {"pid": pid, "status": info["status"]}
 
 
 @app.post("/bots/{pid}/resume")
 async def resume_bot(pid: int):
     """Send SIGCONT to resume a paused bot."""
-
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
-    if info.get("status") != "paused":
-        raise HTTPException(status_code=400, detail="bot not paused")
-    proc: asyncio.subprocess.Process = info["process"]
-    proc.send_signal(signal.SIGCONT)
-    info["status"] = "running"
-    monitor_task = asyncio.create_task(_monitor_bot(pid, proc))
-    info["monitor_task"] = monitor_task
-    return {"pid": pid, "status": info["status"]}
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        if info.get("status") != "paused":
+            raise HTTPException(status_code=400, detail="bot not paused")
+        proc: asyncio.subprocess.Process = info["process"]
+        proc.send_signal(signal.SIGCONT)
+        info["status"] = "running"
+        monitor_task = asyncio.create_task(_monitor_bot(pid, proc))
+        info["monitor_task"] = monitor_task
+        return {"pid": pid, "status": info["status"]}
 
 
 @app.delete("/bots/{pid}")
 async def delete_bot(pid: int):
     """Terminate a bot if running and remove its entry."""
 
-    info = _BOTS.get(pid)
-    if not info:
-        raise HTTPException(status_code=404, detail="bot not found")
+    async with _bots_lock:
+        info = _BOTS.get(pid)
+        if not info:
+            raise HTTPException(status_code=404, detail="bot not found")
+        proc: asyncio.subprocess.Process = info["process"]
+        running = proc.returncode is None
 
-    proc: asyncio.subprocess.Process = info["process"]
-    if proc.returncode is None:
+    if running:
         await stop_bot(pid)
 
-    info = _BOTS.pop(pid, None) or info
-    task = info.get("metrics_task")
-    if task:
-        task.cancel()
-    err_task = info.get("stderr_task")
-    if err_task:
-        err_task.cancel()
-    mon_task = info.get("monitor_task")
-    if mon_task:
-        mon_task.cancel()
-    return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
+    async with _bots_lock:
+        info = _BOTS.pop(pid, None) or info
+        task = info.get("metrics_task")
+        if task:
+            task.cancel()
+        err_task = info.get("stderr_task")
+        if err_task:
+            err_task.cancel()
+        mon_task = info.get("monitor_task")
+        if mon_task:
+            mon_task.cancel()
+        return {"pid": pid, "status": "deleted", "returncode": proc.returncode}
