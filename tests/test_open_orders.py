@@ -54,7 +54,7 @@ def test_check_order_pending_qty_reduces_next_size():
         pending_qty=svc.account.open_orders.get("BTC", {}).get("buy", 0.0),
     )
     assert not allowed2
-    assert reason2 == "zero_size"
+    assert reason2 == "below_min_qty"
     assert delta2 == pytest.approx(0.0)
 
 

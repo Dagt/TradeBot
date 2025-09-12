@@ -497,7 +497,7 @@ class RiskService:
             return False, "symbol_exposure", 0.0
 
         if qty < self._min_order_qty:
-            return False, "zero_size", 0.0
+            return False, "below_min_qty", 0.0
 
         try:
             limits_ok = self.check_limits(price)
