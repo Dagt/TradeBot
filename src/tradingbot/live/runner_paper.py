@@ -15,7 +15,6 @@ from ..adapters.binance import BinanceWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_futures import BinanceFuturesAdapter
-from ..adapters.bybit_spot import BybitSpotAdapter as BybitSpotWSAdapter
 from ..adapters.bybit_spot import BybitSpotAdapter
 from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter
@@ -47,7 +46,7 @@ log = logging.getLogger(__name__)
 WS_ADAPTERS = {
     ("binance", "spot"): BinanceSpotWSAdapter,
     ("binance", "futures"): BinanceWSAdapter,
-    ("bybit", "spot"): BybitSpotWSAdapter,
+    ("bybit", "spot"): BybitSpotAdapter,
     ("bybit", "futures"): BybitFuturesAdapter,
     ("okx", "spot"): OKXSpotWSAdapter,
     ("okx", "futures"): OKXFuturesAdapter,
