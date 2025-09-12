@@ -667,9 +667,10 @@ class RiskService:
         with self._lock:
             self.add_fill(side, qty, price=price)
             self.guard.update_position_on_order(symbol, side, qty, venue=venue)
-            self.account.update_open_order(symbol, side, -abs(qty))
-            delta = qty if side == "buy" else -qty
-            self.account.update_position(symbol, delta, price=price)
+            if venue != "paper":
+                self.account.update_open_order(symbol, side, -abs(qty))
+                delta = qty if side == "buy" else -qty
+                self.account.update_position(symbol, delta, price=price)
             if venue is not None:
                 book = self.guard.st.venue_positions.get(venue, {})
                 venue_book = self.positions_multi.setdefault(venue, {})

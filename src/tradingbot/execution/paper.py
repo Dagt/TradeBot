@@ -191,31 +191,34 @@ class PaperAdapter(ExchangeAdapter):
         fee = abs(qty) * px * (fee_bps / 10000.0)
         # cash/pnl y posición
         pos = self.state.pos.setdefault(symbol, PaperPosition())
+        prev_qty = pos.qty
         if side == "buy":
-            new_qty = pos.qty + qty
-            if new_qty == 0:
-                pos.avg_px = 0.0
-            elif pos.qty >= 0:
-                # promedia si seguimos largos
-                pos.avg_px = (pos.avg_px * pos.qty + qty * px) / new_qty
-            else:
-                # estábamos cortos, realizar PnL por cierre parcial
-                closed = min(qty, -pos.qty)
+            new_qty = prev_qty + qty
+            if prev_qty < 0:
+                closed = min(qty, -prev_qty)
                 self.state.realized_pnl += (pos.avg_px - px) * closed
             pos.qty = new_qty
+            if new_qty == 0:
+                pos.avg_px = 0.0
+            elif prev_qty >= 0:
+                pos.avg_px = (pos.avg_px * prev_qty + qty * px) / new_qty
+            elif new_qty > 0:
+                pos.avg_px = px
             self.state.cash -= qty * px + fee
             self.account.update_position(symbol, qty, px)
             self.account.update_cash(-(qty * px + fee))
         elif side == "sell":
-            new_qty = pos.qty - qty
-            if new_qty == 0:
-                pos.avg_px = 0.0
-            elif pos.qty <= 0:
-                pos.avg_px = (pos.avg_px * (-pos.qty) + qty * px) / (-new_qty)
-            else:
-                closed = min(qty, pos.qty)
+            new_qty = prev_qty - qty
+            if prev_qty > 0:
+                closed = min(qty, prev_qty)
                 self.state.realized_pnl += (px - pos.avg_px) * closed
             pos.qty = new_qty
+            if new_qty == 0:
+                pos.avg_px = 0.0
+            elif prev_qty <= 0:
+                pos.avg_px = (pos.avg_px * (-prev_qty) + qty * px) / (-new_qty)
+            elif new_qty < 0:
+                pos.avg_px = px
             self.state.cash += qty * px - fee
             self.account.update_position(symbol, -qty, px)
             self.account.update_cash(qty * px - fee)
