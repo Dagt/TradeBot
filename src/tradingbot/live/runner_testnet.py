@@ -33,6 +33,8 @@ from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter, OKXSpotAdapt
 from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
+from ..execution.order_sizer import adjust_qty
+from ..utils.venues import is_spot
 
 try:
     from ..storage.timescale import get_engine
@@ -81,8 +83,8 @@ async def _run_symbol(
     cfg: _SymbolConfig,
     leverage: int,
     dry_run: bool,
-    total_cap_pct: float,
-    per_symbol_cap_pct: float,
+    total_cap_pct: float | None,
+    per_symbol_cap_pct: float | None,
     soft_cap_pct: float,
     soft_cap_grace_sec: int,
     daily_max_loss_pct: float,
@@ -92,6 +94,12 @@ async def _run_symbol(
     params: dict | None = None,
     config_path: str | None = None,
     timeframe: str = "1m",
+    risk_per_trade: float = 1.0,
+    maker_fee_bps: float | None = None,
+    taker_fee_bps: float | None = None,
+    slippage_bps: float = 0.0,
+    min_notional: float = 0.0,
+    step_size: float = 0.0,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     log.info(
@@ -121,20 +129,32 @@ async def _run_symbol(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
-    guard = PortfolioGuard(GuardConfig(
-        total_cap_pct=total_cap_pct,
-        per_symbol_cap_pct=per_symbol_cap_pct,
-        venue=venue,
-        soft_cap_pct=soft_cap_pct,
-        soft_cap_grace_sec=soft_cap_grace_sec,
-    ))
+    guard = PortfolioGuard(
+        GuardConfig(
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
+            venue=venue,
+            soft_cap_pct=soft_cap_pct,
+            soft_cap_grace_sec=soft_cap_grace_sec,
+        )
+    )
     dguard = DailyGuard(GuardLimits(
         daily_max_loss_pct=daily_max_loss_pct,
         daily_max_drawdown_pct=daily_max_drawdown_pct,
         halt_action="close_all",
     ), venue=venue)
     corr = CorrelationService()
-    broker = PaperAdapter(fee_bps=1.5)
+    import inspect
+    broker_kwargs = {
+        "maker_fee_bps": maker_fee_bps,
+        "taker_fee_bps": taker_fee_bps,
+        "min_notional": min_notional,
+        "step_size": step_size,
+    }
+    sig = inspect.signature(PaperAdapter)
+    broker = PaperAdapter(
+        **{k: v for k, v in broker_kwargs.items() if k in sig.parameters}
+    )
     exec_broker = Broker(exec_adapter if not dry_run else broker)
     risk = RiskService(
         guard,
@@ -142,8 +162,9 @@ async def _run_symbol(
         corr_service=corr,
         account=broker.account,
         risk_pct=cfg.risk_pct,
+        risk_per_trade=risk_per_trade,
     )
-    risk.allow_short = market != "spot"
+    risk.allow_short = not is_spot(venue)
     strat.risk_service = risk
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
@@ -203,12 +224,14 @@ async def _run_symbol(
                 log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
             continue
         side = "buy" if delta > 0 else "sell"
-        qty = abs(delta)
         price = (
             sig.limit_price
             if sig.limit_price is not None
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
+        qty = adjust_qty(abs(delta), price, min_notional, step_size)
+        if qty <= 0:
+            continue
         notional = qty * price
         if not risk.register_order(cfg.symbol, notional):
             continue
@@ -222,6 +245,7 @@ async def _run_symbol(
             on_partial_fill=lambda *_: "re_quote",
             on_order_expiry=lambda *_: "re_quote",
             signal_ts=signal_ts,
+            slip_bps=slippage_bps,
         )
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
@@ -245,8 +269,8 @@ async def run_live_testnet(
     dry_run: bool = False,
     *,
     metrics_port: int = 8000,
-    total_cap_pct: float = 1.0,
-    per_symbol_cap_pct: float = 0.5,
+    total_cap_pct: float | None = None,
+    per_symbol_cap_pct: float | None = None,
     soft_cap_pct: float = 0.10,
     soft_cap_grace_sec: int = 30,
     daily_max_loss_pct: float = 0.05,
@@ -256,6 +280,12 @@ async def run_live_testnet(
     config_path: str | None = None,
     params: dict | None = None,
     timeframe: str = "1m",
+    risk_per_trade: float = 1.0,
+    maker_fee_bps: float | None = None,
+    taker_fee_bps: float | None = None,
+    slippage_bps: float = 0.0,
+    min_notional: float = 0.0,
+    step_size: float = 0.0,
 ) -> None:
     """Run a simple live loop on a crypto exchange testnet."""
     log.info("Starting testnet runner for %s %s", exchange, market)
@@ -302,6 +332,12 @@ async def run_live_testnet(
             params=params,
             config_path=config_path,
             timeframe=timeframe,
+            risk_per_trade=risk_per_trade,
+            maker_fee_bps=maker_fee_bps,
+            taker_fee_bps=taker_fee_bps,
+            slippage_bps=slippage_bps,
+            min_notional=min_notional,
+            step_size=step_size,
         )
         for c in cfgs
     ]

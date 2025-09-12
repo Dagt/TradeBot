@@ -54,6 +54,8 @@ class Broker:
         on_partial_fill: Optional[Callable[[Order, dict], str | None]] = None,
         on_order_expiry: Optional[Callable[[Order, dict], str | None]] = None,
         signal_ts: float | None = None,
+        *,
+        slip_bps: float | None = None,
     ) -> dict:
         """Place a limit order respecting ``tif`` semantics.
 
@@ -131,6 +133,8 @@ class Broker:
                 post_only=post_only,
                 time_in_force=time_in_force,
             )
+            if slip_bps is not None:
+                kwargs["slip_bps"] = slip_bps
             if signal_ts is not None:
                 sig = inspect.signature(self.adapter.place_order)
                 params = sig.parameters
@@ -193,6 +197,8 @@ class Broker:
         side: str,
         qty: float,
         signal_ts: float | None = None,
+        *,
+        slip_bps: float | None = None,
     ) -> dict:
         """Place a market order and track submission metrics."""
 
@@ -202,6 +208,8 @@ class Broker:
             "type_": "market",
             "qty": qty,
         }
+        if slip_bps is not None:
+            kwargs["slip_bps"] = slip_bps
         if signal_ts is not None:
             kwargs["signal_ts"] = signal_ts
         ORDER_SENT.inc()

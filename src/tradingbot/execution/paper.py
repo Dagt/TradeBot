@@ -11,6 +11,7 @@ import csv
 from ..adapters.base import ExchangeAdapter
 from .order_types import Order
 from ..config import settings
+from .order_sizer import adjust_qty
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,9 @@ class PaperAdapter(ExchangeAdapter):
         taker_fee_bps: float | None = None,
         fee_bps: float | None = None,
         latency: float = 0.0,
+        *,
+        min_notional: float = 0.0,
+        step_size: float = 0.0,
     ):
         super().__init__()
         self.state = PaperState()
@@ -67,6 +71,9 @@ class PaperAdapter(ExchangeAdapter):
             else settings.paper_taker_fee_bps
         )
         self.latency = float(latency)
+        # Common limits used to mirror exchange behaviour during sizing.
+        self.min_notional = float(min_notional)
+        self.step_size = float(step_size)
 
     def update_last_price(self, symbol: str, px: float, qty: float | None = None):
         self.state.last_px[symbol] = px
@@ -247,6 +254,15 @@ class PaperAdapter(ExchangeAdapter):
             return {
                 "status": "rejected",
                 "reason": "no_last_price",
+                "order_id": order_id,
+                "trade_id": trade_id,
+            }
+        working_px = price if price is not None else last
+        qty = adjust_qty(qty, working_px, self.min_notional, self.step_size)
+        if qty <= 0:
+            return {
+                "status": "rejected",
+                "reason": "min_notional",
                 "order_id": order_id,
                 "trade_id": trade_id,
             }
