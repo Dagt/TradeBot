@@ -299,9 +299,18 @@ async def run_paper(
                     close_side = "sell" if pos_qty > 0 else "buy"
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(close_side)
-                    qty_close = adjust_qty(abs(pos_qty), price, min_notional, step_size)
+                    qty_close = adjust_qty(
+                        abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
+                    )
                     qty_close = min(qty_close, abs(pos_qty))
                     if qty_close <= 0:
+                        log.info(
+                            "Skipping order: qty %.8f below min threshold", abs(pos_qty)
+                        )
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                        )
                         continue
                     log.info(
                         "METRICS %s",
@@ -402,8 +411,18 @@ async def run_paper(
                         price = _limit_price(side)
                         qty_scale = abs(delta_qty)
                         qty_scale = min(qty_scale, abs(pos_qty))
-                        qty_scale = adjust_qty(qty_scale, price, min_notional, step_size)
+                        qty_scale = adjust_qty(
+                            qty_scale, price, min_notional, step_size, risk.min_order_qty
+                        )
                         if qty_scale <= 0:
+                            log.info(
+                                "Skipping order: qty %.8f below min threshold",
+                                abs(delta_qty),
+                            )
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                            )
                             continue
                         log.info(
                             "METRICS %s",
@@ -513,19 +532,33 @@ async def run_paper(
                 target_volatility=bar.get("target_volatility"),
             )
             if not allowed:
-                log.warning("orden bloqueada: %s", reason)
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"event": "risk_check_reject", "reason": reason}),
-                )
-                continue
-            if abs(delta) <= 0:
+                if reason == "below_min_qty":
+                    log.info(
+                        "Skipping order: qty %.8f below min threshold", abs(delta)
+                    )
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                    )
+                else:
+                    log.warning("orden bloqueada: %s", reason)
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "risk_check_reject", "reason": reason}),
+                    )
                 continue
             side = "buy" if delta > 0 else "sell"
             price = getattr(signal, "limit_price", None)
             price = price if price is not None else _limit_price(side)
-            qty = adjust_qty(abs(delta), price, min_notional, step_size)
+            qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
             if qty <= 0:
+                log.info(
+                    "Skipping order: qty %.8f below min threshold", abs(delta)
+                )
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                )
                 continue
             notional = qty * price
             if not risk.register_order(symbol, notional):

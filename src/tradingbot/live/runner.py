@@ -298,7 +298,7 @@ async def run_live_binance(
             target_volatility=bar.get("target_volatility"),
         )
         if not allowed or abs(delta) <= 1e-9:
-            if not allowed:
+            if not allowed and reason != "below_min_qty":
                 log.warning("[RISK] Bloqueado %s: %s", symbol, reason)
             continue
 

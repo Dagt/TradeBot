@@ -196,5 +196,5 @@ def test_min_order_qty_blocks_small_orders():
     rs.min_order_qty = 0.01
     allowed, reason, delta = rs.check_order("SYM", "buy", 100.0, strength=0.001)
     assert not allowed
-    assert reason == "zero_size"
+    assert reason == "below_min_qty"
     assert delta == 0.0

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Dict, Callable, Tuple, Type, List, Any
 import time
+import json
 
 import pandas as pd
 import uvicorn
@@ -219,9 +220,19 @@ async def _run_symbol(
             volatility=bar.get("atr") or bar.get("volatility"),
             target_volatility=bar.get("target_volatility"),
         )
-        if not allowed or abs(delta) <= 0:
-            if reason:
+        if not allowed:
+            if reason == "below_min_qty":
+                log.info(
+                    "Skipping order: qty %.8f below min threshold", abs(delta)
+                )
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                )
+            elif reason:
                 log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
+            continue
+        if abs(delta) <= 0:
             continue
         side = "buy" if delta > 0 else "sell"
         price = (
@@ -229,8 +240,15 @@ async def _run_symbol(
             if sig.limit_price is not None
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
-        qty = adjust_qty(abs(delta), price, min_notional, step_size)
+        qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
         if qty <= 0:
+            log.info(
+                "Skipping order: qty %.8f below min threshold", abs(delta)
+            )
+            log.info(
+                "METRICS %s",
+                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+            )
             continue
         notional = qty * price
         if not risk.register_order(cfg.symbol, notional):

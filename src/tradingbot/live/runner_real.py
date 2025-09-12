@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Tuple
 import time
+import json
 
 import pandas as pd
 import uvicorn
@@ -236,8 +237,17 @@ async def _run_symbol(
                     px - limit_offset if close_side == "buy" else px + limit_offset
                 )
                 prev_rpnl = broker.state.realized_pnl
-                qty_close = adjust_qty(abs(pos_qty), price, min_notional, step_size)
+                qty_close = adjust_qty(
+                    abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
+                )
                 if qty_close <= 0:
+                    log.info(
+                        "Skipping order: qty %.8f below min threshold", abs(pos_qty)
+                    )
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                    )
                     continue
                 resp = await exec_broker.place_limit(
                     cfg.symbol,
@@ -274,8 +284,17 @@ async def _run_symbol(
                     price = (
                         px - limit_offset if side == "buy" else px + limit_offset
                     )
-                    qty_scale = adjust_qty(abs(delta_qty), price, min_notional, step_size)
+                    qty_scale = adjust_qty(
+                        abs(delta_qty), price, min_notional, step_size, risk.min_order_qty
+                    )
                     if qty_scale <= 0:
+                        log.info(
+                            "Skipping order: qty %.8f below min threshold", abs(delta_qty)
+                        )
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                        )
                         continue
                     prev_rpnl = broker.state.realized_pnl
                     resp = await exec_broker.place_limit(
@@ -322,9 +341,19 @@ async def _run_symbol(
             volatility=bar.get("atr") or bar.get("volatility"),
             target_volatility=bar.get("target_volatility"),
         )
-        if not allowed or abs(delta) <= 0:
-            if reason:
+        if not allowed:
+            if reason == "below_min_qty":
+                log.info(
+                    "Skipping order: qty %.8f below min threshold", abs(delta)
+                )
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                )
+            elif reason:
                 log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
+            continue
+        if abs(delta) <= 0:
             continue
         side = "buy" if delta > 0 else "sell"
         price = (
@@ -332,8 +361,15 @@ async def _run_symbol(
             if sig.limit_price is not None
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
-        qty = adjust_qty(abs(delta), price, min_notional, step_size)
+        qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
         if qty <= 0:
+            log.info(
+                "Skipping order: qty %.8f below min threshold", abs(delta)
+            )
+            log.info(
+                "METRICS %s",
+                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+            )
             continue
         notional = qty * price
         if not risk.register_order(cfg.symbol, notional):

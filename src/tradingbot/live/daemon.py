@@ -570,7 +570,7 @@ class TradeBotDaemon:
             pending_qty=getattr(trade, "pending_qty", 0.0),
         )
         if not allowed or abs(delta) <= 0:
-            if not allowed:
+            if not allowed and reason != "below_min_qty":
                 log.warning("risk_block", extra={"symbol": symbol, "reason": reason})
             return
         order = Order(

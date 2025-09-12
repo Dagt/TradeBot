@@ -19,18 +19,23 @@ def adjust_qty(
     price: float,
     min_notional: float | None = None,
     step_size: float | None = None,
+    min_qty: float | None = None,
 ) -> float:
-    """Return ``qty`` rounded to ``step_size`` and validated against ``min_notional``.
+    """Return ``qty`` rounded to venue constraints and validated.
 
-    If the resulting notional falls below ``min_notional`` the function returns
-    ``0`` signalling that the order should be skipped.
+    Orders smaller than ``min_qty`` or ``min_notional`` are rejected by
+    returning ``0`` so that callers can skip placing them.
     """
     if price <= 0:
         return 0.0
+    if min_qty and abs(qty) < min_qty:
+        return 0.0
     notional = qty * price
-    if min_notional and notional < min_notional:
+    if min_notional and abs(notional) < min_notional:
         return 0.0
     qty = _round_step(qty, step_size or 0.0)
-    if min_notional and qty * price < min_notional:
+    if min_qty and abs(qty) < min_qty:
+        return 0.0
+    if min_notional and abs(qty * price) < min_notional:
         return 0.0
     return qty
