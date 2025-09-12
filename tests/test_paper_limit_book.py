@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from tradingbot.execution.paper import PaperAdapter
+from tradingbot.execution.paper import PaperAdapter, PaperPosition
 
 
 @pytest.mark.asyncio
@@ -53,3 +53,21 @@ async def test_cancel_pending_order_reports_metrics():
     assert cancel["status"] == "canceled"
     assert cancel["time_in_book"] >= 0.02
     assert cancel["latency"] >= 0.01
+
+
+def test_realized_pnl_on_close():
+    adapter = PaperAdapter()
+    # cerrar largo
+    adapter.state.pos["BTC/USDT"] = PaperPosition(qty=1.0, avg_px=100.0)
+    adapter._apply_fill("BTC/USDT", "sell", 1.0, 110.0, False)
+    assert adapter.state.realized_pnl == pytest.approx(10.0)
+    assert adapter.state.pos["BTC/USDT"].qty == pytest.approx(0.0)
+    assert adapter.state.pos["BTC/USDT"].avg_px == pytest.approx(0.0)
+
+    # cerrar corto
+    adapter.state.pos["ETH/USDT"] = PaperPosition(qty=-1.0, avg_px=100.0)
+    prev = adapter.state.realized_pnl
+    adapter._apply_fill("ETH/USDT", "buy", 1.0, 90.0, False)
+    assert adapter.state.realized_pnl - prev == pytest.approx(10.0)
+    assert adapter.state.pos["ETH/USDT"].qty == pytest.approx(0.0)
+    assert adapter.state.pos["ETH/USDT"].avg_px == pytest.approx(0.0)

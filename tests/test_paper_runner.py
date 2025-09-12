@@ -108,6 +108,33 @@ class DummyExecBroker:
         return {"filled_qty": qty, "pending_qty": 0.0, "realized_pnl": 0.0}
 
 
+class DummyExecBrokerInsufficient(DummyExecBroker):
+    async def place_limit(
+        self,
+        symbol,
+        side,
+        price,
+        qty,
+        on_partial_fill=None,
+        on_order_expiry=None,
+        **_,
+    ):
+        DummyExecBrokerInsufficient.last_args = (
+            symbol,
+            side,
+            price,
+            qty,
+            on_partial_fill,
+            on_order_expiry,
+        )
+        return {
+            "filled_qty": 0.0,
+            "pending_qty": 0.0,
+            "realized_pnl": 0.0,
+            "reason": "insufficient_position",
+        }
+
+
 class DummyBroker:
     def __init__(self):
         self.account = object()
@@ -126,6 +153,15 @@ class DummyServer:
 
     async def serve(self):
         return
+
+
+class DummyRiskRecord(DummyRisk):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.on_fill_called = False
+
+    def on_fill(self, symbol, side, qty, price=None, venue=None):
+        self.on_fill_called = True
 
 
 @pytest.mark.asyncio
@@ -155,3 +191,24 @@ async def test_run_paper(monkeypatch):
     assert price == pytest.approx(99.9)
     assert pfill is not None and oexp is not None
     assert dummy_risk.last_strength == pytest.approx(0.37)
+
+
+@pytest.mark.asyncio
+async def test_run_paper_skips_on_fill(monkeypatch):
+    monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    dummy_risk = DummyRiskRecord()
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    monkeypatch.setattr(rp, "Broker", DummyExecBrokerInsufficient)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp, "settings", types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0)
+    )
+
+    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+
+    assert dummy_risk.on_fill_called is False

@@ -300,6 +300,7 @@ async def run_paper(
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(close_side)
                     qty_close = adjust_qty(abs(pos_qty), price, min_notional, step_size)
+                    qty_close = min(qty_close, abs(pos_qty))
                     if qty_close <= 0:
                         continue
                     log.info(
@@ -330,9 +331,13 @@ async def run_paper(
                     risk.account.update_open_order(
                         symbol, close_side, filled_qty + pending_qty
                     )
-                    risk.on_fill(
-                        symbol, close_side, filled_qty, price=exec_price, venue="paper"
-                    )
+                    if not (
+                        filled_qty == 0
+                        and resp.get("reason") == "insufficient_position"
+                    ):
+                        risk.on_fill(
+                            symbol, close_side, filled_qty, price=exec_price, venue="paper"
+                        )
                     cur_qty = risk.account.current_exposure(symbol)[0]
                     log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
                     delta_rpnl = (
@@ -395,7 +400,9 @@ async def run_paper(
                         )
                         prev_rpnl = broker.state.realized_pnl
                         price = _limit_price(side)
-                        qty_scale = adjust_qty(abs(delta_qty), price, min_notional, step_size)
+                        qty_scale = abs(delta_qty)
+                        qty_scale = min(qty_scale, abs(pos_qty))
+                        qty_scale = adjust_qty(qty_scale, price, min_notional, step_size)
                         if qty_scale <= 0:
                             continue
                         log.info(
@@ -426,9 +433,13 @@ async def run_paper(
                         risk.account.update_open_order(
                             symbol, side, filled_qty + pending_qty
                         )
-                        risk.on_fill(
-                            symbol, side, filled_qty, price=exec_price, venue="paper"
-                        )
+                        if not (
+                            filled_qty == 0
+                            and resp.get("reason") == "insufficient_position"
+                        ):
+                            risk.on_fill(
+                                symbol, side, filled_qty, price=exec_price, venue="paper"
+                            )
                         cur_qty = risk.account.current_exposure(symbol)[0]
                         log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
                         delta_rpnl = (
@@ -553,9 +564,12 @@ async def run_paper(
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
             risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
-            risk.on_fill(
-                symbol, side, filled_qty, price=exec_price, venue="paper"
-            )
+            if not (
+                filled_qty == 0 and resp.get("reason") == "insufficient_position"
+            ):
+                risk.on_fill(
+                    symbol, side, filled_qty, price=exec_price, venue="paper"
+                )
             cur_qty = risk.account.current_exposure(symbol)[0]
             log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
