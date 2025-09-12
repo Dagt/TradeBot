@@ -54,6 +54,15 @@ class DummyWS:
         self.pings += 1
 
 
+def test_binance_connector_uses_testnet_ws_base():
+    c = BinanceConnector()
+    c.rest.options["testnet"] = True
+    url = c._ws_url("BTCUSDT")
+    trade_url = c._ws_trades_url("BTCUSDT")
+    assert url.startswith("wss://testnet.binance.vision/ws/")
+    assert trade_url.startswith("wss://testnet.binance.vision/ws/")
+
+
 @pytest.mark.parametrize(
     "connector_cls",
     [BinanceConnector, BybitConnector, OKXConnector],
