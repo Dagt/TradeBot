@@ -170,8 +170,21 @@ async function refreshPositions(){
   }catch(e){}
 }
 let currentSymbol='';
-function buildPnlChart(ctx, labels, upnl, rpnl, net){
-  new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]},options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
+const pnlCharts={};
+function renderPnlChart(canvasId, labels, upnl, rpnl, net){
+  const data={labels,datasets:[{label:'UPnL',data:upnl,borderColor:'#10b981'},{label:'RPnL',data:rpnl,borderColor:'#3b82f6'},{label:'Net',data:net,borderColor:'#f59e0b'}]};
+  let chart=pnlCharts[canvasId];
+  if(chart){
+    chart.data.labels=data.labels;
+    chart.data.datasets[0].data=upnl;
+    chart.data.datasets[1].data=rpnl;
+    chart.data.datasets[2].data=net;
+    chart.update();
+  }else{
+    pnlCharts[canvasId]?.destroy();
+    const ctx=document.getElementById(canvasId).getContext('2d');
+    pnlCharts[canvasId]=new Chart(ctx,{type:'line',data,options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false}},y:{beginAtZero:false}}}});
+  }
 }
 async function refreshPnlSpot(){
   try{
@@ -180,7 +193,7 @@ async function refreshPnlSpot(){
     const j=await r.json();
     const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
     const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl-spot').getContext('2d'),labels,upnl,rpnl,net);
+    renderPnlChart('chart-pnl-spot',labels,upnl,rpnl,net);
   }catch(e){}
 }
 async function refreshPnlFut(){
@@ -190,7 +203,7 @@ async function refreshPnlFut(){
     const j=await r.json();
     const pts=j.points||[]; const labels=pts.map(p=>p.ts.replace('T',' ').replace('Z',''));
     const upnl=pts.map(p=>p.upnl||0); const rpnl=pts.map(p=>p.rpnl||0); const net=pts.map(p=>p.net||0);
-    buildPnlChart(document.getElementById('chart-pnl-fut').getContext('2d'),labels,upnl,rpnl,net);
+    renderPnlChart('chart-pnl-fut',labels,upnl,rpnl,net);
   }catch(e){}
 }
 async function refreshPnlSummarySpot(){
