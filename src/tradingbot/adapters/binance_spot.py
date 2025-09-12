@@ -85,6 +85,10 @@ class BinanceSpotAdapter(ExchangeAdapter):
         self._start_fee_updater()
 
     async def update_fees(self, symbol: str | None = None) -> None:
+        client = getattr(self, "client", self.rest)
+        if client.options.get("testnet"):
+            return
+
         params: Dict[str, Any] = {}
         if symbol:
             params["symbol"] = symbol.replace("/", "")
