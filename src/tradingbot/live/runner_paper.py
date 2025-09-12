@@ -211,10 +211,15 @@ async def run_paper(
             fetch_symbol = symbol
             if exchange == "okx" and hasattr(adapter, "normalize_symbol"):
                 fetch_symbol = adapter.normalize_symbol(symbol).replace("-", "/")
-            client = rest.rest if hasattr(rest, "rest") else rest
-            bars = await client.fetch_ohlcv(
-                fetch_symbol, timeframe=timeframe, limit=warmup_total
-            )
+            if hasattr(rest, "fetch_ohlcv"):
+                bars = await rest.fetch_ohlcv(
+                    fetch_symbol, timeframe=timeframe, limit=warmup_total
+                )
+            else:
+                client = rest.rest if hasattr(rest, "rest") else rest
+                bars = await client.fetch_ohlcv(
+                    fetch_symbol, timeframe=timeframe, limit=warmup_total
+                )
             for ts_ms, o, h, l, c, v in bars:
                 ts_bar = datetime.fromtimestamp(ts_ms / 1000, timezone.utc)
                 agg.completed.append(Bar(ts_open=ts_bar, o=o, h=h, l=l, c=c, v=v))
