@@ -32,6 +32,7 @@ from ..risk.correlation_service import CorrelationService
 from ..strategies import STRATEGIES
 from monitoring import panel
 from ..core.symbols import normalize
+from ..execution.order_sizer import adjust_qty
 
 try:
     from ..storage.timescale import get_engine
@@ -93,6 +94,14 @@ async def run_paper(
     params: dict | None = None,
     timeframe: str = "1m",
     initial_cash: float = 1000.0,
+    risk_per_trade: float = 1.0,
+    total_cap_pct: float | None = None,
+    per_symbol_cap_pct: float | None = None,
+    maker_fee_bps: float | None = None,
+    taker_fee_bps: float | None = None,
+    slippage_bps: float = 0.0,
+    min_notional: float = 0.0,
+    step_size: float = 0.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
     exchange, market = venue.split("_", 1)
@@ -119,13 +128,27 @@ async def run_paper(
             rest = rest_cls()
             if hasattr(adapter, "rest"):
                 adapter.rest = rest
-    broker = PaperAdapter()
+    import inspect
+    broker_kwargs = {
+        "maker_fee_bps": maker_fee_bps,
+        "taker_fee_bps": taker_fee_bps,
+        "min_notional": min_notional,
+        "step_size": step_size,
+    }
+    sig = inspect.signature(PaperAdapter)
+    broker = PaperAdapter(
+        **{k: v for k, v in broker_kwargs.items() if k in sig.parameters}
+    )
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
         broker.account.update_cash(initial_cash)
 
     guard = PortfolioGuard(
-        GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=0.5, venue="paper")
+        GuardConfig(
+            total_cap_pct=total_cap_pct,
+            per_symbol_cap_pct=per_symbol_cap_pct,
+            venue="paper",
+        )
     )
     guard.refresh_usd_caps(initial_cash)
     corr = CorrelationService()
@@ -134,8 +157,10 @@ async def run_paper(
         corr_service=corr,
         account=broker.account,
         risk_pct=risk_pct,
+        risk_per_trade=risk_per_trade,
     )
-    risk.allow_short = market != "spot"
+    from ..utils.venues import is_spot
+    risk.allow_short = not is_spot(venue)
     engine = None
     if _CAN_PG:
         while True:
@@ -274,6 +299,10 @@ async def run_paper(
                     close_side = "sell" if pos_qty > 0 else "buy"
                     prev_rpnl = broker.state.realized_pnl
                     price = _limit_price(close_side)
+                    from ..execution.order_sizer import adjust_qty
+                    qty_close = adjust_qty(abs(pos_qty), price, min_notional, step_size)
+                    if qty_close <= 0:
+                        continue
                     log.info(
                         "METRICS %s",
                         json.dumps(
@@ -281,7 +310,7 @@ async def run_paper(
                                 "event": "order",
                                 "side": close_side,
                                 "price": price,
-                                "qty": abs(pos_qty),
+                                "qty": qty_close,
                                 "fee": 0.0,
                                 "pnl": broker.state.realized_pnl,
                             }
@@ -291,9 +320,10 @@ async def run_paper(
                         symbol,
                         close_side,
                         price,
-                        abs(pos_qty),
+                        qty_close,
                         on_partial_fill=strat.on_partial_fill,
                         on_order_expiry=strat.on_order_expiry,
+                        slip_bps=slippage_bps,
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
@@ -366,6 +396,9 @@ async def run_paper(
                         )
                         prev_rpnl = broker.state.realized_pnl
                         price = _limit_price(side)
+                        qty_scale = adjust_qty(abs(delta_qty), price, min_notional, step_size)
+                        if qty_scale <= 0:
+                            continue
                         log.info(
                             "METRICS %s",
                             json.dumps(
@@ -373,7 +406,7 @@ async def run_paper(
                                     "event": "order",
                                     "side": side,
                                     "price": price,
-                                    "qty": abs(delta_qty),
+                                    "qty": qty_scale,
                                     "fee": 0.0,
                                     "pnl": broker.state.realized_pnl,
                                 }
@@ -383,9 +416,10 @@ async def run_paper(
                             symbol,
                             side,
                             price,
-                            abs(delta_qty),
+                            qty_scale,
                             on_partial_fill=strat.on_partial_fill,
                             on_order_expiry=strat.on_order_expiry,
+                            slip_bps=slippage_bps,
                         )
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
@@ -478,9 +512,11 @@ async def run_paper(
             if abs(delta) <= 0:
                 continue
             side = "buy" if delta > 0 else "sell"
-            qty = abs(delta)
             price = getattr(signal, "limit_price", None)
             price = price if price is not None else _limit_price(side)
+            qty = adjust_qty(abs(delta), price, min_notional, step_size)
+            if qty <= 0:
+                continue
             notional = qty * price
             if not risk.register_order(symbol, notional):
                 reason = getattr(risk, "last_kill_reason", "register_reject")
@@ -512,6 +548,7 @@ async def run_paper(
                 on_partial_fill=strat.on_partial_fill,
                 on_order_expiry=strat.on_order_expiry,
                 signal_ts=signal_ts,
+                slip_bps=slippage_bps,
             )
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
