@@ -641,6 +641,16 @@ async def run_paper(
                 )
                 continue
             notional = qty * price
+            if qty < step_size or notional < min_notional:
+                reason = "below_min_qty" if qty < step_size else "below_min_notional"
+                log.info(
+                    "Skipping order: qty %.8f notional %.8f below min threshold", qty, notional
+                )
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": reason}),
+                )
+                continue
             if not risk.register_order(symbol, notional):
                 reason = getattr(risk, "last_kill_reason", "register_reject")
                 log.warning("registro de orden bloqueado: %s", reason)
