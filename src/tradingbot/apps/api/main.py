@@ -1251,21 +1251,11 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
             trades_buf.append(trade_data)
         elif event == "cancel":
             buf["cancels"] = buf.get("cancels", 0) + 1
+        elif event == "skip":
+            buf["skips"] = buf.get("skips", 0) + 1
         elif event == "trade":
             trades_buf = info.setdefault("trades", deque(maxlen=100))
             trade_payload = dict(data)
-            duration = data.get("duration")
-            if duration is not None:
-                try:
-                    dur = float(duration)
-                except (TypeError, ValueError):
-                    dur = None
-                if dur is not None:
-                    tot = buf.get("_dur_tot", 0.0) + dur
-                    cnt = buf.get("_dur_cnt", 0) + 1
-                    buf["_dur_tot"] = tot
-                    buf["_dur_cnt"] = cnt
-                    buf["avg_trade_duration"] = tot / cnt
             if pnl_val is not None:
                 trade_payload["pnl"] = pnl_val
             trades_buf.append(trade_payload)
