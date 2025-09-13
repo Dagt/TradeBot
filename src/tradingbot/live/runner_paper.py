@@ -618,7 +618,18 @@ async def run_paper(
             side = "buy" if delta > 0 else "sell"
             price = getattr(signal, "limit_price", None)
             price = price if price is not None else _limit_price(side)
-            qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
+            qty = adjust_qty(
+                abs(delta), price, min_notional, step_size, risk.min_order_qty
+            )
+            if side == "sell":
+                inventory = risk.account.current_exposure(symbol)[0]
+                if inventory <= 0:
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": "no_inventory"}),
+                    )
+                    continue
+                qty = min(qty, inventory)
             if qty <= 0:
                 log.info(
                     "Skipping order: qty %.8f below min threshold", abs(delta)
