@@ -357,6 +357,7 @@ async def run_paper(
                     if abs(cur_qty) < step_size:
                         cur_qty = 0.0
                         risk.account.positions[symbol] = 0.0
+                        risk.account.open_orders.pop(symbol, None)
                     locked = risk.account.get_locked_usd(symbol)
                     log.info(
                         "METRICS %s",
@@ -495,6 +496,7 @@ async def run_paper(
                         if abs(cur_qty) < step_size:
                             cur_qty = 0.0
                             risk.account.positions[symbol] = 0.0
+                            risk.account.open_orders.pop(symbol, None)
                         locked = risk.account.get_locked_usd(symbol)
                         log.info(
                             "METRICS %s",
@@ -667,6 +669,7 @@ async def run_paper(
             if abs(cur_qty) < step_size:
                 cur_qty = 0.0
                 risk.account.positions[symbol] = 0.0
+                risk.account.open_orders.pop(symbol, None)
             locked = risk.account.get_locked_usd(symbol)
             log.info(
                 "METRICS %s",
