@@ -78,7 +78,7 @@ async def test_update_bot_stats(monkeypatch):
 
     cfg = api_main.BotConfig(strategy="dummy")
     await api_main.start_bot(cfg)
-    await api_main.update_bot_stats(999, orders_sent=5, fills=2, inventory=1.5)
+    await api_main.update_bot_stats(999, orders_sent=5, fills=2, exposure=1.5)
 
     class DummyReq:
         headers = {}
@@ -87,7 +87,7 @@ async def test_update_bot_stats(monkeypatch):
     stats = data["bots"][0]["stats"]
     assert stats["orders_sent"] == 5
     assert stats["fills"] == 2
-    assert stats["inventory"] == 1.5
+    assert stats["exposure"] == 1.5
 
     # cleanup
     captured["proc"]._done.set()  # type: ignore[index]

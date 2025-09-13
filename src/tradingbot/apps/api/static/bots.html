@@ -120,7 +120,7 @@
     <div class="muted">Auto-refresh 5s</div>
     <div style="overflow:auto; max-height:60vh; margin-top:10px">
       <table id="tbl-bots">
-        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders</th><th>Fills</th><th>PnL</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Duración</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>PID</th><th>Bot</th><th>Pares</th><th>Estado</th><th>Orders</th><th>Fills</th><th>PnL</th><th>Cancel %</th><th>M/T</th><th>Fees</th><th>Slippage</th><th>Hit %</th><th>Locked (USD)</th><th>Exposure</th><th>Leverage</th><th>Risk</th><th>Acciones</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -358,8 +358,8 @@ async function refreshBots(){
         (stats.fees_usd||0).toFixed(2),
         (stats.slippage_bps||0).toFixed(2),
         `${((stats.hit_rate||0)*100).toFixed(1)}%`,
-        (stats.avg_trade_duration||0).toFixed(1),
-        (stats.inventory||0).toFixed(4),
+        (stats.locked||0).toFixed(2),
+        (stats.exposure||0).toFixed(4),
         (stats.leverage||0).toFixed(2),
         `${((b.risk_pct ?? 0)*100).toFixed(2)}%`
       ];

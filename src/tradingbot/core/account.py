@@ -84,3 +84,13 @@ class Account:
         qty = float(self.positions.get(symbol, 0.0))
         price = float(self.prices.get(symbol, 0.0))
         return qty, abs(qty) * price
+
+    # ------------------------------------------------------------------
+    def get_locked_usd(self, symbol: str) -> float:
+        """Return USD locked in open orders for ``symbol``.
+
+        This helper mirrors :meth:`pending_exposure` to clarify intent when
+        reporting metrics.  It sums the notional of all outstanding orders for
+        ``symbol`` using the last marked price.
+        """
+        return self.pending_exposure(symbol)

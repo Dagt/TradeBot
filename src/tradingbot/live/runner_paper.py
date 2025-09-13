@@ -334,11 +334,17 @@ async def run_paper(
                         on_order_expiry=strat.on_order_expiry,
                         slip_bps=slippage_bps,
                     )
+                    if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                        )
+                        continue
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     exec_price = float(resp.get("price", price))
                     risk.account.update_open_order(
-                        symbol, close_side, filled_qty + pending_qty
+                        symbol, close_side, pending_qty
                     )
                     if not (
                         filled_qty == 0
@@ -348,7 +354,14 @@ async def run_paper(
                             symbol, close_side, filled_qty, price=exec_price, venue="paper"
                         )
                     cur_qty = risk.account.current_exposure(symbol)[0]
-                    log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
+                    if abs(cur_qty) < step_size:
+                        cur_qty = 0.0
+                        risk.account.positions[symbol] = 0.0
+                    locked = risk.account.get_locked_usd(symbol)
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"exposure": cur_qty, "locked": locked}),
+                    )
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
@@ -377,6 +390,8 @@ async def run_paper(
                             ),
                         )
                     if pending_qty > 0:
+                        risk.account.update_open_order(symbol, close_side, -pending_qty)
+                        locked = risk.account.get_locked_usd(symbol)
                         log.info(
                             "METRICS %s",
                             json.dumps(
@@ -386,20 +401,18 @@ async def run_paper(
                                     "price": price,
                                     "qty": pending_qty,
                                     "reason": "expired",
+                                    "locked": locked,
                                 }
                             ),
                         )
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
-                    opened_at = trade.get("opened_at")
-                    duration = time.time() - opened_at if opened_at else 0.0
                     log.info(
                         "METRICS %s",
                         json.dumps(
                             {
                                 "event": "trade",
-                                "duration": duration,
                                 "pnl": delta_rpnl,
                             }
                         ),
@@ -459,11 +472,17 @@ async def run_paper(
                             on_order_expiry=strat.on_order_expiry,
                             slip_bps=slippage_bps,
                         )
+                        if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                            )
+                            continue
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         exec_price = float(resp.get("price", price))
                         risk.account.update_open_order(
-                            symbol, side, filled_qty + pending_qty
+                            symbol, side, pending_qty
                         )
                         if not (
                             filled_qty == 0
@@ -473,7 +492,14 @@ async def run_paper(
                                 symbol, side, filled_qty, price=exec_price, venue="paper"
                             )
                         cur_qty = risk.account.current_exposure(symbol)[0]
-                        log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
+                        if abs(cur_qty) < step_size:
+                            cur_qty = 0.0
+                            risk.account.positions[symbol] = 0.0
+                        locked = risk.account.get_locked_usd(symbol)
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"exposure": cur_qty, "locked": locked}),
+                        )
                         delta_rpnl = (
                             resp.get("realized_pnl", broker.state.realized_pnl)
                             - prev_rpnl
@@ -505,6 +531,8 @@ async def run_paper(
                                 ),
                             )
                         if pending_qty > 0:
+                            risk.account.update_open_order(symbol, side, -pending_qty)
+                            locked = risk.account.get_locked_usd(symbol)
                             log.info(
                                 "METRICS %s",
                                 json.dumps(
@@ -514,6 +542,7 @@ async def run_paper(
                                         "price": price,
                                         "qty": pending_qty,
                                         "reason": "expired",
+                                        "locked": locked,
                                     }
                                 ),
                             )
@@ -618,10 +647,16 @@ async def run_paper(
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
+            if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                )
+                continue
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
-            risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+            risk.account.update_open_order(symbol, side, pending_qty)
             if not (
                 filled_qty == 0 and resp.get("reason") == "insufficient_position"
             ):
@@ -629,7 +664,14 @@ async def run_paper(
                     symbol, side, filled_qty, price=exec_price, venue="paper"
                 )
             cur_qty = risk.account.current_exposure(symbol)[0]
-            log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
+            if abs(cur_qty) < step_size:
+                cur_qty = 0.0
+                risk.account.positions[symbol] = 0.0
+            locked = risk.account.get_locked_usd(symbol)
+            log.info(
+                "METRICS %s",
+                json.dumps({"exposure": cur_qty, "locked": locked}),
+            )
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if filled_qty > 0:
                 slippage = ((exec_price - price) / price) * 10000 if price else 0.0
@@ -652,6 +694,8 @@ async def run_paper(
                     ),
                 )
             if pending_qty > 0:
+                risk.account.update_open_order(symbol, side, -pending_qty)
+                locked = risk.account.get_locked_usd(symbol)
                 log.info(
                     "METRICS %s",
                     json.dumps(
@@ -661,6 +705,7 @@ async def run_paper(
                             "price": price,
                             "qty": pending_qty,
                             "reason": "expired",
+                            "locked": locked,
                         }
                     ),
                 )
