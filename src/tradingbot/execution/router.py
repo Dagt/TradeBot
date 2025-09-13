@@ -22,7 +22,7 @@ from ..utils.metrics import (
     SIGNAL_CONFIRM_LATENCY,
     ROUTER_SELECTED_VENUE,
     ROUTER_STALE_BOOK,
-    ORDER_REJECTS,
+    SKIPS,
 )
 from ..storage import timescale
 from ..utils.logging import get_logger
@@ -269,7 +269,7 @@ class ExecutionRouter:
 
         if self.risk_service is not None and not self.risk_service.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
-            ORDER_REJECTS.inc()
+            SKIPS.inc()
             return {"status": "rejected", "reason": "risk_disabled"}
 
         if algo:
@@ -306,7 +306,7 @@ class ExecutionRouter:
             cur_qty, _ = self.risk_service.account.current_exposure(order.symbol)
             if cur_qty <= 0:
                 log.warning("Short not allowed; rejecting order %s", order)
-                ORDER_REJECTS.inc()
+                SKIPS.inc()
                 return {"status": "rejected", "reason": "short_not_allowed"}
             if order.qty > cur_qty:
                 order.qty = cur_qty
@@ -347,7 +347,7 @@ class ExecutionRouter:
             adj = adjust_order(order.price, order.qty, float(mark_price or 0.0), rules, order.side)
             if not adj.ok:
                 log.warning("Order %s rejected by adjust_order: %s", order, adj.reason)
-                ORDER_REJECTS.inc()
+                SKIPS.inc()
                 return {"status": "rejected", "reason": adj.reason}
             order.price = adj.price
             order.qty = adj.qty
@@ -385,7 +385,7 @@ class ExecutionRouter:
             res = await adapter.place_order(**kwargs)
         except Exception as exc:  # pragma: no cover - logging only
             log.exception("Order placement failed on %s", venue)
-            ORDER_REJECTS.inc()
+            SKIPS.inc()
             return {"status": "error", "reason": str(exc), "venue": venue}
 
         latency = time.monotonic() - start
@@ -403,7 +403,7 @@ class ExecutionRouter:
         res.setdefault("fee_bps", fee_bps)
         status = res.get("status")
         if status == "rejected":
-            ORDER_REJECTS.inc()
+            SKIPS.inc()
         if status in {"partial", "expired"}:
             filled = float(res.get("filled_qty", 0.0))
             order.pending_qty = max((order.pending_qty or order.qty) - filled, 0.0)

@@ -350,7 +350,7 @@ async function refreshBots(){
       tr.appendChild(tdStatus);
 
       const cells=[
-        stats.orders_sent||0,
+        stats.orders||0,
         stats.fills||0,
         (stats.pnl||0).toFixed(2),
         `${((stats.cancel_ratio||0)*100).toFixed(1)}%`,

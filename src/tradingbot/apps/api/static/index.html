@@ -102,7 +102,7 @@ const allowedExchanges = [
 ];
 
 // Track whether the backend has emitted any trading events. If no events have
-// occurred yet (orders_sent, fills, etc.), metrics returning 0 are rendered as
+// occurred yet (orders, fills, etc.), metrics returning 0 are rendered as
 // "N/A" to indicate insufficient data.
 let metricsHaveEvents = false;
 
@@ -157,7 +157,7 @@ async function refreshMetrics(){
     const j = await r.json();
     // Determine if any event-driven metrics have been recorded so far. When no
     // events exist, zero values represent missing data rather than true zeros.
-    metricsHaveEvents = (j.orders_sent||0) > 0 || (j.fills||0) > 0 || (j.risk_events||0) > 0;
+    metricsHaveEvents = (j.orders||0) > 0 || (j.fills||0) > 0 || (j.risk_events||0) > 0;
 
     const show = (id, val, decimals = 2, suffix = '') => {
       const num = Number(val) || 0;
@@ -166,7 +166,7 @@ async function refreshMetrics(){
         : num.toFixed(decimals) + suffix;
     };
 
-    show('m-reject', (j.order_reject_rate||0)*100, 2, '%');
+    show('m-reject', (j.skip_rate||0)*100, 2, '%');
     show('m-ws-up', (j.ws_uptime||0)*100, 2, '%');
     show('m-ws-rec', j.ws_reconnections_per_hour, 2);
     show('m-book-lag', j.book_lag_ms, 1);

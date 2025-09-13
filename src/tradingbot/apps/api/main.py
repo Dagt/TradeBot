@@ -1210,7 +1210,7 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         if event in {"order", "fill", "trade"}:
             pnl_val = data.pop("pnl", None)
         if event == "order":
-            buf["orders_sent"] = buf.get("orders_sent", 0) + 1
+            buf["orders"] = buf.get("orders", 0) + 1
         elif event == "fill":
             qty = float(data.get("qty", 0.0))
             buf["fills"] = buf.get("fills", 0) + 1
@@ -1276,7 +1276,7 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         if data:
             buf.update(data)
 
-        orders = buf.get("orders_sent", 0)
+        orders = buf.get("orders", 0)
         fills = buf.get("fills", 0)
         cancels = buf.get("cancels", 0)
         if orders:
