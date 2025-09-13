@@ -404,7 +404,7 @@ class ExecutionRouter:
         status = res.get("status")
         if status == "rejected":
             ORDER_REJECTS.inc()
-        if status in {"partial", "expired"}:
+        if status in {"partial", "expired", "canceled", "cancelled"}:
             filled = float(res.get("filled_qty", 0.0))
             order.pending_qty = max((order.pending_qty or order.qty) - filled, 0.0)
             res["pending_qty"] = order.pending_qty
@@ -429,9 +429,12 @@ class ExecutionRouter:
                 return res2
             res.setdefault("venue", venue)
             if self.risk_service is not None:
+                prev = getattr(order, "_reserved_qty", 0.0)
+                delta_pending = order.pending_qty - prev
                 self.risk_service.account.update_open_order(
-                    order.symbol, order.side, float(res.get("pending_qty", 0.0))
+                    order.symbol, order.side, delta_pending
                 )
+                order._reserved_qty = order.pending_qty
                 if filled:
                     book = self.risk_service.positions_multi.get(venue, {})
                     cur_qty = book.get(order.symbol, 0.0)
@@ -523,7 +526,12 @@ class ExecutionRouter:
         if self.risk_service is not None:
             filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
             pending = float(res.get("pending_qty", 0.0))
-            self.risk_service.account.update_open_order(order.symbol, order.side, pending)
+            prev = getattr(order, "_reserved_qty", 0.0)
+            delta_pending = pending - prev
+            self.risk_service.account.update_open_order(
+                order.symbol, order.side, delta_pending
+            )
+            order._reserved_qty = pending
             if filled:
                 book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)
