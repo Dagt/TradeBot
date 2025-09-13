@@ -298,6 +298,11 @@ class ExecutionRouter:
                     await asyncio.sleep(delay)
             return results
 
+        if not hasattr(order, "_reserved_qty"):
+            order._reserved_qty = (
+                order.pending_qty if order.pending_qty is not None else order.qty
+            )
+
         if (
             self.risk_service is not None
             and not self.risk_service.allow_short
@@ -404,10 +409,36 @@ class ExecutionRouter:
         status = res.get("status")
         if status == "rejected":
             SKIPS.inc()
-        if status in {"partial", "expired"}:
+        if status in {"partial", "expired", "cancelled"}:
             filled = float(res.get("filled_qty", 0.0))
-            order.pending_qty = max((order.pending_qty or order.qty) - filled, 0.0)
+            prev_pending = order.pending_qty or order.qty
+            order.pending_qty = max(prev_pending - filled, 0.0)
             res["pending_qty"] = order.pending_qty
+            if self.risk_service is not None:
+                if status in {"expired", "cancelled"}:
+                    released = getattr(order, "_reserved_qty", 0.0)
+                    if released:
+                        self.risk_service.account.update_open_order(
+                            order.symbol, order.side, -released
+                        )
+                    order._reserved_qty = 0.0
+                else:  # partial
+                    delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
+                    if delta:
+                        self.risk_service.account.update_open_order(
+                            order.symbol, order.side, delta
+                        )
+                    order._reserved_qty = order.pending_qty
+                if filled:
+                    book = self.risk_service.positions_multi.get(venue, {})
+                    cur_qty = book.get(order.symbol, 0.0)
+                    delta_pos = filled if order.side == "buy" else -filled
+                    self.risk_service.update_position(
+                        venue,
+                        order.symbol,
+                        cur_qty + delta_pos,
+                        entry_price=res.get("price"),
+                    )
             cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
             action = cb(order, res) if cb else None
             if action in {"re_quote", "re-quote", "requote"} and order.pending_qty > 0:
@@ -422,26 +453,13 @@ class ExecutionRouter:
                     reduce_only=order.reduce_only,
                     reason=getattr(order, "reason", None),
                 )
+                new_order._reserved_qty = getattr(order, "_reserved_qty", 0.0)
                 res2 = await self.execute(
                     new_order, fill_mode=fill_mode, slip_bps=slip_bps
                 )
                 order.pending_qty = res2.get("pending_qty", order.pending_qty)
                 return res2
             res.setdefault("venue", venue)
-            if self.risk_service is not None:
-                self.risk_service.account.update_open_order(
-                    order.symbol, order.side, float(res.get("pending_qty", 0.0))
-                )
-                if filled:
-                    book = self.risk_service.positions_multi.get(venue, {})
-                    cur_qty = book.get(order.symbol, 0.0)
-                    delta = filled if order.side == "buy" else -filled
-                    self.risk_service.update_position(
-                        venue,
-                        order.symbol,
-                        cur_qty + delta,
-                        entry_price=res.get("price"),
-                    )
             return res
         if res.get("status") == "filled":
             fill_price = res.get("price")
@@ -523,15 +541,20 @@ class ExecutionRouter:
         if self.risk_service is not None:
             filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
             pending = float(res.get("pending_qty", 0.0))
-            self.risk_service.account.update_open_order(order.symbol, order.side, pending)
+            delta = pending - getattr(order, "_reserved_qty", 0.0)
+            if delta:
+                self.risk_service.account.update_open_order(
+                    order.symbol, order.side, delta
+                )
+            order._reserved_qty = pending
             if filled:
                 book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)
-                delta = filled if order.side == "buy" else -filled
+                delta_pos = filled if order.side == "buy" else -filled
                 self.risk_service.update_position(
                     venue,
                     order.symbol,
-                    cur_qty + delta,
+                    cur_qty + delta_pos,
                     entry_price=res.get("price"),
                 )
         return res
