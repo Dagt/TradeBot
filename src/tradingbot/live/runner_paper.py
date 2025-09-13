@@ -142,6 +142,7 @@ async def run_paper(
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
         broker.account.update_cash(initial_cash)
+    broker.account.market_type = market
 
     guard = PortfolioGuard(
         GuardConfig(
@@ -158,9 +159,8 @@ async def run_paper(
         account=broker.account,
         risk_pct=risk_pct,
         risk_per_trade=risk_per_trade,
+        market_type=market,
     )
-    from ..utils.venues import is_spot
-    risk.allow_short = not is_spot(venue)
     engine = None
     if _CAN_PG:
         while True:
