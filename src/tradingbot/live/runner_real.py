@@ -268,6 +268,19 @@ async def _run_symbol(
                     filled_qty,
                     venue=venue if not dry_run else "paper",
                 )
+                if pending_qty > 0:
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "cancel",
+                                "side": close_side,
+                                "price": price,
+                                "qty": pending_qty,
+                                "reason": "expired",
+                            }
+                        ),
+                    )
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
                 if halted:
@@ -316,6 +329,19 @@ async def _run_symbol(
                         filled_qty,
                         venue=venue if not dry_run else "paper",
                     )
+                    if pending_qty > 0:
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "event": "cancel",
+                                    "side": side,
+                                    "price": price,
+                                    "qty": pending_qty,
+                                    "reason": "expired",
+                                }
+                            ),
+                        )
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
                     if halted:
@@ -393,6 +419,19 @@ async def _run_symbol(
         risk.on_fill(
             cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
+        if pending_qty > 0:
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {
+                        "event": "cancel",
+                        "side": side,
+                        "price": price,
+                        "qty": pending_qty,
+                        "reason": "expired",
+                    }
+                ),
+            )
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
         if halted:

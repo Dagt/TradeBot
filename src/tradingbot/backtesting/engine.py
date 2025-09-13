@@ -1337,6 +1337,10 @@ class EventDrivenBacktestEngine:
             for o in orders
         ]
 
+        order_count = len(orders)
+        cancel_count = sum(1 for o in orders if o.remaining_qty > 1e-9)
+        cancel_ratio = cancel_count / order_count if order_count else 0.0
+
         result = {
             "equity": equity_curve[-1],
             "pnl": pnl,
@@ -1347,6 +1351,9 @@ class EventDrivenBacktestEngine:
             "max_drawdown": max_drawdown,
             "equity_curve": equity_curve,
             "fill_count": fill_count,
+            "order_count": order_count,
+            "cancel_count": cancel_count,
+            "cancel_ratio": cancel_ratio,
             "fills": fills if collect_fills else [],
         }
         log.info(

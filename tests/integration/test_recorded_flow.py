@@ -33,6 +33,9 @@ def test_recorded_full_flow_validates_fills_pnl_and_risk(monkeypatch):
     engine.verbose_fills = True
     result = engine.run()
     assert result["fill_count"] == 2
+    assert result["order_count"] == len(result["orders"])
+    assert result["cancel_count"] == 1
+    assert result["cancel_ratio"] == pytest.approx(1 / result["order_count"])
     fills = pd.DataFrame(
         result["fills"],
         columns=[

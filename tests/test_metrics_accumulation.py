@@ -21,6 +21,7 @@ async def test_update_bot_stats_events():
     )
     await api_main.update_bot_stats(1, {"event": "trade", "pnl": 5})
     await api_main.update_bot_stats(1, {"event": "trade", "pnl": 7})
+    await api_main.update_bot_stats(1, {"event": "cancel"})
     stats = api_main._BOTS[1]["stats"]
     assert stats["orders_sent"] == 1
     assert stats["fills"] == 1
@@ -28,4 +29,6 @@ async def test_update_bot_stats_events():
     assert stats["hit_rate"] == 1.0
     assert stats["slippage_bps"] == 5
     assert stats["pnl"] == 9
+    assert stats["cancels"] == 1
+    assert stats["cancel_ratio"] == 1.0
     assert "trades_processed" not in stats
