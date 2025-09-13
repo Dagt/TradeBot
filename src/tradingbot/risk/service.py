@@ -50,13 +50,17 @@ class RiskService:
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
         profit_lock_usd: float = 1.0,
+        market_type: str | None = None,
     ) -> None:
         self.guard = guard
         self.daily = daily
         self.corr = corr_service
         self.engine = engine
         self.bus = bus
-        self.account = account or CoreAccount(float("inf"))
+        mt = market_type or getattr(account, "market_type", None) or "futures"
+        self.account = account or CoreAccount(float("inf"), market_type=mt)
+        if account is not None:
+            account.market_type = mt
         self.rm = CoreRiskManager(
             self.account,
             risk_per_trade=risk_per_trade,
@@ -68,7 +72,8 @@ class RiskService:
 
         # Internal risk tracking previously handled by _RiskManager
         self.risk_pct = abs(risk_pct)
-        self._allow_short = True
+        self.market_type = mt
+        self._allow_short = mt != "spot"
         self._min_order_qty = 1e-9
         self.enabled = True
         self.last_kill_reason: str | None = None

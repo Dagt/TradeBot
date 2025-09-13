@@ -21,6 +21,7 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..broker.broker import Broker
 from ..config import settings
+from ..utils.metrics import CANCELS
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -128,6 +129,7 @@ async def run_live_binance(
     log.info("Connecting to Binance WS for %s", symbol)
     adapter = BinanceWSAdapter()
     broker = PaperAdapter(fee_bps=fee_bps)
+    broker.account.market_type = market
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
@@ -159,8 +161,8 @@ async def run_live_binance(
         engine=pg_engine,
         account=broker.account,
         risk_pct=risk_pct,
+        market_type=market,
     )
-    risk.allow_short = market != "spot"
     guard.refresh_usd_caps(broker.equity({}))
     strat.risk_service = risk
     if pg_engine is not None:
@@ -221,8 +223,11 @@ async def run_live_binance(
                 )
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
-                risk.account.update_open_order(symbol, close_side, filled_qty + pending_qty)
+                risk.account.update_open_order(symbol, close_side, pending_qty)
                 risk.on_fill(symbol, close_side, filled_qty, venue="binance")
+                if pending_qty > 0:
+                    CANCELS.inc()
+                    risk.account.update_open_order(symbol, close_side, -pending_qty)
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                 if halted:
@@ -250,8 +255,11 @@ async def run_live_binance(
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
-                    risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+                    risk.account.update_open_order(symbol, side, pending_qty)
                     risk.on_fill(symbol, side, filled_qty, venue="binance")
+                    if pending_qty > 0:
+                        CANCELS.inc()
+                        risk.account.update_open_order(symbol, side, -pending_qty)
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
@@ -322,8 +330,11 @@ async def run_live_binance(
         log.info("FILL live %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+        risk.account.update_open_order(symbol, side, pending_qty)
         risk.on_fill(symbol, side, filled_qty, venue="binance")
+        if pending_qty > 0:
+            CANCELS.inc()
+            risk.account.update_open_order(symbol, side, -pending_qty)
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:

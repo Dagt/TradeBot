@@ -22,10 +22,14 @@ class Account:
         enforcement is left to higher level components.
     cash:
         Optional starting cash balance.
+    market_type:
+        Market type for this account, "spot" or "futures". Determines
+        whether short positions are permitted.
     """
 
     max_symbol_exposure: float
     cash: float = 0.0
+    market_type: str = "futures"
     positions: Dict[str, float] = field(default_factory=dict)
     prices: Dict[str, float] = field(default_factory=dict)
     open_orders: Dict[str, Dict[str, float]] = field(default_factory=dict)

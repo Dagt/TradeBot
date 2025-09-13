@@ -35,7 +35,7 @@ from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
-from ..utils.venues import is_spot
+from ..utils.metrics import CANCELS
 
 try:
     from ..storage.timescale import get_engine
@@ -156,6 +156,7 @@ async def _run_symbol(
     broker = PaperAdapter(
         **{k: v for k, v in broker_kwargs.items() if k in sig.parameters}
     )
+    broker.account.market_type = market
     exec_broker = Broker(exec_adapter if not dry_run else broker)
     risk = RiskService(
         guard,
@@ -164,8 +165,8 @@ async def _run_symbol(
         account=broker.account,
         risk_pct=cfg.risk_pct,
         risk_per_trade=risk_per_trade,
+        market_type=market,
     )
-    risk.allow_short = not is_spot(venue)
     strat.risk_service = risk
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
@@ -268,11 +269,12 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(cfg.symbol, side, filled_qty + pending_qty)
+        risk.account.update_open_order(cfg.symbol, side, pending_qty)
         risk.on_fill(
             cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
         if pending_qty > 0:
+            CANCELS.inc()
             log.info(
                 "METRICS %s",
                 json.dumps(
@@ -285,6 +287,7 @@ async def _run_symbol(
                     }
                 ),
             )
+            risk.account.update_open_order(cfg.symbol, side, -pending_qty)
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
         if halted:

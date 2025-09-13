@@ -418,16 +418,17 @@ class EventDrivenBacktestEngine:
             if strat_cls is None:
                 raise ValueError(f"unknown strategy: {strat_name}")
             key = (strat_name, symbol)
-            allow_short = self.exchange_mode.get(exchange, "perp") != "spot"
+            market_mode = self.exchange_mode.get(exchange, "perp")
+            mt = "spot" if market_mode == "spot" else "futures"
             guard = PortfolioGuard(GuardConfig(venue=exchange))
-            account = CoreAccount(float("inf"), cash=self.initial_equity)
+            account = CoreAccount(float("inf"), cash=self.initial_equity, market_type=mt)
             svc = RiskService(
                 guard,
                 account=account,
                 risk_per_trade=self.risk_per_trade,
                 risk_pct=self._risk_pct,
+                market_type=mt,
             )
-            svc.allow_short = allow_short
             svc.min_order_qty = self.min_order_qty
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
