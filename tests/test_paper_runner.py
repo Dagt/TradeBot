@@ -135,6 +135,25 @@ class DummyExecBrokerInsufficient(DummyExecBroker):
         }
 
 
+class DummyExecBrokerRecord(DummyExecBroker):
+    called = False
+
+    async def place_limit(
+        self,
+        symbol,
+        side,
+        price,
+        qty,
+        on_partial_fill=None,
+        on_order_expiry=None,
+        **_,
+    ):
+        DummyExecBrokerRecord.called = True
+        return await super().place_limit(
+            symbol, side, price, qty, on_partial_fill, on_order_expiry, **_
+        )
+
+
 class DummyBroker:
     def __init__(self):
         self.account = object()
@@ -162,6 +181,27 @@ class DummyRiskRecord(DummyRisk):
 
     def on_fill(self, symbol, side, qty, price=None, venue=None):
         self.on_fill_called = True
+
+
+class SellStrat:
+    def on_bar(self, ctx):
+        return SimpleNamespace(side="sell", strength=0.37, reduce_only=False, limit_price=None)
+
+    def on_partial_fill(self, order, res):  # pragma: no cover - simple stub
+        pass
+
+    def on_order_expiry(self, order, res):  # pragma: no cover - simple stub
+        pass
+
+
+class DummyRiskNoInventory(DummyRisk):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.register_called = False
+
+    def register_order(self, symbol, notional):
+        self.register_called = True
+        return True
 
 
 @pytest.mark.asyncio
@@ -212,3 +252,26 @@ async def test_run_paper_skips_on_fill(monkeypatch):
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
 
     assert dummy_risk.on_fill_called is False
+
+
+@pytest.mark.asyncio
+async def test_run_paper_skip_sell_no_inventory(monkeypatch):
+    monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": SellStrat})
+    dummy_risk = DummyRiskNoInventory()
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    DummyExecBrokerRecord.called = False
+    monkeypatch.setattr(rp, "Broker", DummyExecBrokerRecord)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp, "settings", types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0)
+    )
+
+    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+
+    assert dummy_risk.register_called is False
+    assert DummyExecBrokerRecord.called is False
