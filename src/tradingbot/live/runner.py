@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Deque, Dict, Optional
 import time
 
+import ccxt
 import pandas as pd
 
 from ..adapters.binance import BinanceWSAdapter
@@ -42,27 +43,26 @@ class Bar:
 class BarAggregator:
     """Agrega trades en barras OHLCV para un timeframe configurable.
 
-    El timeframe debe expresarse como minutos (ej. ``"1m"``, ``"5m"``).
-    Se cierra una barra cuando cambia el periodo calculado para el trade
-    entrante.
+    El timeframe puede expresarse en minutos u horas (ej. ``"1m"``, ``"5m"``,
+    ``"1h"`, ``"4h"``). Se cierra una barra cuando cambia el periodo calculado
+    para el trade entrante.
     """
 
     def __init__(self, timeframe: str = "1m") -> None:
-        if not timeframe.endswith("m"):
-            raise ValueError("timeframe must be specified in minutes, e.g. '1m'")
         self.timeframe = timeframe
-        self._mins = int(timeframe[:-1]) or 1
+        seconds = ccxt.Exchange.parse_timeframe(timeframe)
+        if seconds % 60:
+            raise ValueError("timeframe must resolve to a whole number of minutes")
+        self._mins = int(seconds // 60) or 1
         self.current_period: Optional[datetime] = None
         self.cur: Optional[Bar] = None
         self.completed: Deque[Bar] = deque(maxlen=5000)
 
     def _floor_ts(self, ts: datetime) -> datetime:
         """Floor ``ts`` to the start of the current timeframe."""
-        return ts - timedelta(
-            minutes=ts.minute % self._mins,
-            seconds=ts.second,
-            microseconds=ts.microsecond,
-        )
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        delta = timedelta(minutes=self._mins)
+        return ts - ((ts - epoch) % delta)
 
     def on_trade(self, ts: datetime, px: float, qty: float) -> Optional[Bar]:
         period = self._floor_ts(ts)
