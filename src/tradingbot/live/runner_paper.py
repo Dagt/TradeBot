@@ -353,29 +353,29 @@ async def run_paper(
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
                     if filled_qty > 0:
-                          slippage = (
-                              ((exec_price - price) / price) * 10000 if price else 0.0
-                          )
-                          maker = exec_price == price
-                          fee_bps = (
-                              exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
-                          )
-                          fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                          log.info(
-                              "METRICS %s",
-                              json.dumps(
-                                  {
-                                      "event": "fill",
-                                      "side": close_side,
-                                      "price": exec_price,
-                                      "qty": filled_qty,
-                                      "fee": fee,
-                                      "pnl": delta_rpnl,
-                                      "slippage_bps": slippage,
-                                      "maker": maker,
-                                  }
-                              ),
-                    )
+                        slippage = (
+                            ((exec_price - price) / price) * 10000 if price else 0.0
+                        )
+                        maker = exec_price == price
+                        fee_bps = (
+                            exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                        )
+                        fee = filled_qty * exec_price * (fee_bps / 10000.0)
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "event": "fill",
+                                    "side": close_side,
+                                    "price": exec_price,
+                                    "qty": filled_qty,
+                                    "fee": fee,
+                                    "pnl": delta_rpnl,
+                                    "slippage_bps": slippage,
+                                    "maker": maker,
+                                }
+                            ),
+                        )
                     if pending_qty > 0:
                         log.info(
                             "METRICS %s",
@@ -389,9 +389,9 @@ async def run_paper(
                                 }
                             ),
                         )
-                      delta_rpnl = (
-                          resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-                      )
+                    delta_rpnl = (
+                        resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    )
                     opened_at = trade.get("opened_at")
                     duration = time.time() - opened_at if opened_at else 0.0
                     log.info(
@@ -478,50 +478,49 @@ async def run_paper(
                             resp.get("realized_pnl", broker.state.realized_pnl)
                             - prev_rpnl
                         )
-                          if filled_qty > 0:
-                              slippage = (
-                                  ((exec_price - price) / price) * 10000 if price else 0.0
-                              )
-                              maker = exec_price == price
-                              fee_bps = (
-                                  exec_broker.maker_fee_bps
-                                  if maker
-                                  else broker.taker_fee_bps
-                              )
-                              fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                              log.info(
-                                  "METRICS %s",
-                                  json.dumps(
-                                      {
-                                          "event": "fill",
-                                          "side": side,
-                                          "price": exec_price,
-                                          "qty": filled_qty,
-                                          "fee": fee,
-                                          "pnl": delta_rpnl,
-                                          "slippage_bps": slippage,
-                                          "maker": maker,
-                                      }
-                                  ),
-                              )
-                          if pending_qty > 0:
-                              log.info(
-                                  "METRICS %s",
-                                  json.dumps(
-                                      {
-                                          "event": "cancel",
-                                          "side": side,
-                                          "price": price,
-                                          "qty": pending_qty,
-                                          "reason": "expired",
-                                      }
-                                  ),
-                              )
-
-                          halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
-                          if halted:
-                              log.error("[HALT] motivo=%s", reason)
-                              break
+                        if filled_qty > 0:
+                            slippage = (
+                                ((exec_price - price) / price) * 10000 if price else 0.0
+                            )
+                            maker = exec_price == price
+                            fee_bps = (
+                                exec_broker.maker_fee_bps
+                                if maker
+                                else broker.taker_fee_bps
+                            )
+                            fee = filled_qty * exec_price * (fee_bps / 10000.0)
+                            log.info(
+                                "METRICS %s",
+                                json.dumps(
+                                    {
+                                        "event": "fill",
+                                        "side": side,
+                                        "price": exec_price,
+                                        "qty": filled_qty,
+                                        "fee": fee,
+                                        "pnl": delta_rpnl,
+                                        "slippage_bps": slippage,
+                                        "maker": maker,
+                                    }
+                                ),
+                            )
+                        if pending_qty > 0:
+                            log.info(
+                                "METRICS %s",
+                                json.dumps(
+                                    {
+                                        "event": "cancel",
+                                        "side": side,
+                                        "price": price,
+                                        "qty": pending_qty,
+                                        "reason": "expired",
+                                    }
+                                ),
+                            )
+                        halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+                        if halted:
+                            log.error("[HALT] motivo=%s", reason)
+                            break
                     continue
             closed = agg.on_trade(ts, px, qty)
             latency = (datetime.now(timezone.utc) - ts).total_seconds()
@@ -621,54 +620,55 @@ async def run_paper(
             )
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
-              exec_price = float(resp.get("price", price))
-              risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
-              if not (
-                  filled_qty == 0 and resp.get("reason") == "insufficient_position"
-              ):
-                  risk.on_fill(
-                      symbol, side, filled_qty, price=exec_price, venue="paper"
-                  )
-              cur_qty = risk.account.current_exposure(symbol)[0]
-              log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
-              delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-              if filled_qty > 0:
-                  slippage = ((exec_price - price) / price) * 10000 if price else 0.0
-                  maker = exec_price == price
-                  fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
-                  fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                  log.info(
-                      "METRICS %s",
-                      json.dumps(
-                          {
-                              "event": "fill",
-                              "side": side,
-                              "price": exec_price,
-                              "qty": filled_qty,
-                              "fee": fee,
-                              "pnl": delta_rpnl,
-                              "slippage_bps": slippage,
-                              "maker": maker,
-                          }
-                      ),
-                  )
-              if pending_qty > 0:
-                  log.info(
-                      "METRICS %s",
-                      json.dumps(
-                          {
-                              "event": "cancel",
-                              "side": side,
-                              "price": price,
-                              "qty": pending_qty,
-                              "reason": "expired",
-                          }
-                      ),
-                  )
-              halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
-              if halted:
-                  log.error("[HALT] motivo=%s", reason)
-                  break
+            exec_price = float(resp.get("price", price))
+            risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+            if not (
+                filled_qty == 0 and resp.get("reason") == "insufficient_position"
+            ):
+                risk.on_fill(
+                    symbol, side, filled_qty, price=exec_price, venue="paper"
+                )
+            cur_qty = risk.account.current_exposure(symbol)[0]
+            log.info("METRICS %s", json.dumps({"inventory": cur_qty}))
+            delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+            if filled_qty > 0:
+                slippage = ((exec_price - price) / price) * 10000 if price else 0.0
+                maker = exec_price == price
+                fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                fee = filled_qty * exec_price * (fee_bps / 10000.0)
+                log.info(
+                    "METRICS %s",
+                    json.dumps(
+                        {
+                            "event": "fill",
+                            "side": side,
+                            "price": exec_price,
+                            "qty": filled_qty,
+                            "fee": fee,
+                            "pnl": delta_rpnl,
+                            "slippage_bps": slippage,
+                            "maker": maker,
+                        }
+                    ),
+                )
+            if pending_qty > 0:
+                log.info(
+                    "METRICS %s",
+                    json.dumps(
+                        {
+                            "event": "cancel",
+                            "side": side,
+                            "price": price,
+                            "qty": pending_qty,
+                            "reason": "expired",
+                        }
+                    ),
+                )
+            halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
+            if halted:
+                log.error("[HALT] motivo=%s", reason)
+                break
+            continue
     finally:
         server.should_exit = True
         if metrics_task is not None:
