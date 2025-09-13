@@ -38,14 +38,19 @@ FILL_COUNT = Counter(
 )
 
 # Order flow counters
-ORDER_SENT = Counter(
-    "order_sent_total",
-    "Total orders sent",
+ORDERS = Counter(
+    "orders_total",
+    "Total orders submitted to the broker",
 )
 
-ORDER_REJECTS = Counter(
-    "order_rejects_total",
-    "Total order rejections",
+CANCELS = Counter(
+    "order_cancels_total",
+    "Total order cancellations or expiries",
+)
+
+SKIPS = Counter(
+    "order_skips_total",
+    "Total orders skipped before submission",
 )
 
 # Slippage observed in order execution (basis points)

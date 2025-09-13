@@ -23,7 +23,7 @@ async def test_update_bot_stats_events():
     await api_main.update_bot_stats(1, {"event": "trade", "pnl": 7})
     await api_main.update_bot_stats(1, {"event": "cancel"})
     stats = api_main._BOTS[1]["stats"]
-    assert stats["orders_sent"] == 1
+    assert stats["orders"] == 1
     assert stats["fills"] == 1
     assert stats["fees_usd"] == 0.2
     assert stats["hit_rate"] == 1.0

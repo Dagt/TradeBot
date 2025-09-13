@@ -14,8 +14,9 @@ from tradingbot.utils.metrics import (
     SLIPPAGE,
     RISK_EVENTS,
     ORDER_LATENCY,
-    ORDER_SENT,
-    ORDER_REJECTS,
+    ORDERS,
+    SKIPS,
+    CANCELS,
     MAKER_TAKER_RATIO,
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
@@ -210,9 +211,10 @@ def metrics_summary() -> dict:
     avg_market_latency = _avg_market_latency()
     avg_e2e = _avg_e2e_latency()
 
-    orders_sent = ORDER_SENT._value.get()
-    order_rejects = ORDER_REJECTS._value.get()
-    reject_rate = order_rejects / orders_sent if orders_sent else 0.0
+    orders = ORDERS._value.get()
+    cancels = CANCELS._value.get()
+    skips = SKIPS._value.get()
+    skip_rate = skips / orders if orders else 0.0
 
     # Compute average maker/taker ratio across venues
     ratio_samples = [
@@ -262,9 +264,10 @@ def metrics_summary() -> dict:
         "disconnects": SYSTEM_DISCONNECTS._value.get(),
         "fills": fill_total,
         "risk_events": risk_total,
-        "orders_sent": orders_sent,
-        "order_rejects": order_rejects,
-        "order_reject_rate": reject_rate,
+        "orders": orders,
+        "cancels": cancels,
+        "skips": skips,
+        "skip_rate": skip_rate,
         "kill_switch_active": KILL_SWITCH_ACTIVE._value.get(),
         "avg_slippage_bps": avg_slippage,
         "avg_market_latency_seconds": avg_market_latency,

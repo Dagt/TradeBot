@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
-from ..utils.metrics import ORDER_SENT
+from ..utils.metrics import ORDERS, SKIPS
 
 
 class Broker:
@@ -143,8 +143,11 @@ class Broker:
                     or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
                 ):
                     kwargs["signal_ts"] = signal_ts
-            ORDER_SENT.inc()
             res = await self.adapter.place_order(**kwargs)
+            if res.get("status") == "rejected":
+                SKIPS.inc()
+            else:
+                ORDERS.inc()
             qty_filled = float(
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
             )
@@ -212,5 +215,9 @@ class Broker:
             kwargs["slip_bps"] = slip_bps
         if signal_ts is not None:
             kwargs["signal_ts"] = signal_ts
-        ORDER_SENT.inc()
-        return await self.adapter.place_order(**kwargs)
+        res = await self.adapter.place_order(**kwargs)
+        if res.get("status") == "rejected":
+            SKIPS.inc()
+        else:
+            ORDERS.inc()
+        return res

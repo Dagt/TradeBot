@@ -22,7 +22,7 @@ from ..adapters.okx_spot import OKXSpotAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, CANCELS, SKIPS
 from ..broker.broker import Broker
 from ..config import settings
 from ..risk.service import load_positions
@@ -307,9 +307,26 @@ async def run_paper(
                         log.info(
                             "Skipping order: qty %.8f below min threshold", abs(pos_qty)
                         )
+                        SKIPS.inc()
                         log.info(
                             "METRICS %s",
                             json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                        )
+                        continue
+                    resp = await exec_broker.place_limit(
+                        symbol,
+                        close_side,
+                        price,
+                        qty_close,
+                        on_partial_fill=strat.on_partial_fill,
+                        on_order_expiry=strat.on_order_expiry,
+                        slip_bps=slippage_bps,
+                    )
+                    if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                        SKIPS.inc()
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"event": "skip", "reason": "insufficient_cash"}),
                         )
                         continue
                     log.info(
@@ -325,21 +342,6 @@ async def run_paper(
                             }
                         ),
                     )
-                    resp = await exec_broker.place_limit(
-                        symbol,
-                        close_side,
-                        price,
-                        qty_close,
-                        on_partial_fill=strat.on_partial_fill,
-                        on_order_expiry=strat.on_order_expiry,
-                        slip_bps=slippage_bps,
-                    )
-                    if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
-                        log.info(
-                            "METRICS %s",
-                            json.dumps({"event": "skip", "reason": "insufficient_cash"}),
-                        )
-                        continue
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     exec_price = float(resp.get("price", price))
@@ -390,6 +392,7 @@ async def run_paper(
                             ),
                         )
                     if pending_qty > 0:
+                        CANCELS.inc()
                         risk.account.update_open_order(symbol, close_side, -pending_qty)
                         locked = risk.account.get_locked_usd(symbol)
                         log.info(
@@ -445,9 +448,26 @@ async def run_paper(
                                 "Skipping order: qty %.8f below min threshold",
                                 abs(delta_qty),
                             )
+                            SKIPS.inc()
                             log.info(
                                 "METRICS %s",
                                 json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                            )
+                            continue
+                        resp = await exec_broker.place_limit(
+                            symbol,
+                            side,
+                            price,
+                            qty_scale,
+                            on_partial_fill=strat.on_partial_fill,
+                            on_order_expiry=strat.on_order_expiry,
+                            slip_bps=slippage_bps,
+                        )
+                        if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                            SKIPS.inc()
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
                             )
                             continue
                         log.info(
@@ -463,21 +483,6 @@ async def run_paper(
                                 }
                             ),
                         )
-                        resp = await exec_broker.place_limit(
-                            symbol,
-                            side,
-                            price,
-                            qty_scale,
-                            on_partial_fill=strat.on_partial_fill,
-                            on_order_expiry=strat.on_order_expiry,
-                            slip_bps=slippage_bps,
-                        )
-                        if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
-                            log.info(
-                                "METRICS %s",
-                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
-                            )
-                            continue
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         exec_price = float(resp.get("price", price))
@@ -531,6 +536,7 @@ async def run_paper(
                                 ),
                             )
                         if pending_qty > 0:
+                            CANCELS.inc()
                             risk.account.update_open_order(symbol, side, -pending_qty)
                             locked = risk.account.get_locked_usd(symbol)
                             log.info(
@@ -590,15 +596,21 @@ async def run_paper(
                     log.info(
                         "Skipping order: qty %.8f below min threshold", abs(delta)
                     )
+                    SKIPS.inc()
                     log.info(
                         "METRICS %s",
                         json.dumps({"event": "skip", "reason": "below_min_qty"}),
                     )
                 else:
                     log.warning("orden bloqueada: %s", reason)
+                    SKIPS.inc()
                     log.info(
                         "METRICS %s",
                         json.dumps({"event": "risk_check_reject", "reason": reason}),
+                    )
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": reason}),
                     )
                 continue
             side = "buy" if delta > 0 else "sell"
@@ -609,6 +621,7 @@ async def run_paper(
                 log.info(
                     "Skipping order: qty %.8f below min threshold", abs(delta)
                 )
+                SKIPS.inc()
                 log.info(
                     "METRICS %s",
                     json.dumps({"event": "skip", "reason": "below_min_qty"}),
@@ -618,12 +631,34 @@ async def run_paper(
             if not risk.register_order(symbol, notional):
                 reason = getattr(risk, "last_kill_reason", "register_reject")
                 log.warning("registro de orden bloqueado: %s", reason)
+                SKIPS.inc()
                 log.info(
                     "METRICS %s",
                     json.dumps({"event": "register_order_reject", "reason": reason}),
                 )
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": reason}),
+                )
                 continue
             prev_rpnl = broker.state.realized_pnl
+            resp = await exec_broker.place_limit(
+                symbol,
+                side,
+                price,
+                qty,
+                on_partial_fill=strat.on_partial_fill,
+                on_order_expiry=strat.on_order_expiry,
+                signal_ts=signal_ts,
+                slip_bps=slippage_bps,
+            )
+            if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
+                SKIPS.inc()
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                )
+                continue
             log.info(
                 "METRICS %s",
                 json.dumps(
@@ -637,22 +672,6 @@ async def run_paper(
                     }
                 ),
             )
-            resp = await exec_broker.place_limit(
-                symbol,
-                side,
-                price,
-                qty,
-                on_partial_fill=strat.on_partial_fill,
-                on_order_expiry=strat.on_order_expiry,
-                signal_ts=signal_ts,
-                slip_bps=slippage_bps,
-            )
-            if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
-                )
-                continue
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
@@ -694,6 +713,7 @@ async def run_paper(
                     ),
                 )
             if pending_qty > 0:
+                CANCELS.inc()
                 risk.account.update_open_order(symbol, side, -pending_qty)
                 locked = risk.account.get_locked_usd(symbol)
                 log.info(
