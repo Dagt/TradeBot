@@ -501,6 +501,13 @@ class ExecutionRouter:
                     )
                 except Exception:  # pragma: no cover - logging only
                     log.exception("Persist failure: insert_order")
+            log.info(
+                "Order filled venue=%s oid=%s tid=%s reason=%s",
+                venue,
+                res.get("order_id"),
+                res.get("trade_id"),
+                res.get("reason"),
+            )
 
         base_price = res.get("fill_price") or res.get("price")
         slip_bps = getattr(order, "slip_bps", None)
@@ -529,12 +536,14 @@ class ExecutionRouter:
         MAKER_TAKER_RATIO.labels(venue=venue).set(ratio)
         # Propagate venue so downstream components can track positions per exchange
         res.setdefault("venue", venue)
+        filled_flag = float(res.get("pending_qty", 0.0)) <= 0.0
         log.info(
-            "Order executed venue=%s oid=%s tid=%s reason=%s",
+            "Order placed venue=%s oid=%s tid=%s reason=%s filled=%s",
             venue,
             res.get("order_id"),
             res.get("trade_id"),
             res.get("reason"),
+            filled_flag,
         )
         if signal_ts is not None:
             SIGNAL_CONFIRM_LATENCY.observe(time.time() - signal_ts)
