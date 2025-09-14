@@ -1,0 +1,723 @@
+
+
+2025-09-14 03:02:25,531 | INFO | tradingbot.live.runner_paper | Connecting to Okx spot WS in paper mode for ETHUSDT
+2025-09-14 03:02:25,671 | INFO | tradingbot.live.runner_paper | METRICS {"leverage": 1}
+INFO:     Started server process [137]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:42421 (Press CTRL+C to quit)
+2025-09-14 03:02:25,776 | INFO | tradingbot.live.runner_paper | metrics server listening on port 42421
+2025-09-14 03:02:25,776 | INFO | tradingbot.live.runner_paper | Loading 140 historical bars for warm-up
+2025-09-14 03:02:28,900 | INFO | tradingbot.live.runner_paper | Pre-loaded 140/140 bars
+2025-09-14 03:03:01,041 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:03:01,041 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:03:01,041 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:03:01,042 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:05:00,903 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:05:00,904 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:05:00,904 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:05:00,905 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:06:00,683 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:06:00,684 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:06:00,684 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:06:00,684 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:07:00,857 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:07:00,857 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:07:00,857 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:07:00,857 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:08:00,813 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:08:00,814 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:08:00,814 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:08:00,814 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:12:00,944 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:12:00,945 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:12:00,946 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:12:00,946 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:13:01,527 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:13:01,528 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:13:01,528 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:13:01,528 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:14:00,620 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:14:00,620 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:14:00,621 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:14:00,621 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:15:00,649 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:15:00,650 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:15:00,650 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:15:00,650 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:16:01,409 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:16:01,409 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:16:01,410 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:16:01,410 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:17:00,548 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:17:00,549 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:17:00,549 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:17:00,549 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:18:02,607 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:18:02,608 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:18:02,608 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:18:02,608 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:19:00,891 | WARNING | tradingbot.risk.service | short_not_allowed: ETHUSDT cur_qty=0.00000000
+2025-09-14 03:19:00,891 | WARNING | tradingbot.live.runner_paper | orden bloqueada: short_not_allowed
+2025-09-14 03:19:00,892 | INFO | tradingbot.live.runner_paper | METRICS {"event": "risk_check_reject", "reason": "short_not_allowed"}
+2025-09-14 03:19:00,893 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "short_not_allowed"}
+2025-09-14 03:25:00,707 | INFO | tradingbot.execution.router | Routing order Order(symbol='ETHUSDT', side='buy', type_='limit', qty=2.138900177, price=4675.3, post_only=True, time_in_force='GTC', iceberg_qty=None, reduce_only=False, reason=None, slip_bps=0.0, pending_qty=2.138900177) via paper reason=None
+2025-09-14 03:25:00,709 | INFO | tradingbot.execution.router | Order executed venue=paper oid=paper-1 tid=trade-1 reason=None
+2025-09-14 03:25:00,710 | INFO | tradingbot.execution.router | Routing order Order(symbol='ETHUSDT', side='buy', type_='limit', qty=0.0016029723747541524, price=4675.3, post_only=True, time_in_force='GTC', iceberg_qty=None, reduce_only=False, reason=None, slip_bps=0.0, pending_qty=0.0016029723747541524) via paper reason=None
+2025-09-14 03:25:00,711 | INFO | tradingbot.execution.router | Order executed venue=paper oid=paper-2 tid=trade-2 reason=insufficient_cash
+2025-09-14 03:25:00,711 | INFO | tradingbot.live.runner_paper | METRICS {"event": "order", "side": "buy", "price": 4675.3, "qty": 2.138900177, "fee": 0.0, "pnl": 0.0}
+2025-09-14 03:25:00,712 | INFO | tradingbot.live.runner_paper | METRICS {"exposure": 2.137297204625246, "locked": 7.494376743688089}
+2025-09-14 03:25:00,712 | INFO | tradingbot.live.runner_paper | METRICS {"event": "fill", "side": "buy", "price": 4675.3, "qty": 2.137297204625246, "fee": 7.494379215588309, "pnl": 0.0, "slippage_bps": 0.0, "maker": true}
+2025-09-14 03:32:00,750 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:32:00,750 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 03:33:01,081 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:33:01,082 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 03:37:03,546 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:37:03,547 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 03:39:02,374 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:39:02,376 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 03:40:01,186 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:40:01,187 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 03:45:02,681 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 03:45:02,682 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:06:02,385 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:06:02,385 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:07:02,706 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:07:02,707 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:08:00,867 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:08:00,867 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:09:00,720 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:09:00,721 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:10:00,522 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:10:00,523 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:11:00,935 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:11:00,936 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:12:01,267 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:12:01,268 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:13:00,791 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:13:00,792 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:15:00,637 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:15:00,640 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:16:01,474 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:16:01,475 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:17:00,551 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:17:00,551 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:18:02,573 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:18:02,573 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:19:00,542 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:19:00,543 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:20:00,639 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:20:00,639 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:21:01,248 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:21:01,248 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:22:01,191 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:22:01,192 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:23:00,541 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:23:00,542 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:26:04,606 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:26:04,606 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:27:01,120 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:27:01,121 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:28:02,062 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:28:02,063 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:29:01,863 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:29:01,863 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:30:00,654 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:30:00,655 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:31:00,582 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:31:00,584 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:32:01,293 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:32:01,293 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:33:01,638 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:33:01,639 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:35:00,810 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:35:00,810 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:36:01,174 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:36:01,174 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:37:03,586 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:37:03,586 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:38:01,106 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:38:01,106 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:56:02,950 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:56:02,950 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:57:00,999 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:57:00,999 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 04:59:02,974 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 04:59:02,974 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:00:00,833 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:00:00,834 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:03:00,892 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:03:00,892 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:05:00,582 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:05:00,582 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:06:01,578 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:06:01,578 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:07:00,775 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:07:00,775 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:08:02,846 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:08:02,846 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:09:03,635 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:09:03,635 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:10:04,798 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:10:04,798 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:11:10,285 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:11:10,285 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:12:07,435 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:12:07,435 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:22:01,127 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:22:01,127 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:35:01,475 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:35:01,475 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:36:03,584 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:36:03,584 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:37:00,593 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:37:00,593 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:38:00,966 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:38:00,967 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:45:05,086 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:45:05,086 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 05:47:01,388 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 05:47:01,388 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:03:01,130 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:03:01,130 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:05:00,742 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:05:00,742 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:06:01,873 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:06:01,874 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:07:02,141 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:07:02,141 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:08:00,611 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:08:00,611 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:09:03,758 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:09:03,758 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:10:01,787 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:10:01,787 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:11:01,983 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:11:01,984 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:12:00,972 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:12:00,972 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:13:01,196 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:13:01,196 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:14:03,833 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:14:03,833 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:15:01,610 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:15:01,610 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:19:00,806 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:19:00,807 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:20:04,242 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:20:04,243 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:21:07,115 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:21:07,115 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:22:01,701 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:22:01,702 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:23:03,872 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:23:03,873 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:28:04,665 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:28:04,665 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:30:00,739 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:30:00,739 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:31:00,898 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:31:00,898 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:33:01,490 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:33:01,491 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:34:01,066 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:34:01,067 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:35:02,526 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:35:02,527 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:36:00,754 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:36:00,755 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:37:02,801 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:37:02,801 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:38:00,563 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:38:00,563 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:39:00,825 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:39:00,825 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:41:00,941 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:41:00,941 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:42:01,248 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:42:01,249 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:43:00,682 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:43:00,682 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:44:01,330 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:44:01,330 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:45:00,887 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:45:00,887 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:46:00,591 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:46:00,591 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:47:03,443 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:47:03,443 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:48:00,674 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:48:00,674 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:50:01,826 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:50:01,827 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:51:00,812 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:51:00,812 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:52:02,603 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:52:02,603 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:53:04,566 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:53:04,566 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:54:01,058 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:54:01,058 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:55:03,967 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:55:03,967 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 06:57:00,905 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 06:57:00,905 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:00:00,850 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:00:00,851 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:02:00,527 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:02:00,528 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:03:00,649 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:03:00,649 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:04:00,677 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:04:00,677 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:05:00,644 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:05:00,644 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:06:00,615 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:06:00,615 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:09:00,648 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:09:00,648 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:10:00,662 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:10:00,663 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:11:00,649 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:11:00,649 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:12:00,606 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:12:00,607 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:14:00,657 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:14:00,658 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:17:00,655 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:17:00,655 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:18:00,614 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:18:00,615 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:19:00,660 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:19:00,660 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:21:00,521 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:21:00,521 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:22:00,564 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:22:00,564 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:23:00,528 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:23:00,528 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:24:00,570 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:24:00,571 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:25:00,653 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:25:00,653 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:26:00,641 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:26:00,641 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:27:00,676 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:27:00,676 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:32:00,600 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:32:00,601 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:48:00,517 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:48:00,517 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:49:00,514 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:49:00,514 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:50:00,550 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:50:00,551 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:51:00,530 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:51:00,530 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:52:00,613 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:52:00,614 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:53:00,592 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:53:00,592 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:54:00,594 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:54:00,594 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:57:00,609 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:57:00,609 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:58:00,599 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:58:00,599 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 07:59:00,649 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 07:59:00,650 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:00:00,651 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:00:00,651 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:01:01,913 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:01:01,913 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:02:00,579 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:02:00,579 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:03:01,619 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:03:01,620 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:04:01,054 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:04:01,054 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:06:00,541 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:06:00,541 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:07:00,789 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:07:00,789 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:10:03,871 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:10:03,871 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:11:01,039 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:11:01,039 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:14:00,682 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:14:00,682 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:15:02,557 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:15:02,557 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:19:01,007 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:19:01,007 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:21:01,038 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:21:01,038 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:23:01,056 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:23:01,056 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:24:01,215 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:24:01,215 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:25:03,867 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:25:03,867 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:26:00,601 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:26:00,601 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:27:00,885 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:27:00,886 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:31:02,230 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:31:02,230 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:33:01,542 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:33:01,543 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:34:01,924 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:34:01,924 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 08:44:00,518 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 08:44:00,518 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:07:00,521 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:07:00,522 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:09:00,803 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:09:00,803 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:13:01,717 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:13:01,717 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:18:05,011 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:18:05,011 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:19:02,392 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:19:02,392 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:20:00,523 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:20:00,523 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:21:03,881 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:21:03,882 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:22:01,044 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:22:01,045 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:23:00,599 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:23:00,599 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:24:01,104 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:24:01,104 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:25:00,514 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:25:00,514 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:26:03,527 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:26:03,527 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:27:00,853 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:27:00,853 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:40:00,722 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:40:00,722 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:47:01,770 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:47:01,770 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:50:01,007 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:50:01,007 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:51:00,689 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:51:00,690 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:52:00,967 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:52:00,967 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:53:03,240 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:53:03,240 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:54:00,968 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:54:00,968 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:55:02,918 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:55:02,919 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:57:13,766 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:57:13,767 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:58:04,711 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:58:04,711 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 09:59:06,389 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 09:59:06,389 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:00:00,749 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:00:00,750 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:07:01,058 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:07:01,058 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:08:03,269 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:08:03,269 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:14:02,375 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:14:02,375 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:15:01,932 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:15:01,932 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:16:00,582 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:16:00,582 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:17:03,803 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:17:03,803 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:18:01,343 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:18:01,344 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:20:03,110 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:20:03,110 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:21:05,800 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:21:05,800 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:22:01,226 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:22:01,227 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:24:01,626 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:24:01,626 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:25:02,100 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:25:02,100 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:26:02,071 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:26:02,071 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:27:13,981 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:27:13,981 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:28:01,160 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:28:01,160 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:29:01,048 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:29:01,049 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:30:00,780 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:30:00,780 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:31:01,282 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:31:01,282 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:32:03,037 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:32:03,038 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:33:01,835 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:33:01,835 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:36:01,542 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:36:01,543 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:37:01,071 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:37:01,071 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:51:01,820 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:51:01,820 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:58:02,684 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:58:02,684 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 10:59:01,171 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 10:59:01,171 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:01:02,680 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:01:02,680 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:02:00,857 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:02:00,858 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:03:02,697 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:03:02,697 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:04:02,596 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:04:02,596 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:05:00,982 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:05:00,982 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:06:03,481 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:06:03,481 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:17:02,541 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:17:02,542 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:18:00,985 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:18:00,986 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:19:00,498 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:19:00,498 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:20:00,502 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:20:00,503 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:21:00,575 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:21:00,575 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:22:03,489 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:22:03,489 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:23:01,169 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:23:01,170 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:24:01,533 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:24:01,534 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:25:00,536 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:25:00,537 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:26:00,660 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:26:00,660 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:27:02,037 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:27:02,038 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:28:00,737 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:28:00,737 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:29:01,344 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:29:01,344 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:30:00,596 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:30:00,596 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:31:01,468 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:31:01,468 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:32:00,592 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:32:00,592 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:33:00,907 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:33:00,907 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:34:00,590 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:34:00,590 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:35:00,591 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:35:00,592 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:37:00,539 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:37:00,539 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:38:00,574 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:38:00,574 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:39:01,591 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:39:01,592 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:41:00,863 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:41:00,865 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:42:03,118 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:42:03,118 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:43:01,467 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:43:01,467 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:44:01,829 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:44:01,830 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:45:00,636 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:45:00,636 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:48:01,188 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:48:01,189 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:49:00,817 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:49:00,817 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:51:00,562 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:51:00,562 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:53:02,477 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:53:02,477 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:55:03,196 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:55:03,196 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:56:01,094 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:56:01,094 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:57:01,609 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:57:01,610 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:58:03,237 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:58:03,238 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 11:59:00,634 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 11:59:00,634 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:01:00,555 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:01:00,555 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:02:01,039 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:02:01,039 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:06:01,970 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:06:01,970 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:07:01,467 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:07:01,468 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:10:03,200 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:10:03,201 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:11:00,568 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:11:00,569 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:14:02,672 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:14:02,672 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:36:01,494 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:36:01,494 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:40:01,125 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:40:01,125 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:41:00,874 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:41:00,874 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:42:00,724 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:42:00,725 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:43:01,846 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:43:01,846 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:44:02,860 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:44:02,861 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:45:00,708 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:45:00,708 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:46:01,906 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:46:01,906 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:47:00,859 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:47:00,859 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:48:01,375 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:48:01,375 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:49:01,782 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:49:01,782 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:50:01,663 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:50:01,664 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:51:00,545 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:51:00,546 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:52:00,510 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:52:00,510 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:53:00,763 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:53:00,763 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:56:00,964 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:56:00,964 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:57:01,829 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:57:01,829 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:58:02,522 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:58:02,523 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 12:59:00,856 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 12:59:00,857 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:00:00,510 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:00:00,510 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:01:02,100 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:01:02,100 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:03:00,907 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:03:00,908 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:04:00,525 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:04:00,526 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:05:00,937 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:05:00,937 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:06:01,321 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:06:01,321 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:07:02,510 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:07:02,510 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:08:01,958 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:08:01,958 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:09:00,972 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:09:00,973 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:10:02,297 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:10:02,297 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:11:00,822 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:11:00,822 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:12:00,895 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:12:00,895 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:13:03,254 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:13:03,254 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:16:02,138 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:16:02,139 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:17:01,015 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:17:01,015 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:18:00,641 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:18:00,642 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:19:01,097 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:19:01,097 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:20:00,704 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:20:00,704 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:21:01,071 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:21:01,071 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:22:02,403 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:22:02,403 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:23:01,219 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:23:01,219 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:24:01,732 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:24:01,732 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:25:00,647 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:25:00,647 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:27:00,699 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:27:00,699 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:28:00,672 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:28:00,673 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:29:00,875 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:29:00,875 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:30:01,671 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:30:01,671 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:31:03,038 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:31:03,038 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:32:01,967 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:32:01,967 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:33:01,196 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:33:01,196 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:34:02,172 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:34:02,172 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:35:01,162 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:35:01,162 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:37:01,053 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:37:01,053 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:38:00,669 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:38:00,670 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:41:00,937 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:41:00,938 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:42:02,961 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:42:02,961 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:46:02,986 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:46:02,987 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:47:02,241 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:47:02,241 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:48:00,558 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:48:00,558 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:49:01,686 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:49:01,687 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:50:01,961 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:50:01,962 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:52:00,547 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:52:00,548 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:53:00,890 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:53:00,890 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:55:01,163 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:55:01,163 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:56:00,508 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:56:00,508 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:57:00,623 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:57:00,623 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 13:58:00,588 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 13:58:00,588 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:00:00,829 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:00:00,829 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:03:00,654 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:03:00,655 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:04:01,101 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:04:01,101 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:07:03,762 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:07:03,762 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:08:00,819 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:08:00,819 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:09:00,659 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:09:00,659 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:10:02,969 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:10:02,969 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:11:00,830 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:11:00,830 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:12:01,303 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:12:01,303 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+2025-09-14 14:13:00,507 | INFO | tradingbot.live.runner_paper | Skipping order: qty 0.00000000 below min threshold
+2025-09-14 14:13:00,508 | INFO | tradingbot.live.runner_paper | METRICS {"event": "skip", "reason": "below_min_qty"}
+
