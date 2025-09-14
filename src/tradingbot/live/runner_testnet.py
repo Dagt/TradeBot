@@ -36,6 +36,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
+from ..utils.metrics import CANCELS
 
 try:
     from ..storage.timescale import get_engine
@@ -169,6 +170,14 @@ async def _run_symbol(
         market_type=market,
     )
     strat.risk_service = risk
+    def on_order_cancel(order, res: dict) -> str | None:
+        """Track broker order cancellations."""
+        CANCELS.inc()
+        log.info(
+            "METRICS %s",
+            json.dumps({"event": "cancel", "reason": res.get("reason")}),
+        )
+        return "re_quote"
     limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     try:
@@ -263,10 +272,12 @@ async def _run_symbol(
             qty,
             tif=tif,
             on_partial_fill=lambda *_: "re_quote",
-            on_order_expiry=lambda *_: "re_quote",
+            on_order_expiry=on_order_cancel,
             signal_ts=signal_ts,
             slip_bps=slippage_bps,
         )
+        if resp.get("status") == "canceled":
+            on_order_cancel(None, resp)
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
