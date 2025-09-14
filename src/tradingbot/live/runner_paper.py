@@ -104,6 +104,7 @@ async def run_paper(
     step_size: float = 0.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
+    symbol = normalize(symbol)
     exchange, market = venue.split("_", 1)
     ws_cls = WS_ADAPTERS.get((exchange, market))
     if ws_cls is None:
