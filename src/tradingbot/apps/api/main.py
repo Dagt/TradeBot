@@ -1279,9 +1279,8 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         orders = buf.get("orders", 0)
         fills = buf.get("fills", 0)
         cancels = buf.get("cancels", 0)
-        if orders:
-            buf["hit_rate"] = fills / orders
-            buf["cancel_ratio"] = cancels / orders
+        buf["hit_rate"] = fills / orders if orders else 0.0
+        buf["cancel_ratio"] = cancels / orders if orders else 0.0
 
 
 async def _scrape_metrics(
