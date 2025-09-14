@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Iterable, AsyncIterator, AsyncIterable
+from typing import Dict, Optional, Iterable, AsyncIterator, AsyncIterable, Mapping, Any
 from datetime import datetime
 import csv
 
@@ -12,6 +12,11 @@ from ..adapters.base import ExchangeAdapter
 from .order_types import Order
 from ..config import settings
 from .order_sizer import adjust_qty
+from .slippage import impact_by_depth
+try:  # Optional import for environments without backtesting module
+    from ..backtesting.engine import SlippageModel  # type: ignore
+except Exception:  # pragma: no cover - fallback when backtesting is unavailable
+    SlippageModel = None  # type: ignore
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +64,7 @@ class PaperAdapter(ExchangeAdapter):
         min_notional: float = 0.0,
         step_size: float = 0.0,
         slip_bps_per_qty: float = 0.0,
+        slippage_model: "SlippageModel" | None = None,
     ):
         super().__init__()
         self.state = PaperState()
@@ -78,11 +84,18 @@ class PaperAdapter(ExchangeAdapter):
         self.min_notional = float(min_notional)
         self.step_size = float(step_size)
         self.slip_bps_per_qty = float(slip_bps_per_qty)
+        self.slippage_model = slippage_model
 
-    def update_last_price(self, symbol: str, px: float, qty: float | None = None):
+    def update_last_price(
+        self,
+        symbol: str,
+        px: float,
+        qty: float | None = None,
+        book: Mapping[str, Any] | None = None,
+    ):
         self.state.last_px[symbol] = px
         self.account.mark_price(symbol, px)
-        return self._match_book(symbol, px, qty)
+        return self._match_book(symbol, px, qty, book)
 
     async def stream_trades(
         self,
@@ -128,13 +141,25 @@ class PaperAdapter(ExchangeAdapter):
         self.state.trade_id_seq += 1
         return f"trade-{self.state.trade_id_seq}"
 
-    def _match_book(self, symbol: str, px: float, qty: float | None = None) -> list[dict]:
+    def _match_book(
+        self,
+        symbol: str,
+        px: float,
+        qty: float | None = None,
+        book: Mapping[str, Any] | None = None,
+    ) -> list[dict]:
         fills: list[dict] = []
         orders = self.state.book.get(symbol)
         if not orders:
             return fills
         remaining = float("inf") if qty is None else float(qty)
         now = datetime.utcnow()
+        # Available top-of-book liquidity if provided
+        if book is not None:
+            remaining_asks = float(book.get("ask_size", float("inf")))
+            remaining_bids = float(book.get("bid_size", float("inf")))
+        else:
+            remaining_asks = remaining_bids = float("inf")
         for oid in list(orders.keys()):
             if remaining <= 0:
                 break
@@ -149,19 +174,25 @@ class PaperAdapter(ExchangeAdapter):
             pos = self.state.pos.get(symbol, PaperPosition())
             if order.side == "sell":
                 avail = pos.qty
+                book_avail = remaining_bids
             else:
                 avail = (
                     self.state.cash / (px * (1 + fee_bps / 10000.0))
                     if self.state.cash > 0
                     else 0.0
                 )
-            fill_qty = min(order.pending_qty, remaining, avail)
+                book_avail = remaining_asks
+            fill_qty = min(order.pending_qty, remaining, avail, book_avail)
             if fill_qty <= 0:
                 continue
-            px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px)
+            px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px, book)
             fill = self._apply_fill(symbol, order.side, fill_qty, px_slip, True)
             order.pending_qty -= fill_qty
             remaining -= fill_qty
+            if order.side == "sell":
+                remaining_bids -= fill_qty
+            else:
+                remaining_asks -= fill_qty
             status = "filled" if order.pending_qty <= 0 else "partial"
             time_in_book = (datetime.utcnow() - order.placed_at).total_seconds()
             res = {
@@ -203,7 +234,44 @@ class PaperAdapter(ExchangeAdapter):
             self.state.book.pop(symbol, None)
         return fills
 
-    def _apply_slippage(self, side: str, qty: float, px: float) -> tuple[float, float]:
+    def _apply_slippage(
+        self,
+        side: str,
+        qty: float,
+        px: float,
+        book: Mapping[str, Any] | None = None,
+    ) -> tuple[float, float]:
+        """Return adjusted price and slippage in basis points.
+
+        Priority is given to an injected :class:`SlippageModel`.  If no model is
+        provided, but order book levels are available via ``book`` (``bids`` or
+        ``asks`` lists), slippage is estimated by consuming depth using
+        :func:`impact_by_depth`.  Finally, a simple linear model based on
+        ``slip_bps_per_qty`` acts as a fallback for backwards compatibility.
+        """
+
+        # Slippage model path ----------------------------------------------
+        if self.slippage_model is not None and book is not None:
+            adj = self.slippage_model.adjust(side, qty, px, book)
+            if side == "buy":
+                slip_bps = (adj - px) / px * 10000.0
+            else:
+                slip_bps = (px - adj) / px * 10000.0
+            return adj, slip_bps
+
+        # Depth based path --------------------------------------------------
+        if book is not None:
+            levels = None
+            if side == "buy" and "asks" in book:
+                levels = book["asks"]  # type: ignore[index]
+            elif side == "sell" and "bids" in book:
+                levels = book["bids"]  # type: ignore[index]
+            if levels:
+                slip_bps = impact_by_depth(side, qty, levels) or 0.0
+                px_slipped = px * (1 + slip_bps / 10000.0)
+                return px_slipped, slip_bps
+
+        # Linear fallback ---------------------------------------------------
         slip_bps = self.slip_bps_per_qty * qty
         direction = 1 if side == "buy" else -1
         px_slipped = px * (1 + direction * slip_bps / 10000.0)
@@ -282,6 +350,7 @@ class PaperAdapter(ExchangeAdapter):
         timeout: float | None = None,
         iceberg_qty: float | None = None,
         reduce_only: bool = False,
+        book: Mapping[str, Any] | None = None,
     ) -> dict:
         order_id = self._next_order_id()
         trade_id = self._next_trade_id()
@@ -387,6 +456,8 @@ class PaperAdapter(ExchangeAdapter):
         pos = self.state.pos.get(symbol, PaperPosition())
         if side == "sell":
             qty = min(qty, pos.qty)
+            book_avail = float(book.get("bid_size", float("inf"))) if book else float("inf")
+            qty = min(qty, book_avail)
             if qty <= 0:
                 return {
                     "status": "rejected",
@@ -401,6 +472,8 @@ class PaperAdapter(ExchangeAdapter):
                 else 0.0
             )
             qty = min(qty, max_aff)
+            book_avail = float(book.get("ask_size", float("inf"))) if book else float("inf")
+            qty = min(qty, book_avail)
             if qty <= 0:
                 return {
                     "status": "rejected",
@@ -408,7 +481,7 @@ class PaperAdapter(ExchangeAdapter):
                     "order_id": order_id,
                     "trade_id": trade_id,
                 }
-        px_exec, slip_bps = self._apply_slippage(side, qty, px_exec)
+        px_exec, slip_bps = self._apply_slippage(side, qty, px_exec, book)
         fill = self._apply_fill(symbol, side, qty, px_exec, maker)
         if self.latency:
             await asyncio.sleep(self.latency)

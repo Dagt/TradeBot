@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from tradingbot.execution.paper import PaperAdapter, PaperPosition
+from tradingbot.backtesting.engine import SlippageModel
 
 
 @pytest.mark.asyncio
@@ -69,15 +70,39 @@ async def test_partial_cancel_reports_filled_and_pending():
 
 
 @pytest.mark.asyncio
-async def test_market_slippage_proportional_to_volume():
-    adapter = PaperAdapter(slip_bps_per_qty=100.0)
+async def test_market_slippage_matches_model():
+    model = SlippageModel(volume_impact=0.1, pct=0.0)
+    adapter = PaperAdapter(slippage_model=model)
     adapter.state.cash = 10000.0
     adapter.update_last_price("BTC/USDT", 100.0)
-    res = await adapter.place_order("BTC/USDT", "buy", "market", 2.0)
+    book = {"bid": 99.5, "ask": 100.5, "bid_size": 10.0, "ask_size": 10.0, "volume": 1000.0}
+    qty = 2.0
+    res = await adapter.place_order("BTC/USDT", "buy", "market", qty, book=book)
     assert res["status"] == "filled"
-    assert res["price"] == pytest.approx(102.0)
-    assert res["filled_qty"] == pytest.approx(2.0)
-    assert res["pending_qty"] == pytest.approx(0.0)
+    expected_price = model.adjust("buy", qty, 100.0, book)
+    assert res["price"] == pytest.approx(expected_price)
+    expected_slip = (expected_price - 100.0) / 100.0 * 10000
+    assert res["slippage_bps"] == pytest.approx(expected_slip)
+
+
+@pytest.mark.asyncio
+async def test_limit_slippage_matches_model():
+    model = SlippageModel(volume_impact=0.1, pct=0.0)
+    adapter = PaperAdapter(slippage_model=model)
+    adapter.state.cash = 10000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 5.0, price=99.0)
+    assert res["status"] == "new"
+    book = {"bid": 97.5, "ask": 98.5, "bid_size": 10.0, "ask_size": 3.0, "volume": 1000.0}
+    fills = adapter.update_last_price("BTC/USDT", 98.0, book=book)
+    fill = fills[0]
+    assert fill["status"] == "partial"
+    exp_px, exp_qty, _ = model.fill("buy", 5.0, 98.0, book)
+    assert fill["price"] == pytest.approx(exp_px)
+    assert fill["qty"] == pytest.approx(exp_qty)
+    assert fill["pending_qty"] == pytest.approx(5.0 - exp_qty)
+    exp_slip = (exp_px - 98.0) / 98.0 * 10000
+    assert fill["slippage_bps"] == pytest.approx(exp_slip)
 
 
 @pytest.mark.asyncio
