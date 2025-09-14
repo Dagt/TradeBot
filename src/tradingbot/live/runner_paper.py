@@ -23,6 +23,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
 from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
+from ..utils.price import limit_price_from_close
 from ..broker.broker import Broker
 from ..config import settings
 from ..risk.service import load_positions
@@ -283,18 +284,9 @@ async def run_paper(
         except Exception as e:  # pragma: no cover - best effort
             log.warning("Failed to pre-load historical bars: %s", e)
 
-    tick = getattr(settings, "tick_size", 0.0)
+    tick_size = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()
-
-    def _limit_price(side: str) -> float:
-        book = getattr(broker.state, "order_book", {}).get(symbol, {})
-        bids = book.get("bids") or []
-        asks = book.get("asks") or []
-        last = broker.state.last_px.get(symbol, 0.0)
-        best_bid = bids[0][0] if bids else last
-        best_ask = asks[0][0] if asks else last
-        return (best_ask - tick) if side == "buy" else (best_bid + tick)
 
     last_progress = len(agg.completed)
     last_log = 0
@@ -330,7 +322,8 @@ async def run_paper(
                 if decision == "close":
                     close_side = "sell" if pos_qty > 0 else "buy"
                     prev_rpnl = broker.state.realized_pnl
-                    price = _limit_price(close_side)
+                    last_close = agg.completed[-1].c if agg.completed else px
+                    price = limit_price_from_close(close_side, last_close, tick_size)
                     qty_close = adjust_qty(
                         abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
                     )
@@ -450,7 +443,8 @@ async def run_paper(
                             else ("sell" if trade["side"] == "buy" else "buy")
                         )
                         prev_rpnl = broker.state.realized_pnl
-                        price = _limit_price(side)
+                        last_close = agg.completed[-1].c if agg.completed else px
+                        price = limit_price_from_close(side, last_close, tick_size)
                         qty_scale = abs(delta_qty)
                         qty_scale = min(qty_scale, abs(pos_qty))
                         qty_scale = adjust_qty(
@@ -609,7 +603,11 @@ async def run_paper(
                 continue
             side = "buy" if delta > 0 else "sell"
             price = getattr(signal, "limit_price", None)
-            price = price if price is not None else _limit_price(side)
+            price = (
+                price
+                if price is not None
+                else limit_price_from_close(side, closed.c, tick_size)
+            )
             qty = adjust_qty(
                 abs(delta), price, min_notional, step_size, risk.min_order_qty
             )

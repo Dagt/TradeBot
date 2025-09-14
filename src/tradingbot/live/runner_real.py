@@ -51,6 +51,7 @@ from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
 from ..utils.metrics import CANCELS
+from ..utils.price import limit_price_from_close
 
 try:
     from ..storage.timescale import get_engine
@@ -185,7 +186,6 @@ async def _run_symbol(
     )
     broker.account.market_type = market
     exec_broker = Broker(exec_adapter if not dry_run else broker)
-    limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     risk = RiskService(
         guard,
@@ -245,9 +245,8 @@ async def _run_symbol(
             decision = risk.manage_position(trade)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
-                price = (
-                    px - limit_offset if close_side == "buy" else px + limit_offset
-                )
+                last_close = agg.completed[-1].c if agg.completed else px
+                price = limit_price_from_close(close_side, last_close, tick_size)
                 prev_rpnl = broker.state.realized_pnl
                 qty_close = adjust_qty(
                     abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
@@ -303,9 +302,8 @@ async def _run_symbol(
                     side = trade["side"] if delta_qty > 0 else (
                         "sell" if trade["side"] == "buy" else "buy"
                     )
-                    price = (
-                        px - limit_offset if side == "buy" else px + limit_offset
-                    )
+                    last_close = agg.completed[-1].c if agg.completed else px
+                    price = limit_price_from_close(side, last_close, tick_size)
                     qty_scale = adjust_qty(
                         abs(delta_qty), price, min_notional, step_size, risk.min_order_qty
                     )
@@ -391,7 +389,7 @@ async def _run_symbol(
         price = (
             sig.limit_price
             if sig.limit_price is not None
-            else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
+            else limit_price_from_close(side, closed.c, tick_size)
         )
         qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
         if qty <= 0:
