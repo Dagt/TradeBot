@@ -346,8 +346,11 @@ async def run_paper(
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     exec_price = float(resp.get("price", price))
+                    prev_pending = risk.account.open_orders.get(symbol, {}).get(
+                        close_side, 0.0
+                    )
                     risk.account.update_open_order(
-                        symbol, close_side, pending_qty
+                        symbol, close_side, pending_qty - prev_pending
                     )
                     if not (
                         filled_qty == 0
@@ -488,8 +491,11 @@ async def run_paper(
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         exec_price = float(resp.get("price", price))
+                        prev_pending = risk.account.open_orders.get(symbol, {}).get(
+                            side, 0.0
+                        )
                         risk.account.update_open_order(
-                            symbol, side, pending_qty
+                            symbol, side, pending_qty - prev_pending
                         )
                         if not (
                             filled_qty == 0
@@ -699,7 +705,8 @@ async def run_paper(
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
-            risk.account.update_open_order(symbol, side, pending_qty)
+            prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
+            risk.account.update_open_order(symbol, side, pending_qty - prev_pending)
             if not (
                 filled_qty == 0 and resp.get("reason") == "insufficient_position"
             ):
