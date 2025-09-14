@@ -570,6 +570,18 @@ async def run_paper(
             signal = strat.on_bar(bar)
             if signal is None:
                 continue
+            if (
+                signal.side == "sell"
+                and not risk.allow_short
+                and risk.account.current_exposure(symbol)[0] <= 0
+            ):
+                log.info("Skipping signal: short_not_allowed")
+                SKIPS.inc()
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "short_not_allowed"}),
+                )
+                continue
             signal_ts = getattr(signal, "signal_ts", time.time())
             allowed, reason, delta = risk.check_order(
                 symbol,

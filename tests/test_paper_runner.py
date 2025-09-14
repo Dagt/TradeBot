@@ -45,6 +45,7 @@ class DummyRisk:
         self.last_strength: float | None = None
         self.min_order_qty = 0.0
         self.rm = types.SimpleNamespace(allow_short=True)
+        self.allow_short = True
         self.account = types.SimpleNamespace(
             current_exposure=lambda symbol: (0.0, 0.0),
             update_open_order=lambda symbol, side, qty: None,
@@ -198,6 +199,7 @@ class DummyRiskNoInventory(DummyRisk):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.register_called = False
+        self.allow_short = False
 
     def register_order(self, symbol, notional):
         self.register_called = True
