@@ -214,14 +214,17 @@ async def _run_symbol(
     )
     strat.risk_service = risk
 
-    def on_order_cancel(order, res: dict) -> str | None:
+    def on_order_cancel(order, res: dict) -> None:
         """Track broker order cancellations."""
         CANCELS.inc()
         log.info(
             "METRICS %s",
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
-        return "re_quote"
+
+    def on_order_expiry(order, res: dict) -> str | None:
+        on_order_cancel(order, res)
+        return strat.on_order_expiry(order, res)
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -283,7 +286,7 @@ async def _run_symbol(
                     qty_close,
                     tif=tif,
                     on_partial_fill=lambda *_: "re_quote",
-                    on_order_expiry=on_order_cancel,
+                    on_order_expiry=on_order_expiry,
                     slip_bps=slippage_bps,
                 )
                 if resp.get("status") == "canceled":
@@ -340,7 +343,7 @@ async def _run_symbol(
                         qty_scale,
                         tif=tif,
                         on_partial_fill=lambda *_: "re_quote",
-                        on_order_expiry=on_order_cancel,
+                        on_order_expiry=on_order_expiry,
                         slip_bps=slippage_bps,
                     )
                     if resp.get("status") == "canceled":
@@ -439,7 +442,7 @@ async def _run_symbol(
             qty,
             tif=tif,
             on_partial_fill=lambda *_: "re_quote",
-            on_order_expiry=on_order_cancel,
+            on_order_expiry=on_order_expiry,
             signal_ts=signal_ts,
             slip_bps=slippage_bps,
         )
