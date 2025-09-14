@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
-from ..utils.metrics import ORDERS, SKIPS
+from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT, CANCELS
 
 
 class Broker:
@@ -26,10 +26,62 @@ class Broker:
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
 
     def update_last_price(self, symbol: str, px: float) -> None:
-        """Update last price on the underlying adapter if supported."""
+        """Update last price on the underlying adapter if supported.
+
+        Any fills returned by the adapter are forwarded to the execution
+        callbacks and risk service while updating metrics.
+        """
+
+        def _handle_fills(fills, venue: str | None = None) -> None:
+            if not fills:
+                return
+            cb_pf = getattr(self.adapter, "on_partial_fill", None)
+            cb_exp = getattr(self.adapter, "on_order_expiry", None)
+            risk = getattr(self.adapter, "risk_service", None)
+            for f in fills:
+                status = str(f.get("status", "")).lower()
+                side = f.get("side")
+                qty = float(f.get("qty") or f.get("filled_qty") or 0.0)
+                price = f.get("price")
+                if side and qty > 0:
+                    FILL_COUNT.labels(symbol=symbol, side=side).inc()
+                    if risk is not None:
+                        try:
+                            risk.on_fill(symbol, side, qty, price=price, venue=venue)
+                        except Exception:
+                            pass
+                if status in {"expired", "cancelled", "canceled"}:
+                    CANCELS.inc()
+                    cb = cb_exp
+                else:
+                    cb = cb_pf
+                if cb is not None and side:
+                    try:
+                        order_qty = f.get("qty")
+                        if order_qty is None:
+                            order_qty = qty + float(f.get("pending_qty", 0.0))
+                        order = Order(
+                            symbol=symbol,
+                            side=side,
+                            type_="limit",
+                            qty=float(order_qty),
+                            price=price,
+                        )
+                        order.pending_qty = float(f.get("pending_qty", 0.0))
+                        cb(order, f)
+                    except Exception:
+                        pass
+
         upd = getattr(self.adapter, "update_last_price", None)
-        if upd:
-            upd(symbol, px)
+        if callable(upd):
+            fills = upd(symbol, px)
+            _handle_fills(fills, getattr(self.adapter, "name", None))
+        elif hasattr(self.adapter, "adapters"):
+            for ad in getattr(self.adapter, "adapters", {}).values():
+                upd = getattr(ad, "update_last_price", None)
+                if callable(upd):
+                    fills = upd(symbol, px)
+                    _handle_fills(fills, getattr(ad, "name", None))
 
     def equity(self) -> float:
         """Return account equity if the adapter exposes it."""
