@@ -10,7 +10,6 @@ from ..adapters.base import ExchangeAdapter
 from ..execution.balance import rebalance_between_exchanges
 from ..risk.arbitrage_service import ArbitrageRiskService, ArbGuardConfig
 from ..broker.broker import Broker
-from ..config import settings
 
 try:
     from ..storage.timescale import (
@@ -102,6 +101,20 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
     risk = ArbitrageRiskService(cfg.risk_cfg)
     spot_broker = Broker(cfg.spot)
     perp_broker = Broker(cfg.perp)
+    tick_spot = 0.0
+    tick_perp = 0.0
+    meta_spot = getattr(cfg.spot, "meta", None)
+    if meta_spot is not None:
+        try:
+            tick_spot = float(getattr(meta_spot.rules_for(cfg.symbol), "price_step", 0.0) or 0.0)
+        except Exception:
+            tick_spot = 0.0
+    meta_perp = getattr(cfg.perp, "meta", None)
+    if meta_perp is not None:
+        try:
+            tick_perp = float(getattr(meta_perp.rules_for(cfg.symbol), "price_step", 0.0) or 0.0)
+        except Exception:
+            tick_perp = 0.0
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:
@@ -159,9 +172,8 @@ async def run_cross_exchange_arbitrage(cfg: CrossArbConfig) -> None:
             if cfg.latency:
                 await asyncio.sleep(cfg.latency)
 
-            tick = getattr(settings, "tick_size", 0.0)
-            spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
-            perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
+            spot_price = last["spot"] + tick_spot if spot_side == "buy" else last["spot"] - tick_spot
+            perp_price = last["perp"] + tick_perp if perp_side == "buy" else last["perp"] - tick_perp
             ts = datetime.now(timezone.utc)
             resp_spot, resp_perp = await asyncio.gather(
                 spot_broker.place_limit(cfg.symbol, spot_side, spot_price, qty, tif="IOC"),

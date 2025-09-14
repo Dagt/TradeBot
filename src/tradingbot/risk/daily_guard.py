@@ -7,7 +7,6 @@ import asyncio
 
 from ..utils.metrics import RISK_EVENTS
 from ..storage import timescale
-from ..config import settings
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +71,8 @@ class DailyGuard:
             place = getattr(broker, "place_order", None)
             if not pos_book or place is None:
                 return
-            tick = getattr(settings, "tick_size", 0.0)
+            adapter = getattr(broker, "adapter", None)
+            meta = getattr(adapter, "meta", None)
             for sym, p in list(pos_book.items()):
                 qty = getattr(p, "qty", 0.0)
                 if abs(qty) <= 0:
@@ -81,6 +81,12 @@ class DailyGuard:
                 last_px = getattr(getattr(broker, "state", object()), "last_px", {}).get(sym)
                 if last_px is None:
                     continue
+                tick = 0.0
+                if meta is not None:
+                    try:
+                        tick = float(getattr(meta.rules_for(sym), "price_step", 0.0) or 0.0)
+                    except Exception:
+                        tick = 0.0
                 price = last_px - tick if side == "sell" else last_px + tick
                 place_limit = getattr(broker, "place_limit", None)
                 if place_limit is None:

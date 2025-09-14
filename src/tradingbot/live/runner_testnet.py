@@ -105,6 +105,7 @@ async def _run_symbol(
     step_size: float = 0.0,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
+    raw_symbol = cfg.symbol
     symbol = normalize(cfg.symbol)
     log.info(
         "Connecting to %s %s testnet for %s", exchange, market, symbol
@@ -126,7 +127,20 @@ async def _run_symbol(
         except TypeError:
             exec_adapter = exec_cls()
     cfg_app = load_config()
-    tick_size = float(cfg_app.exchange_configs.get(venue, {}).get("tick_size", 0.0))
+    tick_size = 0.0
+    meta = getattr(exec_adapter, "meta", None)
+    if meta is not None:
+        try:
+            fetch_symbol = None
+            symbols = getattr(meta.client, "symbols", [])
+            if symbols:
+                fetch_symbol = next((s for s in symbols if normalize(s) == symbol), None)
+            if fetch_symbol is None:
+                fetch_symbol = raw_symbol.replace("-", "/")
+            rules = meta.rules_for(fetch_symbol)
+            tick_size = float(getattr(rules, "price_step", 0.0) or 0.0)
+        except Exception:
+            tick_size = 0.0
     agg = BarAggregator(timeframe=timeframe)
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
