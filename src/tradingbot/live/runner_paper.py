@@ -7,6 +7,7 @@ import time
 import contextlib
 import json
 import uvicorn
+from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
@@ -231,6 +232,8 @@ async def run_paper(
     )
     strat.risk_service = risk
 
+    pending_expiries: list[tuple[Any, dict]] = []
+
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
         CANCELS.inc()
@@ -239,16 +242,17 @@ async def run_paper(
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
 
+    def on_order_expiry(order, res: dict) -> None:
+        on_order_cancel(res)
+        pending_expiries.append((order, res))
+
     router = ExecutionRouter(
         [broker],
         prefer="maker",
         on_partial_fill=strat.on_partial_fill,
-        on_order_expiry=lambda order, res: (
-            on_order_cancel(res) or strat.on_order_expiry(order, res)
-        ),
+        on_order_expiry=on_order_expiry,
     )
     exec_broker = Broker(router)
-    tif = f"GTD:{settings.limit_expiry_sec}|PO"
 
     metrics_task: asyncio.Task[None] | None = None
     port = metrics_port
@@ -277,6 +281,8 @@ async def run_paper(
         agg = BarAggregator()
     if not hasattr(agg, "completed"):
         agg.completed = []
+    expiry = agg._mins * 60
+    tif = f"GTD:{expiry}|PO"
 
     if rest is not None and warmup_total > 0:
         try:
@@ -575,6 +581,9 @@ async def run_paper(
                 prev_bars = bars
             if closed is None:
                 continue
+            for order, res in pending_expiries:
+                strat.on_order_expiry(order, res)
+            pending_expiries.clear()
             correlations = await asyncio.to_thread(corr.get_correlations)
             risk.update_correlation(correlations, corr_threshold)
             df = await asyncio.to_thread(agg.last_n_bars_df, 200)

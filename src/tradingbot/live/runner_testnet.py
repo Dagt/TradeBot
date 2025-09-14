@@ -143,6 +143,7 @@ async def _run_symbol(
         except Exception:
             tick_size = 0.0
     agg = BarAggregator(timeframe=timeframe)
+    expiry = agg._mins * 60
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
@@ -187,6 +188,8 @@ async def _run_symbol(
         market_type=market,
     )
     strat.risk_service = risk
+    pending_expiries: list[tuple[Any, dict]] = []
+
     def on_order_cancel(order, res: dict) -> None:
         """Track broker order cancellations."""
         CANCELS.inc()
@@ -195,10 +198,11 @@ async def _run_symbol(
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
 
-    def on_order_expiry(order, res: dict) -> str | None:
+    def on_order_expiry(order, res: dict) -> None:
         on_order_cancel(order, res)
-        return strat.on_order_expiry(order, res)
-    tif = f"GTD:{settings.limit_expiry_sec}|PO"
+        pending_expiries.append((order, res))
+
+    tif = f"GTD:{expiry}|PO"
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -233,6 +237,9 @@ async def _run_symbol(
         closed = agg.on_trade(ts, px, qty)
         if closed is None:
             continue
+        for order, res in pending_expiries:
+            strat.on_order_expiry(order, res)
+        pending_expiries.clear()
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
