@@ -156,7 +156,7 @@ class DummyExecBrokerRecord(DummyExecBroker):
 
 class DummyBroker:
     def __init__(self):
-        self.account = object()
+        self.account = SimpleNamespace(update_cash=lambda amount: None)
         self.state = SimpleNamespace(realized_pnl=0.0, last_px={}, order_book={})
 
     def update_last_price(self, symbol, px):
@@ -209,6 +209,7 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
     # Use real RiskManager and PortfolioGuard to satisfy run_paper setup
     dummy_risk = DummyRisk()
     monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
@@ -238,6 +239,7 @@ async def test_run_paper_skips_on_fill(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
     dummy_risk = DummyRiskRecord()
     monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
     monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
@@ -259,6 +261,7 @@ async def test_run_paper_skip_sell_no_inventory(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": SellStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
     dummy_risk = DummyRiskNoInventory()
     monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
     monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
