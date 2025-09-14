@@ -1217,12 +1217,11 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
             fee = float(data.get("fee", 0.0))
             buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
             slip = float(data.get("slippage_bps", 0.0))
-            if slip:
-                tot = buf.get("_slip_tot", 0.0) + slip
-                cnt = buf.get("_slip_cnt", 0) + 1
-                buf["_slip_tot"] = tot
-                buf["_slip_cnt"] = cnt
-                buf["slippage_bps"] = tot / cnt
+            tot = buf.get("_slip_tot", 0.0) + abs(slip)
+            cnt = buf.get("_slip_cnt", 0) + 1
+            buf["_slip_tot"] = tot
+            buf["_slip_cnt"] = cnt
+            buf["slippage_bps"] = tot / cnt
             maker = bool(data.get("maker"))
             if maker:
                 buf["_maker_qty"] = buf.get("_maker_qty", 0.0) + qty
