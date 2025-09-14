@@ -211,7 +211,9 @@ async def run_live_binance(
         ts: datetime = t["ts"] or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t["qty"] or 0.0)
-        broker.update_last_price(symbol, px)
+        events = broker.update_last_price(symbol, px)
+        for ev in events or []:
+            await router.handle_paper_event(ev)
         risk.mark_price(symbol, px)
         halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:

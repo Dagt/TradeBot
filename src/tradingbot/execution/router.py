@@ -87,6 +87,8 @@ class ExecutionRouter:
         self.risk_service = risk_service
         self.on_partial_fill = on_partial_fill
         self.on_order_expiry = on_order_expiry
+        # Track live orders so PaperAdapter events can trigger callbacks
+        self._active_orders: dict[str, tuple[Order, str, str, float]] = {}
 
         self._fee_update_task = None
         interval = getattr(settings, "router_fee_update_interval_sec", 3600.0)
@@ -385,6 +387,9 @@ class ExecutionRouter:
         )
         if order.iceberg_qty is not None and self._supports_iceberg_qty.get(adapter):
             kwargs["iceberg_qty"] = order.iceberg_qty
+        timeout = getattr(order, "timeout", None)
+        if timeout is not None:
+            kwargs["timeout"] = timeout
 
         try:
             res = await adapter.place_order(**kwargs)
@@ -409,6 +414,10 @@ class ExecutionRouter:
         status = res.get("status")
         if status == "rejected":
             SKIPS.inc()
+        if status == "new":
+            oid = res.get("order_id")
+            if oid:
+                self._active_orders[oid] = (order, venue, fill_mode, slip_bps)
         if status in {"partial", "expired", "cancelled"}:
             filled = float(res.get("filled_qty", 0.0))
             prev_pending = order.pending_qty or order.qty
@@ -566,6 +575,84 @@ class ExecutionRouter:
                     cur_qty + delta_pos,
                     entry_price=res.get("price"),
                 )
+        return res
+
+    # ------------------------------------------------------------------
+    async def handle_paper_event(self, res: dict) -> dict | None:
+        """Process fill/expiry events from ``PaperAdapter``.
+
+        The router keeps track of live orders placed through ``execute``. When
+        the underlying :class:`PaperAdapter` later emits events via
+        ``update_last_price`` this method updates order state, forwards the
+        appropriate callbacks and optionally re-quotes remaining quantity.
+        """
+
+        oid = res.get("order_id")
+        if not oid:
+            return None
+        info = self._active_orders.get(oid)
+        if info is None:
+            return None
+        order, venue, fill_mode, slip_bps = info
+        status = res.get("status")
+        if status not in {"partial", "expired", "filled"}:
+            return None
+
+        filled = float(res.get("filled_qty", 0.0))
+        prev_pending = order.pending_qty or order.qty
+        order.pending_qty = max(prev_pending - filled, 0.0)
+        res["pending_qty"] = order.pending_qty
+
+        if self.risk_service is not None:
+            if status in {"expired", "filled"}:
+                released = getattr(order, "_reserved_qty", 0.0)
+                if released:
+                    self.risk_service.account.update_open_order(
+                        order.symbol, order.side, -released
+                    )
+                order._reserved_qty = 0.0
+            else:  # partial
+                delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
+                if delta:
+                    self.risk_service.account.update_open_order(
+                        order.symbol, order.side, delta
+                    )
+                order._reserved_qty = order.pending_qty
+            if filled:
+                book = self.risk_service.positions_multi.get(venue, {})
+                cur_qty = book.get(order.symbol, 0.0)
+                delta_pos = filled if order.side == "buy" else -filled
+                self.risk_service.update_position(
+                    venue,
+                    order.symbol,
+                    cur_qty + delta_pos,
+                    entry_price=res.get("price"),
+                )
+
+        cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
+        action = cb(order, res) if cb else None
+        if action in {"re_quote", "re-quote", "requote"} and order.pending_qty > 0:
+            self._active_orders.pop(oid, None)
+            new_order = Order(
+                symbol=order.symbol,
+                side=order.side,
+                type_=order.type_,
+                qty=order.pending_qty,
+                price=order.price,
+                post_only=order.post_only,
+                time_in_force=order.time_in_force,
+                reduce_only=order.reduce_only,
+                reason=getattr(order, "reason", None),
+            )
+            new_order._reserved_qty = getattr(order, "_reserved_qty", 0.0)
+            res2 = await self.execute(
+                new_order, fill_mode=fill_mode, slip_bps=slip_bps
+            )
+            return res2
+
+        if status in {"expired", "filled"} or order.pending_qty <= 0:
+            self._active_orders.pop(oid, None)
+        res.setdefault("venue", venue)
         return res
 
 
