@@ -468,7 +468,14 @@ async def run_paper(
                 log.warning("orden bloqueada: %s", reason)
                 log.info(
                     "METRICS %s",
-                    json.dumps({"event": "risk_check_reject", "reason": reason}),
+                    json.dumps(
+                        {
+                            "event": "risk_check_reject",
+                            "reason": reason,
+                            "requested_qty": abs(delta),
+                            "inventory": risk.account.current_exposure(symbol)[0],
+                        }
+                    ),
                 )
                 continue
             if abs(delta) <= 0:
