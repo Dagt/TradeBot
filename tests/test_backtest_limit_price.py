@@ -7,6 +7,7 @@ import pytest
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.strategies import STRATEGIES
+from tradingbot.utils.price import limit_price_from_close
 
 
 def test_backtest_limit_price(monkeypatch):
@@ -97,3 +98,4 @@ def test_backtest_default_limit_price(monkeypatch):
     assert order["place_price"] == pytest.approx(close_price)
     assert order["avg_price"] == pytest.approx(close_price)
     assert fill[3] == pytest.approx(close_price)
+    assert limit_price_from_close("buy", close_price, 0.0) == pytest.approx(close_price)

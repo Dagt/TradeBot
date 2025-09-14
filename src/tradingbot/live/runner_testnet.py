@@ -37,6 +37,7 @@ from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
 from ..utils.metrics import CANCELS
+from ..utils.price import limit_price_from_close
 
 try:
     from ..storage.timescale import get_engine
@@ -178,7 +179,6 @@ async def _run_symbol(
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
         return "re_quote"
-    limit_offset = settings.limit_offset_ticks * tick_size
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
     try:
         guard.refresh_usd_caps(broker.equity({}))
@@ -249,7 +249,7 @@ async def _run_symbol(
         price = (
             sig.limit_price
             if sig.limit_price is not None
-            else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
+            else limit_price_from_close(side, closed.c, tick_size)
         )
         qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
         if qty <= 0:
