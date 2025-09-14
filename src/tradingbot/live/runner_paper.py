@@ -248,6 +248,7 @@ async def run_paper(
         ),
     )
     exec_broker = Broker(router)
+    tif = f"GTD:{settings.limit_expiry_sec}|PO"
 
     metrics_task: asyncio.Task[None] | None = None
     port = metrics_port
@@ -357,6 +358,7 @@ async def run_paper(
                         close_side,
                         price,
                         qty_close,
+                        tif=tif,
                         on_partial_fill=strat.on_partial_fill,
                         on_order_expiry=strat.on_order_expiry,
                         slip_bps=slippage_bps,
@@ -480,6 +482,7 @@ async def run_paper(
                             side,
                             price,
                             qty_scale,
+                            tif=tif,
                             on_partial_fill=strat.on_partial_fill,
                             on_order_expiry=strat.on_order_expiry,
                             slip_bps=slippage_bps,
@@ -677,6 +680,7 @@ async def run_paper(
                 side,
                 price,
                 qty,
+                tif=tif,
                 on_partial_fill=strat.on_partial_fill,
                 on_order_expiry=strat.on_order_expiry,
                 signal_ts=signal_ts,
