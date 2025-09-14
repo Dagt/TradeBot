@@ -101,10 +101,20 @@ async def run_paper(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
+    slip_bps_per_qty: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
-    """Run a simple live pipeline entirely in paper mode."""
+    """Run a simple live pipeline entirely in paper mode.
+
+    Parameters
+    ----------
+    slip_bps_per_qty:
+        Additional slippage in basis points applied per unit of traded
+        quantity.  This is forwarded to :class:`~tradingbot.execution.paper.PaperAdapter`
+        so that fills include this slippage and metrics report non‑zero
+        ``slippage_bps`` values.
+    """
     raw_symbol = symbol
     symbol = normalize(symbol)
     exchange, market = venue.split("_", 1)
@@ -158,6 +168,7 @@ async def run_paper(
         "taker_fee_bps": taker_fee_bps,
         "min_notional": min_notional,
         "step_size": step_size,
+        "slip_bps_per_qty": slip_bps_per_qty,
     }
     sig = inspect.signature(PaperAdapter)
     broker = PaperAdapter(

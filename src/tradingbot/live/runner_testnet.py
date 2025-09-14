@@ -101,6 +101,7 @@ async def _run_symbol(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
+    slip_bps_per_qty: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
@@ -168,6 +169,7 @@ async def _run_symbol(
         "taker_fee_bps": taker_fee_bps,
         "min_notional": min_notional,
         "step_size": step_size,
+        "slip_bps_per_qty": slip_bps_per_qty,
     }
     sig = inspect.signature(PaperAdapter)
     broker = PaperAdapter(
@@ -346,10 +348,19 @@ async def run_live_testnet(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
+    slip_bps_per_qty: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
-    """Run a simple live loop on a crypto exchange testnet."""
+    """Run a simple live loop on a crypto exchange testnet.
+
+    Parameters
+    ----------
+    slip_bps_per_qty:
+        Slippage in basis points to apply per unit of traded quantity when
+        using the :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero
+        values produce slippage metrics during dry runs.
+    """
     log.info("Starting testnet runner for %s %s", exchange, market)
     if (exchange, market) not in ADAPTERS:
         raise ValueError(f"Unsupported combination {exchange} {market}")
@@ -398,6 +409,7 @@ async def run_live_testnet(
             maker_fee_bps=maker_fee_bps,
             taker_fee_bps=taker_fee_bps,
             slippage_bps=slippage_bps,
+            slip_bps_per_qty=slip_bps_per_qty,
             min_notional=min_notional,
             step_size=step_size,
         )
