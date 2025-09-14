@@ -323,7 +323,9 @@ async def run_paper(
                     }
                 ),
             )
-            broker.update_last_price(symbol, px)
+            events = broker.update_last_price(symbol, px)
+            for ev in events or []:
+                await router.handle_paper_event(ev)
             risk.mark_price(symbol, px)
             if time.time() - last_purge >= purge_interval:
                 risk.purge([symbol])
