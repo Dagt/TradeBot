@@ -119,6 +119,44 @@ async def test_timeout_emits_partial_cancel():
     assert cancel["pending_qty"] == pytest.approx(0.6)
 
 
+@pytest.mark.asyncio
+async def test_limit_order_queue_simulation():
+    model = SlippageModel(volume_impact=0.0, pct=0.0)
+    adapter = PaperAdapter(slippage_model=model)
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order(
+        "BTC/USDT", "buy", "limit", 5.0, price=99.0, book={"ask_size": 5.0}
+    )
+    assert res["status"] == "new"
+    adapter.update_last_price(
+        "BTC/USDT", 99.0, qty=5.0, book={"ask_size": 5.0}
+    )
+    fills = adapter.update_last_price(
+        "BTC/USDT", 99.0, qty=3.0, book={"ask_size": 3.0}
+    )
+    fill = fills[0]
+    assert fill["status"] == "partial"
+    assert fill["qty"] == pytest.approx(3.0)
+    assert fill["pending_qty"] == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_timeout_emits_expired():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order(
+        "BTC/USDT", "buy", "limit", 1.0, price=90.0, timeout=0.01
+    )
+    await asyncio.sleep(0.02)
+    events = adapter.update_last_price("BTC/USDT", 100.0)
+    cancel = [e for e in events if e.get("order_id") == res["order_id"]][0]
+    assert cancel["status"] == "expired"
+    assert cancel["filled_qty"] == pytest.approx(0.0)
+    assert cancel["pending_qty"] == pytest.approx(1.0)
+
+
 def test_realized_pnl_on_close():
     adapter = PaperAdapter()
     # cerrar largo
