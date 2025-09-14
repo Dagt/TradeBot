@@ -36,6 +36,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..utils.metrics import CANCELS
+from ..core.symbols import normalize
 
 try:
     from ..storage.timescale import get_engine
@@ -103,8 +104,9 @@ async def _run_symbol(
     step_size: float = 0.0,
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
+    symbol = normalize(cfg.symbol)
     log.info(
-        "Connecting to %s %s testnet for %s", exchange, market, cfg.symbol
+        "Connecting to %s %s testnet for %s", exchange, market, symbol
     )
     ws_kwargs: Dict[str, Any] = {"testnet": True}
     exec_kwargs: Dict[str, Any] = {"testnet": True}
@@ -190,14 +192,14 @@ async def _run_symbol(
                 guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
             )
 
-    async for t in ws.stream_trades(cfg.symbol):
+    async for t in ws.stream_trades(symbol):
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t.get("qty") or 0.0)
-        broker.update_last_price(cfg.symbol, px)
-        risk.mark_price(cfg.symbol, px)
+        broker.update_last_price(symbol, px)
+        risk.mark_price(symbol, px)
         risk.update_correlation(corr.get_correlations(), corr_threshold)
-        halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+        halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
@@ -207,13 +209,13 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        bar = {"window": df, "symbol": cfg.symbol}
+        bar = {"window": df, "symbol": symbol}
         sig = strat.on_bar(bar)
         if sig is None:
             continue
         signal_ts = getattr(sig, "signal_ts", time.time())
         allowed, reason, delta = risk.check_order(
-            cfg.symbol,
+            symbol,
             sig.side,
             closed.c,
             strength=sig.strength,
@@ -231,7 +233,7 @@ async def _run_symbol(
                     json.dumps({"event": "skip", "reason": "below_min_qty"}),
                 )
             elif reason:
-                log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
+                log.warning("[PG] Bloqueado %s: %s", symbol, reason)
             continue
         if abs(delta) <= 0:
             continue
@@ -252,11 +254,11 @@ async def _run_symbol(
             )
             continue
         notional = qty * price
-        if not risk.register_order(cfg.symbol, notional):
+        if not risk.register_order(symbol, notional):
             continue
         prev_rpnl = broker.state.realized_pnl
         resp = await exec_broker.place_limit(
-            cfg.symbol,
+            symbol,
             side,
             price,
             qty,
@@ -269,9 +271,9 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(cfg.symbol, side, pending_qty)
+        risk.account.update_open_order(symbol, side, pending_qty)
         risk.on_fill(
-            cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
+            symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
         if pending_qty > 0:
             CANCELS.inc()
@@ -287,9 +289,9 @@ async def _run_symbol(
                     }
                 ),
             )
-            risk.account.update_open_order(cfg.symbol, side, -pending_qty)
+            risk.account.update_open_order(symbol, side, -pending_qty)
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-        halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
+        halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
