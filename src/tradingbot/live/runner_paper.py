@@ -22,7 +22,7 @@ from ..adapters.okx_spot import OKXSpotAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
 from ..broker.broker import Broker
 from ..config import settings
 from ..risk.service import load_positions
@@ -215,11 +215,21 @@ async def run_paper(
     )
     strat.risk_service = risk
 
+    def on_order_cancel(res: dict) -> None:
+        """Handle broker order cancellation notifications."""
+        CANCELS.inc()
+        log.info(
+            "METRICS %s",
+            json.dumps({"event": "cancel", "reason": res.get("reason")}),
+        )
+
     router = ExecutionRouter(
         [broker],
         prefer="maker",
         on_partial_fill=strat.on_partial_fill,
-        on_order_expiry=strat.on_order_expiry,
+        on_order_expiry=lambda order, res: (
+            on_order_cancel(res) or strat.on_order_expiry(order, res)
+        ),
     )
     exec_broker = Broker(router)
 
@@ -344,6 +354,8 @@ async def run_paper(
                         on_order_expiry=strat.on_order_expiry,
                         slip_bps=slippage_bps,
                     )
+                    if resp.get("status") == "canceled":
+                        on_order_cancel(resp)
                     if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                         SKIPS.inc()
                         log.info(
@@ -464,6 +476,8 @@ async def run_paper(
                             on_order_expiry=strat.on_order_expiry,
                             slip_bps=slippage_bps,
                         )
+                        if resp.get("status") == "canceled":
+                            on_order_cancel(resp)
                         if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                             SKIPS.inc()
                             log.info(
@@ -644,6 +658,8 @@ async def run_paper(
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
+            if resp.get("status") == "canceled":
+                on_order_cancel(resp)
             if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                 SKIPS.inc()
                 log.info(
