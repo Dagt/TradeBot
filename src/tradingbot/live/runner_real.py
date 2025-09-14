@@ -136,6 +136,7 @@ async def _run_symbol(
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
     slip_bps_per_qty: float = 0.0,
+    reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
@@ -222,9 +223,31 @@ async def _run_symbol(
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
 
-    def on_order_expiry(order, res: dict) -> str | None:
-        on_order_cancel(order, res)
-        return strat.on_order_expiry(order, res)
+    last_price = 0.0
+
+    def _wrap_cb(orig_cb, *, call_cancel=False):
+        def _cb(order, res):
+            if call_cancel:
+                on_order_cancel(order, res)
+            if orig_cb is not None:
+                action = orig_cb(order, res)
+            else:
+                action = "re_quote"
+            if action not in {"re_quote", "requote", "re-quote"}:
+                return action
+            lp = order.price or res.get("price")
+            if lp is None or last_price <= 0 or reprice_bps <= 0:
+                order.price = limit_price_from_close(order.side, last_price, tick_size)
+                return "re_quote"
+            diff = abs(last_price - lp) / lp
+            if diff > reprice_bps / 10000.0:
+                order.price = limit_price_from_close(order.side, last_price, tick_size)
+                return "re_quote"
+            return None
+        return _cb
+
+    on_pf = _wrap_cb(getattr(strat, "on_partial_fill", None))
+    on_oe = _wrap_cb(getattr(strat, "on_order_expiry", None), call_cancel=True)
     try:
         guard.refresh_usd_caps(broker.equity({}))
     except Exception:
@@ -252,6 +275,7 @@ async def _run_symbol(
         broker.update_last_price(symbol, px)
         risk.mark_price(symbol, px)
         risk.update_correlation(corr.get_correlations(), corr_threshold)
+        last_price = px
         halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)
@@ -285,8 +309,8 @@ async def _run_symbol(
                     price,
                     qty_close,
                     tif=tif,
-                    on_partial_fill=lambda *_: "re_quote",
-                    on_order_expiry=on_order_expiry,
+                    on_partial_fill=on_pf,
+                    on_order_expiry=on_oe,
                     slip_bps=slippage_bps,
                 )
                 if resp.get("status") == "canceled":
@@ -342,8 +366,8 @@ async def _run_symbol(
                         price,
                         qty_scale,
                         tif=tif,
-                        on_partial_fill=lambda *_: "re_quote",
-                        on_order_expiry=on_order_expiry,
+                        on_partial_fill=on_pf,
+                        on_order_expiry=on_oe,
                         slip_bps=slippage_bps,
                     )
                     if resp.get("status") == "canceled":
@@ -441,8 +465,8 @@ async def _run_symbol(
             price,
             qty,
             tif=tif,
-            on_partial_fill=lambda *_: "re_quote",
-            on_order_expiry=on_order_expiry,
+            on_partial_fill=on_pf,
+            on_order_expiry=on_oe,
             signal_ts=signal_ts,
             slip_bps=slippage_bps,
         )
@@ -494,6 +518,7 @@ async def run_live_real(
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
     slip_bps_per_qty: float = 0.0,
+    reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
@@ -562,6 +587,7 @@ async def run_live_real(
             taker_fee_bps=taker_fee_bps,
             slippage_bps=slippage_bps,
             slip_bps_per_qty=slip_bps_per_qty,
+            reprice_bps=reprice_bps,
             min_notional=min_notional,
             step_size=step_size,
         )

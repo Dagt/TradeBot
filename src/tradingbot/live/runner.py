@@ -23,6 +23,7 @@ from ..broker.broker import Broker
 from ..config import settings
 from ..utils.metrics import CANCELS
 from ..core.symbols import normalize
+from ..utils.price import limit_price_from_close
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -115,6 +116,7 @@ async def run_live_binance(
     soft_cap_grace_sec: int = 30,
     daily_max_loss_pct: float = 0.05,
     daily_max_drawdown_pct: float = 0.05,
+    reprice_bps: float = 0.0,
     *,
     strategy_name: str = "breakout_atr",
     config_path: str | None = None,
@@ -136,12 +138,9 @@ async def run_live_binance(
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
     strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
-    router = ExecutionRouter(
-        [broker],
-        prefer="maker",
-        on_partial_fill=strat.on_partial_fill,
-        on_order_expiry=strat.on_order_expiry,
-    )
+    router = ExecutionRouter([
+        broker
+    ], prefer="maker")
     exec_broker = Broker(router)
     guard = PortfolioGuard(GuardConfig(
         total_cap_pct=total_cap_pct,
@@ -198,6 +197,29 @@ async def run_live_binance(
         except Exception:
             tick = 0.0
 
+    last_price = 0.0
+
+    def _wrap_cb(orig_cb):
+        def _cb(order, res):
+            action = orig_cb(order, res) if orig_cb else "re_quote"
+            if action not in {"re_quote", "requote", "re-quote"}:
+                return action
+            lp = order.price or res.get("price")
+            if lp is None or last_price <= 0 or reprice_bps <= 0:
+                order.price = limit_price_from_close(order.side, last_price, tick)
+                return "re_quote"
+            diff = abs(last_price - lp) / lp
+            if diff > reprice_bps / 10000.0:
+                order.price = limit_price_from_close(order.side, last_price, tick)
+                return "re_quote"
+            return None
+        return _cb
+
+    pf_cb = _wrap_cb(strat.on_partial_fill)
+    oe_cb = _wrap_cb(strat.on_order_expiry)
+    router.on_partial_fill = pf_cb
+    router.on_order_expiry = oe_cb
+
     def _limit_price(side: str) -> float:
         book = getattr(broker.state, "order_book", {}).get(symbol, {})
         bids = book.get("bids") or []
@@ -211,6 +233,7 @@ async def run_live_binance(
         ts: datetime = t["ts"] or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t["qty"] or 0.0)
+        last_price = px
         events = broker.update_last_price(symbol, px)
         for ev in events or []:
             await router.handle_paper_event(ev)
@@ -239,8 +262,8 @@ async def run_live_binance(
                     close_side,
                     price,
                     qty_close,
-                    on_partial_fill=strat.on_partial_fill,
-                    on_order_expiry=strat.on_order_expiry,
+                    on_partial_fill=pf_cb,
+                    on_order_expiry=oe_cb,
                 )
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
@@ -271,8 +294,8 @@ async def run_live_binance(
                         side,
                         price,
                         qty_scale,
-                        on_partial_fill=strat.on_partial_fill,
-                        on_order_expiry=strat.on_order_expiry,
+                        on_partial_fill=pf_cb,
+                        on_order_expiry=oe_cb,
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
@@ -343,8 +366,8 @@ async def run_live_binance(
             side,
             price,
             qty,
-            on_partial_fill=strat.on_partial_fill,
-            on_order_expiry=strat.on_order_expiry,
+            on_partial_fill=pf_cb,
+            on_order_expiry=oe_cb,
             signal_ts=signal_ts,
         )
         fills += 1
