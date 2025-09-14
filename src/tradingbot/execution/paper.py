@@ -45,6 +45,7 @@ class BookOrder:
     pending_qty: float
     placed_at: datetime
     timeout: float | None = None
+    queue_pos: float = 0.0
 
 
 class PaperAdapter(ExchangeAdapter):
@@ -174,18 +175,37 @@ class PaperAdapter(ExchangeAdapter):
             pos = self.state.pos.get(symbol, PaperPosition())
             if order.side == "sell":
                 avail = pos.qty
-                book_avail = remaining_bids
+                book_side = remaining_bids
             else:
                 avail = (
                     self.state.cash / (px * (1 + fee_bps / 10000.0))
                     if self.state.cash > 0
                     else 0.0
                 )
-                book_avail = remaining_asks
-            fill_qty = min(order.pending_qty, remaining, avail, book_avail)
-            if fill_qty <= 0:
+                book_side = remaining_asks
+            qty_cap = min(order.pending_qty, remaining, avail)
+            if qty_cap <= 0 or book_side <= 0:
                 continue
-            px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px, book)
+            if self.slippage_model is not None and book is not None:
+                bar = dict(book)
+                key = "bid_size" if order.side == "sell" else "ask_size"
+                bar[key] = book_side
+                px_slip, fill_qty, new_q = self.slippage_model.fill(
+                    order.side, qty_cap, px, bar, queue_pos=order.queue_pos
+                )
+                order.queue_pos = new_q
+                if fill_qty <= 0:
+                    continue
+                slip_bps = (
+                    (px_slip - px) / px * 10000.0
+                    if order.side == "buy"
+                    else (px - px_slip) / px * 10000.0
+                )
+            else:
+                fill_qty = min(qty_cap, book_side)
+                if fill_qty <= 0:
+                    continue
+                px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px, book)
             fill = self._apply_fill(symbol, order.side, fill_qty, px_slip, True)
             order.pending_qty -= fill_qty
             remaining -= fill_qty
@@ -422,7 +442,21 @@ class PaperAdapter(ExchangeAdapter):
                         "order_id": order_id,
                         "trade_id": trade_id,
                     }
-            order = BookOrder(order_id, symbol, side, float(price), qty, qty, datetime.utcnow(), timeout)
+            qpos = 0.0
+            if book is not None:
+                q_key = "ask_size" if side == "buy" else "bid_size"
+                qpos = float(book.get(q_key, 0.0))
+            order = BookOrder(
+                order_id,
+                symbol,
+                side,
+                float(price),
+                qty,
+                qty,
+                datetime.utcnow(),
+                timeout,
+                qpos,
+            )
             self.state.book.setdefault(symbol, {})[order_id] = order
             if self.latency:
                 await asyncio.sleep(self.latency)
