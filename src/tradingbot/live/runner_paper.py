@@ -22,7 +22,7 @@ from ..adapters.okx_spot import OKXSpotAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, CANCELS, SKIPS
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS
 from ..broker.broker import Broker
 from ..config import settings
 from ..risk.service import load_positions
@@ -377,7 +377,6 @@ async def run_paper(
                     if step_size > 0 and abs(cur_qty) < step_size:
                         cur_qty = 0.0
                         risk.account.positions[symbol] = 0.0
-                        risk.account.open_orders.pop(symbol, None)
                     locked = risk.account.get_locked_usd(symbol)
                     log.info(
                         "METRICS %s",
@@ -407,23 +406,6 @@ async def run_paper(
                                     "pnl": delta_rpnl,
                                     "slippage_bps": slippage,
                                     "maker": maker,
-                                }
-                            ),
-                        )
-                    if pending_qty > 0:
-                        CANCELS.inc()
-                        risk.account.update_open_order(symbol, close_side, -pending_qty)
-                        locked = risk.account.get_locked_usd(symbol)
-                        log.info(
-                            "METRICS %s",
-                            json.dumps(
-                                {
-                                    "event": "cancel",
-                                    "side": close_side,
-                                    "price": price,
-                                    "qty": pending_qty,
-                                    "reason": "expired",
-                                    "locked": locked,
                                 }
                             ),
                         )
@@ -515,7 +497,6 @@ async def run_paper(
                         if step_size > 0 and abs(cur_qty) < step_size:
                             cur_qty = 0.0
                             risk.account.positions[symbol] = 0.0
-                            risk.account.open_orders.pop(symbol, None)
                         locked = risk.account.get_locked_usd(symbol)
                         log.info(
                             "METRICS %s",
@@ -548,23 +529,6 @@ async def run_paper(
                                         "pnl": delta_rpnl,
                                         "slippage_bps": slippage,
                                         "maker": maker,
-                                    }
-                                ),
-                            )
-                        if pending_qty > 0:
-                            CANCELS.inc()
-                            risk.account.update_open_order(symbol, side, -pending_qty)
-                            locked = risk.account.get_locked_usd(symbol)
-                            log.info(
-                                "METRICS %s",
-                                json.dumps(
-                                    {
-                                        "event": "cancel",
-                                        "side": side,
-                                        "price": price,
-                                        "qty": pending_qty,
-                                        "reason": "expired",
-                                        "locked": locked,
                                     }
                                 ),
                             )
@@ -635,15 +599,6 @@ async def run_paper(
             qty = adjust_qty(
                 abs(delta), price, min_notional, step_size, risk.min_order_qty
             )
-            if side == "sell":
-                inventory = risk.account.current_exposure(symbol)[0]
-                if inventory <= 0:
-                    log.info(
-                        "METRICS %s",
-                        json.dumps({"event": "skip", "reason": "no_inventory"}),
-                    )
-                    continue
-                qty = min(qty, inventory)
             if qty <= 0:
                 log.info(
                     "Skipping order: qty %.8f below min threshold", abs(delta)
@@ -718,7 +673,6 @@ async def run_paper(
             if step_size > 0 and abs(cur_qty) < step_size:
                 cur_qty = 0.0
                 risk.account.positions[symbol] = 0.0
-                risk.account.open_orders.pop(symbol, None)
             locked = risk.account.get_locked_usd(symbol)
             log.info(
                 "METRICS %s",
@@ -742,23 +696,6 @@ async def run_paper(
                             "pnl": delta_rpnl,
                             "slippage_bps": slippage,
                             "maker": maker,
-                        }
-                    ),
-                )
-            if pending_qty > 0:
-                CANCELS.inc()
-                risk.account.update_open_order(symbol, side, -pending_qty)
-                locked = risk.account.get_locked_usd(symbol)
-                log.info(
-                    "METRICS %s",
-                    json.dumps(
-                        {
-                            "event": "cancel",
-                            "side": side,
-                            "price": price,
-                            "qty": pending_qty,
-                            "reason": "expired",
-                            "locked": locked,
                         }
                     ),
                 )
