@@ -352,13 +352,6 @@ async def run_paper(
                     risk.account.update_open_order(
                         symbol, close_side, pending_qty - prev_pending
                     )
-                    if not (
-                        filled_qty == 0
-                        and resp.get("reason") == "insufficient_position"
-                    ):
-                        risk.on_fill(
-                            symbol, close_side, filled_qty, price=exec_price, venue="paper"
-                        )
                     cur_qty = risk.account.current_exposure(symbol)[0]
                     if abs(cur_qty) < step_size:
                         cur_qty = 0.0
@@ -497,13 +490,6 @@ async def run_paper(
                         risk.account.update_open_order(
                             symbol, side, pending_qty - prev_pending
                         )
-                        if not (
-                            filled_qty == 0
-                            and resp.get("reason") == "insufficient_position"
-                        ):
-                            risk.on_fill(
-                                symbol, side, filled_qty, price=exec_price, venue="paper"
-                            )
                         cur_qty = risk.account.current_exposure(symbol)[0]
                         if abs(cur_qty) < step_size:
                             cur_qty = 0.0
@@ -707,12 +693,6 @@ async def run_paper(
             exec_price = float(resp.get("price", price))
             prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
             risk.account.update_open_order(symbol, side, pending_qty - prev_pending)
-            if not (
-                filled_qty == 0 and resp.get("reason") == "insufficient_position"
-            ):
-                risk.on_fill(
-                    symbol, side, filled_qty, price=exec_price, venue="paper"
-                )
             cur_qty = risk.account.current_exposure(symbol)[0]
             if abs(cur_qty) < step_size:
                 cur_qty = 0.0
