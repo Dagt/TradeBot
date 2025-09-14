@@ -23,6 +23,7 @@ from ..risk.correlation_service import CorrelationService
 from ..risk.service import RiskService
 from ..execution.paper import PaperAdapter
 from ..broker.broker import Broker
+from ..core.symbols import normalize
 
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
@@ -94,8 +95,9 @@ async def _run_symbol(
     timeframe: str = "1m",
 ) -> None:
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
+    symbol = normalize(cfg.symbol)
     log.info(
-        "Connecting to %s %s testnet for %s", exchange, market, cfg.symbol
+        "Connecting to %s %s testnet for %s", exchange, market, symbol
     )
     ws_kwargs: Dict[str, Any] = {"testnet": True}
     exec_kwargs: Dict[str, Any] = {"testnet": True}
@@ -167,14 +169,14 @@ async def _run_symbol(
                 guard.cfg.venue, sym, data.get("qty", 0.0), entry_price=data.get("avg_price")
             )
 
-    async for t in ws.stream_trades(cfg.symbol):
+    async for t in ws.stream_trades(symbol):
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t.get("qty") or 0.0)
-        broker.update_last_price(cfg.symbol, px)
-        risk.mark_price(cfg.symbol, px)
+        broker.update_last_price(symbol, px)
+        risk.mark_price(symbol, px)
         risk.update_correlation(corr.get_correlations(), corr_threshold)
-        halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)
+        halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
@@ -184,13 +186,13 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        bar = {"window": df, "symbol": cfg.symbol}
+        bar = {"window": df, "symbol": symbol}
         sig = strat.on_bar(bar)
         if sig is None:
             continue
         signal_ts = getattr(sig, "signal_ts", time.time())
         allowed, reason, delta = risk.check_order(
-            cfg.symbol,
+            symbol,
             sig.side,
             closed.c,
             strength=sig.strength,
@@ -200,7 +202,7 @@ async def _run_symbol(
         )
         if not allowed or abs(delta) <= 0:
             if reason:
-                log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
+                log.warning("[PG] Bloqueado %s: %s", symbol, reason)
             continue
         side = "buy" if delta > 0 else "sell"
         qty = abs(delta)
@@ -210,11 +212,11 @@ async def _run_symbol(
             else (closed.c - limit_offset if side == "buy" else closed.c + limit_offset)
         )
         notional = qty * price
-        if not risk.register_order(cfg.symbol, notional):
+        if not risk.register_order(symbol, notional):
             continue
         prev_rpnl = broker.state.realized_pnl
         resp = await exec_broker.place_limit(
-            cfg.symbol,
+            symbol,
             side,
             price,
             qty,
@@ -226,12 +228,10 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(cfg.symbol, side, filled_qty + pending_qty)
-        risk.on_fill(
-            cfg.symbol, side, filled_qty, venue=venue if not dry_run else "paper"
-        )
+        risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+        risk.on_fill(symbol, side, filled_qty, venue=venue if not dry_run else "paper")
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
-        halted, reason = risk.daily_mark(broker, cfg.symbol, px, delta_rpnl)
+        halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:
             log.error("[HALT] motivo=%s", reason)
             break
