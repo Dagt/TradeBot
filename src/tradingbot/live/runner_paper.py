@@ -102,6 +102,7 @@ async def run_paper(
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
     slip_bps_per_qty: float = 0.0,
+    reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
@@ -239,14 +240,34 @@ async def run_paper(
             json.dumps({"event": "cancel", "reason": res.get("reason")}),
         )
 
-    router = ExecutionRouter(
-        [broker],
-        prefer="maker",
-        on_partial_fill=strat.on_partial_fill,
-        on_order_expiry=lambda order, res: (
-            on_order_cancel(res) or strat.on_order_expiry(order, res)
-        ),
-    )
+    router = ExecutionRouter([
+        broker
+    ], prefer="maker")
+
+    last_price = 0.0
+
+    def _wrap_cb(orig_cb, *, call_cancel=False):
+        def _cb(order, res):
+            if call_cancel:
+                on_order_cancel(res)
+            action = orig_cb(order, res) if orig_cb else "re_quote"
+            if action not in {"re_quote", "requote", "re-quote"}:
+                return action
+            lp = order.price or res.get("price")
+            if lp is None or last_price <= 0 or reprice_bps <= 0:
+                order.price = limit_price_from_close(order.side, last_price, tick_size)
+                return "re_quote"
+            diff = abs(last_price - lp) / lp
+            if diff > reprice_bps / 10000.0:
+                order.price = limit_price_from_close(order.side, last_price, tick_size)
+                return "re_quote"
+            return None
+        return _cb
+
+    on_pf = _wrap_cb(strat.on_partial_fill)
+    on_oe = _wrap_cb(strat.on_order_expiry, call_cancel=True)
+    router.on_partial_fill = on_pf
+    router.on_order_expiry = on_oe
     exec_broker = Broker(router)
     tif = f"GTD:{settings.limit_expiry_sec}|PO"
 
@@ -312,6 +333,7 @@ async def run_paper(
             ts = t.get("ts") or datetime.now(timezone.utc)
             px = float(t.get("price"))
             qty = float(t.get("qty", 0.0))
+            last_price = px
             log.debug(
                 "METRICS %s",
                 json.dumps(
@@ -361,8 +383,8 @@ async def run_paper(
                         price,
                         qty_close,
                         tif=tif,
-                        on_partial_fill=strat.on_partial_fill,
-                        on_order_expiry=strat.on_order_expiry,
+                        on_partial_fill=on_pf,
+                        on_order_expiry=on_oe,
                         slip_bps=slippage_bps,
                     )
                     if resp.get("status") == "canceled":
@@ -485,8 +507,8 @@ async def run_paper(
                             price,
                             qty_scale,
                             tif=tif,
-                            on_partial_fill=strat.on_partial_fill,
-                            on_order_expiry=strat.on_order_expiry,
+                            on_partial_fill=on_pf,
+                            on_order_expiry=on_oe,
                             slip_bps=slippage_bps,
                         )
                         if resp.get("status") == "canceled":
@@ -683,8 +705,8 @@ async def run_paper(
                 price,
                 qty,
                 tif=tif,
-                on_partial_fill=strat.on_partial_fill,
-                on_order_expiry=strat.on_order_expiry,
+                on_partial_fill=on_pf,
+                on_order_expiry=on_oe,
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
