@@ -38,6 +38,7 @@ class DummyRisk:
         from types import SimpleNamespace
 
         self.rm = SimpleNamespace(allow_short=True)
+        self.allow_short = True
         self.account = Account(float("inf"))
 
     def get_trade(self, symbol):

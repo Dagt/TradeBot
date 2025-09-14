@@ -169,6 +169,59 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
     assert (pos >= -1e-9).all()
 
 
+def test_spot_short_signal_rejected(tmp_path, monkeypatch):
+    rng = pd.date_range("2021-01-01", periods=2, freq="T")
+    df = pd.DataFrame(
+        {
+            "timestamp": rng.view("int64") // 10**9,
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+    )
+    path = tmp_path / "data.csv"
+    df.to_csv(path, index=False)
+
+    class AlwaysShort:
+        def on_bar(self, bar):
+            return SimpleNamespace(side="sell", strength=1.0)
+
+    monkeypatch.setitem(STRATEGIES, "shorty", AlwaysShort)
+    strategies = [("shorty", "SYM")]
+    data = {"SYM": str(path)}
+    cfg = {"default": {"market_type": "spot"}}
+    res = run_backtest_csv(
+        data,
+        strategies,
+        latency=1,
+        window=1,
+        exchange_configs=cfg,
+        initial_equity=1000.0,
+        verbose_fills=True,
+    )
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+    assert fills.empty
+
+
 def test_exchange_configs_require_market_type(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=2, freq="T")
     df = pd.DataFrame(

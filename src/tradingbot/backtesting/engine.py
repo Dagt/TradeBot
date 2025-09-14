@@ -1104,6 +1104,12 @@ class EventDrivenBacktestEngine:
                         continue
                     if sig is None or sig.side == "flat":
                         continue
+                    if (
+                        sig.side == "sell"
+                        and not svc.allow_short
+                        and svc.account.current_exposure(symbol)[0] <= 0
+                    ):
+                        continue
                     pending = svc.account.open_orders.get(symbol, {}).get(sig.side, 0.0)
                     atr_map = getattr(strat, "_last_atr", {})
                     tgt_map = getattr(strat, "_last_target_vol", {})
