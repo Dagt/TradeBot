@@ -15,8 +15,20 @@ from tradingbot.core import normalize
 
 sys.modules.pop("tradingbot.adapters.binance", None)
 
+TICK_MAP = {"BTC/USDT": 0.1}
+
 
 class DummyWS:
+    def __init__(self):
+        self.rest = types.SimpleNamespace(
+            meta=types.SimpleNamespace(
+                client=types.SimpleNamespace(symbols=list(TICK_MAP.keys())),
+                rules_for=lambda sym: SimpleNamespace(
+                    price_step=TICK_MAP.get(sym, 0.1), qty_step=1e-9
+                ),
+            )
+        )
+
     async def stream_trades(self, symbol):
         yield {"ts": datetime.now(timezone.utc), "price": 100.0, "qty": 1.0}
 
@@ -221,7 +233,7 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(
         rp,
         "settings",
-        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+        types.SimpleNamespace(risk_purge_minutes=0),
     )
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
@@ -248,7 +260,7 @@ async def test_run_paper_skips_on_fill(monkeypatch):
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
     monkeypatch.setattr(rp, "_CAN_PG", False)
     monkeypatch.setattr(
-        rp, "settings", types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0)
+        rp, "settings", types.SimpleNamespace(risk_purge_minutes=0)
     )
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
@@ -271,7 +283,7 @@ async def test_run_paper_skip_sell_no_inventory(monkeypatch):
     monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
     monkeypatch.setattr(rp, "_CAN_PG", False)
     monkeypatch.setattr(
-        rp, "settings", types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0)
+        rp, "settings", types.SimpleNamespace(risk_purge_minutes=0)
     )
 
     await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")

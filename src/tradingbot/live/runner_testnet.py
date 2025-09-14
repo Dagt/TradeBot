@@ -14,7 +14,6 @@ import uvicorn
 from sqlalchemy.exc import OperationalError
 from .runner import BarAggregator
 from ..config import settings
-from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
 from ..strategies.breakout_atr import BreakoutATR
 from ..risk.service import load_positions
@@ -124,8 +123,21 @@ async def _run_symbol(
             exec_adapter = exec_cls(**exec_kwargs)
         except TypeError:
             exec_adapter = exec_cls()
-    cfg_app = load_config()
-    tick_size = float(cfg_app.exchange_configs.get(venue, {}).get("tick_size", 0.0))
+    raw_symbol = cfg.symbol
+    tick_size = 0.0
+    try:
+        fetch_symbol = None
+        symbols = getattr(exec_adapter.meta.client, "symbols", [])
+        if symbols:
+            fetch_symbol = next(
+                (s for s in symbols if normalize(s) == symbol), None
+            )
+        if fetch_symbol is None:
+            fetch_symbol = raw_symbol.replace("-", "/")
+        rules = exec_adapter.meta.rules_for(fetch_symbol)
+        tick_size = float(getattr(rules, "price_step", 0.0) or 0.0)
+    except Exception:
+        tick_size = 0.0
     agg = BarAggregator(timeframe=timeframe)
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:

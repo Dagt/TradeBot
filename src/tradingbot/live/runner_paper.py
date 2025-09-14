@@ -130,23 +130,27 @@ async def run_paper(
             rest = rest_cls()
             if hasattr(adapter, "rest"):
                 adapter.rest = rest
-    if step_size <= 0:
-        try:
-            if rest is not None and hasattr(rest, "meta"):
-                fetch_symbol = None
-                symbols = getattr(rest.meta.client, "symbols", [])
-                if symbols:
-                    fetch_symbol = next(
-                        (s for s in symbols if normalize(s) == symbol), None
-                    )
-                if fetch_symbol is None:
-                    fetch_symbol = raw_symbol.replace("-", "/")
-                rules = rest.meta.rules_for(fetch_symbol)
+    tick = 0.0
+    try:
+        if rest is not None and hasattr(rest, "meta"):
+            fetch_symbol = None
+            symbols = getattr(rest.meta.client, "symbols", [])
+            if symbols:
+                fetch_symbol = next(
+                    (s for s in symbols if normalize(s) == symbol), None
+                )
+            if fetch_symbol is None:
+                fetch_symbol = raw_symbol.replace("-", "/")
+            rules = rest.meta.rules_for(fetch_symbol)
+            tick = float(getattr(rules, "price_step", 0.0) or 0.0)
+            if step_size <= 0:
                 step_size = float(getattr(rules, "qty_step", 0.0) or 1e-9)
-            else:
-                step_size = 1e-9
-        except Exception:
+        elif step_size <= 0:
             step_size = 1e-9
+    except Exception:
+        if step_size <= 0:
+            step_size = 1e-9
+        tick = 0.0
     import inspect
     broker_kwargs = {
         "maker_fee_bps": maker_fee_bps,
@@ -283,7 +287,6 @@ async def run_paper(
         except Exception as e:  # pragma: no cover - best effort
             log.warning("Failed to pre-load historical bars: %s", e)
 
-    tick = getattr(settings, "tick_size", 0.0)
     purge_interval = settings.risk_purge_minutes * 60.0
     last_purge = time.time()
 
