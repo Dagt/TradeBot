@@ -49,7 +49,6 @@ from ..adapters.bybit_futures import BybitFuturesAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
-from ..utils.metrics import CANCELS
 from ..core.symbols import normalize
 
 try:
@@ -264,30 +263,21 @@ async def _run_symbol(
                 )
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
-                risk.account.update_open_order(symbol, close_side, pending_qty)
+                prev_pending = risk.account.open_orders.get(symbol, {}).get(
+                    close_side, 0.0
+                )
+                delta_open = (
+                    filled_qty + pending_qty - prev_pending
+                    if not dry_run
+                    else pending_qty - prev_pending
+                )
+                risk.account.update_open_order(symbol, close_side, delta_open)
                 risk.on_fill(
                     symbol,
                     close_side,
                     filled_qty,
                     venue=venue if not dry_run else "paper",
                 )
-                if pending_qty > 0:
-                    CANCELS.inc()
-                    log.info(
-                        "METRICS %s",
-                        json.dumps(
-                            {
-                                "event": "cancel",
-                                "side": close_side,
-                                "price": price,
-                                "qty": pending_qty,
-                                "reason": "expired",
-                            }
-                        ),
-                    )
-                    risk.account.update_open_order(
-                        symbol, close_side, -pending_qty
-                    )
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                 if halted:
@@ -329,28 +319,21 @@ async def _run_symbol(
                     )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
-                    risk.account.update_open_order(symbol, side, pending_qty)
+                    prev_pending = risk.account.open_orders.get(symbol, {}).get(
+                        side, 0.0
+                    )
+                    delta_open = (
+                        filled_qty + pending_qty - prev_pending
+                        if not dry_run
+                        else pending_qty - prev_pending
+                    )
+                    risk.account.update_open_order(symbol, side, delta_open)
                     risk.on_fill(
                         symbol,
                         side,
                         filled_qty,
                         venue=venue if not dry_run else "paper",
                     )
-                    if pending_qty > 0:
-                        CANCELS.inc()
-                        log.info(
-                            "METRICS %s",
-                            json.dumps(
-                                {
-                                    "event": "cancel",
-                                    "side": side,
-                                    "price": price,
-                                    "qty": pending_qty,
-                                    "reason": "expired",
-                                }
-                            ),
-                        )
-                        risk.account.update_open_order(symbol, side, -pending_qty)
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
@@ -424,25 +407,16 @@ async def _run_symbol(
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        risk.account.update_open_order(symbol, side, pending_qty)
+        prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
+        delta_open = (
+            filled_qty + pending_qty - prev_pending
+            if not dry_run
+            else pending_qty - prev_pending
+        )
+        risk.account.update_open_order(symbol, side, delta_open)
         risk.on_fill(
             symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
-        if pending_qty > 0:
-            CANCELS.inc()
-            log.info(
-                "METRICS %s",
-                json.dumps(
-                    {
-                        "event": "cancel",
-                        "side": side,
-                        "price": price,
-                        "qty": pending_qty,
-                        "reason": "expired",
-                    }
-                ),
-            )
-            risk.account.update_open_order(symbol, side, -pending_qty)
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:

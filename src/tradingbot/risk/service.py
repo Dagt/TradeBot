@@ -492,6 +492,7 @@ class RiskService:
         if delta < 0 and not self.allow_short:
             cur_qty, _ = self.account.current_exposure(symbol)
             if cur_qty <= 0:
+                log.warning("short_not_allowed: %s cur_qty=%.8f", symbol, cur_qty)
                 return False, "short_not_allowed", 0.0
             sellable = min(abs(delta), cur_qty)
             delta = -sellable
