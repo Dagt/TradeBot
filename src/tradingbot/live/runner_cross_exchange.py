@@ -12,7 +12,6 @@ from ..execution.router import ExecutionRouter
 from ..execution.paper import PaperAdapter
 from ..strategies.cross_exchange_arbitrage import CrossArbConfig
 from ..broker.broker import Broker
-from ..config import settings
 from ..data.funding import poll_funding
 from ..data.open_interest import poll_open_interest
 from ..data.basis import poll_basis
@@ -61,6 +60,20 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             risk.update_position(venue, sym, data.get("qty", 0.0))
 
     last: Dict[str, Optional[float]] = {"spot": None, "perp": None}
+    tick_spot = 0.0
+    tick_perp = 0.0
+    meta_spot = getattr(cfg.spot, "meta", None)
+    if meta_spot is not None:
+        try:
+            tick_spot = float(getattr(meta_spot.rules_for(cfg.symbol), "price_step", 0.0) or 0.0)
+        except Exception:
+            tick_spot = 0.0
+    meta_perp = getattr(cfg.perp, "meta", None)
+    if meta_perp is not None:
+        try:
+            tick_perp = float(getattr(meta_perp.rules_for(cfg.symbol), "price_step", 0.0) or 0.0)
+        except Exception:
+            tick_perp = 0.0
 
     async def maybe_trade() -> None:
         if last["spot"] is None or last["perp"] is None:
@@ -103,9 +116,8 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         size = min(abs(delta1), abs(delta2))
         if size <= 0:
             return
-        tick = getattr(settings, "tick_size", 0.0)
-        spot_price = last["spot"] + tick if spot_side == "buy" else last["spot"] - tick
-        perp_price = last["perp"] + tick if perp_side == "buy" else last["perp"] - tick
+        spot_price = last["spot"] + tick_spot if spot_side == "buy" else last["spot"] - tick_spot
+        perp_price = last["perp"] + tick_perp if perp_side == "buy" else last["perp"] - tick_perp
         total_notional = size * (spot_price + perp_price)
         if not risk.register_order(cfg.symbol, total_notional):
             return

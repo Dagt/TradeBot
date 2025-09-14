@@ -22,6 +22,7 @@ from ..risk.service import RiskService
 from ..broker.broker import Broker
 from ..config import settings
 from ..utils.metrics import CANCELS
+from ..core.symbols import normalize
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -177,7 +178,25 @@ async def run_live_binance(
     agg = BarAggregator(timeframe=timeframe)
     fills = 0
 
-    tick = getattr(settings, "tick_size", 0.0)
+    tick = 0.0
+    meta = None
+    rest = getattr(adapter, "rest", None)
+    if rest is not None and hasattr(rest, "meta"):
+        meta = rest.meta
+    elif hasattr(adapter, "meta"):
+        meta = adapter.meta
+    if meta is not None:
+        try:
+            fetch_symbol = None
+            symbols = getattr(meta.client, "symbols", [])
+            if symbols:
+                fetch_symbol = next((s for s in symbols if normalize(s) == symbol), None)
+            if fetch_symbol is None:
+                fetch_symbol = symbol.replace("-", "/")
+            rules = meta.rules_for(fetch_symbol)
+            tick = float(getattr(rules, "price_step", 0.0) or 0.0)
+        except Exception:
+            tick = 0.0
 
     def _limit_price(side: str) -> float:
         book = getattr(broker.state, "order_book", {}).get(symbol, {})

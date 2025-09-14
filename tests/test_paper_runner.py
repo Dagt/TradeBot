@@ -17,6 +17,13 @@ sys.modules.pop("tradingbot.adapters.binance", None)
 
 
 class DummyWS:
+    def __init__(self):
+        meta = types.SimpleNamespace(
+            client=types.SimpleNamespace(symbols=[]),
+            rules_for=lambda s: SimpleNamespace(qty_step=1e-9, price_step=0.1),
+        )
+        self.rest = types.SimpleNamespace(meta=meta)
+
     async def stream_trades(self, symbol):
         yield {"ts": datetime.now(timezone.utc), "price": 100.0, "qty": 1.0}
 

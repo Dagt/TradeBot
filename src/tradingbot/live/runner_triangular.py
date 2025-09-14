@@ -17,7 +17,6 @@ from ..risk.service import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..broker.broker import Broker
-from ..config import settings
 
 # Persistencia opcional
 try:
@@ -50,6 +49,7 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
     adapter = PaperAdapter(fee_bps=cfg.taker_fee_bps)
     broker = Broker(adapter)
     last: Dict[str, float] = {"bq": None, "mq": None, "mb": None}
+    tick_bq = tick_mq = tick_mb = 0.0
     fills = 0
     if risk is None:
         risk = RiskService(PortfolioGuard(GuardConfig(venue="binance")), risk_pct=0.0)
@@ -142,10 +142,9 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         mid_qty = min(mid_qty, abs(d3))
                         base_qty = mid_qty * last["mb"]
                         notional = base_qty * last["bq"]
-                        tick = getattr(settings, "tick_size", 0.0)
-                        price1 = last["bq"] + tick
-                        price2 = last["mb"] + tick
-                        price3 = last["mq"] - tick
+                        price1 = last["bq"] + tick_bq
+                        price2 = last["mb"] + tick_mb
+                        price3 = last["mq"] - tick_mq
                         not1 = base_qty * price1
                         not2 = mid_qty * price2
                         not3 = mid_qty * price3
@@ -224,10 +223,9 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         base_qty = min(base_qty, abs(d3))
                         mid_qty = base_qty * last["mb"]
                         notional = mid_qty * last["mq"]
-                        tick = getattr(settings, "tick_size", 0.0)
-                        price1 = last["mq"] + tick
-                        price2 = last["mb"] - tick
-                        price3 = last["bq"] - tick
+                        price1 = last["mq"] + tick_mq
+                        price2 = last["mb"] - tick_mb
+                        price3 = last["bq"] - tick_bq
                         not1 = mid_qty * price1
                         not2 = mid_qty * price2
                         not3 = base_qty * price3
