@@ -104,6 +104,7 @@ async def run_paper(
     step_size: float = 0.0,
 ) -> None:
     """Run a simple live pipeline entirely in paper mode."""
+    raw_symbol = symbol
     symbol = normalize(symbol)
     exchange, market = venue.split("_", 1)
     ws_cls = WS_ADAPTERS.get((exchange, market))
@@ -129,6 +130,23 @@ async def run_paper(
             rest = rest_cls()
             if hasattr(adapter, "rest"):
                 adapter.rest = rest
+    if step_size <= 0:
+        try:
+            if rest is not None and hasattr(rest, "meta"):
+                fetch_symbol = None
+                symbols = getattr(rest.meta.client, "symbols", [])
+                if symbols:
+                    fetch_symbol = next(
+                        (s for s in symbols if normalize(s) == symbol), None
+                    )
+                if fetch_symbol is None:
+                    fetch_symbol = raw_symbol.replace("-", "/")
+                rules = rest.meta.rules_for(fetch_symbol)
+                step_size = float(getattr(rules, "qty_step", 0.0) or 1e-9)
+            else:
+                step_size = 1e-9
+        except Exception:
+            step_size = 1e-9
     import inspect
     broker_kwargs = {
         "maker_fee_bps": maker_fee_bps,
@@ -143,7 +161,10 @@ async def run_paper(
     broker.state.cash = initial_cash
     if hasattr(broker.account, "update_cash"):
         broker.account.update_cash(initial_cash)
-    broker.account.market_type = market
+    try:
+        broker.account.market_type = market
+    except Exception:
+        pass
 
     guard = PortfolioGuard(
         GuardConfig(
@@ -360,7 +381,7 @@ async def run_paper(
                             symbol, close_side, filled_qty, price=exec_price, venue="paper"
                         )
                     cur_qty = risk.account.current_exposure(symbol)[0]
-                    if abs(cur_qty) < step_size:
+                    if step_size > 0 and abs(cur_qty) < step_size:
                         cur_qty = 0.0
                         risk.account.positions[symbol] = 0.0
                         risk.account.open_orders.pop(symbol, None)
@@ -505,7 +526,7 @@ async def run_paper(
                                 symbol, side, filled_qty, price=exec_price, venue="paper"
                             )
                         cur_qty = risk.account.current_exposure(symbol)[0]
-                        if abs(cur_qty) < step_size:
+                        if step_size > 0 and abs(cur_qty) < step_size:
                             cur_qty = 0.0
                             risk.account.positions[symbol] = 0.0
                             risk.account.open_orders.pop(symbol, None)
@@ -714,7 +735,7 @@ async def run_paper(
                     symbol, side, filled_qty, price=exec_price, venue="paper"
                 )
             cur_qty = risk.account.current_exposure(symbol)[0]
-            if abs(cur_qty) < step_size:
+            if step_size > 0 and abs(cur_qty) < step_size:
                 cur_qty = 0.0
                 risk.account.positions[symbol] = 0.0
                 risk.account.open_orders.pop(symbol, None)
