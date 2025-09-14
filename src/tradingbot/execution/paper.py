@@ -36,8 +36,10 @@ class BookOrder:
     symbol: str
     side: str
     price: float
+    qty: float
     pending_qty: float
     placed_at: datetime
+    timeout: float | None = None
 
 
 class PaperAdapter(ExchangeAdapter):
@@ -56,6 +58,7 @@ class PaperAdapter(ExchangeAdapter):
         *,
         min_notional: float = 0.0,
         step_size: float = 0.0,
+        slip_bps_per_qty: float = 0.0,
     ):
         super().__init__()
         self.state = PaperState()
@@ -74,6 +77,7 @@ class PaperAdapter(ExchangeAdapter):
         # Common limits used to mirror exchange behaviour during sizing.
         self.min_notional = float(min_notional)
         self.step_size = float(step_size)
+        self.slip_bps_per_qty = float(slip_bps_per_qty)
 
     def update_last_price(self, symbol: str, px: float, qty: float | None = None):
         self.state.last_px[symbol] = px
@@ -130,6 +134,7 @@ class PaperAdapter(ExchangeAdapter):
         if not orders:
             return fills
         remaining = float("inf") if qty is None else float(qty)
+        now = datetime.utcnow()
         for oid in list(orders.keys()):
             if remaining <= 0:
                 break
@@ -153,7 +158,8 @@ class PaperAdapter(ExchangeAdapter):
             fill_qty = min(order.pending_qty, remaining, avail)
             if fill_qty <= 0:
                 continue
-            fill = self._apply_fill(symbol, order.side, fill_qty, px, True)
+            px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px)
+            fill = self._apply_fill(symbol, order.side, fill_qty, px_slip, True)
             order.pending_qty -= fill_qty
             remaining -= fill_qty
             status = "filled" if order.pending_qty <= 0 else "partial"
@@ -165,17 +171,43 @@ class PaperAdapter(ExchangeAdapter):
                 "symbol": symbol,
                 "side": order.side,
                 "qty": fill_qty,
-                "price": px,
+                "filled_qty": fill_qty,
+                "price": px_slip,
                 "pending_qty": max(order.pending_qty, 0.0),
                 "time_in_book": time_in_book,
+                "slippage_bps": slip_bps,
                 **fill,
             }
             fills.append(res)
             if order.pending_qty <= 0:
                 del orders[oid]
+        # handle expirations
+        for oid, order in list(orders.items()):
+            if order.timeout is not None and (now - order.placed_at).total_seconds() >= order.timeout:
+                filled_qty = order.qty - order.pending_qty
+                status = "partial" if filled_qty > 0 else "expired"
+                res = {
+                    "status": status,
+                    "order_id": order.order_id,
+                    "symbol": symbol,
+                    "side": order.side,
+                    "price": order.price,
+                    "qty": filled_qty,
+                    "filled_qty": filled_qty,
+                    "pending_qty": order.pending_qty,
+                    "time_in_book": (now - order.placed_at).total_seconds(),
+                }
+                fills.append(res)
+                del orders[oid]
         if not orders:
             self.state.book.pop(symbol, None)
         return fills
+
+    def _apply_slippage(self, side: str, qty: float, px: float) -> tuple[float, float]:
+        slip_bps = self.slip_bps_per_qty * qty
+        direction = 1 if side == "buy" else -1
+        px_slipped = px * (1 + direction * slip_bps / 10000.0)
+        return px_slipped, slip_bps
 
     def _apply_fill(
         self,
@@ -247,6 +279,7 @@ class PaperAdapter(ExchangeAdapter):
         price: float | None = None,
         post_only: bool = False,
         time_in_force: str | None = None,
+        timeout: float | None = None,
         iceberg_qty: float | None = None,
         reduce_only: bool = False,
     ) -> dict:
@@ -320,7 +353,7 @@ class PaperAdapter(ExchangeAdapter):
                         "order_id": order_id,
                         "trade_id": trade_id,
                     }
-            order = BookOrder(order_id, symbol, side, float(price), qty, datetime.utcnow())
+            order = BookOrder(order_id, symbol, side, float(price), qty, qty, datetime.utcnow(), timeout)
             self.state.book.setdefault(symbol, {})[order_id] = order
             if self.latency:
                 await asyncio.sleep(self.latency)
@@ -333,6 +366,7 @@ class PaperAdapter(ExchangeAdapter):
                 "side": side,
                 "price": price,
                 "qty": 0.0,
+                "filled_qty": 0.0,
                 "pending_qty": qty,
                 "latency": latency,
             }
@@ -374,6 +408,7 @@ class PaperAdapter(ExchangeAdapter):
                     "order_id": order_id,
                     "trade_id": trade_id,
                 }
+        px_exec, slip_bps = self._apply_slippage(side, qty, px_exec)
         fill = self._apply_fill(symbol, side, qty, px_exec, maker)
         if self.latency:
             await asyncio.sleep(self.latency)
@@ -385,8 +420,11 @@ class PaperAdapter(ExchangeAdapter):
             "symbol": symbol,
             "side": side,
             "qty": qty,
+            "filled_qty": qty,
+            "pending_qty": 0.0,
             "price": px_exec,
             "latency": latency,
+            "slippage_bps": slip_bps,
             **fill,
         }
 
@@ -410,10 +448,14 @@ class PaperAdapter(ExchangeAdapter):
         latency = time.monotonic() - start
         if order:
             tib = (datetime.utcnow() - order.placed_at).total_seconds()
+            filled_qty = order.qty - order.pending_qty
+            status = "partial" if filled_qty > 0 and order.pending_qty > 0 else "canceled"
             return {
-                "status": "canceled",
+                "status": status,
                 "order_id": order.order_id,
                 "time_in_book": tib,
+                "qty": filled_qty,
+                "filled_qty": filled_qty,
                 "pending_qty": order.pending_qty,
                 "latency": latency,
             }

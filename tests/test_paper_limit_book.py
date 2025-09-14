@@ -55,6 +55,45 @@ async def test_cancel_pending_order_reports_metrics():
     assert cancel["latency"] >= 0.01
 
 
+@pytest.mark.asyncio
+async def test_partial_cancel_reports_filled_and_pending():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 1.0, price=90.0)
+    adapter.update_last_price("BTC/USDT", 89.0, qty=0.4)
+    cancel = await adapter.cancel_order(res["order_id"], "BTC/USDT")
+    assert cancel["status"] == "partial"
+    assert cancel["filled_qty"] == pytest.approx(0.4)
+    assert cancel["pending_qty"] == pytest.approx(0.6)
+
+
+@pytest.mark.asyncio
+async def test_market_slippage_proportional_to_volume():
+    adapter = PaperAdapter(slip_bps_per_qty=100.0)
+    adapter.state.cash = 10000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "market", 2.0)
+    assert res["status"] == "filled"
+    assert res["price"] == pytest.approx(102.0)
+    assert res["filled_qty"] == pytest.approx(2.0)
+    assert res["pending_qty"] == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_timeout_emits_partial_cancel():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    res = await adapter.place_order("BTC/USDT", "buy", "limit", 1.0, price=90.0, timeout=0.01)
+    adapter.update_last_price("BTC/USDT", 89.0, qty=0.4)
+    await asyncio.sleep(0.02)
+    events = adapter.update_last_price("BTC/USDT", 100.0)
+    cancel = [e for e in events if e.get("order_id") == res["order_id"]][0]
+    assert cancel["status"] == "partial"
+    assert cancel["pending_qty"] == pytest.approx(0.6)
+
+
 def test_realized_pnl_on_close():
     adapter = PaperAdapter()
     # cerrar largo
