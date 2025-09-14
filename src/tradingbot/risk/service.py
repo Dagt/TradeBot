@@ -75,6 +75,7 @@ class RiskService:
         self.market_type = mt
         self._allow_short = mt != "spot"
         self._min_order_qty = 1e-9
+        self._min_notional = 0.0
         self.enabled = True
         self.last_kill_reason: str | None = None
         self._pos = Position()
@@ -89,6 +90,14 @@ class RiskService:
     @min_order_qty.setter
     def min_order_qty(self, value: float) -> None:
         self._min_order_qty = float(value)
+
+    @property
+    def min_notional(self) -> float:
+        return self._min_notional
+
+    @min_notional.setter
+    def min_notional(self, value: float) -> None:
+        self._min_notional = float(value)
 
     @property
     def allow_short(self) -> bool:

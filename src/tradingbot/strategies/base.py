@@ -9,6 +9,9 @@ import yaml
 from ..utils.metrics import REQUEST_LATENCY
 from ..storage import timescale
 from ..execution.order_types import Order
+from ..utils.logging import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -139,6 +142,14 @@ class Strategy(ABC):
             if decision == "hold" and signal is not None:
                 return signal
             return None
+        if signal is not None:
+            qty = rs.calc_position_size(signal.strength, price)
+            notional = abs(qty) * price
+            if qty < rs.min_order_qty or (
+                getattr(rs, "min_notional", 0.0) and notional < rs.min_notional
+            ):
+                log.info("orden submínima qty=%.8f notional=%.8f", qty, notional)
+                return None
         return signal
 
 
