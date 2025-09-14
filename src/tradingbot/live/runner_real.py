@@ -135,6 +135,7 @@ async def _run_symbol(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
+    slip_bps_per_qty: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
@@ -193,6 +194,7 @@ async def _run_symbol(
         "taker_fee_bps": taker_fee_bps,
         "min_notional": min_notional,
         "step_size": step_size,
+        "slip_bps_per_qty": slip_bps_per_qty,
     }
     sig = inspect.signature(PaperAdapter)
     broker = PaperAdapter(
@@ -488,10 +490,20 @@ async def run_live_real(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
+    slip_bps_per_qty: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
 ) -> None:
-    """Run a simple live loop on a real crypto exchange."""
+    """Run a simple live loop on a real crypto exchange.
+
+    Parameters
+    ----------
+    slip_bps_per_qty:
+        Slippage in basis points applied per unit of traded quantity when
+        operating in ``dry_run`` mode via the
+        :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero values
+        allow monitoring of expected slippage in metrics.
+    """
     log.info("Starting real runner for %s %s", exchange, market)
 
     if not i_know_what_im_doing:
@@ -546,6 +558,7 @@ async def run_live_real(
             maker_fee_bps=maker_fee_bps,
             taker_fee_bps=taker_fee_bps,
             slippage_bps=slippage_bps,
+            slip_bps_per_qty=slip_bps_per_qty,
             min_notional=min_notional,
             step_size=step_size,
         )

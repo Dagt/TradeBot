@@ -182,6 +182,16 @@ class DummyServer:
         return
 
 
+class DummyBrokerSlip(DummyBroker):
+    """Record ``slip_bps_per_qty`` passed by the runner."""
+
+    last_slip: float | None = None
+
+    def __init__(self, slip_bps_per_qty: float = 0.0, **_):
+        super().__init__()
+        DummyBrokerSlip.last_slip = slip_bps_per_qty
+
+
 class DummyRiskRecord(DummyRisk):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
@@ -287,3 +297,27 @@ async def test_run_paper_skip_sell_no_inventory(monkeypatch):
 
     assert dummy_risk.register_called is False
     assert DummyExecBrokerRecord.called is False
+
+
+@pytest.mark.asyncio
+async def test_run_paper_passes_slip(monkeypatch):
+    monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    dummy_risk = DummyRisk()
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    monkeypatch.setattr(rp, "Broker", DummyExecBroker)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBrokerSlip)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp, "settings", types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0)
+    )
+
+    await rp.run_paper(
+        symbol=normalize("BTC-USDT"), strategy_name="dummy", slip_bps_per_qty=5.0
+    )
+
+    assert DummyBrokerSlip.last_slip == 5.0
