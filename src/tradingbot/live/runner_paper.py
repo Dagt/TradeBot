@@ -456,11 +456,15 @@ async def run_paper(
             if signal is None:
                 continue
             signal_ts = getattr(signal, "signal_ts", time.time())
+            pending = risk.account.open_orders.get(symbol, {}).get(
+                signal.side, 0.0
+            )
             allowed, reason, delta = risk.check_order(
                 symbol,
                 signal.side,
                 closed.c,
                 strength=signal.strength,
+                pending_qty=pending,
                 volatility=bar.get("atr") or bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
             )

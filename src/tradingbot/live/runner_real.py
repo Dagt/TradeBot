@@ -288,11 +288,13 @@ async def _run_symbol(
         if sig is None:
             continue
         signal_ts = getattr(sig, "signal_ts", time.time())
+        pending = risk.account.open_orders.get(cfg.symbol, {}).get(sig.side, 0.0)
         allowed, reason, delta = risk.check_order(
             cfg.symbol,
             sig.side,
             closed.c,
             strength=sig.strength,
+            pending_qty=pending,
             volatility=bar.get("atr") or bar.get("volatility"),
             target_volatility=bar.get("target_volatility"),
         )
