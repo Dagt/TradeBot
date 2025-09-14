@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Dict, Callable, Tuple, Type, List, Any
 import time
+import json
 
 import pandas as pd
 import uvicorn
@@ -198,9 +199,22 @@ async def _run_symbol(
             volatility=bar.get("atr") or bar.get("volatility"),
             target_volatility=bar.get("target_volatility"),
         )
-        if not allowed or abs(delta) <= 0:
+        if not allowed:
             if reason:
                 log.warning("[PG] Bloqueado %s: %s", cfg.symbol, reason)
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {
+                        "event": "risk_check_reject",
+                        "reason": reason,
+                        "requested_qty": abs(delta),
+                        "inventory": risk.account.current_exposure(cfg.symbol)[0],
+                    }
+                ),
+            )
+            continue
+        if abs(delta) <= 0:
             continue
         side = "buy" if delta > 0 else "sell"
         qty = abs(delta)
