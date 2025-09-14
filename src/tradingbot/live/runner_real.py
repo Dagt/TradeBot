@@ -24,6 +24,7 @@ import json
 
 import pandas as pd
 import uvicorn
+import ccxt
 
 from sqlalchemy.exc import OperationalError
 from .runner import BarAggregator
@@ -143,6 +144,8 @@ async def _run_symbol(
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     raw_symbol = cfg.symbol
     symbol = normalize(cfg.symbol)
+    timeframe_seconds = ccxt.Exchange.parse_timeframe(timeframe)
+    expiry = timeframe_seconds
     log.info("Connecting to %s %s for %s", exchange, market, symbol)
     api_key, api_secret = _get_keys(exchange)
     exec_kwargs: Dict[str, Any] = {"api_key": api_key, "api_secret": api_secret}
@@ -203,7 +206,7 @@ async def _run_symbol(
     )
     broker.account.market_type = market
     exec_broker = Broker(exec_adapter if not dry_run else broker)
-    tif = f"GTD:{settings.limit_expiry_sec}|PO"
+    tif = f"GTD:{expiry}|PO"
     risk = RiskService(
         guard,
         dguard,
@@ -229,21 +232,10 @@ async def _run_symbol(
         def _cb(order, res):
             if call_cancel:
                 on_order_cancel(order, res)
-            if orig_cb is not None:
-                action = orig_cb(order, res)
-            else:
-                action = "re_quote"
-            if action not in {"re_quote", "requote", "re-quote"}:
-                return action
-            lp = order.price or res.get("price")
-            if lp is None or last_price <= 0 or reprice_bps <= 0:
-                order.price = limit_price_from_close(order.side, last_price, tick_size)
-                return "re_quote"
-            diff = abs(last_price - lp) / lp
-            if diff > reprice_bps / 10000.0:
-                order.price = limit_price_from_close(order.side, last_price, tick_size)
-                return "re_quote"
-            return None
+            action = orig_cb(order, res) if orig_cb else None
+            if action in {"re_quote", "requote", "re-quote"}:
+                return None
+            return action
         return _cb
 
     on_pf = _wrap_cb(getattr(strat, "on_partial_fill", None))
