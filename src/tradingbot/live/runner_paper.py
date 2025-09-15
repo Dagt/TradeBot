@@ -640,6 +640,9 @@ async def run_paper(
                 )
                 continue
             signal_ts = getattr(signal, "signal_ts", time.time())
+            pending = risk.account.open_orders.get(symbol, {}).get(
+                signal.side, 0.0
+            )
             allowed, reason, delta = risk.check_order(
                 symbol,
                 signal.side,
@@ -647,6 +650,7 @@ async def run_paper(
                 strength=signal.strength,
                 volatility=bar.get("atr") or bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
+                pending_qty=pending,
             )
             if not allowed:
                 if reason == "below_min_qty":
