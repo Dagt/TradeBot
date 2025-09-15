@@ -417,6 +417,7 @@ async def _run_symbol(
             )
             continue
         signal_ts = getattr(sig, "signal_ts", time.time())
+        pending = risk.account.open_orders.get(symbol, {}).get(sig.side, 0.0)
         allowed, reason, delta = risk.check_order(
             symbol,
             sig.side,
@@ -424,6 +425,7 @@ async def _run_symbol(
             strength=sig.strength,
             volatility=bar.get("atr") or bar.get("volatility"),
             target_volatility=bar.get("target_volatility"),
+            pending_qty=pending,
         )
         if not allowed:
             if reason == "below_min_qty":
