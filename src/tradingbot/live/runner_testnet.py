@@ -222,7 +222,10 @@ async def _run_symbol(
 
     def _wrap_cb(orig_cb, *, call_cancel=False):
         def _cb(order, res):
-            if call_cancel:
+            status = ""
+            if isinstance(res, dict):
+                status = str(res.get("status", "")).lower()
+            if call_cancel and status not in {"canceled", "cancelled"}:
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
             if not call_cancel:
