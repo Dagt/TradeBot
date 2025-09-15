@@ -101,18 +101,15 @@ def _collect_by_symbol(metric, sample_name: str) -> dict[str, float]:
 def _avg_slippage() -> float:
     """Compute average slippage in basis points."""
 
-    slippage_samples = [
-        sample
-        for metric in SLIPPAGE.collect()
-        for sample in metric.samples
-    ]
-    slippage_sum = sum(
-        abs(s.value) for s in slippage_samples if s.name.endswith("_sum")
-    )
-    slippage_count = sum(
-        s.value for s in slippage_samples if s.name.endswith("_count")
-    )
-    return slippage_sum / slippage_count if slippage_count else 0.0
+    total = 0.0
+    count = 0.0
+    for metric_obj in SLIPPAGE.collect():
+        for sample in metric_obj.samples:
+            if sample.name.endswith("_sum"):
+                total += abs(sample.value)
+            elif sample.name.endswith("_count"):
+                count += sample.value
+    return total / count if count else 0.0
 
 
 def _avg_order_latency() -> float:
