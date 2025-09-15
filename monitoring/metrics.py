@@ -107,7 +107,7 @@ def _avg_slippage() -> float:
         for sample in metric.samples
     ]
     slippage_sum = sum(
-        s.value for s in slippage_samples if s.name.endswith("_sum")
+        abs(s.value) for s in slippage_samples if s.name.endswith("_sum")
     )
     slippage_count = sum(
         s.value for s in slippage_samples if s.name.endswith("_count")
@@ -350,7 +350,7 @@ def _avg_slippage_by_symbol() -> dict[str, float]:
         for sample in metric_obj.samples:
             sym = sample.labels.get("symbol")
             if sample.name.endswith("_sum"):
-                sums[sym] = sums.get(sym, 0.0) + sample.value
+                sums[sym] = sums.get(sym, 0.0) + abs(sample.value)
             elif sample.name.endswith("_count"):
                 counts[sym] = counts.get(sym, 0.0) + sample.value
     return {sym: (sums.get(sym, 0.0) / counts.get(sym, 1.0)) for sym in sums}
