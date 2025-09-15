@@ -238,9 +238,19 @@ async def run_paper(
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
         CANCELS.inc()
+        symbol = res.get("symbol")
+        side = res.get("side")
+        pending_qty = float(res.get("pending_qty") or res.get("qty") or 0.0)
+        if symbol and side and pending_qty > 0:
+            risk.account.update_open_order(symbol, side, -pending_qty)
+        locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
+        if not risk.account.open_orders.get(symbol):
+            locked = 0.0
         log.info(
             "METRICS %s",
-            json.dumps({"event": "cancel", "reason": res.get("reason")}),
+            json.dumps(
+                {"event": "cancel", "reason": res.get("reason"), "locked": locked}
+            ),
         )
 
     router = ExecutionRouter([
