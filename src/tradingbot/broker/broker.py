@@ -226,7 +226,9 @@ class Broker:
             if expiry is not None and status not in {"canceled", "rejected"}:
                 await asyncio.sleep(expiry)
                 try:
-                    await self.adapter.cancel_order(res.get("order_id"), symbol)
+                    res = await self.adapter.cancel_order(res.get("order_id"), symbol)
+                    remaining = float(res.get("pending_qty", remaining))
+                    last_res = res
                 except Exception:
                     pass
                 action = on_order_expiry(order, res) if on_order_expiry else "re_quote"
