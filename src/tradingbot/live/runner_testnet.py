@@ -379,7 +379,10 @@ async def run_live_testnet(
     slip_bps_per_qty:
         Slippage in basis points to apply per unit of traded quantity when
         using the :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero
-        values produce slippage metrics during dry runs.
+        values produce slippage metrics during dry runs.  Ajuste este
+        parámetro para simular la profundidad esperada; ``5.0`` equivale
+        aproximadamente a 5 bps por cada unidad negociada y valores mayores
+        modelan mercados menos líquidos.
     """
     log.info("Starting testnet runner for %s %s", exchange, market)
     if (exchange, market) not in ADAPTERS:

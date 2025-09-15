@@ -51,7 +51,9 @@ class BookOrder:
 class PaperAdapter(ExchangeAdapter):
     """
     Adapter que implementa ExchangeAdapter pero en papel.
-    Ejecuta órdenes al precio last actual (market) o mejor (limit si cruza).
+    Ejecuta órdenes al precio ``last`` actual (market) o mejor (limit si
+    cruza).  Además permite simular el costo de profundidad del libro
+    mediante un parámetro lineal o un modelo de slippage.
     """
     name = "paper"
 
@@ -67,6 +69,26 @@ class PaperAdapter(ExchangeAdapter):
         slip_bps_per_qty: float = 0.0,
         slippage_model: "SlippageModel" | None = None,
     ):
+        """Create a paper execution adapter.
+
+        Parameters
+        ----------
+        maker_fee_bps, taker_fee_bps, fee_bps:
+            Comisiones en basis points para replicar el exchange.
+        latency:
+            Latencia artificial aplicada a las operaciones.
+        min_notional, step_size:
+            Límites mínimos utilizados durante el sizing para emular las
+            reglas del exchange.
+        slip_bps_per_qty:
+            Slippage lineal expresado en basis points por unidad de cantidad
+            ejecutada.  Establecer un valor mayor a ``0`` permite simular
+            costos de profundidad aun cuando solo se dispone del mejor precio.
+        slippage_model:
+            Modelo opcional de profundidad que implemente ``adjust`` y
+            ``fill`` (ver :class:`~tradingbot.backtesting.engine.SlippageModel`).
+            Si se proporciona, tiene prioridad sobre ``slip_bps_per_qty``.
+        """
         super().__init__()
         self.state = PaperState()
         mf = (
@@ -84,6 +106,8 @@ class PaperAdapter(ExchangeAdapter):
         # Common limits used to mirror exchange behaviour during sizing.
         self.min_notional = float(min_notional)
         self.step_size = float(step_size)
+        if slip_bps_per_qty < 0:
+            raise ValueError("slip_bps_per_qty debe ser >= 0")
         self.slip_bps_per_qty = float(slip_bps_per_qty)
         self.slippage_model = slippage_model
 

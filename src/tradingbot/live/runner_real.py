@@ -522,7 +522,10 @@ async def run_live_real(
         Slippage in basis points applied per unit of traded quantity when
         operating in ``dry_run`` mode via the
         :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero values
-        allow monitoring of expected slippage in metrics.
+        allow monitoring of expected slippage in metrics.  Ajuste este valor
+        para reflejar el impacto típico de sus órdenes; por ejemplo,
+        ``2``–``5`` bps por unidad funcionan para pares líquidos y valores
+        mayores para mercados menos profundos.
     """
     log.info("Starting real runner for %s %s", exchange, market)
 

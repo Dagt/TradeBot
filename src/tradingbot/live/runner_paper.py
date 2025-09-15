@@ -113,9 +113,13 @@ async def run_paper(
     ----------
     slip_bps_per_qty:
         Additional slippage in basis points applied per unit of traded
-        quantity.  This is forwarded to :class:`~tradingbot.execution.paper.PaperAdapter`
-        so that fills include this slippage and metrics report non‑zero
-        ``slippage_bps`` values.
+        quantity.  This is forwarded to
+        :class:`~tradingbot.execution.paper.PaperAdapter` so that fills
+        include this slippage and metrics report non-zero ``slippage_bps``
+        values.  Increase this value to aproximar la profundidad típica del
+        mercado; por ejemplo ``5.0`` simula cerca de 5 bps por cada unidad
+        negociada.  Ajustarlo con datos reales produce métricas más
+        realistas.
     """
     raw_symbol = symbol
     symbol = normalize(symbol)
