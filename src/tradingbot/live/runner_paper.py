@@ -250,11 +250,15 @@ async def run_paper(
         CANCELS.inc()
         symbol = res.get("symbol")
         side = res.get("side")
-        pending_qty = float(res.get("pending_qty") or res.get("qty") or 0.0)
-        if symbol and side and pending_qty > 0:
-            risk.account.update_open_order(symbol, side, -pending_qty)
+        prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
+        pending_qty = float(res.get("pending_qty") or 0.0)
+        if symbol and side:
+            if pending_qty > 0:
+                risk.account.update_open_order(symbol, side, -pending_qty)
+            else:
+                risk.account.update_open_order(symbol, side, -prev_pending)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
-        if not risk.account.open_orders.get(symbol):
+        if symbol and not risk.account.open_orders.get(symbol):
             locked = 0.0
         log.info(
             "METRICS %s",
