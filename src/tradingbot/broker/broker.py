@@ -142,6 +142,15 @@ class Broker:
             or fallback order.
         """
 
+        def _same_callback(cb1, cb2) -> bool:
+            if cb1 is cb2:
+                return True
+            if cb1 is None or cb2 is None:
+                return False
+            if inspect.ismethod(cb1) and inspect.ismethod(cb2):
+                return cb1.__func__ is cb2.__func__ and cb1.__self__ is cb2.__self__
+            return False
+
         time_in_force = "GTC"
         post_only = False
         expiry = None
@@ -225,13 +234,38 @@ class Broker:
             # Handle expiry/re-quote
             if expiry is not None and status not in {"canceled", "rejected"}:
                 await asyncio.sleep(expiry)
+                adapter_cb = None
+                callback_same = False
+                callback_executed = False
+                captured_action = None
+                if on_order_expiry is not None:
+                    adapter_cb = getattr(self.adapter, "on_order_expiry", None)
+                    if _same_callback(on_order_expiry, adapter_cb):
+                        callback_same = True
+
+                        def _proxy(_order, adapter_res):
+                            nonlocal callback_executed, captured_action
+                            callback_executed = True
+                            captured_action = on_order_expiry(order, adapter_res)
+                            return captured_action
+
+                        setattr(self.adapter, "on_order_expiry", _proxy)
                 try:
                     res = await self.adapter.cancel_order(res.get("order_id"), symbol)
                     remaining = float(res.get("pending_qty", remaining))
                     last_res = res
                 except Exception:
                     pass
-                action = on_order_expiry(order, res) if on_order_expiry else "re_quote"
+                finally:
+                    if callback_same:
+                        setattr(self.adapter, "on_order_expiry", adapter_cb)
+
+                if on_order_expiry is None:
+                    action = "re_quote"
+                elif callback_same and callback_executed:
+                    action = captured_action
+                else:
+                    action = on_order_expiry(order, res) if on_order_expiry else None
                 if action in {"re_quote", "requote", "re-quote"}:
                     price = order.price or price
                     continue
