@@ -22,6 +22,7 @@ from ..adapters.okx_spot import OKXSpotAdapter as OKXSpotWSAdapter
 from ..adapters.okx_spot import OKXSpotAdapter
 from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
+from ..backtesting.engine import SlippageModel
 from ..execution.router import ExecutionRouter
 from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
 from ..utils.price import limit_price_from_close
@@ -102,7 +103,7 @@ async def run_paper(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
-    slip_bps_per_qty: float = 0.0,
+    slip_bps_per_qty: float = 1.0,
     reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
@@ -113,7 +114,8 @@ async def run_paper(
     ----------
     slip_bps_per_qty:
         Additional slippage in basis points applied per unit of traded
-        quantity.  This is forwarded to :class:`~tradingbot.execution.paper.PaperAdapter`
+        quantity. Defaults to ``1.0`` to emulate a minimal execution cost.
+        This is forwarded to :class:`~tradingbot.execution.paper.PaperAdapter`
         so that fills include this slippage and metrics report non‑zero
         ``slippage_bps`` values.
     """
@@ -167,12 +169,21 @@ async def run_paper(
             step_size = 1e-9
         tick_size = 0.0
     import inspect
+    slippage_model = SlippageModel(
+        volume_impact=0.1,
+        spread_mult=1.0,
+        ofi_impact=0.0,
+        source="bba",
+        base_spread=0.0,
+        pct=0.0001,
+    )
     broker_kwargs = {
         "maker_fee_bps": maker_fee_bps,
         "taker_fee_bps": taker_fee_bps,
         "min_notional": min_notional,
         "step_size": step_size,
         "slip_bps_per_qty": slip_bps_per_qty,
+        "slippage_model": slippage_model,
     }
     sig = inspect.signature(PaperAdapter)
     broker = PaperAdapter(

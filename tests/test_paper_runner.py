@@ -163,7 +163,12 @@ class DummyExecBrokerRecord(DummyExecBroker):
 
 
 class DummyBroker:
-    def __init__(self):
+    def __init__(
+        self,
+        slip_bps_per_qty: float = 0.0,
+        slippage_model=None,
+        **_,
+    ):
         self.account = SimpleNamespace(update_cash=lambda amount: None)
         self.state = SimpleNamespace(realized_pnl=0.0, last_px={}, order_book={})
 
@@ -187,8 +192,13 @@ class DummyBrokerSlip(DummyBroker):
 
     last_slip: float | None = None
 
-    def __init__(self, slip_bps_per_qty: float = 0.0, **_):
-        super().__init__()
+    def __init__(
+        self,
+        slip_bps_per_qty: float = 0.0,
+        slippage_model=None,
+        **_,
+    ):
+        super().__init__(slip_bps_per_qty=slip_bps_per_qty, slippage_model=slippage_model)
         DummyBrokerSlip.last_slip = slip_bps_per_qty
 
 
