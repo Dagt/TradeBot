@@ -24,7 +24,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..backtesting.engine import SlippageModel
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS
 from ..utils.price import limit_price_from_close
 from ..broker.broker import Broker
 from ..config import settings
@@ -247,7 +247,6 @@ async def run_paper(
 
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
-        CANCELS.inc()
         symbol = res.get("symbol")
         side = res.get("side")
         prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
@@ -406,8 +405,6 @@ async def run_paper(
                         on_order_expiry=on_oe,
                         slip_bps=slippage_bps,
                     )
-                    if resp.get("status") == "canceled":
-                        on_order_cancel(resp)
                     if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                         SKIPS.inc()
                         log.info(
@@ -531,8 +528,6 @@ async def run_paper(
                             on_order_expiry=on_oe,
                             slip_bps=slippage_bps,
                         )
-                        if resp.get("status") == "canceled":
-                            on_order_cancel(resp)
                         if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                             SKIPS.inc()
                             log.info(
@@ -731,8 +726,6 @@ async def run_paper(
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
-            if resp.get("status") == "canceled":
-                on_order_cancel(resp)
             if resp.get("status") == "rejected" and resp.get("reason") == "insufficient_cash":
                 SKIPS.inc()
                 log.info(
