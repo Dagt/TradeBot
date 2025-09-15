@@ -23,6 +23,7 @@ from ..utils.metrics import (
     ROUTER_SELECTED_VENUE,
     ROUTER_STALE_BOOK,
     SKIPS,
+    CANCELS,
 )
 from ..storage import timescale
 from ..utils.logging import get_logger
@@ -575,6 +576,46 @@ class ExecutionRouter:
                     cur_qty + delta_pos,
                     entry_price=res.get("price"),
                 )
+        return res
+
+    # ------------------------------------------------------------------
+    async def cancel_order(
+        self, order_id: str, *, venue: str | None = None, symbol: str | None = None
+    ) -> dict:
+        """Cancel an existing order and update metrics once.
+
+        The tracked order is removed immediately to avoid processing
+        subsequent adapter events and double-counting metrics.
+        """
+
+        info = self._active_orders.pop(order_id, None)
+        if venue is None and info is not None:
+            _, venue, _, _ = info
+        adapter = None
+        if venue is not None:
+            adapter = self.adapters.get(venue)
+        if adapter is None:
+            adapter = next(iter(self.adapters.values()))
+        try:
+            res = await adapter.cancel_order(order_id, symbol)
+        except Exception as e:  # pragma: no cover - best effort
+            log.error("Cancel order failed: %s", e)
+            res = {"status": "error"}
+        CANCELS.inc()
+        if info and self.risk_service is not None:
+            order, _, _, _ = info
+            released = getattr(order, "_reserved_qty", 0.0)
+            if released:
+                self.risk_service.account.update_open_order(
+                    order.symbol, order.side, -released
+                )
+            order._reserved_qty = 0.0
+            if self.on_order_expiry is not None:
+                try:
+                    self.on_order_expiry(order, res)
+                except Exception:  # pragma: no cover - best effort
+                    pass
+        log.info("Order cancelled venue=%s oid=%s", getattr(adapter, "name", "unknown"), order_id)
         return res
 
     # ------------------------------------------------------------------
