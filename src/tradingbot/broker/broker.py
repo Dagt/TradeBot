@@ -204,7 +204,7 @@ class Broker:
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
             )
             filled += qty_filled
-            remaining = max(remaining - qty_filled, 0.0)
+            remaining = float(res.get("pending_qty", remaining - qty_filled))
             order.pending_qty = remaining
             res.setdefault("filled_qty", qty_filled)
             res.setdefault("pending_qty", remaining)
