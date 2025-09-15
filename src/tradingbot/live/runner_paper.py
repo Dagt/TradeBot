@@ -415,7 +415,7 @@ async def run_paper(
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     exec_price = float(resp.get("price", price))
-                    if resp.get("status") == "open":
+                    if resp.get("status") != "rejected":
                         log.info(
                             "METRICS %s",
                             json.dumps(
@@ -538,7 +538,7 @@ async def run_paper(
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         exec_price = float(resp.get("price", price))
-                        if resp.get("status") == "open":
+                        if resp.get("status") != "rejected":
                             log.info(
                                 "METRICS %s",
                                 json.dumps(
@@ -736,7 +736,7 @@ async def run_paper(
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
-            if resp.get("status") == "open":
+            if resp.get("status") != "rejected":
                 log.info(
                     "METRICS %s",
                     json.dumps(
