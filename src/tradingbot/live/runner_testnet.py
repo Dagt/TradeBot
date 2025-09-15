@@ -37,7 +37,6 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
-from ..utils.metrics import CANCELS
 from ..utils.price import limit_price_from_close
 
 try:
@@ -192,7 +191,6 @@ async def _run_symbol(
     strat.risk_service = risk
     def on_order_cancel(order, res: dict) -> None:
         """Track broker order cancellations."""
-        CANCELS.inc()
         symbol = res.get("symbol") or getattr(order, "symbol", None)
         side = res.get("side") or getattr(order, "side", None)
         pending_qty = res.get("pending_qty")
@@ -336,8 +334,6 @@ async def _run_symbol(
             signal_ts=signal_ts,
             slip_bps=slippage_bps,
         )
-        if resp.get("status") == "canceled":
-            on_order_cancel(None, resp)
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
