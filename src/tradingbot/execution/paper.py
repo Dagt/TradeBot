@@ -86,6 +86,8 @@ class PaperAdapter(ExchangeAdapter):
         self.step_size = float(step_size)
         self.slip_bps_per_qty = float(slip_bps_per_qty)
         self.slippage_model = slippage_model
+        # Dynamic per-symbol slippage estimates used when book data is absent
+        self.slip_bps_per_qty_by_symbol: Dict[str, float] = {}
 
     def update_last_price(
         self,
@@ -205,7 +207,20 @@ class PaperAdapter(ExchangeAdapter):
                 fill_qty = min(qty_cap, book_side)
                 if fill_qty <= 0:
                     continue
-                px_slip, slip_bps = self._apply_slippage(order.side, fill_qty, px, book)
+                px_slip, slip_bps = self._apply_slippage(
+                    symbol, order.side, fill_qty, px, book
+                )
+            # Update dynamic slippage estimate based on available depth
+            if book is not None:
+                levels = None
+                if order.side == "buy" and "asks" in book:
+                    levels = book["asks"]  # type: ignore[index]
+                elif order.side == "sell" and "bids" in book:
+                    levels = book["bids"]  # type: ignore[index]
+                if levels:
+                    depth_bps = impact_by_depth(order.side, fill_qty, levels)
+                    if depth_bps is not None and fill_qty > 0:
+                        self.slip_bps_per_qty_by_symbol[symbol] = abs(depth_bps) / fill_qty
             fill = self._apply_fill(symbol, order.side, fill_qty, px_slip, True)
             order.pending_qty -= fill_qty
             remaining -= fill_qty
@@ -256,6 +271,7 @@ class PaperAdapter(ExchangeAdapter):
 
     def _apply_slippage(
         self,
+        symbol: str,
         side: str,
         qty: float,
         px: float,
@@ -277,6 +293,15 @@ class PaperAdapter(ExchangeAdapter):
                 slip_bps = (adj - px) / px * 10000.0
             else:
                 slip_bps = (px - adj) / px * 10000.0
+            levels = None
+            if side == "buy" and "asks" in book:
+                levels = book["asks"]  # type: ignore[index]
+            elif side == "sell" and "bids" in book:
+                levels = book["bids"]  # type: ignore[index]
+            if levels:
+                depth_bps = impact_by_depth(side, qty, levels)
+                if depth_bps is not None and qty > 0:
+                    self.slip_bps_per_qty_by_symbol[symbol] = abs(depth_bps) / qty
             return adj, slip_bps
 
         # Depth based path --------------------------------------------------
@@ -288,11 +313,14 @@ class PaperAdapter(ExchangeAdapter):
                 levels = book["bids"]  # type: ignore[index]
             if levels:
                 slip_bps = impact_by_depth(side, qty, levels) or 0.0
+                if qty > 0:
+                    self.slip_bps_per_qty_by_symbol[symbol] = abs(slip_bps) / qty
                 px_slipped = px * (1 + slip_bps / 10000.0)
                 return px_slipped, slip_bps
 
         # Linear fallback ---------------------------------------------------
-        slip_bps = self.slip_bps_per_qty * qty
+        rate = self.slip_bps_per_qty_by_symbol.get(symbol, self.slip_bps_per_qty)
+        slip_bps = rate * qty
         direction = 1 if side == "buy" else -1
         px_slipped = px * (1 + direction * slip_bps / 10000.0)
         return px_slipped, slip_bps
@@ -515,7 +543,7 @@ class PaperAdapter(ExchangeAdapter):
                     "order_id": order_id,
                     "trade_id": trade_id,
                 }
-        px_exec, slip_bps = self._apply_slippage(side, qty, px_exec, book)
+        px_exec, slip_bps = self._apply_slippage(symbol, side, qty, px_exec, book)
         fill = self._apply_fill(symbol, side, qty, px_exec, maker)
         if self.latency:
             await asyncio.sleep(self.latency)

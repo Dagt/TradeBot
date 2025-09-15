@@ -102,7 +102,6 @@ async def _run_symbol(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
-    slip_bps_per_qty: float = 0.0,
     reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
@@ -392,9 +391,9 @@ async def run_live_testnet(
     Parameters
     ----------
     slip_bps_per_qty:
-        Slippage in basis points to apply per unit of traded quantity when
-        using the :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero
-        values produce slippage metrics during dry runs.
+        Optional manual slippage in basis points applied per unit of traded
+        quantity. When omitted, slippage is automatically estimated from order
+        book depth or historical executions.
     """
     log.info("Starting testnet runner for %s %s", exchange, market)
     if (exchange, market) not in ADAPTERS:

@@ -136,7 +136,6 @@ async def _run_symbol(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
-    slip_bps_per_qty: float = 0.0,
     reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
@@ -534,10 +533,9 @@ async def run_live_real(
     Parameters
     ----------
     slip_bps_per_qty:
-        Slippage in basis points applied per unit of traded quantity when
-        operating in ``dry_run`` mode via the
-        :class:`~tradingbot.execution.paper.PaperAdapter`.  Non-zero values
-        allow monitoring of expected slippage in metrics.
+        Optional manual slippage in basis points applied per unit of traded
+        quantity. When omitted, slippage is estimated automatically from order
+        book depth or historical fills during dry runs.
     """
     log.info("Starting real runner for %s %s", exchange, market)
 
