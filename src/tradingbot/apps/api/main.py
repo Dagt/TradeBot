@@ -1278,8 +1278,12 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         orders = buf.get("orders", 0)
         fills = buf.get("fills", 0)
         cancels = buf.get("cancels", 0)
-        buf["hit_rate"] = fills / orders if orders else 0.0
-        buf["cancel_ratio"] = cancels / orders if orders else 0.0
+
+        hit_rate = fills / orders if orders else 0.0
+        cancel_ratio = cancels / orders if orders else 0.0
+
+        buf["hit_rate"] = hit_rate
+        buf["cancel_ratio"] = cancel_ratio
 
 
 async def _scrape_metrics(
@@ -1525,6 +1529,9 @@ async def start_bot(cfg: BotConfig, request: Request = None):
                 "monitor_task": monitor_task,
                 "log_buffer": log_buffer,
             }
+
+        # Initialize stats so the UI receives metrics from the start
+        await update_bot_stats(proc.pid)
         return {"pid": proc.pid, "status": "running"}
 
 
