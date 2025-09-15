@@ -265,6 +265,7 @@ async def run_paper(
                 {"event": "cancel", "reason": res.get("reason"), "locked": locked}
             ),
         )
+        risk.complete_order()
 
     router = ExecutionRouter([
         broker
@@ -277,6 +278,22 @@ async def run_paper(
             if call_cancel:
                 on_order_cancel(res)
             action = orig_cb(order, res) if orig_cb else None
+            if not call_cancel:
+                pending_raw = res.get("pending_qty")
+                pending_qty = None
+                if pending_raw is not None:
+                    try:
+                        pending_qty = float(pending_raw)
+                    except (TypeError, ValueError):
+                        pending_qty = None
+                if pending_qty is not None and pending_qty <= 0:
+                    already_completed = False
+                    if order is not None:
+                        already_completed = getattr(order, "_risk_order_completed", False)
+                    if not already_completed:
+                        risk.complete_order()
+                        if order is not None:
+                            setattr(order, "_risk_order_completed", True)
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action

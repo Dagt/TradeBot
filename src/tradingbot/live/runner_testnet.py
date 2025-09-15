@@ -210,6 +210,13 @@ async def _run_symbol(
                 {"event": "cancel", "reason": res.get("reason"), "locked": locked}
             ),
         )
+        already_completed = order is not None and getattr(
+            order, "_risk_order_completed", False
+        )
+        if not already_completed:
+            risk.complete_order()
+            if order is not None:
+                setattr(order, "_risk_order_completed", True)
 
     last_price = 0.0
 
@@ -218,6 +225,22 @@ async def _run_symbol(
             if call_cancel:
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
+            if not call_cancel:
+                pending_raw = res.get("pending_qty")
+                pending_qty = None
+                if pending_raw is not None:
+                    try:
+                        pending_qty = float(pending_raw)
+                    except (TypeError, ValueError):
+                        pending_qty = None
+                if pending_qty is not None and pending_qty <= 0:
+                    already_completed = order is not None and getattr(
+                        order, "_risk_order_completed", False
+                    )
+                    if not already_completed:
+                        risk.complete_order()
+                        if order is not None:
+                            setattr(order, "_risk_order_completed", True)
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action

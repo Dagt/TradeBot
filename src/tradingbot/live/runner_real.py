@@ -237,6 +237,13 @@ async def _run_symbol(
                 {"event": "cancel", "reason": res.get("reason"), "locked": locked}
             ),
         )
+        already_completed = order is not None and getattr(
+            order, "_risk_order_completed", False
+        )
+        if not already_completed:
+            risk.complete_order()
+            if order is not None:
+                setattr(order, "_risk_order_completed", True)
 
     last_price = 0.0
 
@@ -245,6 +252,22 @@ async def _run_symbol(
             if call_cancel:
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
+            if not call_cancel:
+                pending_raw = res.get("pending_qty")
+                pending_qty = None
+                if pending_raw is not None:
+                    try:
+                        pending_qty = float(pending_raw)
+                    except (TypeError, ValueError):
+                        pending_qty = None
+                if pending_qty is not None and pending_qty <= 0:
+                    already_completed = order is not None and getattr(
+                        order, "_risk_order_completed", False
+                    )
+                    if not already_completed:
+                        risk.complete_order()
+                        if order is not None:
+                            setattr(order, "_risk_order_completed", True)
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action
@@ -362,16 +385,16 @@ async def _run_symbol(
                         )
                         continue
                     prev_rpnl = broker.state.realized_pnl
-                        resp = await exec_broker.place_limit(
-                            symbol,
-                            side,
-                            price,
-                            qty_scale,
-                            tif=tif,
-                            on_partial_fill=on_pf,
-                            on_order_expiry=on_oe,
-                            slip_bps=slippage_bps,
-                        )
+                    resp = await exec_broker.place_limit(
+                        symbol,
+                        side,
+                        price,
+                        qty_scale,
+                        tif=tif,
+                        on_partial_fill=on_pf,
+                        on_order_expiry=on_oe,
+                        slip_bps=slippage_bps,
+                    )
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     prev_pending = risk.account.open_orders.get(symbol, {}).get(
