@@ -103,7 +103,7 @@ async def run_paper(
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
-    slip_bps_per_qty: float = 1.0,
+    slip_bps_per_qty: float = 0.0,
     reprice_bps: float = 0.0,
     min_notional: float = 0.0,
     step_size: float = 0.0,
@@ -113,11 +113,10 @@ async def run_paper(
     Parameters
     ----------
     slip_bps_per_qty:
-        Additional slippage in basis points applied per unit of traded
-        quantity. Defaults to ``1.0`` to emulate a minimal execution cost.
-        This is forwarded to :class:`~tradingbot.execution.paper.PaperAdapter`
-        so that fills include this slippage and metrics report non‑zero
-        ``slippage_bps`` values.
+        Optional manual slippage in basis points applied per unit of traded
+        quantity. Slippage is otherwise estimated automatically from order
+        book depth or historical executions, so this parameter can usually be
+        left at ``0.0``.
     """
     raw_symbol = symbol
     symbol = normalize(symbol)
