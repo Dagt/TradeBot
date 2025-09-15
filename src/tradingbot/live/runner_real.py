@@ -221,9 +221,24 @@ async def _run_symbol(
     def on_order_cancel(order, res: dict) -> None:
         """Track broker order cancellations."""
         CANCELS.inc()
+        symbol = res.get("symbol") or getattr(order, "symbol", None)
+        side = res.get("side") or getattr(order, "side", None)
+        pending_qty = res.get("pending_qty")
+        if pending_qty is None and order is not None:
+            pending_qty = getattr(order, "pending_qty", None)
+        if pending_qty is None:
+            pending_qty = res.get("qty", 0.0)
+        pending_qty = float(pending_qty or 0.0)
+        if symbol and side and pending_qty > 0:
+            risk.account.update_open_order(symbol, side, -pending_qty)
+        locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
+        if not risk.account.open_orders.get(symbol):
+            locked = 0.0
         log.info(
             "METRICS %s",
-            json.dumps({"event": "cancel", "reason": res.get("reason")}),
+            json.dumps(
+                {"event": "cancel", "reason": res.get("reason"), "locked": locked}
+            ),
         )
 
     last_price = 0.0
