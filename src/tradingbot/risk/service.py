@@ -175,7 +175,9 @@ class RiskService:
         return True
 
     def complete_order(self) -> None:
-        return None
+        """Clear pending order tracking once an order is finalised."""
+        with self._lock:
+            self.account.open_orders.clear()
 
     def set_position(self, qty: float) -> None:
         self._pos.qty = float(qty)
