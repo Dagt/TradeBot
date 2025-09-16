@@ -360,30 +360,33 @@ async def _run_symbol(
                     slip_bps=slippage_bps,
                 )
                 status = str(resp.get("status", ""))
+                if status == "canceled":
+                    return
                 if status == "rejected":
                     continue
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
-                log.info(
-                    "METRICS %s",
-                    json.dumps(
-                        {
-                            "event": "order",
-                            "side": close_side,
-                            "price": price,
-                            "qty": qty_close,
-                            "fee": 0.0,
-                            "pnl": broker.state.realized_pnl,
-                        }
-                    ),
-                )
-                risk.account.update_open_order(symbol, close_side, pending_qty)
-                cur_qty = risk.account.current_exposure(symbol)[0]
-                locked = risk.account.get_locked_usd(symbol)
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"exposure": cur_qty, "locked": locked}),
-                )
+                if status in {"open", "filled"}:
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "order",
+                                "side": close_side,
+                                "price": price,
+                                "qty": qty_close,
+                                "fee": 0.0,
+                                "pnl": broker.state.realized_pnl,
+                            }
+                        ),
+                    )
+                    risk.account.update_open_order(symbol, close_side, pending_qty)
+                    cur_qty = risk.account.current_exposure(symbol)[0]
+                    locked = risk.account.get_locked_usd(symbol)
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"exposure": cur_qty, "locked": locked}),
+                    )
                 risk.on_fill(
                     symbol,
                     close_side,
@@ -429,30 +432,33 @@ async def _run_symbol(
                         slip_bps=slippage_bps,
                     )
                     status = str(resp.get("status", ""))
+                    if status == "canceled":
+                        return
                     if status == "rejected":
                         continue
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
-                    log.info(
-                        "METRICS %s",
-                        json.dumps(
-                            {
-                                "event": "order",
-                                "side": side,
-                                "price": price,
-                                "qty": qty_scale,
-                                "fee": 0.0,
-                                "pnl": broker.state.realized_pnl,
-                            }
-                        ),
-                    )
-                    risk.account.update_open_order(symbol, side, pending_qty)
-                    cur_qty = risk.account.current_exposure(symbol)[0]
-                    locked = risk.account.get_locked_usd(symbol)
-                    log.info(
-                        "METRICS %s",
-                        json.dumps({"exposure": cur_qty, "locked": locked}),
-                    )
+                    if status in {"open", "filled"}:
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "event": "order",
+                                    "side": side,
+                                    "price": price,
+                                    "qty": qty_scale,
+                                    "fee": 0.0,
+                                    "pnl": broker.state.realized_pnl,
+                                }
+                            ),
+                        )
+                        risk.account.update_open_order(symbol, side, pending_qty)
+                        cur_qty = risk.account.current_exposure(symbol)[0]
+                        locked = risk.account.get_locked_usd(symbol)
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"exposure": cur_qty, "locked": locked}),
+                        )
                     risk.on_fill(
                         symbol,
                         side,
@@ -543,32 +549,35 @@ async def _run_symbol(
             slip_bps=slippage_bps,
         )
         status = str(resp.get("status", ""))
+        if status == "canceled":
+            return
         if status == "rejected":
             log.info("LIVE FILL %s", resp)
             continue
         log.info("LIVE FILL %s", resp)
         filled_qty = float(resp.get("filled_qty", 0.0))
         pending_qty = float(resp.get("pending_qty", 0.0))
-        log.info(
-            "METRICS %s",
-            json.dumps(
-                {
-                    "event": "order",
-                    "side": side,
-                    "price": price,
-                    "qty": qty,
-                    "fee": 0.0,
-                    "pnl": broker.state.realized_pnl,
-                }
-            ),
-        )
-        risk.account.update_open_order(symbol, side, pending_qty)
-        cur_qty = risk.account.current_exposure(symbol)[0]
-        locked = risk.account.get_locked_usd(symbol)
-        log.info(
-            "METRICS %s",
-            json.dumps({"exposure": cur_qty, "locked": locked}),
-        )
+        if status in {"open", "filled"}:
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {
+                        "event": "order",
+                        "side": side,
+                        "price": price,
+                        "qty": qty,
+                        "fee": 0.0,
+                        "pnl": broker.state.realized_pnl,
+                    }
+                ),
+            )
+            risk.account.update_open_order(symbol, side, pending_qty)
+            cur_qty = risk.account.current_exposure(symbol)[0]
+            locked = risk.account.get_locked_usd(symbol)
+            log.info(
+                "METRICS %s",
+                json.dumps({"exposure": cur_qty, "locked": locked}),
+            )
         risk.on_fill(
             symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
