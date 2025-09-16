@@ -193,16 +193,23 @@ async def _run_symbol(
         """Track broker order cancellations."""
         symbol = res.get("symbol") or getattr(order, "symbol", None)
         side = res.get("side") or getattr(order, "side", None)
-        pending_qty = res.get("pending_qty")
-        if pending_qty is None and order is not None:
-            pending_qty = getattr(order, "pending_qty", None)
-        if pending_qty is None:
-            pending_qty = res.get("qty", 0.0)
-        pending_qty = float(pending_qty or 0.0)
+        pending_raw = res.get("pending_qty")
+        if pending_raw is None and order is not None:
+            pending_raw = getattr(order, "pending_qty", None)
+        if pending_raw is None:
+            pending_raw = res.get("qty")
+        try:
+            pending_qty = float(pending_raw) if pending_raw is not None else 0.0
+        except (TypeError, ValueError):
+            pending_qty = 0.0
+        if (not pending_qty) and symbol and side:
+            pending_qty = float(
+                risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
+            )
         if symbol and side and pending_qty > 0:
             risk.account.update_open_order(symbol, side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
-        if not risk.account.open_orders.get(symbol):
+        if symbol and not risk.account.open_orders.get(symbol):
             locked = 0.0
         log.info(
             "METRICS %s",
@@ -226,6 +233,15 @@ async def _run_symbol(
             if isinstance(res, dict):
                 status = str(res.get("status", "")).lower()
             if call_cancel and status not in {"canceled", "cancelled"}:
+                res_dict = res if isinstance(res, dict) else {}
+                if order is not None:
+                    res_dict = {
+                        **res_dict,
+                        "symbol": getattr(order, "symbol", None),
+                        "side": getattr(order, "side", None),
+                        "pending_qty": getattr(order, "pending_qty", None),
+                    }
+                res = res_dict
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
             if not call_cancel:
