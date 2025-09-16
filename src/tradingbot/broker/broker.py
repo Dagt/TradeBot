@@ -274,13 +274,24 @@ class Broker:
             # Nothing else to do (no expiry and not fully filled)
             break
 
-        return {
-            "status": last_res.get("status"),
-            "filled_qty": filled,
-            "pending_qty": remaining,
-            "order_id": last_res.get("order_id"),
-            "price": last_res.get("price", price),
-        }
+        remaining = max(float(remaining), 0.0)
+        result = dict(last_res)
+        result.update(
+            {
+                "status": last_res.get("status"),
+                "filled_qty": float(filled),
+                "filled": float(filled),
+                "pending_qty": remaining,
+            }
+        )
+        result.setdefault("order_id", last_res.get("order_id"))
+        price_val = result.get("price")
+        if price_val is None:
+            price_val = last_res.get("price", price)
+        if price_val is None:
+            price_val = price
+        result["price"] = price_val
+        return result
 
     async def place_market(
         self,
