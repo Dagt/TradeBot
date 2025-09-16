@@ -250,6 +250,145 @@ async def _run_symbol(
                 res = res_dict
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
+            filled_qty = 0.0
+            if isinstance(res, dict):
+                try:
+                    filled_qty = float(res.get("filled_qty", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    filled_qty = 0.0
+            if filled_qty > 0:
+                symbol = None
+                side = None
+                if order is not None:
+                    symbol = getattr(order, "symbol", None)
+                    side = getattr(order, "side", None)
+                if symbol is None and isinstance(res, dict):
+                    symbol = res.get("symbol")
+                if side is None and isinstance(res, dict):
+                    side = res.get("side")
+                price_raw = None
+                if isinstance(res, dict):
+                    price_raw = res.get("price") or res.get("avg_price")
+                if price_raw is None and order is not None:
+                    price_raw = getattr(order, "price", None)
+                exec_price = None
+                if price_raw is not None:
+                    try:
+                        exec_price = float(price_raw)
+                    except (TypeError, ValueError):
+                        exec_price = None
+                base_price = getattr(order, "price", None) if order is not None else None
+                slippage_bps = None
+                if isinstance(res, dict):
+                    slippage_bps = res.get("slippage_bps")
+                if slippage_bps is None and exec_price is not None and base_price:
+                    try:
+                        base_price_f = float(base_price)
+                        if base_price_f:
+                            slippage_bps = ((exec_price - base_price_f) / base_price_f) * 10000.0
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        slippage_bps = 0.0
+                fee = None
+                fee_bps = None
+                if isinstance(res, dict):
+                    fee = res.get("fee")
+                    fee_bps = res.get("fee_bps")
+                if fee is None and exec_price is not None:
+                    fee_type = (res.get("fee_type") if isinstance(res, dict) else None) or ""
+                    fee_type = str(fee_type).lower()
+                    if fee_bps is None:
+                        if fee_type == "maker":
+                            fee_bps = getattr(exec_broker, "maker_fee_bps", getattr(broker, "maker_fee_bps", 0.0))
+                        elif fee_type == "taker":
+                            fee_bps = getattr(exec_broker, "taker_fee_bps", getattr(broker, "taker_fee_bps", 0.0))
+                        else:
+                            fee_bps = getattr(exec_broker, "maker_fee_bps", getattr(broker, "maker_fee_bps", 0.0))
+                    try:
+                        fee = filled_qty * exec_price * (float(fee_bps) / 10000.0)
+                    except (TypeError, ValueError):
+                        fee = 0.0
+                side_norm = str(side).lower() if side is not None else None
+                log.info(
+                    "METRICS %s",
+                    json.dumps(
+                        {
+                            "event": "fill",
+                            "side": side,
+                            "price": exec_price,
+                            "qty": filled_qty,
+                            "fee": 0.0 if fee is None else fee,
+                            "slippage_bps": (
+                                float(slippage_bps)
+                                if slippage_bps is not None
+                                else 0.0
+                            ),
+                        }
+                    ),
+                )
+                if symbol and side_norm:
+                    pending_qty = None
+                    if isinstance(res, dict):
+                        pending_raw = res.get("pending_qty")
+                        if pending_raw is not None:
+                            try:
+                                pending_qty = float(pending_raw)
+                            except (TypeError, ValueError):
+                                pending_qty = None
+                    account_open_orders = getattr(risk.account, "open_orders", None)
+                    update_open = getattr(risk.account, "update_open_order", None)
+                    prev_pending = 0.0
+                    if isinstance(account_open_orders, dict):
+                        prev_pending = float(
+                            account_open_orders.get(symbol, {}).get(side_norm, 0.0) or 0.0
+                        )
+                    if pending_qty is not None and callable(update_open):
+                        if isinstance(account_open_orders, dict):
+                            delta_pending = pending_qty - prev_pending
+                            if abs(delta_pending) > 1e-12:
+                                update_open(symbol, side_norm, delta_pending)
+                        else:
+                            update_open(symbol, side_norm, pending_qty)
+                    target_qty = None
+                    if isinstance(res, dict) and res.get("pos_qty") is not None:
+                        try:
+                            target_qty = float(res.get("pos_qty"))
+                        except (TypeError, ValueError):
+                            target_qty = None
+                    positions = getattr(risk.account, "positions", {})
+                    current_qty = 0.0
+                    if isinstance(positions, dict):
+                        current_qty = float(positions.get(symbol, 0.0) or 0.0)
+                    if target_qty is None:
+                        direction = 1.0 if side_norm == "buy" else -1.0
+                        target_qty = current_qty + direction * filled_qty
+                    delta_qty = target_qty - current_qty
+                    price_for_position = exec_price
+                    if price_for_position is None and base_price is not None:
+                        try:
+                            price_for_position = float(base_price)
+                        except (TypeError, ValueError):
+                            price_for_position = None
+                    update_position = getattr(risk.account, "update_position", None)
+                    if abs(delta_qty) > 1e-12 and callable(update_position):
+                        update_position(symbol, delta_qty, price=price_for_position)
+                    current_exposure_fn = getattr(risk.account, "current_exposure", None)
+                    exposure_qty = target_qty
+                    if callable(current_exposure_fn):
+                        try:
+                            exposure_qty = float(current_exposure_fn(symbol)[0])
+                        except Exception:
+                            exposure_qty = float(target_qty)
+                    get_locked = getattr(risk.account, "get_locked_usd", None)
+                    locked = 0.0
+                    if callable(get_locked):
+                        try:
+                            locked = float(get_locked(symbol))
+                        except Exception:
+                            locked = 0.0
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"exposure": exposure_qty, "locked": locked}),
+                    )
             if not call_cancel:
                 pending_raw = res.get("pending_qty")
                 pending_qty = None
