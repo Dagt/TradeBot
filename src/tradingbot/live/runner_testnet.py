@@ -524,15 +524,20 @@ async def _run_symbol(
             slip_bps=slippage_bps,
         )
         status = str(resp.get("status", ""))
-        if status == "canceled":
-            return
+        filled_qty = float(resp.get("filled_qty", 0.0))
+        pending_qty = float(resp.get("pending_qty", 0.0))
         if status == "rejected":
             log.info("LIVE FILL %s", resp)
             continue
         log.info("LIVE FILL %s", resp)
-        filled_qty = float(resp.get("filled_qty", 0.0))
-        pending_qty = float(resp.get("pending_qty", 0.0))
+        log_order = False
+        order_qty = qty
         if status in {"open", "filled"}:
+            log_order = True
+        elif status == "canceled" and filled_qty > 0:
+            log_order = True
+            order_qty = filled_qty
+        if log_order:
             log.info(
                 "METRICS %s",
                 json.dumps(
@@ -540,7 +545,7 @@ async def _run_symbol(
                         "event": "order",
                         "side": side,
                         "price": price,
-                        "qty": qty,
+                        "qty": order_qty,
                         "fee": 0.0,
                         "pnl": broker.state.realized_pnl,
                     }
