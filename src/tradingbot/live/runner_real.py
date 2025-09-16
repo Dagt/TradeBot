@@ -220,12 +220,19 @@ async def _run_symbol(
         """Track broker order cancellations."""
         symbol = res.get("symbol") or getattr(order, "symbol", None)
         side = res.get("side") or getattr(order, "side", None)
-        pending_qty = res.get("pending_qty")
-        if pending_qty is None and order is not None:
-            pending_qty = getattr(order, "pending_qty", None)
-        if pending_qty is None:
-            pending_qty = res.get("qty", 0.0)
-        pending_qty = float(pending_qty or 0.0)
+        pending_raw = res.get("pending_qty")
+        if pending_raw is None and order is not None:
+            pending_raw = getattr(order, "pending_qty", None)
+        if pending_raw is None:
+            pending_raw = res.get("qty", 0.0)
+        try:
+            pending_qty = float(pending_raw) if pending_raw is not None else 0.0
+        except (TypeError, ValueError):
+            pending_qty = 0.0
+        if symbol and side and pending_qty <= 0:
+            pending_qty = float(
+                risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
+            )
         if symbol and side and pending_qty > 0:
             risk.account.update_open_order(symbol, side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
@@ -250,6 +257,15 @@ async def _run_symbol(
     def _wrap_cb(orig_cb, *, call_cancel=False):
         def _cb(order, res):
             if call_cancel:
+                if order is not None:
+                    res = {
+                        **res,
+                        "symbol": getattr(order, "symbol", res.get("symbol")),
+                        "side": getattr(order, "side", res.get("side")),
+                        "pending_qty": getattr(
+                            order, "pending_qty", res.get("pending_qty")
+                        ),
+                    }
                 on_order_cancel(order, res)
             action = orig_cb(order, res) if orig_cb else None
             if not call_cancel:

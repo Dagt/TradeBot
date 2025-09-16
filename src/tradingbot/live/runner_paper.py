@@ -249,13 +249,18 @@ async def run_paper(
         """Handle broker order cancellation notifications."""
         symbol = res.get("symbol")
         side = res.get("side")
-        prev_pending = risk.account.open_orders.get(symbol, {}).get(side, 0.0)
-        pending_qty = float(res.get("pending_qty") or 0.0)
+        pending_raw = res.get("pending_qty")
+        try:
+            pending_qty = float(pending_raw) if pending_raw is not None else 0.0
+        except (TypeError, ValueError):
+            pending_qty = 0.0
         if symbol and side:
+            if pending_qty <= 0:
+                pending_qty = float(
+                    risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
+                )
             if pending_qty > 0:
                 risk.account.update_open_order(symbol, side, -pending_qty)
-            else:
-                risk.account.update_open_order(symbol, side, -prev_pending)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
         if symbol and not risk.account.open_orders.get(symbol):
             locked = 0.0
@@ -276,6 +281,15 @@ async def run_paper(
     def _wrap_cb(orig_cb, *, call_cancel=False):
         def _cb(order, res):
             if call_cancel:
+                if order is not None:
+                    res = {
+                        **res,
+                        "symbol": getattr(order, "symbol", res.get("symbol")),
+                        "side": getattr(order, "side", res.get("side")),
+                        "pending_qty": getattr(
+                            order, "pending_qty", res.get("pending_qty")
+                        ),
+                    }
                 on_order_cancel(res)
             action = orig_cb(order, res) if orig_cb else None
             if not call_cancel:
