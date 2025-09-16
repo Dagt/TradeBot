@@ -24,7 +24,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..backtesting.engine import SlippageModel
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
 from ..utils.price import limit_price_from_close
 from ..broker.broker import Broker
 from ..config import settings
@@ -277,6 +277,15 @@ async def run_paper(
                 {"event": "cancel", "reason": res.get("reason"), "locked": locked}
             ),
         )
+        metric_pending = res.get("pending_qty", pending_qty)
+        try:
+            metric_pending = float(metric_pending)
+        except (TypeError, ValueError):
+            metric_pending = 0.0
+        if metric_pending > 0:
+            CANCELS.inc()
+        else:
+            return  # treat as filled; no cancel metric
         risk.complete_order()
 
     router = ExecutionRouter([
