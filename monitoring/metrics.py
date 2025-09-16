@@ -99,7 +99,7 @@ def _collect_by_symbol(metric, sample_name: str) -> dict[str, float]:
 
 
 def _avg_slippage() -> float:
-    """Compute average slippage in basis points."""
+    """Compute average slippage magnitude in basis points."""
 
     total = 0.0
     count = 0.0
@@ -339,7 +339,7 @@ def metrics_positions() -> dict:
 
 
 def _avg_slippage_by_symbol() -> dict[str, float]:
-    """Compute average slippage per symbol from histogram samples."""
+    """Compute average slippage magnitude per symbol from histogram samples."""
 
     sums: dict[str, float] = {}
     counts: dict[str, float] = {}
