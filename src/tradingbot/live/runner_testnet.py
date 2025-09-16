@@ -198,19 +198,25 @@ async def _run_symbol(
             pending_raw = getattr(order, "pending_qty", None)
         if pending_raw is None:
             pending_raw = res.get("qty")
-        try:
-            pending_qty = float(pending_raw) if pending_raw is not None else 0.0
-        except (TypeError, ValueError):
-            pending_qty = 0.0
-        if (not pending_qty) and symbol and side:
-            pending_qty = float(
-                risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
-            )
-        if symbol and side and pending_qty > 0:
+        pending_qty = None
+        if pending_raw is not None:
+            try:
+                pending_qty = float(pending_raw)
+            except (TypeError, ValueError):
+                pending_qty = None
+        prev_pending = 0.0
+        if symbol and side:
+            try:
+                prev_pending = float(
+                    risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
+                )
+            except (TypeError, ValueError):
+                prev_pending = 0.0
+        if (pending_qty is None or pending_qty == 0.0) and symbol and side:
+            pending_qty = prev_pending
+        if symbol and side and pending_qty and pending_qty > 0:
             risk.account.update_open_order(symbol, side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
-        if symbol and not risk.account.open_orders.get(symbol):
-            locked = 0.0
         log.info(
             "METRICS %s",
             json.dumps(
