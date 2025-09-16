@@ -52,7 +52,6 @@ from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
 from ..utils.price import limit_price_from_close
-from ..utils.metrics import CANCELS
 
 try:
     from ..storage.timescale import get_engine
@@ -295,10 +294,8 @@ async def _run_symbol(
             metric_pending = float(metric_pending)
         except (TypeError, ValueError):
             metric_pending = 0.0
-        if metric_pending > 0:
-            CANCELS.inc()
-        else:
-            return  # treat as filled; no cancel metric
+        if metric_pending <= 0:
+            return  # treat as filled; no cancel handling needed
         already_completed = order is not None and getattr(
             order, "_risk_order_completed", False
         )
