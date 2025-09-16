@@ -415,6 +415,28 @@ async def run_paper(
                             json.dumps({"event": "skip", "reason": "below_min_qty"}),
                         )
                         continue
+                    resp = await exec_broker.place_limit(
+                        symbol,
+                        close_side,
+                        price,
+                        qty_close,
+                        tif=tif,
+                        on_partial_fill=on_pf,
+                        on_order_expiry=on_oe,
+                        slip_bps=slippage_bps,
+                    )
+                    status = str(resp.get("status", ""))
+                    if status == "rejected":
+                        if resp.get("reason") == "insufficient_cash":
+                            SKIPS.inc()
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                            )
+                        continue
+                    filled_qty = float(resp.get("filled_qty", 0.0))
+                    pending_qty = float(resp.get("pending_qty", 0.0))
+                    exec_price = float(resp.get("price", price))
                     log.info(
                         "METRICS %s",
                         json.dumps(
@@ -428,62 +450,16 @@ async def run_paper(
                             }
                         ),
                     )
-                    risk.account.update_open_order(symbol, close_side, qty_close)
-                    cur_qty_pre = risk.account.current_exposure(symbol)[0]
-                    locked_pre = risk.account.get_locked_usd(symbol)
+                    risk.account.update_open_order(symbol, close_side, pending_qty)
+                    cur_qty = risk.account.current_exposure(symbol)[0]
+                    if step_size > 0 and abs(cur_qty) < step_size:
+                        cur_qty = 0.0
+                        risk.account.positions[symbol] = 0.0
+                    locked = risk.account.get_locked_usd(symbol)
                     log.info(
                         "METRICS %s",
-                        json.dumps({"exposure": cur_qty_pre, "locked": locked_pre}),
+                        json.dumps({"exposure": cur_qty, "locked": locked}),
                     )
-                    resp = await exec_broker.place_limit(
-                        symbol,
-                        close_side,
-                        price,
-                        qty_close,
-                        tif=tif,
-                        on_partial_fill=on_pf,
-                        on_order_expiry=on_oe,
-                        slip_bps=slippage_bps,
-                    )
-                    status = str(resp.get("status", ""))
-                    if status == "rejected":
-                        risk.account.update_open_order(symbol, close_side, -qty_close)
-                        if resp.get("reason") == "insufficient_cash":
-                            SKIPS.inc()
-                            log.info(
-                                "METRICS %s",
-                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
-                            )
-                        continue
-                    filled_qty = float(resp.get("filled_qty", 0.0))
-                    pending_qty = float(resp.get("pending_qty", 0.0))
-                    exec_price = float(resp.get("price", price))
-                    if status == "canceled" and filled_qty == 0.0:
-                        risk.account.update_open_order(symbol, close_side, -qty_close)
-                        cur_qty = risk.account.current_exposure(symbol)[0]
-                        if step_size > 0 and abs(cur_qty) < step_size:
-                            cur_qty = 0.0
-                            risk.account.positions[symbol] = 0.0
-                        locked = risk.account.get_locked_usd(symbol)
-                        log.info(
-                            "METRICS %s",
-                            json.dumps({"exposure": cur_qty, "locked": locked}),
-                        )
-                    else:
-                        delta_pending = pending_qty - qty_close
-                        if delta_pending:
-                            risk.account.update_open_order(
-                                symbol, close_side, delta_pending
-                            )
-                        cur_qty = risk.account.current_exposure(symbol)[0]
-                        if step_size > 0 and abs(cur_qty) < step_size:
-                            cur_qty = 0.0
-                            risk.account.positions[symbol] = 0.0
-                        locked = risk.account.get_locked_usd(symbol)
-                        log.info(
-                            "METRICS %s",
-                            json.dumps({"exposure": cur_qty, "locked": locked}),
-                        )
                     delta_rpnl = (
                         resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     )
@@ -558,6 +534,28 @@ async def run_paper(
                                 json.dumps({"event": "skip", "reason": "below_min_qty"}),
                             )
                             continue
+                        resp = await exec_broker.place_limit(
+                            symbol,
+                            side,
+                            price,
+                            qty_scale,
+                            tif=tif,
+                            on_partial_fill=on_pf,
+                            on_order_expiry=on_oe,
+                            slip_bps=slippage_bps,
+                        )
+                        status = str(resp.get("status", ""))
+                        if status == "rejected":
+                            if resp.get("reason") == "insufficient_cash":
+                                SKIPS.inc()
+                                log.info(
+                                    "METRICS %s",
+                                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                                )
+                            continue
+                        filled_qty = float(resp.get("filled_qty", 0.0))
+                        pending_qty = float(resp.get("pending_qty", 0.0))
+                        exec_price = float(resp.get("price", price))
                         log.info(
                             "METRICS %s",
                             json.dumps(
@@ -571,60 +569,16 @@ async def run_paper(
                                 }
                             ),
                         )
-                        risk.account.update_open_order(symbol, side, qty_scale)
-                        cur_qty_pre = risk.account.current_exposure(symbol)[0]
-                        locked_pre = risk.account.get_locked_usd(symbol)
+                        risk.account.update_open_order(symbol, side, pending_qty)
+                        cur_qty = risk.account.current_exposure(symbol)[0]
+                        if step_size > 0 and abs(cur_qty) < step_size:
+                            cur_qty = 0.0
+                            risk.account.positions[symbol] = 0.0
+                        locked = risk.account.get_locked_usd(symbol)
                         log.info(
                             "METRICS %s",
-                            json.dumps({"exposure": cur_qty_pre, "locked": locked_pre}),
+                            json.dumps({"exposure": cur_qty, "locked": locked}),
                         )
-                        resp = await exec_broker.place_limit(
-                            symbol,
-                            side,
-                            price,
-                            qty_scale,
-                            tif=tif,
-                            on_partial_fill=on_pf,
-                            on_order_expiry=on_oe,
-                            slip_bps=slippage_bps,
-                        )
-                        status = str(resp.get("status", ""))
-                        if status == "rejected":
-                            risk.account.update_open_order(symbol, side, -qty_scale)
-                            if resp.get("reason") == "insufficient_cash":
-                                SKIPS.inc()
-                                log.info(
-                                    "METRICS %s",
-                                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
-                                )
-                            continue
-                        filled_qty = float(resp.get("filled_qty", 0.0))
-                        pending_qty = float(resp.get("pending_qty", 0.0))
-                        exec_price = float(resp.get("price", price))
-                        if status == "canceled" and filled_qty == 0.0:
-                            risk.account.update_open_order(symbol, side, -qty_scale)
-                            cur_qty = risk.account.current_exposure(symbol)[0]
-                            if step_size > 0 and abs(cur_qty) < step_size:
-                                cur_qty = 0.0
-                                risk.account.positions[symbol] = 0.0
-                            locked = risk.account.get_locked_usd(symbol)
-                            log.info(
-                                "METRICS %s",
-                                json.dumps({"exposure": cur_qty, "locked": locked}),
-                            )
-                        else:
-                            delta_pending = pending_qty - qty_scale
-                            if delta_pending:
-                                risk.account.update_open_order(symbol, side, delta_pending)
-                            cur_qty = risk.account.current_exposure(symbol)[0]
-                            if step_size > 0 and abs(cur_qty) < step_size:
-                                cur_qty = 0.0
-                                risk.account.positions[symbol] = 0.0
-                            locked = risk.account.get_locked_usd(symbol)
-                            log.info(
-                                "METRICS %s",
-                                json.dumps({"exposure": cur_qty, "locked": locked}),
-                            )
                         delta_rpnl = (
                             resp.get("realized_pnl", broker.state.realized_pnl)
                             - prev_rpnl
@@ -777,26 +731,6 @@ async def run_paper(
                 )
                 continue
             prev_rpnl = broker.state.realized_pnl
-            log.info(
-                "METRICS %s",
-                json.dumps(
-                    {
-                        "event": "order",
-                        "side": side,
-                        "price": price,
-                        "qty": qty,
-                        "fee": 0.0,
-                        "pnl": broker.state.realized_pnl,
-                    }
-                ),
-            )
-            risk.account.update_open_order(symbol, side, qty)
-            cur_qty_pre = risk.account.current_exposure(symbol)[0]
-            locked_pre = risk.account.get_locked_usd(symbol)
-            log.info(
-                "METRICS %s",
-                json.dumps({"exposure": cur_qty_pre, "locked": locked_pre}),
-            )
             resp = await exec_broker.place_limit(
                 symbol,
                 side,
@@ -810,7 +744,6 @@ async def run_paper(
             )
             status = str(resp.get("status", ""))
             if status == "rejected":
-                risk.account.update_open_order(symbol, side, -qty)
                 if resp.get("reason") == "insufficient_cash":
                     SKIPS.inc()
                     log.info(
@@ -821,30 +754,29 @@ async def run_paper(
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
-            if status == "canceled" and filled_qty == 0.0:
-                risk.account.update_open_order(symbol, side, -qty)
-                cur_qty = risk.account.current_exposure(symbol)[0]
-                if step_size > 0 and abs(cur_qty) < step_size:
-                    cur_qty = 0.0
-                    risk.account.positions[symbol] = 0.0
-                locked = risk.account.get_locked_usd(symbol)
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"exposure": cur_qty, "locked": locked}),
-                )
-            else:
-                delta_pending = pending_qty - qty
-                if delta_pending:
-                    risk.account.update_open_order(symbol, side, delta_pending)
-                cur_qty = risk.account.current_exposure(symbol)[0]
-                if step_size > 0 and abs(cur_qty) < step_size:
-                    cur_qty = 0.0
-                    risk.account.positions[symbol] = 0.0
-                locked = risk.account.get_locked_usd(symbol)
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"exposure": cur_qty, "locked": locked}),
-                )
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {
+                        "event": "order",
+                        "side": side,
+                        "price": price,
+                        "qty": qty,
+                        "fee": 0.0,
+                        "pnl": broker.state.realized_pnl,
+                    }
+                ),
+            )
+            risk.account.update_open_order(symbol, side, pending_qty)
+            cur_qty = risk.account.current_exposure(symbol)[0]
+            if step_size > 0 and abs(cur_qty) < step_size:
+                cur_qty = 0.0
+                risk.account.positions[symbol] = 0.0
+            locked = risk.account.get_locked_usd(symbol)
+            log.info(
+                "METRICS %s",
+                json.dumps({"exposure": cur_qty, "locked": locked}),
+            )
             delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
             if filled_qty > 0:
                 slippage = ((exec_price - price) / price) * 10000 if price else 0.0
