@@ -247,6 +247,11 @@ async def run_paper(
 
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
+        if not isinstance(res, dict):
+            return
+        if res.get("_cancel_handled"):
+            return
+        res["_cancel_handled"] = True
         symbol = res.get("symbol")
         side = res.get("side")
         pending_raw = res.get("pending_qty")
@@ -272,10 +277,8 @@ async def run_paper(
             risk.account.update_open_order(symbol, side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
         log.info(
-            "METRICS %s",
-            json.dumps(
-                {"event": "cancel", "reason": res.get("reason"), "locked": locked}
-            ),
+            "METRICS",
+            {"event": "cancel", "reason": res.get("reason"), "locked": locked},
         )
         metric_pending = res.get("pending_qty", pending_qty)
         try:
@@ -299,17 +302,17 @@ async def run_paper(
             status = ""
             if isinstance(res, dict):
                 status = str(res.get("status", "")).lower()
-            if call_cancel and status not in {"canceled", "cancelled"}:
-                res_dict = res if isinstance(res, dict) else {}
+            res_dict = res if isinstance(res, dict) else {}
+            if call_cancel:
                 if order is not None:
-                    res_dict = {
-                        **res_dict,
-                        "symbol": getattr(order, "symbol", None),
-                        "side": getattr(order, "side", None),
-                        "pending_qty": getattr(order, "pending_qty", None),
-                    }
-                res = res_dict
-                on_order_cancel(res)
+                    res_dict.setdefault("symbol", getattr(order, "symbol", None))
+                    res_dict.setdefault("side", getattr(order, "side", None))
+                    res_dict.setdefault("pending_qty", getattr(order, "pending_qty", None))
+                res = res_dict or res
+                if not res_dict.get("_cancel_handled"):
+                    on_order_cancel(res_dict)
+            else:
+                res = res_dict or res
             action = orig_cb(order, res) if orig_cb else None
             filled_qty = 0.0
             if isinstance(res, dict):
