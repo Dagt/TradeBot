@@ -248,7 +248,9 @@ class Broker:
                         setattr(self.adapter, "on_order_expiry", _proxy)
                 try:
                     res = await self.adapter.cancel_order(res.get("order_id"), symbol)
-                    remaining = float(res.get("pending_qty", remaining))
+                    remaining = float(res.get("pending_qty", 0.0))
+                    res.setdefault("pending_qty", remaining)
+                    res.setdefault("status", res.get("status", "canceled"))
                     last_res = res
                 except Exception:
                     pass
