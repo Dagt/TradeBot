@@ -21,7 +21,6 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..broker.broker import Broker
 from ..config import settings
-from ..utils.metrics import CANCELS
 from ..core.symbols import normalize
 from ..utils.price import limit_price_from_close
 
@@ -270,7 +269,6 @@ async def run_live_binance(
                 risk.account.update_open_order(symbol, close_side, pending_qty)
                 risk.on_fill(symbol, close_side, filled_qty, venue="binance")
                 if pending_qty > 0:
-                    CANCELS.inc()
                     risk.account.update_open_order(symbol, close_side, -pending_qty)
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -302,7 +300,6 @@ async def run_live_binance(
                     risk.account.update_open_order(symbol, side, pending_qty)
                     risk.on_fill(symbol, side, filled_qty, venue="binance")
                     if pending_qty > 0:
-                        CANCELS.inc()
                         risk.account.update_open_order(symbol, side, -pending_qty)
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
@@ -377,7 +374,6 @@ async def run_live_binance(
         risk.account.update_open_order(symbol, side, pending_qty)
         risk.on_fill(symbol, side, filled_qty, venue="binance")
         if pending_qty > 0:
-            CANCELS.inc()
             risk.account.update_open_order(symbol, side, -pending_qty)
         delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)

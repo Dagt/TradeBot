@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
-from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT, CANCELS
+from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT
 
 
 class Broker:
@@ -50,11 +50,7 @@ class Broker:
                             risk.on_fill(symbol, side, qty, price=price, venue=venue)
                         except Exception:
                             pass
-                if status in {"expired", "cancelled", "canceled"}:
-                    CANCELS.inc()
-                    cb = cb_exp
-                else:
-                    cb = cb_pf
+                cb = cb_exp if status in {"expired", "cancelled", "canceled"} else cb_pf
                 if cb is not None and side:
                     try:
                         order_qty = f.get("qty")

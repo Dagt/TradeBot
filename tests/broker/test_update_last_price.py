@@ -66,7 +66,7 @@ def test_update_last_price_processes_fills():
         and s.labels.get("side") == "buy"
     ][0]
     assert fill_sample.value == 1.0
-    assert CANCELS._value.get() == 1.0
+    assert CANCELS._value.get() == 0.0
     assert adapter.pf_calls == 1
     assert adapter.exp_calls == 1
     assert adapter.risk_service.calls == [("BTCUSDT", "buy", 1.0, 100.0, "dummy")]
