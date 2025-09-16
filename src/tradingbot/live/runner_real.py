@@ -221,6 +221,8 @@ async def _run_symbol(
         """Track broker order cancellations."""
         symbol = res.get("symbol") or getattr(order, "symbol", None)
         side = res.get("side") or getattr(order, "side", None)
+        side_norm = str(side).lower() if isinstance(side, str) else None
+        lookup_side = side_norm or side
         pending_raw = res.get("pending_qty")
         if pending_raw is None and order is not None:
             pending_raw = getattr(order, "pending_qty", None)
@@ -233,17 +235,47 @@ async def _run_symbol(
             except (TypeError, ValueError):
                 pending_qty = None
         prev_pending = 0.0
-        if symbol and side:
+        if symbol and lookup_side:
             try:
                 prev_pending = float(
-                    risk.account.open_orders.get(symbol, {}).get(side, 0.0) or 0.0
+                    risk.account.open_orders.get(symbol, {}).get(lookup_side, 0.0)
+                    or 0.0
                 )
             except (TypeError, ValueError):
                 prev_pending = 0.0
-        if (pending_qty is None or pending_qty == 0.0) and symbol and side:
+        if (pending_qty is None or pending_qty == 0.0) and symbol and lookup_side:
             pending_qty = prev_pending
-        if symbol and side and pending_qty and pending_qty > 0:
-            risk.account.update_open_order(symbol, side, -pending_qty)
+        filled_qty = 0.0
+        try:
+            filled_qty = float(res.get("filled_qty", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            filled_qty = 0.0
+        metric_pending_override: float | None = None
+        if filled_qty > 0:
+            price_raw = res.get("price") or res.get("avg_price")
+            if price_raw is None and order is not None:
+                price_raw = getattr(order, "price", None)
+            exec_price = None
+            if price_raw is not None:
+                try:
+                    exec_price = float(price_raw)
+                except (TypeError, ValueError):
+                    exec_price = None
+            order_payload = {"event": "order", "side": side, "qty": filled_qty}
+            if exec_price is not None:
+                order_payload["price"] = exec_price
+            fee_raw = res.get("fee")
+            try:
+                order_payload["fee"] = float(fee_raw) if fee_raw is not None else 0.0
+            except (TypeError, ValueError):
+                order_payload["fee"] = 0.0
+            log.info("METRICS %s", json.dumps(order_payload))
+            if symbol and lookup_side:
+                delta_pending = -prev_pending
+                risk.account.update_open_order(symbol, lookup_side, delta_pending)
+            metric_pending_override = 0.0
+        elif symbol and lookup_side and pending_qty and pending_qty > 0:
+            risk.account.update_open_order(symbol, lookup_side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
         log.info(
             "METRICS %s",
@@ -252,6 +284,8 @@ async def _run_symbol(
             ),
         )
         metric_pending = res.get("pending_qty", pending_qty)
+        if metric_pending_override is not None:
+            metric_pending = metric_pending_override
         try:
             metric_pending = float(metric_pending)
         except (TypeError, ValueError):
