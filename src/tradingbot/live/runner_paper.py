@@ -307,8 +307,10 @@ async def run_paper(
             risk.account.update_open_order(symbol, lookup_side, -pending_qty)
         locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
         log.info(
-            "METRICS",
-            {"event": "cancel", "reason": res.get("reason"), "locked": locked},
+            "METRICS %s",
+            json.dumps(
+                {"event": "cancel", "reason": res.get("reason"), "locked": locked}
+            ),
         )
         metric_pending = res.get("pending_qty", pending_qty)
         if metric_pending_override is not None:
