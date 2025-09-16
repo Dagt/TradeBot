@@ -248,8 +248,12 @@ class Broker:
                         setattr(self.adapter, "on_order_expiry", _proxy)
                 try:
                     res = await self.adapter.cancel_order(res.get("order_id"), symbol)
+                    filled = float(res.get("filled_qty", 0.0))
                     remaining = float(res.get("pending_qty", 0.0))
+                    if remaining <= 0 and filled > 0:
+                        res["status"] = "filled"
                     res.setdefault("pending_qty", remaining)
+                    res.setdefault("filled_qty", filled)
                     res.setdefault("status", res.get("status", "canceled"))
                     last_res = res
                 except Exception:
@@ -289,7 +293,8 @@ class Broker:
         if price_val is None:
             price_val = price
         result["price"] = price_val
-        return result
+        last_res = result
+        return last_res
 
     async def place_market(
         self,
