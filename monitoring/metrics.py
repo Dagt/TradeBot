@@ -21,6 +21,8 @@ from tradingbot.utils.metrics import (
     KILL_SWITCH_ACTIVE,
     WS_FAILURES,
     TRADING_PNL,
+    TRADING_PNL_UNREALIZED,
+    TRADING_PNL_TOTAL,
     OPEN_POSITIONS,
     MARKET_LATENCY,
     E2E_LATENCY,
@@ -252,8 +254,15 @@ def metrics_summary() -> dict:
 
     basis = _collect_by_symbol(BASIS, "basis")
 
+    pnl_real = TRADING_PNL._value.get()
+    pnl_unreal = TRADING_PNL_UNREALIZED._value.get()
+    pnl_total = TRADING_PNL_TOTAL._value.get() or (pnl_real + pnl_unreal)
+
     return {
-        "pnl": TRADING_PNL._value.get(),
+        "pnl": pnl_real,
+        "pnl_realizado": pnl_real,
+        "pnl_no_realizado": pnl_unreal,
+        "pnl_total": pnl_total,
         "positions": positions,
         "funding_rates": funding_rates,
         "open_interest": open_interest,
@@ -304,7 +313,16 @@ def metrics_prometheus() -> Response:
 def metrics_pnl() -> dict:
     """Expose current trading PnL."""
 
-    return {"pnl": TRADING_PNL._value.get()}
+    pnl_real = TRADING_PNL._value.get()
+    pnl_unreal = TRADING_PNL_UNREALIZED._value.get()
+    pnl_total = TRADING_PNL_TOTAL._value.get() or (pnl_real + pnl_unreal)
+
+    return {
+        "pnl": pnl_real,
+        "pnl_realizado": pnl_real,
+        "pnl_no_realizado": pnl_unreal,
+        "pnl_total": pnl_total,
+    }
 
 
 @router.get("/metrics/slippage")

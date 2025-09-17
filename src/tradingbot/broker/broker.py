@@ -249,7 +249,14 @@ class Broker:
                 try:
                     res = await self.adapter.cancel_order(res.get("order_id"), symbol)
                     filled = float(res.get("filled_qty", 0.0))
-                    remaining = float(res.get("pending_qty", 0.0))
+                    pending_default = (
+                        order.pending_qty
+                        if getattr(order, "pending_qty", None) is not None
+                        else remaining
+                    )
+                    remaining = float(
+                        res.get("pending_qty", pending_default)
+                    )
                     if remaining <= 0 and filled > 0:
                         res["status"] = "filled"
                     res.setdefault("pending_qty", remaining)

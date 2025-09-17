@@ -740,17 +740,14 @@ async def _run_symbol(
         sig = strat.on_bar(bar)
         if sig is None:
             continue
-        if (
-            sig.side == "sell"
-            and not risk.allow_short
-            and risk.account.current_exposure(symbol)[0] <= 0
-        ):
-            log.warning("[PG] Bloqueado %s: short_not_allowed", symbol)
-            log.info(
-                "METRICS %s",
-                json.dumps({"event": "skip", "reason": "short_not_allowed"}),
-            )
-            continue
+        if sig.side == "sell" and not risk.allow_short:
+            cur_qty, _ = risk.account.current_exposure(symbol)
+            if cur_qty <= 0:
+                log.debug(
+                    "Ignoring short signal while flat and shorting disabled for %s",
+                    symbol,
+                )
+                continue
         signal_ts = getattr(sig, "signal_ts", time.time())
         pending = risk.account.open_orders.get(symbol, {}).get(sig.side, 0.0)
         allowed, reason, delta = risk.check_order(

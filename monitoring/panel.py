@@ -24,6 +24,8 @@ from .metrics import (
     metrics_summary,
     STRATEGY_ACTIONS,
     TRADING_PNL,
+    TRADING_PNL_UNREALIZED,
+    TRADING_PNL_TOTAL,
     OPEN_POSITIONS,
     KILL_SWITCH_ACTIVE,
     PROCESS_CPU,
@@ -425,9 +427,17 @@ async def ws_summary(ws: WebSocket) -> None:
     try:
         while True:
             update_process_metrics()
+            pnl_payload = {
+                "pnl": TRADING_PNL._value.get(),
+                "pnl_realizado": TRADING_PNL._value.get(),
+                "pnl_no_realizado": TRADING_PNL_UNREALIZED._value.get(),
+                "pnl_total": TRADING_PNL_TOTAL._value.get()
+                or (TRADING_PNL._value.get() + TRADING_PNL_UNREALIZED._value.get()),
+            }
+
             payload = {
                 "metrics": metrics_summary(),
-                "pnl": {"pnl": TRADING_PNL._value.get()},
+                "pnl": pnl_payload,
                 "risk": await fetch_risk(),
             }
             await ws.send_json(payload)
@@ -440,7 +450,16 @@ async def ws_summary(ws: WebSocket) -> None:
 def pnl() -> dict:
     """Return current trading PnL."""
 
-    return {"pnl": TRADING_PNL._value.get()}
+    pnl_real = TRADING_PNL._value.get()
+    pnl_unreal = TRADING_PNL_UNREALIZED._value.get()
+    pnl_total = TRADING_PNL_TOTAL._value.get() or (pnl_real + pnl_unreal)
+
+    return {
+        "pnl": pnl_real,
+        "pnl_realizado": pnl_real,
+        "pnl_no_realizado": pnl_unreal,
+        "pnl_total": pnl_total,
+    }
 
 
 @app.get("/orders")
