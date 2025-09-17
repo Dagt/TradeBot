@@ -8,11 +8,18 @@ def _round_step(x: float, step: float) -> float:
         return x
     return round(round(x / step) * step, 12)
 
+
 def _floor_step(x: float, step: float) -> float:
     if step is None or step == 0:
         return x
     n = int(x / step)
     return round(n * step, 12)
+
+
+def floor_to_step(x: float, step: float) -> float:
+    """Floor ``x`` to the nearest multiple of ``step`` preserving sign."""
+
+    return _floor_step(x, step)
 
 @dataclass
 class SymbolRules:
@@ -43,31 +50,35 @@ def adjust_order(price: Optional[float], qty: float, mark_price: float, rules: S
     if rules.qty_step:
         qty = _floor_step(qty, rules.qty_step)
 
-    if rules.min_qty and qty < rules.min_qty:
-        # aumenta al mínimo permitido (al piso del grid)
-        if rules.qty_step:
-            # subimos al múltiplo más cercano >= min_qty
-            mult = int((rules.min_qty + rules.qty_step - 1e-12) / rules.qty_step)
-            qty = round(mult * rules.qty_step, 12)
-        else:
-            qty = rules.min_qty
-
     # notional para validar (usa mark_price si market)
     px = price if price is not None else mark_price
     notional = (px or 0.0) * qty
 
-    if rules.min_notional and notional < rules.min_notional:
-        # escalar qty al mínimo notional
-        target_qty = (rules.min_notional / (px or 1.0))
-        if rules.qty_step:
-            mult = int((target_qty + rules.qty_step - 1e-12) / rules.qty_step)
-            target_qty = round(mult * rules.qty_step, 12)
-        qty = max(qty, target_qty)
-        notional = (px or 0.0) * qty
-
-    # Validación final básica
     if qty <= 0:
-        return AdjustResult(price=price, qty=qty, notional=notional, ok=False, reason="qty<=0 tras ajuste")
+        return AdjustResult(
+            price=price,
+            qty=qty,
+            notional=notional,
+            ok=False,
+            reason="qty<=0 tras ajuste",
+        )
+
+    if rules.min_qty and qty < rules.min_qty:
+        return AdjustResult(
+            price=price,
+            qty=qty,
+            notional=notional,
+            ok=False,
+            reason="below_min_qty",
+        )
+
     if rules.min_notional and notional < rules.min_notional:
-        return AdjustResult(price=price, qty=qty, notional=notional, ok=False, reason="minNotional no alcanzado")
+        return AdjustResult(
+            price=price,
+            qty=qty,
+            notional=notional,
+            ok=False,
+            reason="below_min_notional",
+        )
+
     return AdjustResult(price=price, qty=qty, notional=notional, ok=True)

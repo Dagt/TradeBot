@@ -12,7 +12,7 @@ from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
 from .order_types import Order
 from .slippage import impact_by_depth, queue_position
-from .normalize import adjust_order, SymbolRules
+from .normalize import adjust_order, SymbolRules, floor_to_step
 from ..utils.metrics import (
     SLIPPAGE,
     ORDER_LATENCY,
@@ -270,6 +270,12 @@ class ExecutionRouter:
             Result(s) from the adapter or algorithm.
         """
 
+        def _max_positive(*values: float | None) -> float | None:
+            positives = [
+                float(v) for v in values if v is not None and float(v) > 0.0
+            ]
+            return max(positives) if positives else None
+
         if self.risk_service is not None and not self.risk_service.enabled:
             log.warning("Risk manager disabled; rejecting order %s", order)
             SKIPS.inc()
@@ -361,6 +367,64 @@ class ExecutionRouter:
             order.qty = adj.qty
             order.pending_qty = adj.qty
 
+        step_size = float(getattr(rules, "qty_step", 0.0) or 0.0) if rules else 0.0
+        min_qty_rule = (
+            float(rules.min_qty)
+            if rules is not None and rules.min_qty is not None and rules.min_qty > 0
+            else None
+        )
+        min_notional_rule = (
+            float(rules.min_notional)
+            if rules is not None and rules.min_notional is not None and rules.min_notional > 0
+            else None
+        )
+        risk_min_qty = None
+        risk_min_notional = None
+        if self.risk_service is not None:
+            risk_min_qty = getattr(self.risk_service, "min_order_qty", None)
+            risk_min_notional = getattr(self.risk_service, "min_notional", None)
+
+        min_qty_threshold = _max_positive(min_qty_rule, risk_min_qty)
+        min_notional_threshold = _max_positive(min_notional_rule, risk_min_notional)
+
+        if step_size:
+            order.qty = floor_to_step(order.qty, step_size)
+            order.pending_qty = order.qty
+
+        price_for_notional = order.price if order.price is not None else mark_price
+        price_for_notional = float(price_for_notional or 0.0)
+        notional = abs(order.qty) * price_for_notional
+
+        if abs(order.qty) <= 0.0:
+            log.warning("Order %s rejected: qty<=0 tras cuantización", order)
+            SKIPS.inc()
+            return {"status": "rejected", "reason": "invalid_qty"}
+
+        if min_qty_threshold and abs(order.qty) < min_qty_threshold:
+            log.info(
+                "Skipping order %s: qty %.8f below min %.8f",
+                order,
+                order.qty,
+                min_qty_threshold,
+            )
+            SKIPS.inc()
+            return {"status": "rejected", "reason": "below_min_qty"}
+
+        if min_notional_threshold and notional < min_notional_threshold:
+            log.info(
+                "Skipping order %s: notional %.8f below min %.8f",
+                order,
+                notional,
+                min_notional_threshold,
+            )
+            SKIPS.inc()
+            return {"status": "rejected", "reason": "below_min_notional"}
+
+        order._step_size = step_size
+        order._min_qty_threshold = min_qty_threshold
+        order._min_notional_threshold = min_notional_threshold
+        order._price_for_notional = price_for_notional
+
         est_slippage = None
         queue_pos = None
         if book and book.get("bids") and book.get("asks"):
@@ -421,24 +485,52 @@ class ExecutionRouter:
                 self._active_orders[oid] = (order, venue, fill_mode, slip_bps)
         if status in {"partial", "expired", "cancelled"}:
             filled = float(res.get("filled_qty", 0.0))
-            prev_pending = order.pending_qty or order.qty
-            order.pending_qty = max(prev_pending - filled, 0.0)
-            res["pending_qty"] = order.pending_qty
+            prev_pending = order.pending_qty if order.pending_qty is not None else order.qty
+            remaining = max(prev_pending - filled, 0.0)
+            step_pending = float(getattr(order, "_step_size", 0.0) or 0.0)
+            if step_pending:
+                remaining = floor_to_step(remaining, step_pending)
+            if remaining < 0:
+                remaining = 0.0
+            order.pending_qty = remaining
+            res["pending_qty"] = remaining
+
+            price_for_remaining = order.price
+            if price_for_remaining is None:
+                price_for_remaining = (
+                    res.get("price")
+                    or res.get("fill_price")
+                    or getattr(order, "_price_for_notional", None)
+                    or mark_price
+                )
+            price_for_remaining = float(price_for_remaining or 0.0)
+            order._price_for_notional = price_for_remaining
+            remaining_notional = abs(remaining) * price_for_remaining
+
+            min_qty_threshold = getattr(order, "_min_qty_threshold", None)
+            min_notional_threshold = getattr(order, "_min_notional_threshold", None)
+            cancel_reason = None
+            if remaining > 0:
+                if min_qty_threshold and remaining < min_qty_threshold:
+                    cancel_reason = "below_min_qty"
+                elif min_notional_threshold and remaining_notional < min_notional_threshold:
+                    cancel_reason = "below_min_notional"
+
             if self.risk_service is not None:
-                if status in {"expired", "cancelled"}:
+                if status in {"expired", "cancelled"} or cancel_reason or remaining <= 0:
                     released = getattr(order, "_reserved_qty", 0.0)
                     if released:
                         self.risk_service.account.update_open_order(
                             order.symbol, order.side, -released
                         )
                     order._reserved_qty = 0.0
-                else:  # partial
-                    delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
+                else:
+                    delta = remaining - getattr(order, "_reserved_qty", 0.0)
                     if delta:
                         self.risk_service.account.update_open_order(
                             order.symbol, order.side, delta
                         )
-                    order._reserved_qty = order.pending_qty
+                    order._reserved_qty = remaining
                 if filled:
                     book = self.risk_service.positions_multi.get(venue, {})
                     cur_qty = book.get(order.symbol, 0.0)
@@ -449,6 +541,15 @@ class ExecutionRouter:
                         cur_qty + delta_pos,
                         entry_price=res.get("price"),
                     )
+
+            if cancel_reason:
+                await self._cancel_residual_order(order, adapter, venue, cancel_reason, res)
+                status = res.get("status", status)
+                remaining = float(res.get("pending_qty", 0.0))
+
+            if remaining <= 0 or status in {"expired", "cancelled"}:
+                res["locked"] = 0.0
+
             cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
             action = cb(order, res) if cb else None
             if action in {"re_quote", "re-quote", "requote"} and order.pending_qty > 0:
@@ -579,6 +680,52 @@ class ExecutionRouter:
         return res
 
     # ------------------------------------------------------------------
+    async def _cancel_residual_order(
+        self,
+        order: Order,
+        adapter,
+        venue: str,
+        reason: str,
+        res: dict,
+    ) -> None:
+        oid = res.get("order_id")
+        cancel_details: dict | None = None
+        if adapter is not None and hasattr(adapter, "cancel_order") and oid:
+            try:
+                cancel_details = await adapter.cancel_order(oid, order.symbol)
+            except Exception as exc:  # pragma: no cover - best effort
+                log.warning(
+                    "Residual cancel failed venue=%s oid=%s reason=%s error=%s",
+                    venue,
+                    oid,
+                    reason,
+                    exc,
+                )
+            else:
+                CANCELS.inc()
+        if oid:
+            self._active_orders.pop(oid, None)
+        order.pending_qty = 0.0
+        order._reserved_qty = 0.0
+        res["status"] = "cancelled"
+        res["pending_qty"] = 0.0
+        res["cancel_reason"] = reason
+        res["locked"] = 0.0
+        if cancel_details:
+            res.setdefault("cancel_details", cancel_details)
+            if (
+                cancel_details.get("filled_qty") is not None
+                and res.get("filled_qty") is None
+            ):
+                res["filled_qty"] = cancel_details["filled_qty"]
+        log.info(
+            "Residual order cancelled venue=%s oid=%s reason=%s",
+            venue,
+            oid,
+            reason,
+        )
+
+    # ------------------------------------------------------------------
     async def cancel_order(
         self, order_id: str, *, venue: str | None = None, symbol: str | None = None
     ) -> dict:
@@ -639,26 +786,53 @@ class ExecutionRouter:
         if status not in {"partial", "expired", "filled"}:
             return None
 
+        adapter = self.adapters.get(venue)
         filled = float(res.get("filled_qty", 0.0))
-        prev_pending = order.pending_qty or order.qty
-        order.pending_qty = max(prev_pending - filled, 0.0)
-        res["pending_qty"] = order.pending_qty
+        prev_pending = order.pending_qty if order.pending_qty is not None else order.qty
+        remaining = max(prev_pending - filled, 0.0)
+        step_pending = float(getattr(order, "_step_size", 0.0) or 0.0)
+        if step_pending:
+            remaining = floor_to_step(remaining, step_pending)
+        if remaining < 0:
+            remaining = 0.0
+        order.pending_qty = remaining
+        res["pending_qty"] = remaining
+
+        price_for_remaining = order.price
+        if price_for_remaining is None:
+            price_for_remaining = (
+                res.get("price")
+                or res.get("fill_price")
+                or getattr(order, "_price_for_notional", None)
+            )
+        price_for_remaining = float(price_for_remaining or 0.0)
+        order._price_for_notional = price_for_remaining
+        remaining_notional = abs(remaining) * price_for_remaining
+
+        min_qty_threshold = getattr(order, "_min_qty_threshold", None)
+        min_notional_threshold = getattr(order, "_min_notional_threshold", None)
+        cancel_reason = None
+        if status == "partial" and remaining > 0:
+            if min_qty_threshold and remaining < min_qty_threshold:
+                cancel_reason = "below_min_qty"
+            elif min_notional_threshold and remaining_notional < min_notional_threshold:
+                cancel_reason = "below_min_notional"
 
         if self.risk_service is not None:
-            if status in {"expired", "filled"}:
+            if status in {"expired", "filled"} or cancel_reason or remaining <= 0:
                 released = getattr(order, "_reserved_qty", 0.0)
                 if released:
                     self.risk_service.account.update_open_order(
                         order.symbol, order.side, -released
                     )
                 order._reserved_qty = 0.0
-            else:  # partial
-                delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
+            else:
+                delta = remaining - getattr(order, "_reserved_qty", 0.0)
                 if delta:
                     self.risk_service.account.update_open_order(
                         order.symbol, order.side, delta
                     )
-                order._reserved_qty = order.pending_qty
+                order._reserved_qty = remaining
             if filled:
                 book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)
@@ -669,6 +843,14 @@ class ExecutionRouter:
                     cur_qty + delta_pos,
                     entry_price=res.get("price"),
                 )
+
+        if cancel_reason:
+            await self._cancel_residual_order(order, adapter, venue, cancel_reason, res)
+            status = res.get("status", status)
+            remaining = float(res.get("pending_qty", 0.0))
+
+        if remaining <= 0 or status in {"expired", "filled", "cancelled"}:
+            res["locked"] = 0.0
 
         cb = self.on_partial_fill if status == "partial" else self.on_order_expiry
         action = cb(order, res) if cb else None
@@ -691,7 +873,7 @@ class ExecutionRouter:
             )
             return res2
 
-        if status in {"expired", "filled"} or order.pending_qty <= 0:
+        if status in {"expired", "filled", "cancelled"} or order.pending_qty <= 0:
             self._active_orders.pop(oid, None)
         res.setdefault("venue", venue)
         return res
