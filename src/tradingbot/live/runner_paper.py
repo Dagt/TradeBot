@@ -249,6 +249,9 @@ async def run_paper(
         """Handle broker order cancellation notifications."""
         if not isinstance(res, dict):
             return
+        status = str(res.get("status", "")).lower()
+        if status not in {"canceled", "cancelled", "expired"}:
+            return
         if res.get("_cancel_handled"):
             return
         res["_cancel_handled"] = True
@@ -283,22 +286,6 @@ async def run_paper(
             filled_qty = 0.0
         metric_pending_override: float | None = None
         if filled_qty > 0:
-            price_raw = res.get("price") or res.get("avg_price")
-            exec_price = None
-            if price_raw is not None:
-                try:
-                    exec_price = float(price_raw)
-                except (TypeError, ValueError):
-                    exec_price = None
-            order_payload = {"event": "order", "side": side, "qty": filled_qty}
-            if exec_price is not None:
-                order_payload["price"] = exec_price
-            fee_raw = res.get("fee")
-            try:
-                order_payload["fee"] = float(fee_raw) if fee_raw is not None else 0.0
-            except (TypeError, ValueError):
-                order_payload["fee"] = 0.0
-            log.info("METRICS %s", json.dumps(order_payload))
             if symbol and lookup_side:
                 delta_pending = -prev_pending
                 risk.account.update_open_order(symbol, lookup_side, delta_pending)
