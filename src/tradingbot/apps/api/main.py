@@ -1255,6 +1255,7 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         elif event == "trade":
             trades_buf = info.setdefault("trades", deque(maxlen=100))
             trade_payload = dict(data)
+            is_market_trade = any(k in trade_payload for k in ("price", "qty"))
             if pnl_val is not None:
                 trade_payload["pnl"] = pnl_val
             trades_buf.append(trade_payload)
@@ -1266,20 +1267,23 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
             except (TypeError, ValueError):
                 pnl = 0.0
             prev = buf.get("_last_pnl")
-            if prev is not None:
-                buf["pnl"] = buf.get("pnl", 0.0) + (pnl - prev)
-            else:
-                buf["pnl"] = buf.get("pnl", 0.0) + pnl
+            delta = pnl - prev if prev is not None else pnl
+            buf["pnl"] = buf.get("pnl", 0.0) + delta
             buf["_last_pnl"] = pnl
+            if not is_market_trade and pnl_val is not None:
+                buf["trades_closed"] = buf.get("trades_closed", 0) + 1
+                if delta > 1e-9:
+                    buf["trades_won"] = buf.get("trades_won", 0) + 1
 
         if data:
             buf.update(data)
 
         orders = buf.get("orders", 0)
-        fills = buf.get("fills", 0)
         cancels = buf.get("cancels", 0)
+        trades_closed = buf.get("trades_closed", 0)
+        trades_won = buf.get("trades_won", 0)
 
-        hit_rate = fills / orders if orders else 0.0
+        hit_rate = (trades_won / trades_closed) * 100 if trades_closed else 0.0
         cancel_ratio = cancels / orders if orders else 0.0
 
         buf["hit_rate"] = hit_rate

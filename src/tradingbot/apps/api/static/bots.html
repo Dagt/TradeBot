@@ -357,7 +357,7 @@ async function refreshBots(){
         (stats.maker_taker_ratio||0).toFixed(2),
         (stats.fees_usd||0).toFixed(2),
         (stats.slippage_bps||0).toFixed(2),
-        `${((stats.hit_rate||0)*100).toFixed(1)}%`,
+        `${(stats.hit_rate||0).toFixed(1)}%`,
         (stats.locked||0).toFixed(2),
         (stats.exposure||0).toFixed(4),
         (stats.leverage||0).toFixed(2),
