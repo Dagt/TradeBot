@@ -245,6 +245,55 @@ async def run_paper(
     )
     strat.risk_service = risk
 
+    def _recalc_locked_total() -> float:
+        """Recalculate total notional locked across all open orders."""
+
+        account = getattr(risk, "account", None)
+        if account is None:
+            return 0.0
+        open_orders = getattr(account, "open_orders", None)
+        if not isinstance(open_orders, dict) or not open_orders:
+            setattr(account, "locked_total", 0.0)
+            setattr(risk, "locked_total", 0.0)
+            return 0.0
+        prices = getattr(account, "prices", {})
+
+        def _symbol_locked(sym: str) -> float:
+            orders = open_orders.get(sym) or {}
+            total_qty = 0.0
+            for key in ("buy", "sell"):
+                qty_raw = orders.get(key)
+                if qty_raw is None:
+                    continue
+                try:
+                    total_qty += float(qty_raw)
+                except (TypeError, ValueError):
+                    continue
+            try:
+                price = float(prices.get(sym, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                price = 0.0
+            return total_qty * price
+
+        total_locked = 0.0
+        pending_exposure = getattr(account, "pending_exposure", None)
+        if callable(pending_exposure):
+            for sym in list(open_orders.keys()):
+                try:
+                    total_locked += float(pending_exposure(sym))
+                except Exception:
+                    total_locked += _symbol_locked(sym)
+        else:
+            for sym in list(open_orders.keys()):
+                total_locked += _symbol_locked(sym)
+
+        if total_locked <= 1e-9:
+            total_locked = 0.0
+
+        setattr(account, "locked_total", total_locked)
+        setattr(risk, "locked_total", total_locked)
+        return total_locked
+
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
         if not isinstance(res, dict):
@@ -292,24 +341,31 @@ async def run_paper(
             metric_pending_override = 0.0
         elif symbol and lookup_side and pending_qty and pending_qty > 0:
             risk.account.update_open_order(symbol, lookup_side, -pending_qty)
-        locked = risk.account.get_locked_usd(symbol) if symbol else 0.0
-        log.info(
-            "METRICS %s",
-            json.dumps(
-                {"event": "cancel", "reason": res.get("reason"), "locked": locked}
-            ),
-        )
         metric_pending = res.get("pending_qty", pending_qty)
         if metric_pending_override is not None:
             metric_pending = metric_pending_override
         try:
-            metric_pending = float(metric_pending)
+            metric_pending_val = float(metric_pending)
         except (TypeError, ValueError):
-            metric_pending = 0.0
-        if metric_pending <= 0:
+            metric_pending_val = 0.0
+        if metric_pending_val <= 0:
             risk.complete_order()
+            locked_total = _recalc_locked_total()
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
+                ),
+            )
             return  # treat as filled; no cancel handling needed
         risk.complete_order()
+        locked_total = _recalc_locked_total()
+        log.info(
+            "METRICS %s",
+            json.dumps(
+                {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
+            ),
+        )
 
     router = ExecutionRouter([
         broker
@@ -460,13 +516,7 @@ async def run_paper(
                             exposure_qty = float(current_exposure_fn(symbol)[0])
                         except Exception:
                             exposure_qty = float(target_qty)
-                    get_locked = getattr(risk.account, "get_locked_usd", None)
-                    locked = 0.0
-                    if callable(get_locked):
-                        try:
-                            locked = float(get_locked(symbol))
-                        except Exception:
-                            locked = 0.0
+                    locked = _recalc_locked_total()
                     log.info(
                         "METRICS %s",
                         json.dumps({"exposure": exposure_qty, "locked": locked}),
@@ -487,6 +537,26 @@ async def run_paper(
                         risk.complete_order()
                         if order is not None:
                             setattr(order, "_risk_order_completed", True)
+                    locked_after_completion = _recalc_locked_total()
+                    symbol_for_metrics = None
+                    if order is not None:
+                        symbol_for_metrics = getattr(order, "symbol", None)
+                    if symbol_for_metrics is None and isinstance(res, dict):
+                        symbol_for_metrics = res.get("symbol")
+                    exposure_after = 0.0
+                    if symbol_for_metrics:
+                        try:
+                            exposure_after = float(
+                                risk.account.current_exposure(symbol_for_metrics)[0]
+                            )
+                        except Exception:
+                            exposure_after = 0.0
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {"exposure": exposure_after, "locked": locked_after_completion}
+                        ),
+                    )
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action
@@ -653,7 +723,7 @@ async def run_paper(
                         if step_size > 0 and abs(cur_qty) < step_size:
                             cur_qty = 0.0
                             risk.account.positions[symbol] = 0.0
-                        locked = risk.account.get_locked_usd(symbol)
+                        locked = _recalc_locked_total()
                         log.info(
                             "METRICS %s",
                             json.dumps({"exposure": cur_qty, "locked": locked}),
@@ -780,7 +850,7 @@ async def run_paper(
                             if step_size > 0 and abs(cur_qty) < step_size:
                                 cur_qty = 0.0
                                 risk.account.positions[symbol] = 0.0
-                            locked = risk.account.get_locked_usd(symbol)
+                            locked = _recalc_locked_total()
                             log.info(
                                 "METRICS %s",
                                 json.dumps({"exposure": cur_qty, "locked": locked}),
@@ -986,7 +1056,7 @@ async def run_paper(
                 if step_size > 0 and abs(cur_qty) < step_size:
                     cur_qty = 0.0
                     risk.account.positions[symbol] = 0.0
-                locked = risk.account.get_locked_usd(symbol)
+                locked = _recalc_locked_total()
                 log.info(
                     "METRICS %s",
                     json.dumps({"exposure": cur_qty, "locked": locked}),
