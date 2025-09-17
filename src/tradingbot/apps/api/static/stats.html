@@ -159,7 +159,7 @@ async function refreshMetrics(){
     document.getElementById('m-calmar').textContent = (j.calmar||0).toFixed(2);
     document.getElementById('m-maxdd').textContent = (j.max_drawdown||0).toFixed(2);
     document.getElementById('m-tuw').textContent = (j.time_under_water||0).toFixed(2);
-    document.getElementById('m-hit').textContent = ((j.hit_rate||0)*100).toFixed(1)+'%';
+    document.getElementById('m-hit').textContent = (j.hit_rate||0).toFixed(1)+'%';
     document.getElementById('m-expectancy').textContent = (j.expectancy||0).toFixed(2);
     document.getElementById('m-payoff').textContent = (j.payoff_ratio||0).toFixed(2);
     document.getElementById('m-trades-day').textContent = (j.trades_per_day||0).toFixed(2);

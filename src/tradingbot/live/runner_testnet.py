@@ -196,24 +196,36 @@ async def _run_symbol(
         account = getattr(risk, "account", None)
         if account is None:
             return 0.0
+
         open_orders = getattr(account, "open_orders", None)
         if not isinstance(open_orders, dict) or not open_orders:
             setattr(account, "locked_total", 0.0)
             setattr(risk, "locked_total", 0.0)
             return 0.0
-        prices = getattr(account, "prices", {})
 
-        def _symbol_locked(sym: str) -> float:
-            orders = open_orders.get(sym) or {}
-            total_qty = 0.0
-            for key in ("buy", "sell"):
-                qty_raw = orders.get(key)
-                if qty_raw is None:
-                    continue
+        prices = getattr(account, "prices", {})
+        get_locked = getattr(account, "get_locked_usd", None)
+
+        def _symbol_locked(sym: str, orders: object) -> float:
+            if callable(get_locked):
                 try:
-                    total_qty += float(qty_raw)
+                    return float(get_locked(sym))
+                except Exception:  # pragma: no cover - fallback below
+                    pass
+
+            total_qty = 0.0
+            if isinstance(orders, dict):
+                for _, qty_raw in orders.items():
+                    try:
+                        total_qty += abs(float(qty_raw))
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                try:
+                    total_qty = abs(float(orders))
                 except (TypeError, ValueError):
-                    continue
+                    total_qty = 0.0
+
             try:
                 price = float(prices.get(sym, 0.0) or 0.0)
             except (TypeError, ValueError):
@@ -221,16 +233,8 @@ async def _run_symbol(
             return total_qty * price
 
         total_locked = 0.0
-        pending_exposure = getattr(account, "pending_exposure", None)
-        if callable(pending_exposure):
-            for sym in list(open_orders.keys()):
-                try:
-                    total_locked += float(pending_exposure(sym))
-                except Exception:
-                    total_locked += _symbol_locked(sym)
-        else:
-            for sym in list(open_orders.keys()):
-                total_locked += _symbol_locked(sym)
+        for sym, orders in list(open_orders.items()):
+            total_locked += _symbol_locked(sym, orders)
 
         if total_locked <= 1e-9:
             total_locked = 0.0
