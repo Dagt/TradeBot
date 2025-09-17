@@ -919,18 +919,13 @@ async def run_paper(
             signal = strat.on_bar(bar)
             if signal is None:
                 continue
-            if (
-                signal.side == "sell"
-                and not risk.allow_short
-                and risk.account.current_exposure(symbol)[0] <= 0
-            ):
-                log.info("Skipping signal: short_not_allowed")
-                SKIPS.inc()
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"event": "skip", "reason": "short_not_allowed"}),
-                )
-                continue
+            if signal.side == "sell" and not risk.allow_short:
+                cur_qty, _ = risk.account.current_exposure(symbol)
+                if cur_qty <= 0:
+                    log.debug(
+                        "Ignoring short signal while flat and shorting disabled"
+                    )
+                    continue
             signal_ts = getattr(signal, "signal_ts", time.time())
             pending = risk.account.open_orders.get(symbol, {}).get(
                 signal.side, 0.0

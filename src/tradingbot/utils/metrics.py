@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping
 
 from prometheus_client import Counter, Histogram, Gauge
 
@@ -116,10 +117,22 @@ ROUTER_STALE_BOOK = Counter(
 
 # --- Additional high level trading metrics ---
 
-# Current profit and loss in USD
+# Current profit and loss in USD (realized component)
 TRADING_PNL = Gauge(
     "trading_pnl",
-    "Current trading profit and loss in USD",
+    "Current realized trading profit and loss in USD",
+)
+
+# Unrealized profit and loss in USD
+TRADING_PNL_UNREALIZED = Gauge(
+    "trading_pnl_unrealized",
+    "Current unrealized trading profit and loss in USD",
+)
+
+# Total profit and loss in USD
+TRADING_PNL_TOTAL = Gauge(
+    "trading_pnl_total",
+    "Current total trading profit and loss in USD",
 )
 
 # Open position size per symbol
@@ -216,15 +229,111 @@ def start_pnl_position_updater(broker, interval: float = 5.0) -> None:
     except RuntimeError:  # pragma: no cover - no running loop
         return
 
+    def _extract_numeric(
+        source: object,
+        keys: tuple[str, ...],
+        *,
+        default: float | None = 0.0,
+    ) -> float | None:
+        """Best-effort retrieval of a numeric attribute from ``source``.
+
+        The helper accepts both mappings and objects with attributes.  The
+        first key found with a non-``None`` value is returned as ``float``.
+        If no key matches, ``default`` is returned which may itself be
+        ``None`` to signal missing data.
+        """
+
+        if isinstance(source, Mapping):
+            for key in keys:
+                if key in source and source[key] is not None:
+                    try:
+                        return float(source[key])
+                    except (TypeError, ValueError):
+                        continue
+        for key in keys:
+            if hasattr(source, key):
+                value = getattr(source, key)
+                if value is None:
+                    continue
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+        return default
+
     async def _runner() -> None:
         while True:
             try:
-                TRADING_PNL.set(getattr(broker.state, "realized_pnl", 0.0))
+                realized = float(getattr(broker.state, "realized_pnl", 0.0) or 0.0)
+                TRADING_PNL.set(realized)
 
                 positions = getattr(broker.state, "pos", {}) or {}
+                last_prices = getattr(broker.state, "last_px", {}) or {}
+                pending_fees_map: Mapping[str, float] = {}
+                for attr in ("fees_pending", "pending_fees", "fees_due"):
+                    candidate = getattr(broker.state, attr, None)
+                    if isinstance(candidate, Mapping):
+                        pending_fees_map = candidate  # type: ignore[assignment]
+                        break
+
+                unrealized_total = 0.0
+                positions = getattr(broker.state, "pos", {}) or {}
                 for sym, pos in positions.items():
-                    qty = getattr(pos, "qty", 0.0)
+                    qty = _extract_numeric(pos, ("qty", "position", "position_amt", "positionAmt", "size"), default=0.0) or 0.0
                     OPEN_POSITIONS.labels(symbol=sym).set(qty)
+                    if abs(qty) <= 1e-12:
+                        continue
+
+                    avg_price = _extract_numeric(
+                        pos,
+                        (
+                            "avg_price",
+                            "avg_px",
+                            "entry_price",
+                            "avgEntryPrice",
+                            "avg_entry",
+                        ),
+                        default=None,
+                    )
+                    if avg_price is None:
+                        continue
+
+                    last_px = None
+                    if isinstance(last_prices, Mapping):
+                        raw_last = last_prices.get(sym)
+                        if raw_last is not None:
+                            try:
+                                last_px = float(raw_last)
+                            except (TypeError, ValueError):
+                                last_px = None
+                    if last_px is None:
+                        last_px = _extract_numeric(
+                            pos,
+                            (
+                                "mark_price",
+                                "last_price",
+                                "price",
+                                "close",
+                            ),
+                            default=None,
+                        )
+                    if last_px is None:
+                        continue
+
+                    pending_fee = _extract_numeric(
+                        pos,
+                        ("fees_pending", "pending_fees", "pending_fee"),
+                        default=0.0,
+                    ) or 0.0
+                    if isinstance(pending_fees_map, Mapping):
+                        extra_fee = pending_fees_map.get(sym)
+                        if extra_fee is not None:
+                            try:
+                                pending_fee += float(extra_fee)
+                            except (TypeError, ValueError):
+                                pass
+
+                    unrealized_total += qty * (last_px - avg_price) - pending_fee
 
                 existing = {
                     sample.labels["symbol"]
@@ -234,6 +343,9 @@ def start_pnl_position_updater(broker, interval: float = 5.0) -> None:
                 }
                 for sym in existing - positions.keys():
                     OPEN_POSITIONS.labels(symbol=sym).set(0.0)
+
+                TRADING_PNL_UNREALIZED.set(unrealized_total)
+                TRADING_PNL_TOTAL.set(realized + unrealized_total)
             except Exception:  # pragma: no cover - best effort
                 pass
             await asyncio.sleep(interval)
