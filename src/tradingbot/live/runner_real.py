@@ -153,6 +153,7 @@ async def _run_symbol(
     exec_adapter = exec_cls(**exec_kwargs)
     cfg_app = load_config()
     tick_size = 0.0
+    min_qty_val = 0.0
     meta = getattr(exec_adapter, "meta", None)
     if meta is not None:
         try:
@@ -163,9 +164,23 @@ async def _run_symbol(
             if fetch_symbol is None:
                 fetch_symbol = raw_symbol.replace("-", "/")
             rules = meta.rules_for(fetch_symbol)
+            step_candidate = float(getattr(rules, "qty_step", 0.0) or 0.0)
+            if step_size <= 0 and step_candidate > 0:
+                step_size = step_candidate
+            if min_notional <= 0:
+                try:
+                    min_notional = float(getattr(rules, "min_notional", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    min_notional = 0.0
+            try:
+                min_qty_val = float(getattr(rules, "min_qty", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                min_qty_val = 0.0
             tick_size = float(getattr(rules, "price_step", 0.0) or 0.0)
         except Exception:
             tick_size = 0.0
+    if step_size <= 0:
+        step_size = 1e-9
     agg = BarAggregator(timeframe=timeframe)
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
@@ -214,7 +229,64 @@ async def _run_symbol(
         risk_per_trade=risk_per_trade,
         market_type=market,
     )
+    min_order_qty = min_qty_val if min_qty_val > 0 else 0.0
+    if min_order_qty <= 0 and step_size > 0:
+        min_order_qty = step_size
+    risk.min_order_qty = min_order_qty if min_order_qty > 0 else 1e-9
+    risk.min_notional = float(min_notional if min_notional > 0 else 0.0)
     strat.risk_service = risk
+
+    trades_closed = 0
+    trades_won = 0
+    pnl_won_total = 0.0
+    pnl_lost_total = 0.0
+    try:
+        total_pnl = float(getattr(broker.state, "realized_pnl", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        total_pnl = 0.0
+
+    def _flat_threshold() -> float:
+        base = risk.min_order_qty
+        step = step_size if step_size > 0 else 0.0
+        if step > base:
+            base = step
+        return base if base > 0 else 1e-9
+
+    def _position_closed(before: float, after: float) -> bool:
+        threshold = _flat_threshold()
+        if abs(before) <= threshold:
+            return False
+        if abs(after) <= threshold:
+            return True
+        return (before > 0 > after) or (before < 0 < after)
+
+    def _record_trade(delta_pnl: float) -> None:
+        nonlocal trades_closed, trades_won, pnl_won_total, pnl_lost_total, total_pnl
+        total_pnl += float(delta_pnl)
+        trades_closed += 1
+        if delta_pnl > 1e-9:
+            trades_won += 1
+            pnl_won_total += float(delta_pnl)
+        elif delta_pnl < -1e-9:
+            pnl_lost_total += float(delta_pnl)
+        losses = trades_closed - trades_won
+        expectancy = total_pnl / trades_closed if trades_closed else 0.0
+        avg_win = pnl_won_total / trades_won if trades_won else 0.0
+        avg_loss = abs(pnl_lost_total / losses) if losses else 0.0
+        payoff_ratio = avg_win / avg_loss if avg_loss else 0.0
+        payload = {
+            "event": "trade",
+            "pnl": float(delta_pnl),
+            "trade_pnl": float(delta_pnl),
+            "trades_closed": trades_closed,
+            "trades_won": trades_won,
+            "pnl_won": pnl_won_total,
+            "pnl_lost": pnl_lost_total,
+            "expectancy": expectancy,
+            "payoff_ratio": payoff_ratio,
+        }
+        log.info("METRICS %s", json.dumps(payload))
+        log.info("METRICS %s", json.dumps({"pnl": total_pnl}))
 
     def _recalc_locked_total() -> float:
         """Recalculate total notional locked across all open orders."""
@@ -587,9 +659,13 @@ async def _run_symbol(
             decision = risk.manage_position(trade)
             if decision == "close":
                 close_side = "sell" if pos_qty > 0 else "buy"
+                prev_pos_qty = pos_qty
                 last_close = agg.completed[-1].c if agg.completed else px
                 price = limit_price_from_close(close_side, last_close, tick_size)
-                prev_rpnl = broker.state.realized_pnl
+                try:
+                    prev_rpnl = float(getattr(broker.state, "realized_pnl", 0.0))
+                except (TypeError, ValueError):
+                    prev_rpnl = total_pnl
                 qty_close = adjust_qty(
                     abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
                 )
@@ -651,7 +727,18 @@ async def _run_symbol(
                     filled_qty,
                     venue=venue if not dry_run else "paper",
                 )
-                delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                realized_raw = resp.get("realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl))
+                try:
+                    realized_val = float(realized_raw)
+                except (TypeError, ValueError):
+                    realized_val = prev_rpnl + 0.0
+                delta_rpnl = realized_val - prev_rpnl
+                try:
+                    post_qty = float(risk.account.current_exposure(symbol)[0])
+                except Exception:
+                    post_qty = pos_qty
+                if filled_qty > 0 and _position_closed(prev_pos_qty, post_qty):
+                    _record_trade(delta_rpnl)
                 halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                 if halted:
                     log.error("[HALT] motivo=%s", reason)
@@ -678,7 +765,11 @@ async def _run_symbol(
                             json.dumps({"event": "skip", "reason": "below_min_qty"}),
                         )
                         continue
-                    prev_rpnl = broker.state.realized_pnl
+                    prev_pos_qty = pos_qty
+                    try:
+                        prev_rpnl = float(getattr(broker.state, "realized_pnl", 0.0))
+                    except (TypeError, ValueError):
+                        prev_rpnl = total_pnl
                     resp = await exec_broker.place_limit(
                         symbol,
                         side,
@@ -728,7 +819,18 @@ async def _run_symbol(
                         filled_qty,
                         venue=venue if not dry_run else "paper",
                     )
-                    delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+                    realized_raw = resp.get("realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl))
+                    try:
+                        realized_val = float(realized_raw)
+                    except (TypeError, ValueError):
+                        realized_val = prev_rpnl + 0.0
+                    delta_rpnl = realized_val - prev_rpnl
+                    try:
+                        post_qty = float(risk.account.current_exposure(symbol)[0])
+                    except Exception:
+                        post_qty = pos_qty
+                    if filled_qty > 0 and _position_closed(prev_pos_qty, post_qty):
+                        _record_trade(delta_rpnl)
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
                         log.error("[HALT] motivo=%s", reason)
@@ -796,7 +898,11 @@ async def _run_symbol(
         notional = qty * price
         if not risk.register_order(symbol, notional):
             continue
-        prev_rpnl = broker.state.realized_pnl
+        prev_pos_qty, _ = risk.account.current_exposure(symbol)
+        try:
+            prev_rpnl = float(getattr(broker.state, "realized_pnl", 0.0))
+        except (TypeError, ValueError):
+            prev_rpnl = total_pnl
         resp = await exec_broker.place_limit(
             symbol,
             side,
@@ -842,11 +948,22 @@ async def _run_symbol(
             log.info(
                 "METRICS %s",
                 json.dumps({"exposure": cur_qty, "locked": locked}),
-            )
+        )
         risk.on_fill(
             symbol, side, filled_qty, venue=venue if not dry_run else "paper"
         )
-        delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
+        realized_raw = resp.get("realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl))
+        try:
+            realized_val = float(realized_raw)
+        except (TypeError, ValueError):
+            realized_val = prev_rpnl + 0.0
+        delta_rpnl = realized_val - prev_rpnl
+        try:
+            post_qty = float(risk.account.current_exposure(symbol)[0])
+        except Exception:
+            post_qty = prev_pos_qty
+        if filled_qty > 0 and _position_closed(prev_pos_qty, post_qty):
+            _record_trade(delta_rpnl)
         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
         if halted:
             log.error("[HALT] motivo=%s", reason)
