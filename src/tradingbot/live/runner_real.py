@@ -280,6 +280,9 @@ async def _run_symbol(
         except (TypeError, ValueError):
             metric_pending = 0.0
         if metric_pending <= 0:
+            risk.complete_order()
+            if order is not None:
+                setattr(order, "_risk_order_completed", True)
             return  # treat as filled; no cancel handling needed
         already_completed = order is not None and getattr(
             order, "_risk_order_completed", False

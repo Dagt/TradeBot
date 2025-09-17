@@ -307,6 +307,7 @@ async def run_paper(
         except (TypeError, ValueError):
             metric_pending = 0.0
         if metric_pending <= 0:
+            risk.complete_order()
             return  # treat as filled; no cancel handling needed
         risk.complete_order()
 
