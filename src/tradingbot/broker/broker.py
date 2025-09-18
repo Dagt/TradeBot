@@ -71,8 +71,40 @@ class Broker:
             else getattr(adapter, "maker_fee_bps", settings.maker_fee_bps)
         )
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
-        name = str(getattr(adapter, "name", "") or "").lower()
-        self._track_paper_orders = name == "paper"
+        def _has_paper_venue(obj: Any, visited: set[int] | None = None) -> bool:
+            if visited is None:
+                visited = set()
+            obj_id = id(obj)
+            if obj_id in visited:
+                return False
+            visited.add(obj_id)
+            name = str(getattr(obj, "name", "") or "").lower()
+            if name == "paper":
+                return True
+            adapters_attr = getattr(obj, "adapters", None)
+            if not adapters_attr:
+                return False
+            if isinstance(adapters_attr, dict):
+                children = adapters_attr.values()
+            elif isinstance(adapters_attr, (list, tuple, set)):
+                children = adapters_attr
+            else:
+                try:
+                    children = adapters_attr.values()  # type: ignore[attr-defined]
+                except AttributeError:
+                    try:
+                        children = list(adapters_attr)
+                    except TypeError:
+                        return False
+            for child in children:
+                try:
+                    if _has_paper_venue(child, visited):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        self._track_paper_orders = _has_paper_venue(adapter)
         self._paper_orders: dict[str, _PaperOrderTracker] = {}
 
     def _register_paper_tracker(
