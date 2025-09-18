@@ -174,10 +174,50 @@ class RiskService:
 
         return True
 
-    def complete_order(self) -> None:
-        """Clear pending order tracking once an order is finalised."""
+    def complete_order(
+        self,
+        venue: str | None = None,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+    ) -> None:
+        """Clear tracking for the finalised order while preserving others."""
+
+        def _remove_entry(container: Dict[str, dict], key: str) -> bool:
+            entry = container.get(key)
+            if not isinstance(entry, dict):
+                return False
+            side_key = str(side).lower() if isinstance(side, str) else None
+            if side_key is None:
+                entry.clear()
+            else:
+                entry.pop(side_key, None)
+            if not entry:
+                container.pop(key, None)
+            return True
+
         with self._lock:
-            self.account.open_orders.clear()
+            orders = self.account.open_orders
+            if symbol is None:
+                if venue is None and side is None:
+                    orders.clear()
+                return
+
+            # Primary mapping: symbol -> {side: qty}
+            if _remove_entry(orders, symbol):
+                return
+
+            # Some runners may namespace symbols by venue
+            if venue:
+                composite = f"{venue}:{symbol}"
+                if _remove_entry(orders, composite):
+                    return
+
+                nested = orders.get(venue)
+                if isinstance(nested, dict) and _remove_entry(nested, symbol):
+                    if not nested:
+                        orders.pop(venue, None)
+                    return
 
     def set_position(self, qty: float) -> None:
         self._pos.qty = float(qty)

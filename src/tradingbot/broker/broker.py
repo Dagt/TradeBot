@@ -153,6 +153,8 @@ class Broker:
             risk = getattr(self.adapter, "risk_service", None)
             for raw in fills:
                 event = dict(raw)
+                if venue is not None:
+                    event.setdefault("venue", venue)
                 status = str(event.get("status", "")).lower()
                 side = event.get("side")
                 qty = float(event.get("qty") or event.get("filled_qty") or 0.0)
@@ -177,6 +179,8 @@ class Broker:
                             qty=float(order_qty),
                             price=price,
                         )
+                        if venue is not None:
+                            setattr(order, "venue", venue)
                         order.pending_qty = float(event.get("pending_qty", 0.0))
                         cb(order, event)
                     except Exception:

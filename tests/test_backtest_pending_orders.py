@@ -54,7 +54,7 @@ class StubRisk:
         sign = 1 if side == "buy" else -1
         self.account.update_position(symbol, sign * qty, price)
 
-    def complete_order(self):
+    def complete_order(self, venue=None, *, symbol=None, side=None):
         pass
 
 

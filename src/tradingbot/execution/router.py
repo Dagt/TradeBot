@@ -332,6 +332,7 @@ class ExecutionRouter:
 
         adapter = await self.best_venue(order)
         venue = getattr(adapter, "name", "unknown")
+        setattr(order, "venue", venue)
         log.info(
             "Routing order %s via %s reason=%s",
             order,
@@ -694,7 +695,9 @@ class ExecutionRouter:
                     self.on_order_expiry(order, res)
                 except Exception:  # pragma: no cover - best effort
                     pass
-        log.info("Order cancelled venue=%s oid=%s", getattr(adapter, "name", "unknown"), order_id)
+        cancel_venue = getattr(adapter, "name", venue)
+        res.setdefault("venue", cancel_venue)
+        log.info("Order cancelled venue=%s oid=%s", cancel_venue, order_id)
         return res
 
     # ------------------------------------------------------------------
@@ -714,6 +717,7 @@ class ExecutionRouter:
         if info is None:
             return None
         order, venue, fill_mode, slip_bps = info
+        setattr(order, "venue", venue)
         status = res.get("status")
         if status not in {"partial", "expired", "filled"}:
             return None
