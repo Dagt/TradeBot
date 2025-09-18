@@ -7,6 +7,25 @@ from tradingbot.backtesting.engine import SlippageModel
 
 
 @pytest.mark.asyncio
+async def test_post_only_limit_rests_then_maker_fill():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+
+    res = await adapter.place_order(
+        "BTC/USDT", "buy", "limit", 1.0, price=105.0, post_only=True
+    )
+    assert res["status"] == "new"
+    assert res["pending_qty"] == pytest.approx(1.0)
+
+    fills = adapter.update_last_price("BTC/USDT", 105.0, qty=1.0)
+    fill = [f for f in fills if f.get("order_id") == res["order_id"]][0]
+    assert fill["status"] == "filled"
+    assert fill["qty"] == pytest.approx(1.0)
+    assert fill["fee_type"] == "maker"
+
+
+@pytest.mark.asyncio
 async def test_limit_order_partial_fill():
     adapter = PaperAdapter()
     adapter.state.cash = 1000.0
