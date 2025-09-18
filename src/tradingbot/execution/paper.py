@@ -429,10 +429,9 @@ class PaperAdapter(ExchangeAdapter):
             px_exec = last
             maker = False
         elif type_.lower() == "limit":
-            if side == "buy" and price is not None and price >= last:
-                px_exec = last
-                maker = False
-            elif side == "sell" and price is not None and price <= last:
+            crosses_buy = side == "buy" and price is not None and price >= last
+            crosses_sell = side == "sell" and price is not None and price <= last
+            if not post_only and (crosses_buy or crosses_sell):
                 px_exec = last
                 maker = False
         else:
