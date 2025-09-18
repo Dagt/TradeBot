@@ -38,6 +38,7 @@ from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
 from ._symbol_rules import resolve_symbol_rules
+from ..utils.metrics import CANCELS
 from ..utils.price import limit_price_from_close
 from ._metrics import infer_maker_flag
 
@@ -323,6 +324,7 @@ async def _run_symbol(
         if res.get("_cancel_handled"):
             return
         res["_cancel_handled"] = True
+        CANCELS.inc()
         symbol = res.get("symbol") or getattr(order, "symbol", None)
         side = res.get("side") or getattr(order, "side", None)
         side_norm = str(side).lower() if isinstance(side, str) else None
