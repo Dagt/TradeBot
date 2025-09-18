@@ -84,6 +84,37 @@ class BinanceSpotAdapter(ExchangeAdapter):
 
         self._start_fee_updater()
 
+    def on_paper_fill(self, symbol: str, side: str, pending_qty: float | None) -> None:
+        """Synchronise simulated open orders while paper trading."""
+
+        side_norm = str(side).lower() if side else None
+        if not side_norm or not symbol:
+            return
+
+        try:
+            pending = float(pending_qty or 0.0)
+        except (TypeError, ValueError):
+            pending = 0.0
+        if abs(pending) <= 1e-9:
+            pending = 0.0
+
+        orders = getattr(self.account, "open_orders", {})
+        current = 0.0
+        if isinstance(orders, dict):
+            try:
+                current = float(orders.get(symbol, {}).get(side_norm, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                current = 0.0
+
+        target = pending if pending > 0 else 0.0
+        if target == 0.0 and current != 0.0:
+            self.account.update_open_order(symbol, side_norm, -current)
+            return
+
+        delta = target - current
+        if abs(delta) > 1e-12:
+            self.account.update_open_order(symbol, side_norm, delta)
+
     async def update_fees(self, symbol: str | None = None) -> None:
         client = getattr(self, "client", self.rest)
         if client.options.get("testnet"):

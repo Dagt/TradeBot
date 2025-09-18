@@ -239,6 +239,8 @@ async def run_paper(
     except (TypeError, ValueError):
         total_pnl = 0.0
 
+    logged_order_ids: set[str] = set()
+
     def _flat_threshold() -> float:
         base = risk.min_order_qty
         step = step_size if step_size > 0 else 0.0
@@ -522,6 +524,53 @@ async def run_paper(
                     except (TypeError, ValueError):
                         fee = 0.0
                 side_norm = str(side).lower() if side is not None else None
+                order_id = None
+                if isinstance(res, dict):
+                    order_id = res.get("order_id") or res.get("client_order_id")
+                order_key = str(order_id) if order_id is not None else None
+                if order_key and order_key not in logged_order_ids:
+                    qty_for_event = None
+                    if isinstance(res, dict):
+                        qty_for_event = (
+                            res.get("qty")
+                            or res.get("filled_qty")
+                            or res.get("orig_qty")
+                        )
+                    if qty_for_event is None and order is not None:
+                        qty_for_event = getattr(order, "qty", None)
+                    try:
+                        qty_for_event = float(qty_for_event)
+                    except (TypeError, ValueError):
+                        qty_for_event = filled_qty
+                    price_for_event = None
+                    if isinstance(res, dict):
+                        price_for_event = res.get("price") or res.get("avg_price")
+                    if price_for_event is None and order is not None:
+                        price_for_event = getattr(order, "price", None)
+                    if price_for_event is None:
+                        price_for_event = exec_price if exec_price is not None else base_price
+                    try:
+                        price_for_event = (
+                            float(price_for_event)
+                            if price_for_event is not None
+                            else None
+                        )
+                    except (TypeError, ValueError):
+                        price_for_event = exec_price
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "order",
+                                "side": side,
+                                "price": price_for_event,
+                                "qty": qty_for_event,
+                                "fee": 0.0,
+                                "pnl": getattr(broker.state, "realized_pnl", 0.0),
+                            }
+                        ),
+                    )
+                    logged_order_ids.add(order_key)
                 metrics_payload = {
                     "event": "fill",
                     "side": side,
@@ -544,6 +593,22 @@ async def run_paper(
                                 pending_qty = float(pending_raw)
                             except (TypeError, ValueError):
                                 pending_qty = None
+                    if pending_qty is not None and abs(pending_qty) <= 1e-9:
+                        pending_qty = 0.0
+                    if pending_qty is not None and isinstance(res, dict):
+                        res["pending_qty"] = pending_qty
+                    if pending_qty is not None:
+                        adapters_to_update: list[object] = []
+                        for candidate in (adapter, rest):
+                            if candidate is not None and candidate not in adapters_to_update:
+                                adapters_to_update.append(candidate)
+                        for candidate in adapters_to_update:
+                            handler = getattr(candidate, "on_paper_fill", None)
+                            if callable(handler):
+                                try:
+                                    handler(symbol, side_norm, pending_qty)
+                                except Exception:  # pragma: no cover - defensive
+                                    pass
                     account_open_orders = getattr(risk.account, "open_orders", None)
                     update_open = getattr(risk.account, "update_open_order", None)
                     prev_pending = 0.0
@@ -589,6 +654,8 @@ async def run_paper(
                         except Exception:
                             exposure_qty = float(target_qty)
                     locked = _recalc_locked_total()
+                    if not getattr(risk.account, "open_orders", {}):
+                        locked = 0.0
                     log.info(
                         "METRICS %s",
                         json.dumps({"exposure": exposure_qty, "locked": locked}),
@@ -601,6 +668,10 @@ async def run_paper(
                         pending_qty = float(pending_raw)
                     except (TypeError, ValueError):
                         pending_qty = None
+                if pending_qty is not None and abs(pending_qty) <= 1e-9:
+                    pending_qty = 0.0
+                    if isinstance(res, dict):
+                        res["pending_qty"] = pending_qty
                 if pending_qty is not None and pending_qty <= 0:
                     already_completed = False
                     if order is not None:
@@ -610,6 +681,8 @@ async def run_paper(
                         if order is not None:
                             setattr(order, "_risk_order_completed", True)
                     locked_after_completion = _recalc_locked_total()
+                    if not getattr(risk.account, "open_orders", {}):
+                        locked_after_completion = 0.0
                     symbol_for_metrics = None
                     if order is not None:
                         symbol_for_metrics = getattr(order, "symbol", None)
@@ -764,6 +837,8 @@ async def run_paper(
                     status = str(resp.get("status", ""))
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
+                    if abs(pending_qty) <= 1e-9:
+                        pending_qty = 0.0
                     exec_price = float(resp.get("price", price))
                     if status == "rejected":
                         if resp.get("reason") == "insufficient_cash":
@@ -794,12 +869,17 @@ async def run_paper(
                                 }
                             ),
                         )
+                        oid = resp.get("order_id")
+                        if oid is not None:
+                            logged_order_ids.add(str(oid))
                         risk.account.update_open_order(symbol, close_side, pending_qty)
                         cur_qty = risk.account.current_exposure(symbol)[0]
                         if step_size > 0 and abs(cur_qty) < step_size:
                             cur_qty = 0.0
                             risk.account.positions[symbol] = 0.0
                         locked = _recalc_locked_total()
+                        if not getattr(risk.account, "open_orders", {}):
+                            locked = 0.0
                         log.info(
                             "METRICS %s",
                             json.dumps({"exposure": cur_qty, "locked": locked}),
@@ -896,6 +976,8 @@ async def run_paper(
                         status = str(resp.get("status", ""))
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
+                        if abs(pending_qty) <= 1e-9:
+                            pending_qty = 0.0
                         exec_price = float(resp.get("price", price))
                         if status == "rejected":
                             if resp.get("reason") == "insufficient_cash":
@@ -926,12 +1008,17 @@ async def run_paper(
                                     }
                                 ),
                             )
+                            oid = resp.get("order_id")
+                            if oid is not None:
+                                logged_order_ids.add(str(oid))
                             risk.account.update_open_order(symbol, side, pending_qty)
                             cur_qty = risk.account.current_exposure(symbol)[0]
                             if step_size > 0 and abs(cur_qty) < step_size:
                                 cur_qty = 0.0
                                 risk.account.positions[symbol] = 0.0
                             locked = _recalc_locked_total()
+                            if not getattr(risk.account, "open_orders", {}):
+                                locked = 0.0
                             log.info(
                                 "METRICS %s",
                                 json.dumps({"exposure": cur_qty, "locked": locked}),
@@ -1111,6 +1198,8 @@ async def run_paper(
             status = str(resp.get("status", ""))
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
+            if abs(pending_qty) <= 1e-9:
+                pending_qty = 0.0
             exec_price = float(resp.get("price", price))
             if status == "rejected":
                 if resp.get("reason") == "insufficient_cash":
@@ -1141,12 +1230,17 @@ async def run_paper(
                         }
                     ),
                 )
+                oid = resp.get("order_id")
+                if oid is not None:
+                    logged_order_ids.add(str(oid))
                 risk.account.update_open_order(symbol, side, pending_qty)
                 cur_qty = risk.account.current_exposure(symbol)[0]
                 if step_size > 0 and abs(cur_qty) < step_size:
                     cur_qty = 0.0
                     risk.account.positions[symbol] = 0.0
                 locked = _recalc_locked_total()
+                if not getattr(risk.account, "open_orders", {}):
+                    locked = 0.0
                 log.info(
                     "METRICS %s",
                     json.dumps({"exposure": cur_qty, "locked": locked}),
