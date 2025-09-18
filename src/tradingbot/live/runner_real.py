@@ -229,9 +229,9 @@ async def _run_symbol(
         risk_per_trade=risk_per_trade,
         market_type=market,
     )
-    min_order_qty = min_qty_val if min_qty_val > 0 else 0.0
-    if min_order_qty <= 0 and step_size > 0:
-        min_order_qty = step_size
+    min_qty_value = min_qty_val if min_qty_val > 0 else 0.0
+    step_value = step_size if step_size > 0 else 0.0
+    min_order_qty = max(min_qty_value, step_value)
     risk.min_order_qty = min_order_qty if min_order_qty > 0 else 1e-9
     risk.min_notional = float(min_notional if min_notional > 0 else 0.0)
     strat.risk_service = risk
@@ -247,10 +247,12 @@ async def _run_symbol(
 
     def _flat_threshold() -> float:
         base = risk.min_order_qty
+        if base > 0:
+            return base
         step = step_size if step_size > 0 else 0.0
-        if step > base:
-            base = step
-        return base if base > 0 else 1e-9
+        if step > 0:
+            return step
+        return 1e-9
 
     def _position_closed(before: float, after: float) -> bool:
         threshold = _flat_threshold()
@@ -653,7 +655,8 @@ async def _run_symbol(
             break
         pos_qty, _ = risk.account.current_exposure(symbol)
         trade = risk.get_trade(symbol)
-        if trade and abs(pos_qty) > risk.min_order_qty:
+        threshold = _flat_threshold()
+        if trade and abs(pos_qty) > threshold:
             risk.update_trailing(trade, px)
             trade["_trail_done"] = True
             decision = risk.manage_position(trade)
@@ -669,7 +672,7 @@ async def _run_symbol(
                 qty_close = adjust_qty(
                     abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
                 )
-                if qty_close <= 0:
+                if qty_close < threshold:
                     log.info(
                         "Skipping order: qty %.8f below min threshold", abs(pos_qty)
                     )
@@ -747,7 +750,7 @@ async def _run_symbol(
             if decision in {"scale_in", "scale_out"}:
                 target = risk.calc_position_size(trade.get("strength", 1.0), px, clamp=False)
                 delta_qty = target - abs(pos_qty)
-                if abs(delta_qty) > risk.min_order_qty:
+                if abs(delta_qty) > threshold:
                     side = trade["side"] if delta_qty > 0 else (
                         "sell" if trade["side"] == "buy" else "buy"
                     )
@@ -756,7 +759,7 @@ async def _run_symbol(
                     qty_scale = adjust_qty(
                         abs(delta_qty), price, min_notional, step_size, risk.min_order_qty
                     )
-                    if qty_scale <= 0:
+                    if qty_scale < threshold:
                         log.info(
                             "Skipping order: qty %.8f below min threshold", abs(delta_qty)
                         )
@@ -877,7 +880,15 @@ async def _run_symbol(
             elif reason:
                 log.warning("[PG] Bloqueado %s: %s", symbol, reason)
             continue
-        if abs(delta) <= 0:
+        threshold = _flat_threshold()
+        if abs(delta) < threshold:
+            log.info(
+                "Skipping order: qty %.8f below min threshold", abs(delta)
+            )
+            log.info(
+                "METRICS %s",
+                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+            )
             continue
         side = "buy" if delta > 0 else "sell"
         price = (
@@ -886,7 +897,7 @@ async def _run_symbol(
             else limit_price_from_close(side, closed.c, tick_size)
         )
         qty = adjust_qty(abs(delta), price, min_notional, step_size, risk.min_order_qty)
-        if qty <= 0:
+        if qty < threshold:
             log.info(
                 "Skipping order: qty %.8f below min threshold", abs(delta)
             )

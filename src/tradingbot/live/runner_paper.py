@@ -224,9 +224,9 @@ async def run_paper(
         risk_per_trade=risk_per_trade,
         market_type=market,
     )
-    min_order_qty = min_qty_val if min_qty_val > 0 else 0.0
-    if min_order_qty <= 0 and step_size > 0:
-        min_order_qty = step_size
+    min_qty_value = min_qty_val if min_qty_val > 0 else 0.0
+    step_value = step_size if step_size > 0 else 0.0
+    min_order_qty = max(min_qty_value, step_value)
     risk.min_order_qty = min_order_qty if min_order_qty > 0 else 1e-9
     risk.min_notional = float(min_notional if min_notional > 0 else 0.0)
 
@@ -243,10 +243,12 @@ async def run_paper(
 
     def _flat_threshold() -> float:
         base = risk.min_order_qty
+        if base > 0:
+            return base
         step = step_size if step_size > 0 else 0.0
-        if step > base:
-            base = step
-        return base if base > 0 else 1e-9
+        if step > 0:
+            return step
+        return 1e-9
 
     def _position_closed(before: float, after: float) -> bool:
         threshold = _flat_threshold()
@@ -797,7 +799,8 @@ async def run_paper(
                 last_purge = time.time()
             pos_qty, _ = risk.account.current_exposure(symbol)
             trade = risk.get_trade(symbol)
-            if trade and abs(pos_qty) > risk.min_order_qty:
+            threshold = _flat_threshold()
+            if trade and abs(pos_qty) > threshold:
                 risk.update_trailing(trade, px)
                 trade["_trail_done"] = True
                 decision = risk.manage_position(trade)
@@ -814,7 +817,7 @@ async def run_paper(
                         abs(pos_qty), price, min_notional, step_size, risk.min_order_qty
                     )
                     qty_close = min(qty_close, abs(pos_qty))
-                    if qty_close <= 0:
+                    if qty_close < threshold:
                         log.info(
                             "Skipping order: qty %.8f below min threshold", abs(pos_qty)
                         )
@@ -934,7 +937,7 @@ async def run_paper(
                         trade.get("strength", 1.0), px, clamp=False
                     )
                     delta_qty = target - abs(pos_qty)
-                    if abs(delta_qty) > risk.min_order_qty:
+                    if abs(delta_qty) > threshold:
                         side = (
                             trade["side"]
                             if delta_qty > 0
@@ -949,10 +952,21 @@ async def run_paper(
                         price = limit_price_from_close(side, last_close, tick_size)
                         qty_scale = abs(delta_qty)
                         qty_scale = min(qty_scale, abs(pos_qty))
+                        if qty_scale < threshold:
+                            log.info(
+                                "Skipping order: qty %.8f below min threshold",
+                                abs(delta_qty),
+                            )
+                            SKIPS.inc()
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                            )
+                            continue
                         qty_scale = adjust_qty(
                             qty_scale, price, min_notional, step_size, risk.min_order_qty
                         )
-                        if qty_scale <= 0:
+                        if qty_scale < threshold:
                             log.info(
                                 "Skipping order: qty %.8f below min threshold",
                                 abs(delta_qty),
@@ -1142,10 +1156,21 @@ async def run_paper(
                 if price is not None
                 else limit_price_from_close(side, closed.c, tick_size)
             )
+            threshold = _flat_threshold()
+            if abs(delta) < threshold:
+                log.info(
+                    "Skipping order: qty %.8f below min threshold", abs(delta)
+                )
+                SKIPS.inc()
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                )
+                continue
             qty = adjust_qty(
                 abs(delta), price, min_notional, step_size, risk.min_order_qty
             )
-            if qty <= 0:
+            if qty < threshold:
                 log.info(
                     "Skipping order: qty %.8f below min threshold", abs(delta)
                 )
@@ -1156,8 +1181,8 @@ async def run_paper(
                 )
                 continue
             notional = qty * price
-            if qty < step_size or notional < min_notional:
-                reason = "below_min_qty" if qty < step_size else "below_min_notional"
+            if notional < min_notional:
+                reason = "below_min_notional"
                 log.info(
                     "Skipping order: qty %.8f notional %.8f below min threshold", qty, notional
                 )
