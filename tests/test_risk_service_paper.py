@@ -33,3 +33,29 @@ def test_on_fill_skips_account_updates_for_paper():
     assert calls["pos"] == 0
     assert calls["open"] == 0
     assert account.positions["BTC"] == pytest.approx(1.0)
+
+
+def test_complete_order_preserves_other_paper_reservations():
+    account = Account(float("inf"), cash=0.0)
+    account.mark_price("BTC", 100.0)
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    risk = RiskService(guard, account=account)
+
+    account.update_open_order("BTC", "buy", 1.0)
+    account.update_open_order("BTC", "sell", 2.0)
+
+    locked_before = sum(
+        risk.account.pending_exposure(sym) for sym in risk.account.open_orders
+    )
+    assert locked_before == pytest.approx(300.0)
+
+    risk.complete_order("paper", symbol="BTC", side="buy")
+
+    orders = risk.account.open_orders.get("BTC", {})
+    assert orders.get("buy") is None
+    assert orders.get("sell") == pytest.approx(2.0)
+
+    locked_after = sum(
+        risk.account.pending_exposure(sym) for sym in risk.account.open_orders
+    )
+    assert locked_after == pytest.approx(200.0)

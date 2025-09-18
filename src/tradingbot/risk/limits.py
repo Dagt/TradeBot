@@ -44,7 +44,13 @@ class LimitTracker:
         self.open_orders += 1
         return True
 
-    def complete_order(self) -> None:
+    def complete_order(
+        self,
+        venue: str | None = None,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+    ) -> None:
         if self.open_orders > 0:
             self.open_orders -= 1
 

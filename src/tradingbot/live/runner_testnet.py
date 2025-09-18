@@ -364,6 +364,9 @@ async def _run_symbol(
             metric_pending_override = 0.0
         elif symbol and lookup_side and pending_qty and pending_qty > 0:
             risk.account.update_open_order(symbol, lookup_side, -pending_qty)
+        venue = res.get("venue") if isinstance(res, dict) else None
+        if venue is None and order is not None:
+            venue = getattr(order, "venue", None)
         metric_pending = res.get("pending_qty", pending_qty)
         if metric_pending_override is not None:
             metric_pending = metric_pending_override
@@ -371,8 +374,15 @@ async def _run_symbol(
             metric_pending_val = float(metric_pending)
         except (TypeError, ValueError):
             metric_pending_val = 0.0
+        side_for_risk = side_norm
+        if not side_for_risk and isinstance(lookup_side, str):
+            side_for_risk = lookup_side.lower()
         if metric_pending_val <= 0:
-            risk.complete_order()
+            risk.complete_order(
+                venue=venue,
+                symbol=symbol,
+                side=side_for_risk,
+            )
             if order is not None:
                 setattr(order, "_risk_order_completed", True)
             locked_total = _recalc_locked_total()
@@ -387,7 +397,11 @@ async def _run_symbol(
             order, "_risk_order_completed", False
         )
         if not already_completed:
-            risk.complete_order()
+            risk.complete_order(
+                venue=venue,
+                symbol=symbol,
+                side=side_for_risk,
+            )
             if order is not None:
                 setattr(order, "_risk_order_completed", True)
         locked_total = _recalc_locked_total()
@@ -568,16 +582,33 @@ async def _run_symbol(
                     already_completed = order is not None and getattr(
                         order, "_risk_order_completed", False
                     )
+                    symbol_for_metrics = None
+                    side_for_completion = None
+                    venue_for_completion = None
+                    if order is not None:
+                        symbol_for_metrics = getattr(order, "symbol", None)
+                        side_for_completion = getattr(order, "side", None)
+                        venue_for_completion = getattr(order, "venue", None)
+                    if isinstance(res, dict):
+                        if symbol_for_metrics is None:
+                            symbol_for_metrics = res.get("symbol")
+                        if side_for_completion is None:
+                            side_for_completion = res.get("side")
+                        if venue_for_completion is None:
+                            venue_for_completion = res.get("venue")
+                    if isinstance(side_for_completion, str):
+                        side_for_completion = side_for_completion.lower()
+                    else:
+                        side_for_completion = None
                     if not already_completed:
-                        risk.complete_order()
+                        risk.complete_order(
+                            venue=venue_for_completion,
+                            symbol=symbol_for_metrics,
+                            side=side_for_completion,
+                        )
                         if order is not None:
                             setattr(order, "_risk_order_completed", True)
                     locked_after_completion = _recalc_locked_total()
-                    symbol_for_metrics = None
-                    if order is not None:
-                        symbol_for_metrics = getattr(order, "symbol", None)
-                    if symbol_for_metrics is None and isinstance(res, dict):
-                        symbol_for_metrics = res.get("symbol")
                     exposure_after = 0.0
                     if symbol_for_metrics:
                         try:

@@ -840,7 +840,11 @@ class EventDrivenBacktestEngine:
                 if order.remaining_qty <= 1e-9:
                     if order.latency is None:
                         order.latency = i - order.place_index
-                    svc.complete_order()
+                    svc.complete_order(
+                        order.exchange,
+                        symbol=order.symbol,
+                        side=order.side,
+                    )
 
                 mtm_after = 0.0
                 for (strat_s, sym_s), svc_s in self.risk.items():
