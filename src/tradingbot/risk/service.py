@@ -174,10 +174,45 @@ class RiskService:
 
         return True
 
-    def complete_order(self) -> None:
-        """Clear pending order tracking once an order is finalised."""
+    def complete_order(
+        self,
+        venue: str | None = None,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+    ) -> None:
+        """Clear tracking for the finalised order while preserving others."""
         with self._lock:
-            self.account.open_orders.clear()
+            if symbol is None:
+                return
+
+            orders = self.account.open_orders.get(symbol)
+            if not isinstance(orders, dict):
+                self.account.open_orders.pop(symbol, None)
+                return
+
+            side_key: str | None = None
+            if side is not None:
+                try:
+                    side_key = str(side).lower()
+                except Exception:
+                    side_key = None
+
+            if side_key is None:
+                self.account.open_orders.pop(symbol, None)
+                return
+
+            # remove matching entry preserving other sides
+            if side_key in orders:
+                orders.pop(side_key, None)
+            else:  # pragma: no branch - defensive against non-lowered keys
+                for key in list(orders.keys()):
+                    if str(key).lower() == side_key:
+                        orders.pop(key, None)
+                        break
+
+            if not orders:
+                self.account.open_orders.pop(symbol, None)
 
     def set_position(self, qty: float) -> None:
         self._pos.qty = float(qty)

@@ -329,6 +329,7 @@ async def _run_symbol(
         side = res.get("side") or getattr(order, "side", None)
         side_norm = str(side).lower() if isinstance(side, str) else None
         lookup_side = side_norm or side
+        venue = res.get("venue")
         pending_raw = res.get("pending_qty")
         if pending_raw is None and order is not None:
             pending_raw = getattr(order, "pending_qty", None)
@@ -372,7 +373,7 @@ async def _run_symbol(
         except (TypeError, ValueError):
             metric_pending_val = 0.0
         if metric_pending_val <= 0:
-            risk.complete_order()
+            risk.complete_order(venue=venue, symbol=symbol, side=lookup_side)
             if order is not None:
                 setattr(order, "_risk_order_completed", True)
             locked_total = _recalc_locked_total()
@@ -387,7 +388,7 @@ async def _run_symbol(
             order, "_risk_order_completed", False
         )
         if not already_completed:
-            risk.complete_order()
+            risk.complete_order(venue=venue, symbol=symbol, side=lookup_side)
             if order is not None:
                 setattr(order, "_risk_order_completed", True)
         locked_total = _recalc_locked_total()
@@ -569,7 +570,18 @@ async def _run_symbol(
                         order, "_risk_order_completed", False
                     )
                     if not already_completed:
-                        risk.complete_order()
+                        venue_val = res.get("venue") if isinstance(res, dict) else None
+                        symbol_for_completion = getattr(order, "symbol", None)
+                        side_for_completion = getattr(order, "side", None)
+                        if symbol_for_completion is None and isinstance(res, dict):
+                            symbol_for_completion = res.get("symbol")
+                        if side_for_completion is None and isinstance(res, dict):
+                            side_for_completion = res.get("side")
+                        risk.complete_order(
+                            venue=venue_val,
+                            symbol=symbol_for_completion,
+                            side=side_for_completion,
+                        )
                         if order is not None:
                             setattr(order, "_risk_order_completed", True)
                     locked_after_completion = _recalc_locked_total()

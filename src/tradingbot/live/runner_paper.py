@@ -409,6 +409,7 @@ async def run_paper(
         side = res.get("side")
         side_norm = str(side).lower() if isinstance(side, str) else None
         lookup_side = side_norm or side
+        venue = res.get("venue")
         pending_raw = res.get("pending_qty")
         if pending_raw is None:
             pending_raw = res.get("qty")
@@ -450,7 +451,7 @@ async def run_paper(
         except (TypeError, ValueError):
             metric_pending_val = 0.0
         if metric_pending_val <= 0:
-            risk.complete_order()
+            risk.complete_order(venue=venue, symbol=symbol, side=lookup_side)
             locked_total = _recalc_locked_total()
             log.info(
                 "METRICS %s",
@@ -459,7 +460,7 @@ async def run_paper(
                 ),
             )
             return  # treat as filled; no cancel handling needed
-        risk.complete_order()
+        risk.complete_order(venue=venue, symbol=symbol, side=lookup_side)
         locked_total = _recalc_locked_total()
         log.info(
             "METRICS %s",
@@ -710,7 +711,18 @@ async def run_paper(
                     if order is not None:
                         already_completed = getattr(order, "_risk_order_completed", False)
                     if not already_completed:
-                        risk.complete_order()
+                        venue_val = res.get("venue") if isinstance(res, dict) else None
+                        symbol_for_completion = getattr(order, "symbol", None)
+                        side_for_completion = getattr(order, "side", None)
+                        if symbol_for_completion is None and isinstance(res, dict):
+                            symbol_for_completion = res.get("symbol")
+                        if side_for_completion is None and isinstance(res, dict):
+                            side_for_completion = res.get("side")
+                        risk.complete_order(
+                            venue=venue_val,
+                            symbol=symbol_for_completion,
+                            side=side_for_completion,
+                        )
                         if order is not None:
                             setattr(order, "_risk_order_completed", True)
                     locked_after_completion = _recalc_locked_total()

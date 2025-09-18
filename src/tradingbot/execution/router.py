@@ -410,6 +410,8 @@ class ExecutionRouter:
         res.setdefault("order_id", uuid.uuid4().hex)
         res.setdefault("trade_id", uuid.uuid4().hex)
         res.setdefault("reason", getattr(order, "reason", None))
+        res.setdefault("symbol", order.symbol)
+        res.setdefault("side", order.side)
         fee_attr = "maker_fee_bps" if maker else "taker_fee_bps"
         fee_bps = float(
             getattr(adapter, fee_attr, getattr(adapter, "fee_bps", 0.0)) or 0.0
@@ -693,6 +695,10 @@ class ExecutionRouter:
                     order.symbol, order.side, -released
                 )
             order._reserved_qty = 0.0
+            res.setdefault("symbol", order.symbol)
+            res.setdefault("side", order.side)
+            if venue is not None:
+                res.setdefault("venue", venue)
             if self.on_order_expiry is not None:
                 try:
                     self.on_order_expiry(order, res)
@@ -798,6 +804,8 @@ class ExecutionRouter:
         if status in {"expired", "filled"} or order.pending_qty <= 0:
             self._active_orders.pop(oid, None)
         res.setdefault("venue", venue)
+        res.setdefault("symbol", order.symbol)
+        res.setdefault("side", order.side)
         return res
 
 

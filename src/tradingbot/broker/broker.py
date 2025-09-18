@@ -157,6 +157,9 @@ class Broker:
                 side = event.get("side")
                 qty = float(event.get("qty") or event.get("filled_qty") or 0.0)
                 price = event.get("price")
+                event.setdefault("symbol", symbol)
+                if venue is not None:
+                    event.setdefault("venue", venue)
                 if side and qty > 0:
                     FILL_COUNT.labels(symbol=symbol, side=side).inc()
                     if risk is not None:
