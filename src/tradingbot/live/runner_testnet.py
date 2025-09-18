@@ -228,8 +228,6 @@ async def _run_symbol(
 
     def _position_closed(before: float, after: float) -> bool:
         threshold = _flat_threshold()
-        if abs(before) <= threshold:
-            return False
         if abs(after) <= threshold:
             return True
         return (before > 0 > after) or (before < 0 < after)
@@ -248,6 +246,7 @@ async def _run_symbol(
         avg_win = pnl_won_total / trades_won if trades_won else 0.0
         avg_loss = abs(pnl_lost_total / losses) if losses else 0.0
         payoff_ratio = avg_win / avg_loss if avg_loss else 0.0
+        hit_rate = (trades_won / trades_closed) * 100 if trades_closed else 0.0
         payload = {
             "event": "trade",
             "pnl": float(delta_pnl),
@@ -258,6 +257,8 @@ async def _run_symbol(
             "pnl_lost": pnl_lost_total,
             "expectancy": expectancy,
             "payoff_ratio": payoff_ratio,
+            "hit_rate": hit_rate,
+            "hit%": hit_rate,
         }
         log.info("METRICS %s", json.dumps(payload))
         log.info("METRICS %s", json.dumps({"pnl": total_pnl}))
