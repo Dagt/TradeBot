@@ -162,6 +162,18 @@ class ExecutionRouter:
             return False
         return maker
 
+    def _update_open_order_reservation(self, order: Order, target_pending: float | None) -> None:
+        """Sync the tracked reservation for ``order`` with ``target_pending``."""
+
+        target = max(float(target_pending or 0.0), 0.0)
+        prev_reserved = float(getattr(order, "_reserved_qty", 0.0) or 0.0)
+        account = getattr(self.risk_service, "account", None) if self.risk_service else None
+        update_open = getattr(account, "update_open_order", None) if account else None
+        delta = target - prev_reserved
+        if update_open is not None and abs(delta) > 1e-12:
+            update_open(order.symbol, order.side, delta)
+        order._reserved_qty = target
+
     # ------------------------------------------------------------------
     async def best_venue(self, order: Order):
         """Select venue based on spread, fees, latency and slippage estimates."""
@@ -302,9 +314,7 @@ class ExecutionRouter:
             return results
 
         if not hasattr(order, "_reserved_qty"):
-            order._reserved_qty = (
-                order.pending_qty if order.pending_qty is not None else order.qty
-            )
+            order._reserved_qty = 0.0
 
         if (
             self.risk_service is not None
@@ -419,6 +429,13 @@ class ExecutionRouter:
         status = res.get("status")
         if status == "rejected":
             SKIPS.inc()
+        if status in {"new", "open"}:
+            pending_for_lock = res.get("pending_qty")
+            if pending_for_lock is None:
+                pending_for_lock = (
+                    order.pending_qty if order.pending_qty is not None else order.qty
+                )
+            self._update_open_order_reservation(order, pending_for_lock)
         if status == "new":
             oid = res.get("order_id")
             if oid:
@@ -432,31 +449,18 @@ class ExecutionRouter:
                 pending = floor_to_step(pending, step)
             order.pending_qty = pending
             res["pending_qty"] = pending
-            if self.risk_service is not None:
-                if status in {"expired", "cancelled"}:
-                    released = getattr(order, "_reserved_qty", 0.0)
-                    if released:
-                        self.risk_service.account.update_open_order(
-                            order.symbol, order.side, -released
-                        )
-                    order._reserved_qty = 0.0
-                else:  # partial
-                    delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
-                    if delta:
-                        self.risk_service.account.update_open_order(
-                            order.symbol, order.side, delta
-                        )
-                    order._reserved_qty = order.pending_qty
-                if filled:
-                    book = self.risk_service.positions_multi.get(venue, {})
-                    cur_qty = book.get(order.symbol, 0.0)
-                    delta_pos = filled if order.side == "buy" else -filled
-                    self.risk_service.update_position(
-                        venue,
-                        order.symbol,
-                        cur_qty + delta_pos,
-                        entry_price=res.get("price"),
-                    )
+            target_pending = pending if status == "partial" else 0.0
+            self._update_open_order_reservation(order, target_pending)
+            if self.risk_service is not None and filled:
+                book = self.risk_service.positions_multi.get(venue, {})
+                cur_qty = book.get(order.symbol, 0.0)
+                delta_pos = filled if order.side == "buy" else -filled
+                self.risk_service.update_position(
+                    venue,
+                    order.symbol,
+                    cur_qty + delta_pos,
+                    entry_price=res.get("price"),
+                )
             if status == "partial":
                 price_hint_val = res.get("price") or res.get("fill_price")
                 try:
@@ -581,15 +585,17 @@ class ExecutionRouter:
         )
         if signal_ts is not None:
             SIGNAL_CONFIRM_LATENCY.observe(time.time() - signal_ts)
+        pending_for_lock = res.get("pending_qty")
+        if pending_for_lock is None:
+            if status in {"new", "open"}:
+                pending_for_lock = (
+                    order.pending_qty if order.pending_qty is not None else order.qty
+                )
+            else:
+                pending_for_lock = 0.0
+        self._update_open_order_reservation(order, pending_for_lock)
         if self.risk_service is not None:
             filled = float(res.get("filled_qty") or res.get("qty") or 0.0)
-            pending = float(res.get("pending_qty", 0.0))
-            delta = pending - getattr(order, "_reserved_qty", 0.0)
-            if delta:
-                self.risk_service.account.update_open_order(
-                    order.symbol, order.side, delta
-                )
-            order._reserved_qty = pending
             if filled:
                 book = self.risk_service.positions_multi.get(venue, {})
                 cur_qty = book.get(order.symbol, 0.0)
@@ -640,7 +646,6 @@ class ExecutionRouter:
         if not too_small:
             return False
 
-        prior_reserved = float(getattr(order, "_reserved_qty", 0.0))
         if order_id:
             try:
                 await self.cancel_order(order_id, venue=venue, symbol=symbol)
@@ -651,11 +656,7 @@ class ExecutionRouter:
                     venue,
                     exc,
                 )
-        if self.risk_service is not None and getattr(order, "_reserved_qty", 0.0) > 0.0:
-            self.risk_service.account.update_open_order(
-                order.symbol, order.side, -prior_reserved
-            )
-        order._reserved_qty = 0.0
+        self._update_open_order_reservation(order, 0.0)
         order.pending_qty = 0.0
         result["pending_qty"] = 0.0
         result.setdefault("remaining_cancelled", True)
@@ -685,15 +686,10 @@ class ExecutionRouter:
             log.error("Cancel order failed: %s", e)
             res = {"status": "error"}
         CANCELS.inc()
-        if info and self.risk_service is not None:
+        if info:
             order, _, _, _ = info
-            released = getattr(order, "_reserved_qty", 0.0)
-            if released:
-                self.risk_service.account.update_open_order(
-                    order.symbol, order.side, -released
-                )
-            order._reserved_qty = 0.0
-            if self.on_order_expiry is not None:
+            self._update_open_order_reservation(order, 0.0)
+            if self.risk_service is not None and self.on_order_expiry is not None:
                 try:
                     self.on_order_expiry(order, res)
                 except Exception:  # pragma: no cover - best effort
@@ -731,31 +727,18 @@ class ExecutionRouter:
         order.pending_qty = pending
         res["pending_qty"] = pending
 
-        if self.risk_service is not None:
-            if status in {"expired", "filled"}:
-                released = getattr(order, "_reserved_qty", 0.0)
-                if released:
-                    self.risk_service.account.update_open_order(
-                        order.symbol, order.side, -released
-                    )
-                order._reserved_qty = 0.0
-            else:  # partial
-                delta = order.pending_qty - getattr(order, "_reserved_qty", 0.0)
-                if delta:
-                    self.risk_service.account.update_open_order(
-                        order.symbol, order.side, delta
-                    )
-                order._reserved_qty = order.pending_qty
-            if filled:
-                book = self.risk_service.positions_multi.get(venue, {})
-                cur_qty = book.get(order.symbol, 0.0)
-                delta_pos = filled if order.side == "buy" else -filled
-                self.risk_service.update_position(
-                    venue,
-                    order.symbol,
-                    cur_qty + delta_pos,
-                    entry_price=res.get("price"),
-                )
+        target_pending = pending if status == "partial" else 0.0
+        self._update_open_order_reservation(order, target_pending)
+        if self.risk_service is not None and filled:
+            book = self.risk_service.positions_multi.get(venue, {})
+            cur_qty = book.get(order.symbol, 0.0)
+            delta_pos = filled if order.side == "buy" else -filled
+            self.risk_service.update_position(
+                venue,
+                order.symbol,
+                cur_qty + delta_pos,
+                entry_price=res.get("price"),
+            )
 
         if status == "partial":
             price_hint_val = res.get("price") or res.get("fill_price")
