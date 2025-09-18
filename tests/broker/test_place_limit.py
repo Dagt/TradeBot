@@ -6,7 +6,7 @@ from tradingbot.broker import Broker
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.strategies.base import Strategy, Signal, record_signal_metrics
 from tradingbot.filters.liquidity import LiquidityFilterManager
-from tradingbot.utils.metrics import FILL_COUNT
+from tradingbot.utils.metrics import FILL_COUNT, CANCELS
 
 
 class DummyAdapter:
@@ -176,6 +176,28 @@ async def test_place_limit_expiry_cancels_on_edge_gone():
     assert len(adapter.calls) == 1
     assert adapter.cancel_calls == 1
     assert strat.pending_qty["BTC/USDT"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_place_limit_gtd_timeout_increments_cancel_metric():
+    CANCELS._value.set(0)
+    adapter = ExpiringAdapter()
+    broker = Broker(adapter)
+
+    def stop_on_expiry(order, res):
+        return None
+
+    await broker.place_limit(
+        "BTC/USDT",
+        "buy",
+        90.0,
+        1.0,
+        tif="GTD:0.01",
+        on_order_expiry=stop_on_expiry,
+    )
+
+    assert adapter.cancel_calls == 1
+    assert CANCELS._value.get() == 1.0
 
 
 @pytest.mark.asyncio
