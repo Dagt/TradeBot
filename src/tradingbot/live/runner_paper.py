@@ -36,6 +36,7 @@ from ..strategies import STRATEGIES
 from monitoring import panel
 from ..core.symbols import normalize
 from ..execution.order_sizer import adjust_qty
+from ._metrics import infer_maker_flag
 
 try:
     from ..storage.timescale import get_engine
@@ -574,6 +575,11 @@ async def run_paper(
                         ),
                     )
                     logged_order_ids.add(order_key)
+                maker_flag = infer_maker_flag(
+                    res if isinstance(res, dict) else None,
+                    exec_price,
+                    base_price,
+                )
                 metrics_payload = {
                     "event": "fill",
                     "side": side,
@@ -585,6 +591,7 @@ async def run_paper(
                         if slippage_bps is not None
                         else 0.0
                     ),
+                    "maker": maker_flag,
                 }
                 log.info("METRICS %s", json.dumps(metrics_payload))
                 if symbol and side_norm:

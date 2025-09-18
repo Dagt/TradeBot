@@ -5,6 +5,7 @@ from tradingbot.utils.metrics import (
     ORDERS,
     SKIPS,
 )
+from tradingbot.live._metrics import infer_maker_flag
 
 
 def test_fill_slippage_risk_metrics():
@@ -41,3 +42,29 @@ def test_fill_slippage_risk_metrics():
     rej_samples = list(SKIPS.collect())[0].samples
     rej_sample = [s for s in rej_samples if s.name == "order_skips_total"][0]
     assert rej_sample.value == 1.0
+
+
+def test_metrics_payload_maker_flag_inference():
+    res = {"fee_type": "maker", "price": 100.0}
+    maker_flag = infer_maker_flag(res, exec_price=100.0, base_price=100.0)
+    payload = {
+        "event": "fill",
+        "side": "buy",
+        "price": 100.0,
+        "qty": 1.0,
+        "fee": 0.0,
+        "slippage_bps": 0.0,
+        "maker": maker_flag,
+    }
+    assert payload["maker"] is True
+
+    res["fee_type"] = "taker"
+    payload["maker"] = infer_maker_flag(res, exec_price=100.0, base_price=100.0)
+    assert payload["maker"] is False
+
+    res.pop("fee_type")
+    payload["maker"] = infer_maker_flag(res, exec_price=100.0, base_price=100.0)
+    assert payload["maker"] is True
+
+    payload["maker"] = infer_maker_flag(res, exec_price=99.5, base_price=100.0)
+    assert payload["maker"] is False
