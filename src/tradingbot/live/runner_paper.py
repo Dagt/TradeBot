@@ -24,7 +24,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from ..execution.paper import PaperAdapter
 from ..backtesting.engine import SlippageModel
 from ..execution.router import ExecutionRouter
-from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS
+from ..utils.metrics import MARKET_LATENCY, AGG_COMPLETED, SKIPS, CANCELS
 from ..utils.price import limit_price_from_close
 from ..broker.broker import Broker
 from ..config import settings
@@ -375,6 +375,7 @@ async def run_paper(
         if res.get("_cancel_handled"):
             return
         res["_cancel_handled"] = True
+        CANCELS.inc()
         symbol = res.get("symbol")
         side = res.get("side")
         side_norm = str(side).lower() if isinstance(side, str) else None
