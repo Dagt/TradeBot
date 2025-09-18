@@ -51,6 +51,7 @@ from ..adapters.okx_futures import OKXFuturesAdapter
 from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
+from ._symbol_rules import resolve_symbol_rules
 from ..utils.price import limit_price_from_close
 
 try:
@@ -157,13 +158,7 @@ async def _run_symbol(
     meta = getattr(exec_adapter, "meta", None)
     if meta is not None:
         try:
-            fetch_symbol = None
-            symbols = getattr(meta.client, "symbols", [])
-            if symbols:
-                fetch_symbol = next((s for s in symbols if normalize(s) == symbol), None)
-            if fetch_symbol is None:
-                fetch_symbol = raw_symbol.replace("-", "/")
-            rules = meta.rules_for(fetch_symbol)
+            rules, _ = resolve_symbol_rules(meta, raw_symbol, symbol)
             step_candidate = float(getattr(rules, "qty_step", 0.0) or 0.0)
             if step_size <= 0 and step_candidate > 0:
                 step_size = step_candidate

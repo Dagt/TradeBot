@@ -35,6 +35,7 @@ from ..risk.correlation_service import CorrelationService
 from ..strategies import STRATEGIES
 from monitoring import panel
 from ..core.symbols import normalize
+from ._symbol_rules import resolve_symbol_rules
 from ..execution.order_sizer import adjust_qty
 
 try:
@@ -150,15 +151,7 @@ async def run_paper(
     min_qty_val = 0.0
     try:
         if rest is not None and hasattr(rest, "meta"):
-            fetch_symbol = None
-            symbols = getattr(rest.meta.client, "symbols", [])
-            if symbols:
-                fetch_symbol = next(
-                    (s for s in symbols if normalize(s) == symbol), None
-                )
-            if fetch_symbol is None:
-                fetch_symbol = raw_symbol.replace("-", "/")
-            rules = rest.meta.rules_for(fetch_symbol)
+            rules, _ = resolve_symbol_rules(rest.meta, raw_symbol, symbol)
             qty_step = float(getattr(rules, "qty_step", 0.0) or 0.0)
             if step_size <= 0 and qty_step > 0:
                 step_size = qty_step
