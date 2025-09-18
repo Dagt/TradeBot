@@ -7,10 +7,11 @@ from typing import Any, Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
-from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT
+from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT, CANCELS
 
 
 _FINAL_STATUSES = {"filled", "expired", "cancelled", "canceled"}
+_CANCEL_STATUSES = {"cancelled", "canceled", "expired", "partial"}
 
 
 @dataclass
@@ -374,8 +375,12 @@ class Broker:
                             return captured_action
 
                         setattr(self.adapter, "on_order_expiry", _proxy)
+                cancellation_recorded = False
                 try:
                     cancel_res = await self.adapter.cancel_order(order_id, symbol)
+                    cancel_status = str(cancel_res.get("status") or "").lower()
+                    if cancel_status in _CANCEL_STATUSES:
+                        cancellation_recorded = True
                     if tracker is not None:
                         tracker.update(cancel_res)
                         if tracker.pending_qty is not None:
@@ -384,6 +389,12 @@ class Broker:
                         last_res = dict(tracker.last_res or cancel_res)
                         if tracker.status:
                             status_lc = tracker.status
+                            if tracker.status in _CANCEL_STATUSES or (
+                                tracker.event.is_set()
+                                and tracker.status in _FINAL_STATUSES
+                                and tracker.status != "filled"
+                            ):
+                                cancellation_recorded = True
                     else:
                         filled = float(cancel_res.get("filled_qty", 0.0))
                         pending_default = (
@@ -399,11 +410,16 @@ class Broker:
                         cancel_res.setdefault("status", cancel_res.get("status", "canceled"))
                         last_res = cancel_res
                         status_lc = str(cancel_res.get("status", status_lc)).lower()
+                        if status_lc in _CANCEL_STATUSES:
+                            cancellation_recorded = True
                 except Exception:
                     pass
                 finally:
                     if callback_same:
                         setattr(self.adapter, "on_order_expiry", adapter_cb)
+
+                if cancellation_recorded:
+                    CANCELS.inc()
 
                 if on_order_expiry is None:
                     action = "re_quote"
