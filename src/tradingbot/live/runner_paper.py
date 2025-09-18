@@ -36,7 +36,6 @@ from ..strategies import STRATEGIES
 from monitoring import panel
 from ..core.symbols import normalize
 from ..execution.order_sizer import adjust_qty
-from .paper_orders import PaperOrderManager
 
 try:
     from ..storage.timescale import get_engine
@@ -240,6 +239,8 @@ async def run_paper(
     except (TypeError, ValueError):
         total_pnl = 0.0
 
+    logged_order_ids: set[str] = set()
+
     def _flat_threshold() -> float:
         base = risk.min_order_qty
         step = step_size if step_size > 0 else 0.0
@@ -272,7 +273,6 @@ async def run_paper(
         payload = {
             "event": "trade",
             "pnl": float(delta_pnl),
-            "pnl_trade": float(delta_pnl),
             "trade_pnl": float(delta_pnl),
             "trades_closed": trades_closed,
             "trades_won": trades_won,
@@ -315,53 +315,131 @@ async def run_paper(
     )
     strat.risk_service = risk
 
-    def _emit_metrics(payload: dict) -> None:
-        log.info("METRICS %s", json.dumps(payload))
+    def _recalc_locked_total() -> float:
+        """Recalculate total notional locked across all open orders."""
 
-    def _get_exposure(symbol: str | None) -> float:
-        if not symbol:
-            return 0.0
-        try:
-            return float(risk.account.current_exposure(symbol)[0])
-        except Exception:
-            return 0.0
-
-    order_manager = PaperOrderManager(
-        emit=_emit_metrics,
-        exposure_fn=_get_exposure,
-    )
-
-    def _sync_locked_total() -> None:
-        account = getattr(risk, "account", None)
-        if account is not None:
-            try:
-                setattr(account, "locked_total", order_manager.locked_total)
-            except Exception:
-                pass
-        try:
-            setattr(risk, "locked_total", order_manager.locked_total)
-        except Exception:
-            pass
-
-    def _update_account_pending(symbol: str, side: str) -> None:
-        side_norm = side.lower()
         account = getattr(risk, "account", None)
         if account is None:
-            _sync_locked_total()
-            return
-        open_orders = getattr(account, "open_orders", {})
-        prev_total = 0.0
-        if isinstance(open_orders, dict):
+            return 0.0
+
+        open_orders = getattr(account, "open_orders", None)
+        if not isinstance(open_orders, dict) or not open_orders:
+            setattr(account, "locked_total", 0.0)
+            setattr(risk, "locked_total", 0.0)
+            return 0.0
+
+        prices = getattr(account, "prices", {})
+        get_locked = getattr(account, "get_locked_usd", None)
+
+        def _symbol_locked(sym: str, orders: object) -> float:
+            if callable(get_locked):
+                try:
+                    return float(get_locked(sym))
+                except Exception:  # pragma: no cover - fallback below
+                    pass
+
+            total_qty = 0.0
+            if isinstance(orders, dict):
+                for key, qty_raw in orders.items():
+                    try:
+                        total_qty += abs(float(qty_raw))
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                try:
+                    total_qty = abs(float(orders))
+                except (TypeError, ValueError):
+                    total_qty = 0.0
+
             try:
-                prev_total = float(open_orders.get(symbol, {}).get(side_norm, 0.0) or 0.0)
+                price = float(prices.get(sym, 0.0) or 0.0)
             except (TypeError, ValueError):
-                prev_total = 0.0
-        new_total = order_manager.total_remaining(symbol, side_norm)
-        delta = new_total - prev_total
-        update_open = getattr(account, "update_open_order", None)
-        if callable(update_open) and abs(delta) > 1e-12:
-            update_open(symbol, side_norm, delta)
-        _sync_locked_total()
+                price = 0.0
+            return total_qty * price
+
+        total_locked = 0.0
+        for sym, orders in list(open_orders.items()):
+            total_locked += _symbol_locked(sym, orders)
+
+        if total_locked <= 1e-9:
+            total_locked = 0.0
+
+        setattr(account, "locked_total", total_locked)
+        setattr(risk, "locked_total", total_locked)
+        return total_locked
+
+    def on_order_cancel(res: dict) -> None:
+        """Handle broker order cancellation notifications."""
+        if not isinstance(res, dict):
+            return
+        status = str(res.get("status", "")).lower()
+        if status not in {"canceled", "cancelled", "expired"}:
+            return
+        if res.get("_cancel_handled"):
+            return
+        res["_cancel_handled"] = True
+        symbol = res.get("symbol")
+        side = res.get("side")
+        side_norm = str(side).lower() if isinstance(side, str) else None
+        lookup_side = side_norm or side
+        pending_raw = res.get("pending_qty")
+        if pending_raw is None:
+            pending_raw = res.get("qty")
+        pending_qty = None
+        if pending_raw is not None:
+            try:
+                pending_qty = float(pending_raw)
+            except (TypeError, ValueError):
+                pending_qty = None
+        prev_pending = 0.0
+        if symbol and lookup_side:
+            try:
+                prev_pending = float(
+                    risk.account.open_orders.get(symbol, {}).get(lookup_side, 0.0)
+                    or 0.0
+                )
+            except (TypeError, ValueError):
+                prev_pending = 0.0
+        if (pending_qty is None or pending_qty == 0.0) and symbol and lookup_side:
+            pending_qty = prev_pending
+        filled_qty = 0.0
+        try:
+            filled_qty = float(res.get("filled_qty", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            filled_qty = 0.0
+        metric_pending_override: float | None = None
+        if filled_qty > 0:
+            if symbol and lookup_side:
+                delta_pending = -prev_pending
+                risk.account.update_open_order(symbol, lookup_side, delta_pending)
+            metric_pending_override = 0.0
+        elif symbol and lookup_side and pending_qty and pending_qty > 0:
+            risk.account.update_open_order(symbol, lookup_side, -pending_qty)
+        metric_pending = res.get("pending_qty", pending_qty)
+        if metric_pending_override is not None:
+            metric_pending = metric_pending_override
+        try:
+            metric_pending_val = float(metric_pending)
+        except (TypeError, ValueError):
+            metric_pending_val = 0.0
+        if metric_pending_val <= 0:
+            risk.complete_order()
+            locked_total = _recalc_locked_total()
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
+                ),
+            )
+            return  # treat as filled; no cancel handling needed
+        risk.complete_order()
+        locked_total = _recalc_locked_total()
+        log.info(
+            "METRICS %s",
+            json.dumps(
+                {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
+            ),
+        )
 
     router = ExecutionRouter([
         broker
@@ -369,184 +447,264 @@ async def run_paper(
 
     last_price = 0.0
 
-    def _wrap_cb(orig_cb, *, call_cancel: bool = False):
+    def _wrap_cb(orig_cb, *, call_cancel=False):
         def _cb(order, res):
+            status = ""
+            if isinstance(res, dict):
+                status = str(res.get("status", "")).lower()
             res_dict = res if isinstance(res, dict) else {}
-            status = str(res_dict.get("status", "")).lower()
-            action = orig_cb(order, res_dict) if orig_cb else None
-
-            order_id_val = res_dict.get("order_id") or res_dict.get("client_order_id")
-            if order_id_val is None and order is not None:
-                order_id_val = getattr(order, "order_id", None)
-            order_id = str(order_id_val) if order_id_val is not None else None
-
-            symbol = res_dict.get("symbol")
-            if symbol is None and order is not None:
-                symbol = getattr(order, "symbol", None)
-
-            side = res_dict.get("side")
-            if side is None and order is not None:
-                side = getattr(order, "side", None)
-            side_norm = str(side).lower() if isinstance(side, str) else None
-
+            if call_cancel:
+                if order is not None:
+                    res_dict.setdefault("symbol", getattr(order, "symbol", None))
+                    res_dict.setdefault("side", getattr(order, "side", None))
+                    res_dict.setdefault("pending_qty", getattr(order, "pending_qty", None))
+                res = res_dict or res
+                if not res_dict.get("_cancel_handled"):
+                    on_order_cancel(res_dict)
+            else:
+                res = res_dict or res
+            action = orig_cb(order, res) if orig_cb else None
             filled_qty = 0.0
-            try:
-                filled_qty = float(res_dict.get("filled_qty", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                filled_qty = 0.0
-
-            pending_qty_val = res_dict.get("pending_qty")
-            try:
-                pending_qty = float(pending_qty_val)
-            except (TypeError, ValueError, TypeError):
-                pending_qty = None
-            if pending_qty is not None and abs(pending_qty) <= 1e-9:
-                pending_qty = 0.0
-
-            price_val = res_dict.get("price") or res_dict.get("avg_price")
-            if price_val is None and order is not None:
-                price_val = getattr(order, "price", None)
-            try:
-                exec_price = float(price_val) if price_val is not None else None
-            except (TypeError, ValueError):
-                exec_price = None
-
-            base_price = None
-            if order is not None:
-                base_price = getattr(order, "price", None)
-
-            slippage_bps = res_dict.get("slippage_bps")
-            if slippage_bps is None and exec_price is not None and base_price:
+            if isinstance(res, dict):
                 try:
-                    base_price_f = float(base_price)
-                    if base_price_f:
-                        slippage_bps = ((exec_price - base_price_f) / base_price_f) * 10000.0
-                except (TypeError, ValueError, ZeroDivisionError):
-                    slippage_bps = None
-
-            fee = res_dict.get("fee")
-            fee_bps = res_dict.get("fee_bps")
-            maker = None
-            fee_type = res_dict.get("fee_type")
-            if fee_type is not None:
-                maker = str(fee_type).lower() == "maker"
-            if fee is None and exec_price is not None and filled_qty > 0:
-                if fee_bps is None:
-                    maker_fee = getattr(exec_broker, "maker_fee_bps", getattr(broker, "maker_fee_bps", 0.0))
-                    taker_fee = getattr(exec_broker, "taker_fee_bps", getattr(broker, "taker_fee_bps", 0.0))
-                    if maker is None and base_price is not None:
-                        try:
-                            maker = abs(exec_price - float(base_price)) <= 1e-9
-                        except (TypeError, ValueError):
-                            maker = None
-                    fee_bps = maker_fee if maker else taker_fee
-                try:
-                    fee = filled_qty * exec_price * (float(fee_bps) / 10000.0)
+                    filled_qty = float(res.get("filled_qty", 0.0) or 0.0)
                 except (TypeError, ValueError):
-                    fee = None
-
-            if symbol and order_id and order is not None:
-                try:
-                    orig_qty_val = getattr(order, "qty", None)
-                    if orig_qty_val is None:
-                        orig_qty_val = res_dict.get("orig_qty")
-                    if orig_qty_val is None and pending_qty is not None:
-                        orig_qty_val = pending_qty + filled_qty
-                    if orig_qty_val is None:
-                        orig_qty_val = filled_qty
-                    remain_val = pending_qty
-                    if remain_val is None and orig_qty_val is not None:
-                        remain_val = max(float(orig_qty_val) - filled_qty, 0.0)
-                    order_price = base_price if base_price is not None else exec_price
-                    price_hint = res_dict.get("price")
-                    if order_price is None and isinstance(price_hint, (int, float)):
-                        order_price = float(price_hint)
-                    side_for_event = side if side is not None else getattr(order, "side", None)
-                    if order_price is not None and orig_qty_val is not None and side_for_event is not None:
-                        order_manager.ensure_order_event(
-                            symbol=symbol,
-                            order_id=order_id,
-                            side=str(side_for_event),
-                            price=float(order_price),
-                            orig_qty=float(orig_qty_val),
-                            remaining_qty=float(remain_val or 0.0),
-                        )
-                except Exception:
-                    pass
-
-            if filled_qty > 0 and symbol and side_norm:
-                if pending_qty is not None:
-                    adapters_to_update: list[object] = []
-                    for candidate in (adapter, rest):
-                        if candidate is not None and candidate not in adapters_to_update:
-                            adapters_to_update.append(candidate)
-                    for candidate in adapters_to_update:
-                        handler = getattr(candidate, "on_paper_fill", None)
-                        if callable(handler):
-                            try:
-                                handler(symbol, side_norm, pending_qty)
-                            except Exception:
-                                pass
-                update_position = getattr(risk.account, "update_position", None)
-                if callable(update_position):
-                    direction = 1.0 if side_norm == "buy" else -1.0
-                    update_position(symbol, direction * filled_qty, price=exec_price)
-                entry = order_manager.on_fill(
-                    symbol=symbol,
-                    order_id=order_id,
-                    side=side if side is not None else side_norm,
-                    fill_qty=filled_qty,
-                    price=exec_price,
-                    fee=fee,
-                    pending_qty=pending_qty,
-                    maker=maker,
-                    slippage_bps=None if slippage_bps is None else float(slippage_bps),
-                )
-                entry_side = side_norm or entry.get("side") if entry else side_norm
-                if entry_side:
-                    _update_account_pending(symbol, str(entry_side))
-                else:
-                    _sync_locked_total()
-
-            if status in {"canceled", "cancelled", "expired"} and symbol:
-                if order_id and order is not None:
+                    filled_qty = 0.0
+            if filled_qty > 0:
+                symbol = None
+                side = None
+                if order is not None:
+                    symbol = getattr(order, "symbol", None)
+                    side = getattr(order, "side", None)
+                if symbol is None:
+                    symbol = res.get("symbol") if isinstance(res, dict) else None
+                if side is None:
+                    side = res.get("side") if isinstance(res, dict) else None
+                price_raw = None
+                if isinstance(res, dict):
+                    price_raw = res.get("price") or res.get("avg_price")
+                if price_raw is None and order is not None:
+                    price_raw = getattr(order, "price", None)
+                exec_price = None
+                if price_raw is not None:
                     try:
-                        remain_val = pending_qty
-                        if remain_val is None:
-                            remain_val = max(float(getattr(order, "pending_qty", 0.0) or 0.0), 0.0)
-                        order_price = base_price if base_price is not None else exec_price
-                        price_hint = res_dict.get("price")
-                        if order_price is None and isinstance(price_hint, (int, float)):
-                            order_price = float(price_hint)
-                        side_for_event = side if side is not None else getattr(order, "side", None)
-                        if order_price is not None and side_for_event is not None:
-                            order_manager.ensure_order_event(
-                                symbol=symbol,
-                                order_id=order_id,
-                                side=str(side_for_event),
-                                price=float(order_price),
-                                orig_qty=float(getattr(order, "qty", 0.0) or 0.0),
-                                remaining_qty=float(remain_val or 0.0),
+                        exec_price = float(price_raw)
+                    except (TypeError, ValueError):
+                        exec_price = None
+                base_price = None
+                if order is not None:
+                    base_price = getattr(order, "price", None)
+                slippage_bps = None
+                if isinstance(res, dict):
+                    slippage_bps = res.get("slippage_bps")
+                if slippage_bps is None and exec_price is not None and base_price:
+                    try:
+                        base_price_f = float(base_price)
+                        if base_price_f:
+                            slippage_bps = ((exec_price - base_price_f) / base_price_f) * 10000.0
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        slippage_bps = 0.0
+                fee = None
+                fee_bps = None
+                if isinstance(res, dict):
+                    fee = res.get("fee")
+                    fee_bps = res.get("fee_bps")
+                if fee is None and exec_price is not None:
+                    fee_type = (res.get("fee_type") if isinstance(res, dict) else None) or ""
+                    fee_type = str(fee_type).lower()
+                    if fee_bps is None:
+                        if fee_type == "maker":
+                            fee_bps = getattr(exec_broker, "maker_fee_bps", getattr(broker, "maker_fee_bps", 0.0))
+                        elif fee_type == "taker":
+                            fee_bps = getattr(exec_broker, "taker_fee_bps", getattr(broker, "taker_fee_bps", 0.0))
+                        else:
+                            fee_bps = getattr(exec_broker, "maker_fee_bps", getattr(broker, "maker_fee_bps", 0.0))
+                    try:
+                        fee = filled_qty * exec_price * (float(fee_bps) / 10000.0)
+                    except (TypeError, ValueError):
+                        fee = 0.0
+                side_norm = str(side).lower() if side is not None else None
+                order_id = None
+                if isinstance(res, dict):
+                    order_id = res.get("order_id") or res.get("client_order_id")
+                order_key = str(order_id) if order_id is not None else None
+                if order_key and order_key not in logged_order_ids:
+                    qty_for_event = None
+                    if isinstance(res, dict):
+                        qty_for_event = (
+                            res.get("qty")
+                            or res.get("filled_qty")
+                            or res.get("orig_qty")
+                        )
+                    if qty_for_event is None and order is not None:
+                        qty_for_event = getattr(order, "qty", None)
+                    try:
+                        qty_for_event = float(qty_for_event)
+                    except (TypeError, ValueError):
+                        qty_for_event = filled_qty
+                    price_for_event = None
+                    if isinstance(res, dict):
+                        price_for_event = res.get("price") or res.get("avg_price")
+                    if price_for_event is None and order is not None:
+                        price_for_event = getattr(order, "price", None)
+                    if price_for_event is None:
+                        price_for_event = exec_price if exec_price is not None else base_price
+                    try:
+                        price_for_event = (
+                            float(price_for_event)
+                            if price_for_event is not None
+                            else None
+                        )
+                    except (TypeError, ValueError):
+                        price_for_event = exec_price
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "order",
+                                "side": side,
+                                "price": price_for_event,
+                                "qty": qty_for_event,
+                                "fee": 0.0,
+                                "pnl": getattr(broker.state, "realized_pnl", 0.0),
+                            }
+                        ),
+                    )
+                    logged_order_ids.add(order_key)
+                metrics_payload = {
+                    "event": "fill",
+                    "side": side,
+                    "price": exec_price,
+                    "qty": filled_qty,
+                    "fee": 0.0 if fee is None else fee,
+                    "slippage_bps": (
+                        float(slippage_bps)
+                        if slippage_bps is not None
+                        else 0.0
+                    ),
+                }
+                log.info("METRICS %s", json.dumps(metrics_payload))
+                if symbol and side_norm:
+                    pending_qty = None
+                    if isinstance(res, dict):
+                        pending_raw = res.get("pending_qty")
+                        if pending_raw is not None:
+                            try:
+                                pending_qty = float(pending_raw)
+                            except (TypeError, ValueError):
+                                pending_qty = None
+                    if pending_qty is not None and abs(pending_qty) <= 1e-9:
+                        pending_qty = 0.0
+                    if pending_qty is not None and isinstance(res, dict):
+                        res["pending_qty"] = pending_qty
+                    if pending_qty is not None:
+                        adapters_to_update: list[object] = []
+                        for candidate in (adapter, rest):
+                            if candidate is not None and candidate not in adapters_to_update:
+                                adapters_to_update.append(candidate)
+                        for candidate in adapters_to_update:
+                            handler = getattr(candidate, "on_paper_fill", None)
+                            if callable(handler):
+                                try:
+                                    handler(symbol, side_norm, pending_qty)
+                                except Exception:  # pragma: no cover - defensive
+                                    pass
+                    account_open_orders = getattr(risk.account, "open_orders", None)
+                    update_open = getattr(risk.account, "update_open_order", None)
+                    prev_pending = 0.0
+                    if isinstance(account_open_orders, dict):
+                        prev_pending = float(
+                            account_open_orders.get(symbol, {}).get(side_norm, 0.0) or 0.0
+                        )
+                    if pending_qty is not None and callable(update_open):
+                        if isinstance(account_open_orders, dict):
+                            delta_pending = pending_qty - prev_pending
+                            if abs(delta_pending) > 1e-12:
+                                update_open(symbol, side_norm, delta_pending)
+                        else:
+                            update_open(symbol, side_norm, pending_qty)
+                    target_qty = None
+                    if isinstance(res, dict) and res.get("pos_qty") is not None:
+                        try:
+                            target_qty = float(res.get("pos_qty"))
+                        except (TypeError, ValueError):
+                            target_qty = None
+                    positions = getattr(risk.account, "positions", {})
+                    current_qty = 0.0
+                    if isinstance(positions, dict):
+                        current_qty = float(positions.get(symbol, 0.0) or 0.0)
+                    if target_qty is None:
+                        direction = 1.0 if side_norm == "buy" else -1.0
+                        target_qty = current_qty + direction * filled_qty
+                    delta_qty = target_qty - current_qty
+                    price_for_position = exec_price
+                    if price_for_position is None and base_price is not None:
+                        try:
+                            price_for_position = float(base_price)
+                        except (TypeError, ValueError):
+                            price_for_position = None
+                    update_position = getattr(risk.account, "update_position", None)
+                    if abs(delta_qty) > 1e-12 and callable(update_position):
+                        update_position(symbol, delta_qty, price=price_for_position)
+                    current_exposure_fn = getattr(risk.account, "current_exposure", None)
+                    exposure_qty = target_qty
+                    if callable(current_exposure_fn):
+                        try:
+                            exposure_qty = float(current_exposure_fn(symbol)[0])
+                        except Exception:
+                            exposure_qty = float(target_qty)
+                    locked = _recalc_locked_total()
+                    if not getattr(risk.account, "open_orders", {}):
+                        locked = 0.0
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"exposure": exposure_qty, "locked": locked}),
+                    )
+            if not call_cancel:
+                pending_raw = res.get("pending_qty")
+                pending_qty = None
+                if pending_raw is not None:
+                    try:
+                        pending_qty = float(pending_raw)
+                    except (TypeError, ValueError):
+                        pending_qty = None
+                if pending_qty is not None and abs(pending_qty) <= 1e-9:
+                    pending_qty = 0.0
+                    if isinstance(res, dict):
+                        res["pending_qty"] = pending_qty
+                if pending_qty is not None and pending_qty <= 0:
+                    already_completed = False
+                    if order is not None:
+                        already_completed = getattr(order, "_risk_order_completed", False)
+                    if not already_completed:
+                        risk.complete_order()
+                        if order is not None:
+                            setattr(order, "_risk_order_completed", True)
+                    locked_after_completion = _recalc_locked_total()
+                    if not getattr(risk.account, "open_orders", {}):
+                        locked_after_completion = 0.0
+                    symbol_for_metrics = None
+                    if order is not None:
+                        symbol_for_metrics = getattr(order, "symbol", None)
+                    if symbol_for_metrics is None and isinstance(res, dict):
+                        symbol_for_metrics = res.get("symbol")
+                    exposure_after = 0.0
+                    if symbol_for_metrics:
+                        try:
+                            exposure_after = float(
+                                risk.account.current_exposure(symbol_for_metrics)[0]
                             )
-                    except Exception:
-                        pass
-                entry = order_manager.on_cancel(
-                    symbol=symbol,
-                    order_id=order_id,
-                    reason=res_dict.get("reason"),
-                )
-                cancel_side = side_norm
-                if entry and not cancel_side:
-                    cancel_side = entry.get("side")
-                if cancel_side:
-                    _update_account_pending(symbol, str(cancel_side))
-                else:
-                    _sync_locked_total()
-
+                        except Exception:
+                            exposure_after = 0.0
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {"exposure": exposure_after, "locked": locked_after_completion}
+                        ),
+                    )
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action
-
         return _cb
 
     on_pf = _wrap_cb(strat.on_partial_fill)
@@ -658,11 +816,13 @@ async def run_paper(
                     qty_close = min(qty_close, abs(pos_qty))
                     if qty_close <= 0:
                         log.info(
-                            "orden submínima: qty %.8f por debajo de los mínimos",
-                            abs(pos_qty),
+                            "Skipping order: qty %.8f below min threshold", abs(pos_qty)
                         )
                         SKIPS.inc()
-                        order_manager.emit_skip("min_notional")
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                        )
                         continue
                     resp = await exec_broker.place_limit(
                         symbol,
@@ -683,21 +843,47 @@ async def run_paper(
                     if status == "rejected":
                         if resp.get("reason") == "insufficient_cash":
                             SKIPS.inc()
-                            order_manager.emit_skip("insufficient_cash")
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                            )
                         continue
-                    order_id_val = resp.get("order_id") or resp.get("client_order_id")
-                    order_id = str(order_id_val) if order_id_val is not None else None
-                    if status not in {"rejected", "error"}:
-                        order_manager.on_order(
-                            symbol=symbol,
-                            order_id=order_id,
-                            side=close_side,
-                            price=price,
-                            orig_qty=qty_close,
-                            remaining_qty=pending_qty,
-                            pnl=float(getattr(broker.state, "realized_pnl", 0.0)),
+                    log_order = False
+                    order_qty = qty_close
+                    if status in {"open", "filled"}:
+                        log_order = True
+                    elif status == "canceled" and filled_qty > 0:
+                        log_order = True
+                        order_qty = filled_qty
+                    if log_order:
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "event": "order",
+                                    "side": close_side,
+                                    "price": price,
+                                    "qty": order_qty,
+                                    "fee": 0.0,
+                                    "pnl": broker.state.realized_pnl,
+                                }
+                            ),
                         )
-                        _update_account_pending(symbol, close_side)
+                        oid = resp.get("order_id")
+                        if oid is not None:
+                            logged_order_ids.add(str(oid))
+                        risk.account.update_open_order(symbol, close_side, pending_qty)
+                        cur_qty = risk.account.current_exposure(symbol)[0]
+                        if step_size > 0 and abs(cur_qty) < step_size:
+                            cur_qty = 0.0
+                            risk.account.positions[symbol] = 0.0
+                        locked = _recalc_locked_total()
+                        if not getattr(risk.account, "open_orders", {}):
+                            locked = 0.0
+                        log.info(
+                            "METRICS %s",
+                            json.dumps({"exposure": cur_qty, "locked": locked}),
+                        )
                     realized_raw = resp.get(
                         "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
                     )
@@ -714,34 +900,29 @@ async def run_paper(
                         _record_trade(delta_rpnl)
                     delta_rpnl = realized_val - prev_rpnl
                     if filled_qty > 0:
-                        maker = bool(exec_price == price)
+                        slippage = (
+                            ((exec_price - price) / price) * 10000 if price else 0.0
+                        )
+                        maker = exec_price == price
                         fee_bps = (
                             exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
                         )
                         fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                        slippage = None
-                        if price:
-                            slippage = ((exec_price - price) / price) * 10000.0
-                        update_position = getattr(risk.account, "update_position", None)
-                        if callable(update_position):
-                            direction = 1.0 if close_side == "buy" else -1.0
-                            update_position(symbol, direction * filled_qty, price=exec_price)
-                        order_manager.on_fill(
-                            symbol=symbol,
-                            order_id=order_id,
-                            side=close_side,
-                            fill_qty=filled_qty,
-                            price=exec_price,
-                            fee=fee,
-                            pending_qty=pending_qty,
-                            maker=maker,
-                            slippage_bps=slippage,
-                            pnl=delta_rpnl,
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "event": "fill",
+                                    "side": close_side,
+                                    "price": exec_price,
+                                    "qty": filled_qty,
+                                    "fee": fee,
+                                    "pnl": delta_rpnl,
+                                    "slippage_bps": slippage,
+                                    "maker": maker,
+                                }
+                            ),
                         )
-                        _update_account_pending(symbol, close_side)
-                        cur_qty = risk.account.current_exposure(symbol)[0]
-                        if step_size > 0 and abs(cur_qty) < step_size:
-                            risk.account.positions[symbol] = 0.0
                     delta_rpnl = realized_val - prev_rpnl
                     halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                     if halted:
@@ -773,11 +954,14 @@ async def run_paper(
                         )
                         if qty_scale <= 0:
                             log.info(
-                                "orden submínima: qty %.8f por debajo de los mínimos",
+                                "Skipping order: qty %.8f below min threshold",
                                 abs(delta_qty),
                             )
                             SKIPS.inc()
-                            order_manager.emit_skip("min_notional")
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                            )
                             continue
                         resp = await exec_broker.place_limit(
                             symbol,
@@ -798,21 +982,47 @@ async def run_paper(
                         if status == "rejected":
                             if resp.get("reason") == "insufficient_cash":
                                 SKIPS.inc()
-                                order_manager.emit_skip("insufficient_cash")
+                                log.info(
+                                    "METRICS %s",
+                                    json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                                )
                             continue
-                        order_id_val = resp.get("order_id") or resp.get("client_order_id")
-                        order_id = str(order_id_val) if order_id_val is not None else None
-                        if status not in {"rejected", "error"}:
-                            order_manager.on_order(
-                                symbol=symbol,
-                                order_id=order_id,
-                                side=side,
-                                price=price,
-                                orig_qty=qty_scale,
-                                remaining_qty=pending_qty,
-                                pnl=float(getattr(broker.state, "realized_pnl", 0.0)),
+                        log_order = False
+                        order_qty = qty_scale
+                        if status in {"open", "filled"}:
+                            log_order = True
+                        elif status == "canceled" and filled_qty > 0:
+                            log_order = True
+                            order_qty = filled_qty
+                        if log_order:
+                            log.info(
+                                "METRICS %s",
+                                json.dumps(
+                                    {
+                                        "event": "order",
+                                        "side": side,
+                                        "price": price,
+                                        "qty": order_qty,
+                                        "fee": 0.0,
+                                        "pnl": broker.state.realized_pnl,
+                                    }
+                                ),
                             )
-                            _update_account_pending(symbol, side)
+                            oid = resp.get("order_id")
+                            if oid is not None:
+                                logged_order_ids.add(str(oid))
+                            risk.account.update_open_order(symbol, side, pending_qty)
+                            cur_qty = risk.account.current_exposure(symbol)[0]
+                            if step_size > 0 and abs(cur_qty) < step_size:
+                                cur_qty = 0.0
+                                risk.account.positions[symbol] = 0.0
+                            locked = _recalc_locked_total()
+                            if not getattr(risk.account, "open_orders", {}):
+                                locked = 0.0
+                            log.info(
+                                "METRICS %s",
+                                json.dumps({"exposure": cur_qty, "locked": locked}),
+                            )
                         realized_raw = resp.get(
                             "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
                         )
@@ -828,34 +1038,31 @@ async def run_paper(
                         if filled_qty > 0 and _position_closed(prev_pos_qty, post_qty):
                             _record_trade(delta_rpnl)
                         if filled_qty > 0:
-                            maker = bool(exec_price == price)
+                            slippage = (
+                                ((exec_price - price) / price) * 10000 if price else 0.0
+                            )
+                            maker = exec_price == price
                             fee_bps = (
-                                exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
+                                exec_broker.maker_fee_bps
+                                if maker
+                                else broker.taker_fee_bps
                             )
                             fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                            slippage = None
-                            if price:
-                                slippage = ((exec_price - price) / price) * 10000.0
-                            update_position = getattr(risk.account, "update_position", None)
-                            if callable(update_position):
-                                direction = 1.0 if side == "buy" else -1.0
-                                update_position(symbol, direction * filled_qty, price=exec_price)
-                            order_manager.on_fill(
-                                symbol=symbol,
-                                order_id=order_id,
-                                side=side,
-                                fill_qty=filled_qty,
-                                price=exec_price,
-                                fee=fee,
-                                pending_qty=pending_qty,
-                                maker=maker,
-                                slippage_bps=slippage,
-                                pnl=delta_rpnl,
+                            log.info(
+                                "METRICS %s",
+                                json.dumps(
+                                    {
+                                        "event": "fill",
+                                        "side": side,
+                                        "price": exec_price,
+                                        "qty": filled_qty,
+                                        "fee": fee,
+                                        "pnl": delta_rpnl,
+                                        "slippage_bps": slippage,
+                                        "maker": maker,
+                                    }
+                                ),
                             )
-                            _update_account_pending(symbol, side)
-                            cur_qty = risk.account.current_exposure(symbol)[0]
-                            if step_size > 0 and abs(cur_qty) < step_size:
-                                risk.account.positions[symbol] = 0.0
                         halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
                         if halted:
                             log.error("[HALT] motivo=%s", reason)
@@ -909,10 +1116,13 @@ async def run_paper(
             if not allowed:
                 if reason == "below_min_qty":
                     log.info(
-                        "orden submínima: qty %.8f por debajo de los mínimos", abs(delta)
+                        "Skipping order: qty %.8f below min threshold", abs(delta)
                     )
                     SKIPS.inc()
-                    order_manager.emit_skip("min_notional")
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                    )
                 else:
                     log.warning("orden bloqueada: %s", reason)
                     SKIPS.inc()
@@ -920,7 +1130,10 @@ async def run_paper(
                         "METRICS %s",
                         json.dumps({"event": "risk_check_reject", "reason": reason}),
                     )
-                    order_manager.emit_skip(str(reason))
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": reason}),
+                    )
                 continue
             side = "buy" if delta > 0 else "sell"
             price = getattr(signal, "limit_price", None)
@@ -934,19 +1147,24 @@ async def run_paper(
             )
             if qty <= 0:
                 log.info(
-                    "orden submínima: qty %.8f por debajo de los mínimos", abs(delta)
+                    "Skipping order: qty %.8f below min threshold", abs(delta)
                 )
                 SKIPS.inc()
-                order_manager.emit_skip("min_notional")
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": "below_min_qty"}),
+                )
                 continue
             notional = qty * price
             if qty < step_size or notional < min_notional:
+                reason = "below_min_qty" if qty < step_size else "below_min_notional"
                 log.info(
-                    "orden submínima: qty %.8f notional %.8f por debajo de los mínimos",
-                    qty,
-                    notional,
+                    "Skipping order: qty %.8f notional %.8f below min threshold", qty, notional
                 )
-                order_manager.emit_skip("min_notional")
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": reason}),
+                )
                 continue
             if not risk.register_order(symbol, notional):
                 reason = getattr(risk, "last_kill_reason", "register_reject")
@@ -956,7 +1174,10 @@ async def run_paper(
                     "METRICS %s",
                     json.dumps({"event": "register_order_reject", "reason": reason}),
                 )
-                order_manager.emit_skip(reason)
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"event": "skip", "reason": reason}),
+                )
                 continue
             prev_pos_qty, _ = risk.account.current_exposure(symbol)
             try:
@@ -983,21 +1204,47 @@ async def run_paper(
             if status == "rejected":
                 if resp.get("reason") == "insufficient_cash":
                     SKIPS.inc()
-                    order_manager.emit_skip("insufficient_cash")
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"event": "skip", "reason": "insufficient_cash"}),
+                    )
                 continue
-            order_id_val = resp.get("order_id") or resp.get("client_order_id")
-            order_id = str(order_id_val) if order_id_val is not None else None
-            if status not in {"rejected", "error"}:
-                order_manager.on_order(
-                    symbol=symbol,
-                    order_id=order_id,
-                    side=side,
-                    price=price,
-                    orig_qty=qty,
-                    remaining_qty=pending_qty,
-                    pnl=float(getattr(broker.state, "realized_pnl", 0.0)),
+            log_order = False
+            order_qty = qty
+            if status in {"open", "filled"}:
+                log_order = True
+            elif status == "canceled" and filled_qty > 0:
+                log_order = True
+                order_qty = filled_qty
+            if log_order:
+                log.info(
+                    "METRICS %s",
+                    json.dumps(
+                        {
+                            "event": "order",
+                            "side": side,
+                            "price": price,
+                            "qty": order_qty,
+                            "fee": 0.0,
+                            "pnl": broker.state.realized_pnl,
+                        }
+                    ),
                 )
-                _update_account_pending(symbol, side)
+                oid = resp.get("order_id")
+                if oid is not None:
+                    logged_order_ids.add(str(oid))
+                risk.account.update_open_order(symbol, side, pending_qty)
+                cur_qty = risk.account.current_exposure(symbol)[0]
+                if step_size > 0 and abs(cur_qty) < step_size:
+                    cur_qty = 0.0
+                    risk.account.positions[symbol] = 0.0
+                locked = _recalc_locked_total()
+                if not getattr(risk.account, "open_orders", {}):
+                    locked = 0.0
+                log.info(
+                    "METRICS %s",
+                    json.dumps({"exposure": cur_qty, "locked": locked}),
+                )
             realized_raw = resp.get(
                 "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
             )
@@ -1013,32 +1260,25 @@ async def run_paper(
             if filled_qty > 0 and _position_closed(prev_pos_qty, post_qty):
                 _record_trade(delta_rpnl)
             if filled_qty > 0:
-                maker = bool(exec_price == price)
+                slippage = ((exec_price - price) / price) * 10000 if price else 0.0
+                maker = exec_price == price
                 fee_bps = exec_broker.maker_fee_bps if maker else broker.taker_fee_bps
                 fee = filled_qty * exec_price * (fee_bps / 10000.0)
-                slippage = None
-                if price:
-                    slippage = ((exec_price - price) / price) * 10000.0
-                update_position = getattr(risk.account, "update_position", None)
-                if callable(update_position):
-                    direction = 1.0 if side == "buy" else -1.0
-                    update_position(symbol, direction * filled_qty, price=exec_price)
-                order_manager.on_fill(
-                    symbol=symbol,
-                    order_id=order_id,
-                    side=side,
-                    fill_qty=filled_qty,
-                    price=exec_price,
-                    fee=fee,
-                    pending_qty=pending_qty,
-                    maker=maker,
-                    slippage_bps=slippage,
-                    pnl=delta_rpnl,
+                log.info(
+                    "METRICS %s",
+                    json.dumps(
+                        {
+                            "event": "fill",
+                            "side": side,
+                            "price": exec_price,
+                            "qty": filled_qty,
+                            "fee": fee,
+                            "pnl": delta_rpnl,
+                            "slippage_bps": slippage,
+                            "maker": maker,
+                        }
+                    ),
                 )
-                _update_account_pending(symbol, side)
-                cur_qty = risk.account.current_exposure(symbol)[0]
-                if step_size > 0 and abs(cur_qty) < step_size:
-                    risk.account.positions[symbol] = 0.0
             halted, reason = risk.daily_mark(broker, symbol, px, delta_rpnl)
             if halted:
                 log.error("[HALT] motivo=%s", reason)
