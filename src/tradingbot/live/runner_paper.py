@@ -365,6 +365,35 @@ async def run_paper(
         setattr(risk, "locked_total", total_locked)
         return total_locked
 
+    def _prev_pending_qty(symbol: str | None, side: str | None) -> float:
+        """Return the currently tracked pending quantity for ``symbol``/``side``."""
+
+        if not symbol or not side:
+            return 0.0
+
+        account = getattr(risk, "account", None)
+        if account is None:
+            return 0.0
+
+        open_orders = getattr(account, "open_orders", None)
+        if not isinstance(open_orders, dict):
+            return 0.0
+
+        try:
+            side_key = str(side).lower()
+        except Exception:
+            side_key = side
+
+        try:
+            existing = open_orders.get(symbol, {}).get(side_key, 0.0)
+        except AttributeError:
+            return 0.0
+
+        try:
+            return float(existing or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
         if not isinstance(res, dict):
@@ -876,7 +905,9 @@ async def run_paper(
                         oid = resp.get("order_id")
                         if oid is not None:
                             logged_order_ids.add(str(oid))
-                        risk.account.update_open_order(symbol, close_side, pending_qty)
+                        prev_pending = _prev_pending_qty(symbol, close_side)
+                        delta_pending = pending_qty - prev_pending
+                        risk.account.update_open_order(symbol, close_side, delta_pending)
                         cur_qty = risk.account.current_exposure(symbol)[0]
                         if step_size > 0 and abs(cur_qty) < step_size:
                             cur_qty = 0.0
@@ -1026,7 +1057,9 @@ async def run_paper(
                             oid = resp.get("order_id")
                             if oid is not None:
                                 logged_order_ids.add(str(oid))
-                            risk.account.update_open_order(symbol, side, pending_qty)
+                            prev_pending = _prev_pending_qty(symbol, side)
+                            delta_pending = pending_qty - prev_pending
+                            risk.account.update_open_order(symbol, side, delta_pending)
                             cur_qty = risk.account.current_exposure(symbol)[0]
                             if step_size > 0 and abs(cur_qty) < step_size:
                                 cur_qty = 0.0
@@ -1259,7 +1292,9 @@ async def run_paper(
                 oid = resp.get("order_id")
                 if oid is not None:
                     logged_order_ids.add(str(oid))
-                risk.account.update_open_order(symbol, side, pending_qty)
+                prev_pending = _prev_pending_qty(symbol, side)
+                delta_pending = pending_qty - prev_pending
+                risk.account.update_open_order(symbol, side, delta_pending)
                 cur_qty = risk.account.current_exposure(symbol)[0]
                 if step_size > 0 and abs(cur_qty) < step_size:
                     cur_qty = 0.0

@@ -11,7 +11,8 @@ binance_stub.BinanceWSAdapter = object
 sys.modules.setdefault("tradingbot.adapters.binance", binance_stub)
 
 from tradingbot.live import runner_paper as rp
-from tradingbot.core import normalize
+from tradingbot.core import normalize, Account
+from tradingbot.utils.price import limit_price_from_close
 
 sys.modules.pop("tradingbot.adapters.binance", None)
 
@@ -53,14 +54,11 @@ class DummyRisk:
         self.min_order_qty = 0.0
         self.rm = types.SimpleNamespace(allow_short=True)
         self.allow_short = True
-        self.account = types.SimpleNamespace(
-            current_exposure=lambda symbol: (0.0, 0.0),
-            update_open_order=lambda symbol, side, qty: None,
-        )
+        self.account = Account(float("inf"), cash=0.0)
         self.trades: dict = {}
 
     def mark_price(self, symbol, price):
-        pass
+        self.account.mark_price(symbol, price)
 
     def update_correlation(self, *a, **k):
         pass
@@ -91,6 +89,17 @@ class DummyRisk:
         pass
 
 
+class DummyRiskWithAccount(DummyRisk):
+    def __init__(self, symbol: str, *a, **k):
+        super().__init__(*a, **k)
+        self.account = Account(float("inf"), cash=1000.0)
+        self.account.mark_price(symbol, 100.0)
+        self.account.update_open_order(symbol, "buy", 0.005)
+
+    def mark_price(self, symbol, price):
+        self.account.mark_price(symbol, price)
+
+
 class DummyRouter:
     def __init__(self, adapters, **kwargs):
         self.adapters = adapters
@@ -98,6 +107,8 @@ class DummyRouter:
 
 class DummyExecBroker:
     last_args = None
+    maker_fee_bps = 0.0
+    taker_fee_bps = 0.0
 
     def __init__(self, adapter):
         self.adapter = adapter
@@ -113,7 +124,13 @@ class DummyExecBroker:
         **_,
     ):
         DummyExecBroker.last_args = (symbol, side, price, qty, on_partial_fill, on_order_expiry)
-        return {"filled_qty": qty, "pending_qty": 0.0, "realized_pnl": 0.0}
+        return {
+            "status": "filled",
+            "price": price,
+            "filled_qty": qty,
+            "pending_qty": 0.0,
+            "realized_pnl": 0.0,
+        }
 
 
 class DummyExecBrokerInsufficient(DummyExecBroker):
@@ -236,6 +253,7 @@ class DummyRiskNoInventory(DummyRisk):
 @pytest.mark.asyncio
 async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
     monkeypatch.setattr(rp, "REST_ADAPTERS", {})
@@ -258,14 +276,45 @@ async def test_run_paper(monkeypatch):
     sym, side, price, qty, pfill, oexp = DummyExecBroker.last_args
     assert sym == normalize("BTC-USDT")
     assert side == "buy"
-    assert price == pytest.approx(99.9)
+    expected_price = limit_price_from_close("buy", 100.0, 0.1)
+    assert price == pytest.approx(expected_price)
     assert pfill is not None and oexp is not None
     assert dummy_risk.last_strength == pytest.approx(0.37)
 
 
 @pytest.mark.asyncio
+async def test_run_paper_clears_existing_pending_after_fill(monkeypatch):
+    monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    symbol = normalize("BTC-USDT")
+    dummy_risk = DummyRiskWithAccount(symbol)
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    monkeypatch.setattr(rp, "Broker", DummyExecBroker)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp,
+        "settings",
+        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+    )
+
+    assert dummy_risk.account.open_orders[symbol]["buy"] == pytest.approx(0.005)
+
+    await rp.run_paper(symbol=symbol, strategy_name="dummy")
+
+    assert dummy_risk.account.open_orders == {}
+    assert getattr(dummy_risk.account, "locked_total", 0.0) == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
 async def test_run_paper_skips_on_fill(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
     monkeypatch.setattr(rp, "REST_ADAPTERS", {})
@@ -288,6 +337,7 @@ async def test_run_paper_skips_on_fill(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_paper_skip_sell_no_inventory(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": SellStrat})
     monkeypatch.setattr(rp, "REST_ADAPTERS", {})
@@ -312,6 +362,7 @@ async def test_run_paper_skip_sell_no_inventory(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_paper_passes_slip(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
     monkeypatch.setattr(rp, "REST_ADAPTERS", {})
