@@ -41,7 +41,7 @@ from monitoring.metrics import (
 from monitoring.dashboard import router as dashboard_router
 
 from ...storage.timescale import select_recent_fills
-from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY, TRADING_PNL
+from ...utils.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from ...config import settings
 from ...cli.utils import get_adapter_class, get_supported_kinds
 from ...exchanges import SUPPORTED_EXCHANGES
@@ -1260,20 +1260,30 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
                 trade_payload["pnl"] = pnl_val
             trades_buf.append(trade_payload)
             info["market_trades"] = info.get("market_trades", 0) + 1
-            if pnl_val is None:
-                pnl_val = TRADING_PNL._value.get()
-            try:
-                pnl = float(pnl_val)
-            except (TypeError, ValueError):
-                pnl = 0.0
-            prev = buf.get("_last_pnl")
-            delta = pnl - prev if prev is not None else pnl
-            buf["pnl"] = buf.get("pnl", 0.0) + delta
-            buf["_last_pnl"] = pnl
-            if not is_market_trade and pnl_val is not None:
+            pnl_delta = 0.0
+            has_trade_delta = False
+            if pnl_val is not None:
+                try:
+                    pnl_delta = float(pnl_val)
+                except (TypeError, ValueError):
+                    pnl_delta = 0.0
+                else:
+                    has_trade_delta = True
+                    buf["pnl"] = buf.get("pnl", 0.0) + pnl_delta
+            if not is_market_trade and has_trade_delta:
                 buf["trades_closed"] = buf.get("trades_closed", 0) + 1
-                if delta > 1e-9:
+                if pnl_delta > 1e-9:
                     buf["trades_won"] = buf.get("trades_won", 0) + 1
+
+        if event is None and "pnl" in data:
+            try:
+                snapshot_pnl = float(data["pnl"])
+            except (TypeError, ValueError):
+                pass
+            else:
+                buf["pnl"] = snapshot_pnl
+                buf["_last_pnl"] = snapshot_pnl
+                data["pnl"] = snapshot_pnl
 
         if data:
             buf.update(data)
