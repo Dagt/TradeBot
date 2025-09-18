@@ -441,7 +441,6 @@ async def run_paper(
         if res.get("_cancel_handled"):
             return
         res["_cancel_handled"] = True
-        CANCELS.inc()
         symbol = res.get("symbol")
         side = res.get("side")
         side_norm = str(side).lower() if isinstance(side, str) else None
@@ -490,20 +489,30 @@ async def run_paper(
         side_for_risk = side_norm
         if not side_for_risk and isinstance(lookup_side, str):
             side_for_risk = lookup_side.lower()
-        if metric_pending_val <= 0:
+        treat_as_fill = filled_qty > 0 or metric_pending_val <= 0
+        if treat_as_fill:
             risk.complete_order(
                 venue=venue,
                 symbol=symbol,
                 side=side_for_risk,
             )
             locked_total = _recalc_locked_total()
+            if not getattr(risk.account, "open_orders", {}):
+                locked_total = 0.0
+            exposure_val = 0.0
+            if symbol:
+                current_exposure_fn = getattr(risk.account, "current_exposure", None)
+                if callable(current_exposure_fn):
+                    try:
+                        exposure_val = float(current_exposure_fn(symbol)[0])
+                    except Exception:
+                        exposure_val = 0.0
             log.info(
                 "METRICS %s",
-                json.dumps(
-                    {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
-                ),
+                json.dumps({"exposure": exposure_val, "locked": locked_total}),
             )
-            return  # treat as filled; no cancel handling needed
+            return
+        CANCELS.inc()
         risk.complete_order(
             venue=venue,
             symbol=symbol,

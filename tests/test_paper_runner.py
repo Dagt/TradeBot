@@ -14,6 +14,7 @@ sys.modules.setdefault("tradingbot.adapters.binance", binance_stub)
 
 from tradingbot.live import runner_paper as rp
 from tradingbot.core import normalize, Account
+from tradingbot.utils.metrics import CANCELS
 from tradingbot.utils.price import limit_price_from_close
 
 sys.modules.pop("tradingbot.adapters.binance", None)
@@ -90,6 +91,23 @@ class DummyRisk:
     def purge(self, symbols):
         pass
 
+    def complete_order(self, venue=None, symbol=None, side=None):
+        if symbol is None:
+            return
+        side_key = str(side).lower() if isinstance(side, str) else None
+        orders = getattr(self.account, "open_orders", {})
+        if not isinstance(orders, dict):
+            return
+        if side_key:
+            try:
+                orders.get(symbol, {}).pop(side_key, None)
+            except Exception:
+                return
+            if not orders.get(symbol):
+                orders.pop(symbol, None)
+        else:
+            orders.pop(symbol, None)
+
 
 class DummyRiskWithAccount(DummyRisk):
     def __init__(self, symbol: str, *a, **k):
@@ -105,6 +123,23 @@ class DummyRiskWithAccount(DummyRisk):
 class DummyRouter:
     def __init__(self, adapters, **kwargs):
         self.adapters = adapters
+
+    async def handle_paper_event(self, ev):
+        return
+
+
+class DummyRouterCapture(DummyRouter):
+    last_instance = None
+
+    def __init__(self, adapters, **kwargs):
+        super().__init__(adapters, **kwargs)
+        DummyRouterCapture.last_instance = self
+        self.on_partial_fill = None
+        self.on_order_expiry = None
+        self._events: list = []
+
+    async def handle_paper_event(self, ev):
+        self._events.append(ev)
 
 
 class DummyExecBroker:
@@ -314,6 +349,50 @@ async def test_run_paper_clears_existing_pending_after_fill(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cancel_event_after_fill_does_not_increment(monkeypatch):
+    CANCELS._value.set(0)
+    DummyRouterCapture.last_instance = None
+
+    monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    symbol = normalize("BTC-USDT")
+    dummy_risk = DummyRiskWithAccount(symbol)
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouterCapture)
+    monkeypatch.setattr(rp, "Broker", DummyExecBroker)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp,
+        "settings",
+        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+    )
+
+    await rp.run_paper(symbol=symbol, strategy_name="dummy")
+
+    router = DummyRouterCapture.last_instance
+    assert router is not None and callable(router.on_order_expiry)
+    _, _, _, qty, _, _ = DummyExecBroker.last_args
+    order = SimpleNamespace(symbol=symbol, side="buy", pending_qty=0.0)
+    cancel_event = {
+        "status": "canceled",
+        "filled_qty": qty,
+        "pending_qty": 0.0,
+        "symbol": symbol,
+        "side": "buy",
+    }
+
+    router.on_order_expiry(order, dict(cancel_event))
+
+    assert CANCELS._value.get() == 0.0
+    assert getattr(dummy_risk.account, "locked_total", 0.0) == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
 async def test_run_paper_skips_on_fill(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
@@ -517,7 +596,7 @@ class CloseRisk(DummyRisk):
         self._closed = True
         return "close"
 
-    def complete_order(self):
+    def complete_order(self, *_, **__):
         pass
 
 
