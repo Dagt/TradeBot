@@ -52,6 +52,7 @@ from monitoring import panel
 from ..execution.order_sizer import adjust_qty
 from ..core.symbols import normalize
 from ..utils.price import limit_price_from_close
+from ._metrics import infer_maker_flag
 
 try:
     from ..storage.timescale import get_engine
@@ -504,6 +505,11 @@ async def _run_symbol(
                     except (TypeError, ValueError):
                         fee = 0.0
                 side_norm = str(side).lower() if side is not None else None
+                maker_flag = infer_maker_flag(
+                    res if isinstance(res, dict) else None,
+                    exec_price,
+                    base_price,
+                )
                 log.info(
                     "METRICS %s",
                     json.dumps(
@@ -518,6 +524,7 @@ async def _run_symbol(
                                 if slippage_bps is not None
                                 else 0.0
                             ),
+                            "maker": maker_flag,
                         }
                     ),
                 )
