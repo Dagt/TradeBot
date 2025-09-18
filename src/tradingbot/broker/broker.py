@@ -2,11 +2,57 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from typing import Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
 
 from ..config import settings
 from ..execution.order_types import Order
 from ..utils.metrics import ORDERS, SKIPS, FILL_COUNT
+
+
+_FINAL_STATUSES = {"filled", "expired", "cancelled", "canceled"}
+
+
+@dataclass
+class _PaperOrderTracker:
+    """Track asynchronous fills emitted by ``PaperAdapter``."""
+
+    qty: float
+    pending_qty: float | None = None
+    status: str | None = None
+    filled_qty: float = 0.0
+    last_res: dict[str, Any] | None = None
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def update(self, res: dict[str, Any]) -> None:
+        """Update tracker state from an adapter response or fill event."""
+
+        self.last_res = dict(res)
+        status = res.get("status")
+        if status is not None:
+            self.status = str(status).lower()
+        pending = res.get("pending_qty")
+        if pending is not None:
+            try:
+                self.pending_qty = max(float(pending), 0.0)
+            except (TypeError, ValueError):
+                pass
+        elif self.pending_qty is None:
+            qty_val = res.get("qty")
+            if qty_val is None:
+                qty_val = res.get("filled_qty")
+            try:
+                qty_float = float(qty_val) if qty_val is not None else None
+            except (TypeError, ValueError):
+                qty_float = None
+            if qty_float is not None and self.status == "filled":
+                self.pending_qty = max(self.qty - qty_float, 0.0)
+        if self.pending_qty is not None:
+            self.filled_qty = max(self.qty - self.pending_qty, 0.0)
+        if self.status in _FINAL_STATUSES or (
+            self.pending_qty is not None and self.pending_qty <= 0
+        ):
+            self.event.set()
 
 
 class Broker:
@@ -24,13 +70,47 @@ class Broker:
             else getattr(adapter, "maker_fee_bps", settings.maker_fee_bps)
         )
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
+        name = str(getattr(adapter, "name", "") or "").lower()
+        self._track_paper_orders = name == "paper"
+        self._paper_orders: dict[str, _PaperOrderTracker] = {}
 
-    def update_last_price(self, symbol: str, px: float) -> None:
+    def _register_paper_tracker(
+        self, order_id: str | int | None, qty: float, res: dict[str, Any]
+    ) -> _PaperOrderTracker | None:
+        if not self._track_paper_orders:
+            return None
+        if order_id is None:
+            return None
+        key = str(order_id)
+        tracker = self._paper_orders.get(key)
+        if tracker is None:
+            tracker = _PaperOrderTracker(qty=qty, pending_qty=qty)
+            self._paper_orders[key] = tracker
+        elif tracker.pending_qty is None:
+            tracker.pending_qty = qty
+        tracker.update(res)
+        return tracker
+
+    def _update_paper_tracker(self, res: dict[str, Any]) -> None:
+        if not self._track_paper_orders:
+            return
+        order_id = res.get("order_id")
+        if not order_id:
+            return
+        tracker = self._paper_orders.get(str(order_id))
+        if tracker is not None:
+            tracker.update(res)
+
+    def update_last_price(self, symbol: str, px: float) -> list[dict[str, Any]]:
         """Update last price on the underlying adapter if supported.
 
         Any fills returned by the adapter are forwarded to the execution
-        callbacks and risk service while updating metrics.
+        callbacks and risk service while updating metrics. A list with the
+        processed fill events is returned so callers can forward them to
+        :meth:`ExecutionRouter.handle_paper_event`.
         """
+
+        collected: list[dict[str, Any]] = []
 
         def _handle_fills(fills, venue: str | None = None) -> None:
             if not fills:
@@ -38,11 +118,12 @@ class Broker:
             cb_pf = getattr(self.adapter, "on_partial_fill", None)
             cb_exp = getattr(self.adapter, "on_order_expiry", None)
             risk = getattr(self.adapter, "risk_service", None)
-            for f in fills:
-                status = str(f.get("status", "")).lower()
-                side = f.get("side")
-                qty = float(f.get("qty") or f.get("filled_qty") or 0.0)
-                price = f.get("price")
+            for raw in fills:
+                event = dict(raw)
+                status = str(event.get("status", "")).lower()
+                side = event.get("side")
+                qty = float(event.get("qty") or event.get("filled_qty") or 0.0)
+                price = event.get("price")
                 if side and qty > 0:
                     FILL_COUNT.labels(symbol=symbol, side=side).inc()
                     if risk is not None:
@@ -50,12 +131,12 @@ class Broker:
                             risk.on_fill(symbol, side, qty, price=price, venue=venue)
                         except Exception:
                             pass
-                cb = cb_exp if status in {"expired", "cancelled", "canceled"} else cb_pf
+                cb = cb_exp if status in _FINAL_STATUSES else cb_pf
                 if cb is not None and side:
                     try:
-                        order_qty = f.get("qty")
+                        order_qty = event.get("qty")
                         if order_qty is None:
-                            order_qty = qty + float(f.get("pending_qty", 0.0))
+                            order_qty = qty + float(event.get("pending_qty", 0.0))
                         order = Order(
                             symbol=symbol,
                             side=side,
@@ -63,10 +144,12 @@ class Broker:
                             qty=float(order_qty),
                             price=price,
                         )
-                        order.pending_qty = float(f.get("pending_qty", 0.0))
-                        cb(order, f)
+                        order.pending_qty = float(event.get("pending_qty", 0.0))
+                        cb(order, event)
                     except Exception:
                         pass
+                self._update_paper_tracker(event)
+                collected.append(event)
 
         upd = getattr(self.adapter, "update_last_price", None)
         if callable(upd):
@@ -78,6 +161,7 @@ class Broker:
                 if callable(upd):
                     fills = upd(symbol, px)
                     _handle_fills(fills, getattr(ad, "name", None))
+        return collected
 
     def equity(self) -> float:
         """Return account equity if the adapter exposes it."""
@@ -181,11 +265,12 @@ class Broker:
 
         while remaining > 0 and attempts < max_attempts:
             attempts += 1
+            order_qty = remaining
             kwargs = dict(
                 symbol=symbol,
                 side=side,
                 type_="limit",
-                qty=remaining,
+                qty=order_qty,
                 price=price,
                 post_only=post_only,
                 time_in_force=time_in_force,
@@ -205,6 +290,10 @@ class Broker:
                 SKIPS.inc()
             else:
                 ORDERS.inc()
+
+            order_id = res.get("order_id")
+            tracker = self._register_paper_tracker(order_id, order_qty, res)
+
             qty_filled = float(
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
             )
@@ -215,21 +304,60 @@ class Broker:
             res.setdefault("pending_qty", remaining)
             last_res = res
 
-            # Fully filled or adapter rejected/canceled the order
-            status = res.get("status")
-            if remaining <= 0 or status in {"canceled", "rejected"}:
+            tracker_status = None
+            if tracker is not None:
+                if tracker.pending_qty is not None:
+                    remaining = max(float(tracker.pending_qty), 0.0)
+                filled = max(float(filled), float(qty) - remaining)
+                order.pending_qty = remaining
+                if tracker.last_res is not None:
+                    last_res = dict(tracker.last_res)
+                tracker_status = tracker.status
+            else:
+                filled = max(float(filled), float(qty) - remaining)
+
+            status = tracker_status if tracker_status is not None else res.get("status")
+            status_lc = str(status or "").lower()
+
+            if tracker is not None and tracker.event.is_set():
                 break
 
-            # Handle partial fills
+            if remaining <= 0 or status_lc in {"canceled", "rejected"}:
+                break
+
             if qty_filled > 0 and remaining > 0:
-                action = on_partial_fill(order, res) if on_partial_fill else None
+                action = on_partial_fill(order, last_res) if on_partial_fill else None
                 if action in {"re_quote", "requote", "re-quote"}:
+                    if order_id is not None:
+                        self._paper_orders.pop(str(order_id), None)
+                    price = order.price or price
                     continue
                 break
 
-            # Handle expiry/re-quote
-            if expiry is not None and status not in {"canceled", "rejected"}:
-                await asyncio.sleep(expiry)
+            if expiry is not None and status_lc not in {"canceled", "rejected"}:
+                timed_out = True
+                if tracker is not None:
+                    try:
+                        await asyncio.wait_for(tracker.event.wait(), timeout=expiry)
+                        timed_out = False
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                else:
+                    await asyncio.sleep(expiry)
+                if tracker is not None:
+                    if tracker.pending_qty is not None:
+                        remaining = max(float(tracker.pending_qty), 0.0)
+                    filled = max(float(filled), float(qty) - remaining)
+                    order.pending_qty = remaining
+                    if tracker.last_res is not None:
+                        last_res = dict(tracker.last_res)
+                    if tracker.status:
+                        status_lc = tracker.status
+                    if tracker.event.is_set() or tracker.status in _FINAL_STATUSES or remaining <= 0:
+                        break
+                if tracker is not None and not timed_out:
+                    continue
+
                 adapter_cb = None
                 callback_same = False
                 callback_executed = False
@@ -247,22 +375,30 @@ class Broker:
 
                         setattr(self.adapter, "on_order_expiry", _proxy)
                 try:
-                    res = await self.adapter.cancel_order(res.get("order_id"), symbol)
-                    filled = float(res.get("filled_qty", 0.0))
-                    pending_default = (
-                        order.pending_qty
-                        if getattr(order, "pending_qty", None) is not None
-                        else remaining
-                    )
-                    remaining = float(
-                        res.get("pending_qty", pending_default)
-                    )
-                    if remaining <= 0 and filled > 0:
-                        res["status"] = "filled"
-                    res.setdefault("pending_qty", remaining)
-                    res.setdefault("filled_qty", filled)
-                    res.setdefault("status", res.get("status", "canceled"))
-                    last_res = res
+                    cancel_res = await self.adapter.cancel_order(order_id, symbol)
+                    if tracker is not None:
+                        tracker.update(cancel_res)
+                        if tracker.pending_qty is not None:
+                            remaining = max(float(tracker.pending_qty), 0.0)
+                        filled = max(float(filled), float(qty) - remaining)
+                        last_res = dict(tracker.last_res or cancel_res)
+                        if tracker.status:
+                            status_lc = tracker.status
+                    else:
+                        filled = float(cancel_res.get("filled_qty", 0.0))
+                        pending_default = (
+                            order.pending_qty
+                            if getattr(order, "pending_qty", None) is not None
+                            else remaining
+                        )
+                        remaining = float(cancel_res.get("pending_qty", pending_default))
+                        if remaining <= 0 and filled > 0:
+                            cancel_res["status"] = "filled"
+                        cancel_res.setdefault("pending_qty", remaining)
+                        cancel_res.setdefault("filled_qty", filled)
+                        cancel_res.setdefault("status", cancel_res.get("status", "canceled"))
+                        last_res = cancel_res
+                        status_lc = str(cancel_res.get("status", status_lc)).lower()
                 except Exception:
                     pass
                 finally:
@@ -274,9 +410,11 @@ class Broker:
                 elif callback_same and callback_executed:
                     action = captured_action
                 else:
-                    action = on_order_expiry(order, res) if on_order_expiry else None
+                    action = on_order_expiry(order, last_res) if on_order_expiry else None
                 if action in {"re_quote", "requote", "re-quote"}:
                     price = order.price or price
+                    if order_id is not None:
+                        self._paper_orders.pop(str(order_id), None)
                     continue
                 break
 
@@ -284,6 +422,7 @@ class Broker:
             break
 
         remaining = max(float(remaining), 0.0)
+        filled = max(float(filled), float(qty) - remaining)
         result = dict(last_res)
         result.update(
             {
@@ -300,6 +439,11 @@ class Broker:
         if price_val is None:
             price_val = price
         result["price"] = price_val
+        final_oid = result.get("order_id")
+        if final_oid is not None:
+            tracker = self._paper_orders.get(str(final_oid))
+            if tracker is not None and (tracker.event.is_set() or remaining <= 0):
+                self._paper_orders.pop(str(final_oid), None)
         last_res = result
         return last_res
 

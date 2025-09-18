@@ -1,9 +1,12 @@
+import asyncio
+
 import pytest
 
 from tradingbot.broker import Broker
 from tradingbot.execution.paper import PaperAdapter
 from tradingbot.strategies.base import Strategy, Signal, record_signal_metrics
 from tradingbot.filters.liquidity import LiquidityFilterManager
+from tradingbot.utils.metrics import FILL_COUNT
 
 
 class DummyAdapter:
@@ -173,3 +176,37 @@ async def test_place_limit_expiry_cancels_on_edge_gone():
     assert len(adapter.calls) == 1
     assert adapter.cancel_calls == 1
     assert strat.pending_qty["BTC/USDT"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_place_limit_paper_fill_before_gtd():
+    symbol = "BTC/USDT"
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price(symbol, 100.0)
+    broker = Broker(adapter)
+
+    FILL_COUNT.clear()
+
+    task = asyncio.create_task(
+        broker.place_limit(symbol, "buy", 99.0, 1.0, tif="GTD:0.2|PO")
+    )
+
+    await asyncio.sleep(0)
+    events = broker.update_last_price(symbol, 98.5)
+    assert events and events[0]["status"] == "filled"
+
+    res = await task
+    assert res["status"] == "filled"
+    assert res["filled_qty"] == pytest.approx(1.0)
+    assert res["pending_qty"] == pytest.approx(0.0)
+
+    samples = list(FILL_COUNT.collect())[0].samples
+    fill_sample = [
+        s
+        for s in samples
+        if s.name == "order_fills_total"
+        and s.labels.get("symbol") == symbol
+        and s.labels.get("side") == "buy"
+    ][0]
+    assert fill_sample.value == 1.0
