@@ -1,3 +1,5 @@
+import asyncio
+import json
 import pandas as pd
 import pytest
 from datetime import datetime, timezone
@@ -382,3 +384,239 @@ async def test_run_paper_passes_slip(monkeypatch):
     )
 
     assert DummyBrokerSlip.last_slip == 5.0
+
+
+class AsyncFillPaperAdapter:
+    maker_fee_bps = 0.0
+    taker_fee_bps = 0.0
+
+    def __init__(self, *_, **__):
+        self.state = SimpleNamespace(
+            realized_pnl=0.0,
+            last_px={},
+            order_book={},
+            order_id_seq=0,
+        )
+        self.account = Account(float("inf"), cash=0.0)
+        self.orders: dict[str, dict] = {}
+        self.name = "paper"
+        self.entry_px: dict[str, float] = {}
+        self.default_entry = 100.0
+        self.min_notional = 0.0
+        self.step_size = 1e-9
+
+    async def place_order(
+        self,
+        symbol,
+        side,
+        type_,
+        qty,
+        price,
+        post_only=False,
+        time_in_force=None,
+        **_,
+    ):
+        order_id = f"paper-{self.state.order_id_seq}"
+        self.state.order_id_seq += 1
+        self.orders[order_id] = {
+            "symbol": symbol,
+            "side": side,
+            "price": float(price),
+            "pending": float(qty),
+        }
+        self.state.last_px.setdefault(symbol, float(price))
+        self.state.order_book.setdefault(
+            symbol,
+            {
+                "bids": [(float(price) - 0.5, float(qty))],
+                "asks": [(float(price) + 0.5, float(qty))],
+            },
+        )
+        return {
+            "status": "new",
+            "order_id": order_id,
+            "pending_qty": float(qty),
+            "filled_qty": 0.0,
+            "price": float(price),
+        }
+
+    async def cancel_order(self, order_id, symbol):  # pragma: no cover - defensive
+        self.orders.pop(str(order_id), None)
+        return {"status": "canceled", "order_id": order_id, "symbol": symbol, "pending_qty": 0.0}
+
+    def update_last_price(self, symbol, px):
+        self.state.last_px[symbol] = float(px)
+        self.account.mark_price(symbol, float(px))
+        fills: list[dict] = []
+        for oid, order in list(self.orders.items()):
+            side = order["side"]
+            price = order["price"]
+            pending = order["pending"]
+            if pending <= 0:
+                continue
+            crosses = (side == "sell" and px >= price) or (side == "buy" and px <= price)
+            if not crosses:
+                continue
+            fill_qty = pending
+            order["pending"] = 0.0
+            entry = self.entry_px.get(symbol, self.default_entry)
+            if side == "sell":
+                pnl_delta = (float(px) - float(entry)) * fill_qty
+                self.account.update_position(symbol, -fill_qty, price=float(px))
+            else:
+                pnl_delta = (float(entry) - float(px)) * fill_qty
+                self.account.update_position(symbol, fill_qty, price=float(px))
+            self.state.realized_pnl += pnl_delta
+            fills.append(
+                {
+                    "status": "filled",
+                    "order_id": oid,
+                    "symbol": symbol,
+                    "side": side,
+                    "filled_qty": fill_qty,
+                    "pending_qty": 0.0,
+                    "price": float(px),
+                    "realized_pnl": self.state.realized_pnl,
+                }
+            )
+            self.orders.pop(oid, None)
+        return fills
+
+
+class AsyncDummyWS:
+    def __init__(self, trades):
+        meta = types.SimpleNamespace(
+            client=types.SimpleNamespace(symbols=[]),
+            rules_for=lambda s: SimpleNamespace(qty_step=1e-9, price_step=0.1, min_notional=0.0),
+        )
+        self.rest = types.SimpleNamespace(meta=meta)
+        self._trades = trades
+
+    async def stream_trades(self, symbol):
+        for trade in self._trades:
+            yield trade
+
+
+class CloseRisk(DummyRisk):
+    def __init__(self, symbol: str):
+        super().__init__()
+        self.account = Account(float("inf"), cash=0.0)
+        self.account.update_position(symbol, 1.0, price=100.0)
+        self.account.mark_price(symbol, 100.0)
+        self._symbol = symbol
+        self._closed = False
+
+    def get_trade(self, symbol):
+        if symbol != self._symbol or self._closed:
+            return None
+        return {"side": "buy"}
+
+    def manage_position(self, trade):
+        if self._closed:
+            return "hold"
+        self._closed = True
+        return "close"
+
+    def complete_order(self):
+        pass
+
+
+class NoopStrat:
+    warmup_bars = 0
+
+    def on_bar(self, _ctx):
+        return None
+
+    def on_partial_fill(self, order, res):  # pragma: no cover - simple stub
+        return None
+
+    def on_order_expiry(self, order, res):  # pragma: no cover - simple stub
+        return None
+
+
+class TestAgg:
+    def __init__(self, *_, **__):
+        self.completed = [SimpleNamespace(c=100.0)]
+
+    def on_trade(self, ts, px, qty):
+        bar = SimpleNamespace(c=px)
+        self.completed.append(bar)
+        return bar
+
+    def last_n_bars_df(self, n):
+        return pd.DataFrame({"c": [100.0] * n})
+
+
+class DummyCorr:
+    def get_correlations(self):
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_run_paper_async_fill_updates_trade_metrics(monkeypatch):
+    symbol = normalize("BTC-USDT")
+    trades = [
+        {"ts": datetime.now(timezone.utc), "price": 100.0, "qty": 1.0},
+        {"ts": datetime.now(timezone.utc), "price": 105.0, "qty": 1.0},
+    ]
+
+    def ws_factory():
+        return AsyncDummyWS(trades)
+
+    def adapter_factory(**_):
+        adapter = AsyncFillPaperAdapter()
+        adapter.entry_px[symbol] = 100.0
+        adapter.state.order_book[symbol] = {
+            "bids": [(99.5, 1.0)],
+            "asks": [(100.5, 1.0)],
+        }
+        return adapter
+
+    def risk_factory(*_, **__):
+        return CloseRisk(symbol)
+
+    async def dummy_start_metrics(port):
+        return SimpleNamespace(servers=[]), asyncio.create_task(asyncio.sleep(0))
+
+    metrics: list[dict] = []
+
+    original_info = rp.log.info
+
+    def capture(msg, *args, **kwargs):
+        if str(msg).startswith("METRICS") and args:
+            try:
+                metrics.append(json.loads(args[0]))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if callable(original_info):
+            return original_info(msg, *args, **kwargs)
+
+    monkeypatch.setattr(rp, "BinanceWSAdapter", ws_factory)
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), lambda: AsyncDummyWS(trades))
+    monkeypatch.setattr(rp, "BarAggregator", TestAgg)
+    monkeypatch.setattr(rp, "PaperAdapter", adapter_factory)
+    monkeypatch.setattr(rp, "RiskService", risk_factory)
+    monkeypatch.setattr(rp, "PortfolioGuard", lambda *a, **k: SimpleNamespace(cfg=SimpleNamespace(venue="paper"), refresh_usd_caps=lambda cash: None))
+    monkeypatch.setattr(rp, "CorrelationService", lambda *a, **k: DummyCorr())
+    monkeypatch.setattr(rp, "STRATEGIES", {"noop": NoopStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(rp, "_start_metrics", dummy_start_metrics)
+    monkeypatch.setattr(rp.ccxt.Exchange, "parse_timeframe", staticmethod(lambda _: 0))
+    monkeypatch.setattr(rp.log, "info", capture)
+    monkeypatch.setattr(
+        rp,
+        "settings",
+        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+    )
+
+    await rp.run_paper(symbol=symbol, strategy_name="noop", metrics_port=0)
+
+    trade_logs = [entry for entry in metrics if entry.get("event") == "trade"]
+    assert trade_logs, "expected trade metrics entry"
+    assert trade_logs[-1]["trades_closed"] == 1
+    assert trade_logs[-1]["trade_pnl"] == pytest.approx(5.0)
+
+    total_logs = [entry for entry in metrics if list(entry.keys()) == ["pnl"]]
+    assert total_logs, "expected cumulative pnl log"
+    assert total_logs[-1]["pnl"] == pytest.approx(5.0)

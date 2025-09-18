@@ -234,6 +234,43 @@ async def run_paper(
         total_pnl = 0.0
 
     logged_order_ids: set[str] = set()
+    order_baselines: dict[str, tuple[float, float]] = {}
+
+    def _capture_baseline(order_id: str | None, pnl_base: float, qty_base: float) -> None:
+        if not order_id:
+            return
+        try:
+            order_baselines[str(order_id)] = (float(pnl_base), float(qty_base))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            pass
+
+    def _with_baseline(
+        cb, pnl_base: float, qty_base: float
+    ):
+        if cb is None:
+            return None
+
+        def _inner(order, res):
+            if order is not None:
+                if not hasattr(order, "_pnl_baseline"):
+                    try:
+                        setattr(order, "_pnl_baseline", float(pnl_base))
+                    except (TypeError, ValueError):
+                        setattr(order, "_pnl_baseline", 0.0)
+                if not hasattr(order, "_qty_before"):
+                    try:
+                        setattr(order, "_qty_before", float(qty_base))
+                    except (TypeError, ValueError):
+                        setattr(order, "_qty_before", 0.0)
+            if isinstance(res, dict):
+                key = res.get("order_id") or res.get("client_order_id")
+                if key:
+                    _capture_baseline(key, pnl_base, qty_base)
+                    if order is not None:
+                        setattr(order, "_baseline_key", str(key))
+            return cb(order, res)
+
+        return _inner
 
     def _flat_threshold() -> float:
         base = risk.min_order_qty
@@ -497,6 +534,11 @@ async def run_paper(
                     filled_qty = float(res.get("filled_qty", 0.0) or 0.0)
                 except (TypeError, ValueError):
                     filled_qty = 0.0
+            skip_completion = (
+                call_cancel
+                and status in {"canceled", "cancelled", "expired"}
+                and filled_qty <= 0.0
+            )
             if filled_qty > 0:
                 symbol = None
                 side = None
@@ -693,7 +735,7 @@ async def run_paper(
                         "METRICS %s",
                         json.dumps({"exposure": exposure_qty, "locked": locked}),
                     )
-            if not call_cancel:
+            if not skip_completion:
                 pending_raw = res.get("pending_qty")
                 pending_qty = None
                 if pending_raw is not None:
@@ -735,6 +777,71 @@ async def run_paper(
                             {"exposure": exposure_after, "locked": locked_after_completion}
                         ),
                     )
+                    baseline_qty = None
+                    baseline_pnl = None
+                    baseline_key = None
+                    if order is not None:
+                        baseline_qty = getattr(order, "_qty_before", None)
+                        baseline_pnl = getattr(order, "_pnl_baseline", None)
+                        baseline_key = getattr(order, "_baseline_key", None)
+                    lookup_key = None
+                    if isinstance(res, dict):
+                        lookup_key = res.get("order_id") or res.get("client_order_id")
+                    if lookup_key is None:
+                        lookup_key = baseline_key
+                    if lookup_key is not None and (
+                        baseline_qty is None or baseline_pnl is None
+                    ):
+                        stored = order_baselines.get(str(lookup_key))
+                        if stored:
+                            if baseline_pnl is None:
+                                baseline_pnl = stored[0]
+                                if order is not None:
+                                    setattr(order, "_pnl_baseline", stored[0])
+                            if baseline_qty is None:
+                                baseline_qty = stored[1]
+                                if order is not None:
+                                    setattr(order, "_qty_before", stored[1])
+                            if order is not None and getattr(order, "_baseline_key", None) is None:
+                                setattr(order, "_baseline_key", str(lookup_key))
+                    try:
+                        after_qty_val = float(exposure_after)
+                    except (TypeError, ValueError):
+                        after_qty_val = None
+                    before_qty_val = None
+                    if baseline_qty is not None:
+                        try:
+                            before_qty_val = float(baseline_qty)
+                        except (TypeError, ValueError):
+                            before_qty_val = None
+                    if (
+                        before_qty_val is not None
+                        and after_qty_val is not None
+                        and baseline_pnl is not None
+                        and _position_closed(before_qty_val, after_qty_val)
+                    ):
+                        already_recorded = False
+                        if order is not None:
+                            already_recorded = getattr(order, "_trade_recorded", False)
+                        if not already_recorded:
+                            pnl_source = None
+                            if isinstance(res, dict):
+                                pnl_source = res.get("realized_pnl")
+                            if pnl_source is None:
+                                pnl_source = getattr(broker.state, "realized_pnl", None)
+                            try:
+                                current_pnl = float(pnl_source)
+                                delta_pnl = current_pnl - float(baseline_pnl)
+                            except (TypeError, ValueError):
+                                delta_pnl = None
+                            if delta_pnl is not None:
+                                _record_trade(delta_pnl)
+                                if order is not None:
+                                    setattr(order, "_trade_recorded", True)
+                                key_to_clear = lookup_key
+                                if key_to_clear is not None:
+                                    order_baselines.pop(str(key_to_clear), None)
+                                log.info("METRICS %s", json.dumps({"pnl": total_pnl}))
             if action in {"re_quote", "requote", "re-quote"}:
                 return None
             return action
@@ -858,14 +965,16 @@ async def run_paper(
                             json.dumps({"event": "skip", "reason": "below_min_qty"}),
                         )
                         continue
+                    pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
+                    oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
                     resp = await exec_broker.place_limit(
                         symbol,
                         close_side,
                         price,
                         qty_close,
                         tif=tif,
-                        on_partial_fill=on_pf,
-                        on_order_expiry=on_oe,
+                        on_partial_fill=pf_wrapped,
+                        on_order_expiry=oe_wrapped,
                         slip_bps=slippage_bps,
                     )
                     status = str(resp.get("status", ""))
@@ -906,6 +1015,11 @@ async def run_paper(
                         oid = resp.get("order_id")
                         if oid is not None:
                             logged_order_ids.add(str(oid))
+                        _capture_baseline(
+                            resp.get("order_id") or resp.get("client_order_id"),
+                            prev_rpnl,
+                            prev_pos_qty,
+                        )
                         prev_pending = _prev_pending_qty(symbol, close_side)
                         delta_pending = pending_qty - prev_pending
                         risk.account.update_open_order(symbol, close_side, delta_pending)
@@ -1010,14 +1124,16 @@ async def run_paper(
                                 json.dumps({"event": "skip", "reason": "below_min_qty"}),
                             )
                             continue
+                        pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
+                        oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
                         resp = await exec_broker.place_limit(
                             symbol,
                             side,
                             price,
                             qty_scale,
                             tif=tif,
-                            on_partial_fill=on_pf,
-                            on_order_expiry=on_oe,
+                            on_partial_fill=pf_wrapped,
+                            on_order_expiry=oe_wrapped,
                             slip_bps=slippage_bps,
                         )
                         status = str(resp.get("status", ""))
@@ -1058,6 +1174,11 @@ async def run_paper(
                             oid = resp.get("order_id")
                             if oid is not None:
                                 logged_order_ids.add(str(oid))
+                            _capture_baseline(
+                                resp.get("order_id") or resp.get("client_order_id"),
+                                prev_rpnl,
+                                prev_pos_qty,
+                            )
                             prev_pending = _prev_pending_qty(symbol, side)
                             delta_pending = pending_qty - prev_pending
                             risk.account.update_open_order(symbol, side, delta_pending)
@@ -1244,14 +1365,16 @@ async def run_paper(
                 prev_rpnl = float(getattr(broker.state, "realized_pnl", 0.0))
             except (TypeError, ValueError):
                 prev_rpnl = total_pnl
+            pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
+            oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
             resp = await exec_broker.place_limit(
                 symbol,
                 side,
                 price,
                 qty,
                 tif=tif,
-                on_partial_fill=on_pf,
-                on_order_expiry=on_oe,
+                on_partial_fill=pf_wrapped,
+                on_order_expiry=oe_wrapped,
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
@@ -1293,6 +1416,11 @@ async def run_paper(
                 oid = resp.get("order_id")
                 if oid is not None:
                     logged_order_ids.add(str(oid))
+                _capture_baseline(
+                    resp.get("order_id") or resp.get("client_order_id"),
+                    prev_rpnl,
+                    prev_pos_qty,
+                )
                 prev_pending = _prev_pending_qty(symbol, side)
                 delta_pending = pending_qty - prev_pending
                 risk.account.update_open_order(symbol, side, delta_pending)
