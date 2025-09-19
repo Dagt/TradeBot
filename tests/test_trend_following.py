@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import pytest
 
@@ -50,7 +52,7 @@ def test_trend_following_risk_service_handles_stop_and_size():
 def test_trend_following_generates_signal_across_timeframes(timeframe):
     lookback_min = 60
     tf_minutes = 1 if timeframe == "1m" else 15
-    lookback_bars = lookback_min // tf_minutes
+    lookback_bars = math.ceil(lookback_min / tf_minutes)
     n = max(lookback_bars * 2 + 1, 15)
     prices = [100] * (n - 1) + [110]
     freq = f"{tf_minutes}min"
@@ -59,6 +61,40 @@ def test_trend_following_generates_signal_across_timeframes(timeframe):
     bar = {"window": df, "timeframe": timeframe, "volatility": 0.0}
     sig = strat.on_bar(bar)
     assert sig and sig.side == "buy"
+
+
+def test_trend_following_volatility_lookback_covers_minutes():
+    lookback_min = 50
+    timeframe = "15m"
+    tf_minutes = 15
+    expected_bars = math.ceil(lookback_min / tf_minutes)
+    prices = [100.0] * (expected_bars + 10)
+    index = pd.date_range("2024", periods=len(prices), freq=f"{tf_minutes}min")
+    df = pd.DataFrame({"close": prices}, index=index)
+
+    class DummyRQ:
+        def __init__(self):
+            self.calls: list[tuple[int, int | None]] = []
+
+        def get(self, symbol, name, *, window, q, min_periods=None):
+            self.calls.append((window, min_periods))
+
+            class _Tracker:
+                def update(self_inner, value):
+                    return value
+
+            return _Tracker()
+
+    strat = TrendFollowing(rsi_n=2, vol_lookback=lookback_min)
+    tracker = DummyRQ()
+    strat._rq = tracker
+    bar = {"window": df, "timeframe": timeframe, "volatility": 0.0}
+    strat.on_bar(bar)
+
+    vol_calls = [call for call in tracker.calls if call[0] == expected_bars * 5]
+    assert vol_calls, "Rolling quantile cache not queried with expected window"
+    _, min_periods = vol_calls[0]
+    assert min_periods == expected_bars
 
 
 def test_trend_following_respects_explicit_min_volatility():
