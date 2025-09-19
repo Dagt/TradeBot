@@ -20,6 +20,7 @@ from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
 from ..broker.broker import Broker
 from ..config import settings
+from .paper_utils import process_paper_fills
 
 # Persistencia opcional (Timescale). No es obligatorio para correr.
 try:
@@ -190,7 +191,8 @@ async def run_live_binance(
         ts: datetime = t["ts"] or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t["qty"] or 0.0)
-        broker.update_last_price(symbol, px)
+        fills = broker.update_last_price(symbol, px)
+        process_paper_fills(fills, risk, symbol, logger=log)
         risk.mark_price(symbol, px)
         halted, reason = risk.daily_mark(broker, symbol, px, 0.0)
         if halted:

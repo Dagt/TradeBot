@@ -19,6 +19,7 @@ from ..data.basis import poll_basis
 from ..risk.service import load_positions
 from ..risk.portfolio_guard import PortfolioGuard, GuardConfig
 from ..risk.service import RiskService
+from .paper_utils import process_paper_fills
 
 try:
     from ..storage.timescale import get_engine
@@ -117,9 +118,11 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             router.execute(order_spot),
             router.execute(order_perp),
         )
-        broker.update_last_price(cfg.symbol, last["spot"])
+        fills_spot = broker.update_last_price(cfg.symbol, last["spot"])
+        process_paper_fills(fills_spot, risk, cfg.symbol, logger=log)
         await broker.place_limit(cfg.symbol, spot_side, spot_price, size, tif="IOC")
-        broker.update_last_price(cfg.symbol, last["perp"])
+        fills_perp = broker.update_last_price(cfg.symbol, last["perp"])
+        process_paper_fills(fills_perp, risk, cfg.symbol, logger=log)
         await broker.place_limit(cfg.symbol, perp_side, perp_price, size, tif="IOC")
         risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
         risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
@@ -140,7 +143,8 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             if getattr(cfg.spot, "state", None) is None:
                 cfg.spot.state = type("S", (), {"last_px": {}})  # type: ignore[attr-defined]
             cfg.spot.state.last_px[cfg.symbol] = price  # type: ignore[attr-defined]
-            broker.update_last_price(cfg.symbol, price)
+            fills = broker.update_last_price(cfg.symbol, price)
+            process_paper_fills(fills, risk, cfg.symbol, logger=log)
             last["spot"] = price
             risk.mark_price(cfg.symbol, price)
             await maybe_trade()
@@ -154,7 +158,8 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
             if getattr(cfg.perp, "state", None) is None:
                 cfg.perp.state = type("S", (), {"last_px": {}})  # type: ignore[attr-defined]
             cfg.perp.state.last_px[cfg.symbol] = price  # type: ignore[attr-defined]
-            broker.update_last_price(cfg.symbol, price)
+            fills = broker.update_last_price(cfg.symbol, price)
+            process_paper_fills(fills, risk, cfg.symbol, logger=log)
             last["perp"] = price
             risk.mark_price(cfg.symbol, price)
             await maybe_trade()

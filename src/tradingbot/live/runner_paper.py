@@ -11,6 +11,7 @@ import uvicorn
 from sqlalchemy.exc import OperationalError
 
 from .runner import Bar, BarAggregator
+from .paper_utils import process_paper_fills
 from ..adapters.binance import BinanceWSAdapter
 from ..adapters.binance_spot import BinanceSpotAdapter
 from ..adapters.binance_spot_ws import BinanceSpotWSAdapter
@@ -255,7 +256,8 @@ async def run_paper(
                     }
                 ),
             )
-            broker.update_last_price(symbol, px)
+            fills = broker.update_last_price(symbol, px)
+            process_paper_fills(fills, risk, symbol, logger=log)
             risk.mark_price(symbol, px)
             if time.time() - last_purge >= purge_interval:
                 risk.purge([symbol])

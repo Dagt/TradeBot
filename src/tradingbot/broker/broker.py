@@ -25,11 +25,12 @@ class Broker:
         )
         self.passive_rebate_bps = getattr(settings, "passive_rebate_bps", 0.0)
 
-    def update_last_price(self, symbol: str, px: float) -> None:
+    def update_last_price(self, symbol: str, px: float):
         """Update last price on the underlying adapter if supported."""
         upd = getattr(self.adapter, "update_last_price", None)
         if upd:
-            upd(symbol, px)
+            return upd(symbol, px)
+        return None
 
     def equity(self) -> float:
         """Return account equity if the adapter exposes it."""

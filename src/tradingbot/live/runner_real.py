@@ -27,6 +27,7 @@ import uvicorn
 
 from sqlalchemy.exc import OperationalError
 from .runner import BarAggregator
+from .paper_utils import process_paper_fills
 from ..config import settings
 from ..config.hydra_conf import load_config
 from ..strategies import STRATEGIES
@@ -199,7 +200,8 @@ async def _run_symbol(
         ts: datetime = t.get("ts") or datetime.now(timezone.utc)
         px: float = float(t["price"])
         qty: float = float(t.get("qty") or 0.0)
-        broker.update_last_price(cfg.symbol, px)
+        fills = broker.update_last_price(cfg.symbol, px)
+        process_paper_fills(fills, risk, cfg.symbol, logger=log)
         risk.mark_price(cfg.symbol, px)
         risk.update_correlation(corr.get_correlations(), corr_threshold)
         halted, reason = risk.daily_mark(broker, cfg.symbol, px, 0.0)

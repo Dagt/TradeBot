@@ -1,3 +1,7 @@
+import asyncio
+import contextlib
+import json
+import logging
 import pandas as pd
 import pytest
 from datetime import datetime, timezone
@@ -12,6 +16,10 @@ sys.modules.setdefault("tradingbot.adapters.binance", binance_stub)
 
 from tradingbot.live import runner_paper as rp
 from tradingbot.core import normalize
+from tradingbot.live.paper_utils import process_paper_fills
+from tradingbot.execution.paper import PaperAdapter
+from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
+from tradingbot.risk.service import RiskService
 
 sys.modules.pop("tradingbot.adapters.binance", None)
 
@@ -48,7 +56,10 @@ class DummyRisk:
         self.account = types.SimpleNamespace(
             current_exposure=lambda symbol: (0.0, 0.0),
             update_open_order=lambda symbol, side, qty: None,
+            open_orders={},
+            cash=0.0,
         )
+        self.account.get_available_balance = lambda: self.account.cash
         self.trades: dict = {}
 
     def mark_price(self, symbol, price):
@@ -93,6 +104,7 @@ class DummyExecBroker:
 
     def __init__(self, adapter):
         self.adapter = adapter
+        self.maker_fee_bps = 0.0
 
     async def place_limit(
         self,
@@ -112,6 +124,7 @@ class DummyBroker:
     def __init__(self):
         self.account = object()
         self.state = SimpleNamespace(realized_pnl=0.0, last_px={}, order_book={})
+        self.taker_fee_bps = 0.0
 
     def update_last_price(self, symbol, px):
         self.state.last_px[symbol] = px
@@ -133,6 +146,8 @@ async def test_run_paper(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
     monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), lambda: DummyWS())
     # Use real RiskManager and PortfolioGuard to satisfy run_paper setup
     dummy_risk = DummyRisk()
     monkeypatch.setattr(rp, "RiskService", lambda *a, **k: dummy_risk)
@@ -147,7 +162,21 @@ async def test_run_paper(monkeypatch):
         types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
     )
 
-    await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+    DummyExecBroker.last_args = None
+
+    task = asyncio.create_task(
+        rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+    )
+    try:
+        async def _wait_for_order():
+            while DummyExecBroker.last_args is None:
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(_wait_for_order(), timeout=5.0)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     sym, side, price, qty, pfill, oexp = DummyExecBroker.last_args
     assert sym == normalize("BTC-USDT")
@@ -155,3 +184,39 @@ async def test_run_paper(monkeypatch):
     assert price == pytest.approx(99.9)
     assert pfill is not None and oexp is not None
     assert dummy_risk.last_strength == pytest.approx(0.37)
+
+
+@pytest.mark.asyncio
+async def test_process_paper_fills_clears_open_orders(caplog):
+    symbol = "BTC/USDT"
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.account.cash = 1000.0
+    risk = RiskService(PortfolioGuard(GuardConfig(venue="paper")), account=adapter.account, risk_pct=0.0)
+
+    adapter.update_last_price(symbol, 100.0)
+    resp = await adapter.place_order(symbol, "buy", "limit", 1.0, price=90.0)
+    pending_qty = float(resp.get("pending_qty", 0.0))
+    assert pending_qty > 0.0
+
+    risk.account.mark_price(symbol, 100.0)
+    risk.account.update_open_order(symbol, "buy", pending_qty)
+    locked_before = risk.account.cash - risk.account.get_available_balance()
+    assert locked_before > 0.0
+
+    fills = adapter.update_last_price(symbol, 90.0)
+    assert fills
+    logger = logging.getLogger("test.paper_fills")
+    with caplog.at_level(logging.INFO):
+        process_paper_fills(fills, risk, symbol, logger=logger)
+
+    assert risk.account.open_orders == {}
+    assert risk.account.get_available_balance() == pytest.approx(risk.account.cash)
+
+    locked_records = [
+        json.loads(record.message.split("METRICS ", 1)[1])
+        for record in caplog.records
+        if "METRICS" in record.message and "locked_cash" in record.message
+    ]
+    assert locked_records, "locked cash metric was not emitted"
+    assert locked_records[-1]["value"] == pytest.approx(0.0)
