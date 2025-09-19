@@ -1060,7 +1060,7 @@ async def run_paper(
                         continue
                     log_order = False
                     order_qty = qty_close
-                    if status in {"open", "filled"}:
+                    if status in {"open", "filled", "new"}:
                         log_order = True
                     elif status == "canceled" and filled_qty > 0:
                         log_order = True
@@ -1223,7 +1223,7 @@ async def run_paper(
                             continue
                         log_order = False
                         order_qty = qty_scale
-                        if status in {"open", "filled"}:
+                        if status in {"open", "filled", "new"}:
                             log_order = True
                         elif status == "canceled" and filled_qty > 0:
                             log_order = True
@@ -1469,7 +1469,7 @@ async def run_paper(
                 continue
             log_order = False
             order_qty = qty
-            if status in {"open", "filled"}:
+            if status in {"open", "filled", "new"}:
                 log_order = True
             elif status == "canceled" and filled_qty > 0:
                 log_order = True
