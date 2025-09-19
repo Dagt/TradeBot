@@ -365,7 +365,36 @@ class ExecutionRouter:
         order._mark_price = float(mark_price or 0.0)
         order._step_size = float(rules.qty_step) if rules and rules.qty_step else None
         order._min_qty = float(rules.min_qty) if rules and rules.min_qty else None
-        order._min_notional = float(rules.min_notional) if rules and rules.min_notional else None
+        order._min_notional = (
+            float(rules.min_notional) if rules and rules.min_notional else None
+        )
+        if order._step_size is None:
+            step_attr = getattr(adapter, "step_size", None)
+            if step_attr is None:
+                step_attr = getattr(adapter, "qty_step", None)
+            if step_attr not in (None, ""):
+                try:
+                    order._step_size = float(step_attr)
+                except (TypeError, ValueError):
+                    order._step_size = None
+        if order._min_qty is None:
+            min_qty_attr = getattr(adapter, "min_qty", None)
+            if min_qty_attr in (None, ""):
+                min_qty_attr = getattr(adapter, "min_order_qty", None)
+            if min_qty_attr not in (None, ""):
+                try:
+                    order._min_qty = float(min_qty_attr)
+                except (TypeError, ValueError):
+                    order._min_qty = None
+        if order._min_notional is None:
+            min_notional_attr = getattr(adapter, "min_notional", None)
+            if min_notional_attr in (None, ""):
+                min_notional_attr = getattr(adapter, "min_trade_notional", None)
+            if min_notional_attr not in (None, ""):
+                try:
+                    order._min_notional = float(min_notional_attr)
+                except (TypeError, ValueError):
+                    order._min_notional = None
         if rules is not None:
             adj = adjust_order(order.price, order.qty, float(mark_price or 0.0), rules, order.side)
             if not adj.ok:
