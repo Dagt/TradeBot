@@ -106,13 +106,26 @@ class TrendFollowing(Strategy):
         ofi_val = 0.0
         if {"bid_qty", "ask_qty"}.issubset(df.columns):
             ofi_val = calc_ofi(df[["bid_qty", "ask_qty"]]).iloc[-1]
-        if last_rsi > threshold and ofi_val >= 0:
+        side: str | None = None
+        base_strength = 0.0
+        if last_rsi > threshold:
             side = "buy"
-        elif last_rsi < 100 - threshold and ofi_val <= 0:
+            base_strength = (last_rsi - threshold) / max(1.0, 100.0 - threshold)
+        elif last_rsi < 100 - threshold:
             side = "sell"
-        else:
+            lower_threshold = 100.0 - threshold
+            base_strength = (lower_threshold - last_rsi) / max(1.0, lower_threshold)
+        if side is None:
             return None
-        strength = 1.0
+        base_strength = max(0.0, min(1.0, base_strength))
+        direction = 1.0 if side == "buy" else -1.0
+        if ofi_val == 0:
+            ofi_factor = 1.0
+        else:
+            ofi_factor = max(0.0, math.copysign(1.0, ofi_val) * direction)
+            if ofi_factor == 0.0:
+                return None
+        strength = max(0.0, min(1.0, base_strength * ofi_factor))
         sig = Signal(side, strength)
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, price)

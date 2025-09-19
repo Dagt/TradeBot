@@ -3,6 +3,7 @@ import math
 import pandas as pd
 import pytest
 
+import tradingbot.strategies.trend_following as trend_following
 from tradingbot.core import Account, RiskManager as CoreRiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
@@ -110,4 +111,117 @@ def test_trend_following_respects_explicit_min_volatility():
     strat_auto = TrendFollowing()
     sig_auto = strat_auto.on_bar(bar)
     assert sig_auto and sig_auto.side == "buy"
+
+
+class DummyRiskService:
+    def __init__(self, multiplier: float = 10.0):
+        self.multiplier = multiplier
+        self.calls: list[tuple[float, float]] = []
+        self.min_order_qty = 0.0
+        self.min_notional = 0.0
+
+    def calc_position_size(self, strength, price, **kwargs):
+        self.calls.append((strength, price))
+        return float(strength) * self.multiplier
+
+    @staticmethod
+    def initial_stop(price, side, atr):
+        atr = float(atr or 0.0)
+        if side == "buy":
+            return float(price) - atr
+        return float(price) + atr
+
+
+def _constant_series(length: int, value: float) -> pd.Series:
+    return pd.Series([value] * length)
+
+
+def _constant_ofi(length: int, value: float) -> pd.Series:
+    data = [0.0] * (max(length, 1) - 1)
+    data.append(value)
+    return pd.Series(data)
+
+
+def test_trend_following_strength_scales_with_rsi_distance_buy(monkeypatch):
+    threshold = 70.0
+    monkeypatch.setattr(
+        TrendFollowing,
+        "auto_threshold",
+        lambda self, symbol, last_rsi, vol_bps: threshold,
+    )
+    monkeypatch.setattr(
+        trend_following,
+        "calc_ofi",
+        lambda data: _constant_ofi(len(data), 1.0),
+    )
+    df = pd.DataFrame(
+        {
+            "close": [100.0] * 6,
+            "bid_qty": [1.0] * 6,
+            "ask_qty": [1.0] * 6,
+        }
+    )
+
+    def run_case(rsi_value: float):
+        monkeypatch.setattr(
+            trend_following,
+            "rsi",
+            lambda data, n, value=rsi_value: _constant_series(len(data), value),
+        )
+        risk = DummyRiskService()
+        strat = TrendFollowing(rsi_n=2, risk_service=risk)
+        bar = {"window": df, "atr": 1.0, "volatility": 0.0}
+        sig = strat.on_bar(bar)
+        assert sig and sig.side == "buy"
+        assert all(pytest.approx(sig.strength) == call[0] for call in risk.calls)
+        assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
+        return sig.strength, strat.trade["qty"]
+
+    near_strength, near_qty = run_case(threshold + 0.5)
+    far_strength, far_qty = run_case(99.0)
+
+    assert 0 < near_strength < far_strength <= 1.0
+    assert near_qty < far_qty
+
+
+def test_trend_following_strength_scales_with_rsi_distance_sell(monkeypatch):
+    threshold = 70.0
+    monkeypatch.setattr(
+        TrendFollowing,
+        "auto_threshold",
+        lambda self, symbol, last_rsi, vol_bps: threshold,
+    )
+    monkeypatch.setattr(
+        trend_following,
+        "calc_ofi",
+        lambda data: _constant_ofi(len(data), -1.0),
+    )
+    df = pd.DataFrame(
+        {
+            "close": [100.0] * 6,
+            "bid_qty": [1.0] * 6,
+            "ask_qty": [1.0] * 6,
+        }
+    )
+
+    def run_case(rsi_value: float):
+        monkeypatch.setattr(
+            trend_following,
+            "rsi",
+            lambda data, n, value=rsi_value: _constant_series(len(data), value),
+        )
+        risk = DummyRiskService()
+        strat = TrendFollowing(rsi_n=2, risk_service=risk)
+        bar = {"window": df, "atr": 1.0, "volatility": 0.0}
+        sig = strat.on_bar(bar)
+        assert sig and sig.side == "sell"
+        assert all(pytest.approx(sig.strength) == call[0] for call in risk.calls)
+        assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
+        return sig.strength, strat.trade["qty"]
+
+    near_strength, near_qty = run_case(100.0 - threshold - 0.5)
+    far_strength, far_qty = run_case(1.0)
+
+    assert 0 < near_strength < far_strength <= 1.0
+    assert near_qty < far_qty
 
