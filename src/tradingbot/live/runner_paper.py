@@ -49,6 +49,74 @@ except Exception:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 
+_EXPOSURE_LOG_STATE: dict[tuple[str | None, str | None], tuple[float, float]] = {}
+
+
+def _normalize_exposure_key(
+    symbol: str | None, side: str | None
+) -> tuple[str | None, str | None]:
+    """Return a normalized key for exposure logging lookups."""
+
+    sym_key: str | None
+    if symbol is None or isinstance(symbol, str):
+        sym_key = symbol
+    else:
+        sym_key = str(symbol)
+
+    if isinstance(side, str):
+        side_key: str | None = side.lower()
+    elif side is None:
+        side_key = None
+    else:
+        try:
+            side_key = str(side).lower()
+        except Exception:
+            side_key = str(side)
+    return sym_key, side_key
+
+
+def _log_exposure_if_changed(
+    symbol: str | None, side: str | None, exposure: float, locked: float
+) -> bool:
+    """Emit exposure metrics only when they change beyond tolerance."""
+
+    key = _normalize_exposure_key(symbol, side)
+    try:
+        exposure_val = float(exposure)
+    except (TypeError, ValueError):
+        exposure_val = 0.0
+    try:
+        locked_val = float(locked)
+    except (TypeError, ValueError):
+        locked_val = 0.0
+    prev = _EXPOSURE_LOG_STATE.get(key)
+    if prev is not None:
+        if (
+            abs(prev[0] - exposure_val) <= 1e-9
+            and abs(prev[1] - locked_val) <= 1e-9
+        ):
+            return False
+    log.info(
+        "METRICS %s",
+        json.dumps({"exposure": exposure_val, "locked": locked_val}),
+    )
+    _EXPOSURE_LOG_STATE[key] = (exposure_val, locked_val)
+    return True
+
+
+def _reset_exposure_log(symbol: str | None, side: str | None) -> None:
+    """Forget the last exposure/locked pair for ``symbol``/``side``."""
+
+    key = _normalize_exposure_key(symbol, side)
+    _EXPOSURE_LOG_STATE.pop(key, None)
+
+
+def _clear_exposure_log_registry() -> None:
+    """Clear all cached exposure metrics (primarily for tests)."""
+
+    _EXPOSURE_LOG_STATE.clear()
+
+
 WS_ADAPTERS = {
     ("binance", "spot"): BinanceSpotWSAdapter,
     ("binance", "futures"): BinanceWSAdapter,
@@ -603,10 +671,7 @@ async def run_paper(
             locked = _recalc_locked_total()
             if not getattr(account, "open_orders", {}):
                 locked = 0.0
-            log.info(
-                "METRICS %s",
-                json.dumps({"exposure": cur_qty, "locked": locked}),
-            )
+            _log_exposure_if_changed(symbol, side, cur_qty, locked)
 
         return _on_ack
 
@@ -686,10 +751,9 @@ async def run_paper(
                         exposure_val = float(current_exposure_fn(symbol)[0])
                     except Exception:
                         exposure_val = 0.0
-            log.info(
-                "METRICS %s",
-                json.dumps({"exposure": exposure_val, "locked": locked_total}),
-            )
+            reset_side = side_for_risk if side_for_risk is not None else lookup_side
+            _log_exposure_if_changed(symbol, reset_side, exposure_val, locked_total)
+            _reset_exposure_log(symbol, reset_side)
             return
         CANCELS.inc()
         risk.complete_order(
@@ -717,6 +781,8 @@ async def run_paper(
                 }
             ),
         )
+        reset_side = side_for_risk if side_for_risk is not None else lookup_side
+        _reset_exposure_log(symbol, reset_side)
 
     router = ExecutionRouter([
         broker
@@ -960,10 +1026,7 @@ async def run_paper(
                     locked = _recalc_locked_total()
                     if not getattr(risk.account, "open_orders", {}):
                         locked = 0.0
-                    log.info(
-                        "METRICS %s",
-                        json.dumps({"exposure": exposure_qty, "locked": locked}),
-                    )
+                    _log_exposure_if_changed(symbol, side_norm, exposure_qty, locked)
                     logged_exposure = True
             if not skip_completion:
                 pending_raw = res.get("pending_qty")
@@ -1019,15 +1082,13 @@ async def run_paper(
                         except Exception:
                             exposure_after = 0.0
                     if not logged_exposure:
-                        log.info(
-                            "METRICS %s",
-                            json.dumps(
-                                {
-                                    "exposure": exposure_after,
-                                    "locked": locked_after_completion,
-                                }
-                            ),
+                        _log_exposure_if_changed(
+                            symbol_for_metrics,
+                            side_for_completion,
+                            exposure_after,
+                            locked_after_completion,
                         )
+                    _reset_exposure_log(symbol_for_metrics, side_for_completion)
                     baseline_qty = None
                     baseline_pnl = None
                     baseline_key = None
