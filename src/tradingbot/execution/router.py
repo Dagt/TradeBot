@@ -465,6 +465,15 @@ class ExecutionRouter:
                 pending_for_lock = (
                     order.pending_qty if order.pending_qty is not None else order.qty
                 )
+            pending_for_lock = max(float(pending_for_lock or 0.0), 0.0)
+            order.pending_qty = pending_for_lock
+            try:
+                existing_qty = float(order.qty)
+            except (TypeError, ValueError):
+                existing_qty = None
+            if existing_qty is None or pending_for_lock < existing_qty - 1e-12:
+                order.qty = pending_for_lock
+            res["pending_qty"] = pending_for_lock
             self._update_open_order_reservation(order, pending_for_lock)
         if status == "new":
             oid = res.get("order_id")
