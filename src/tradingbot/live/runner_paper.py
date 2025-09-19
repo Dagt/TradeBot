@@ -505,6 +505,26 @@ async def run_paper(
             account = getattr(risk, "account", None)
             if account is None:
                 return
+            pending_qty = qty_float
+            if pending_qty < 0.0 and abs(pending_qty) <= 1e-9:
+                pending_qty = 0.0
+            try:
+                side_norm = str(side).lower()
+            except Exception:
+                side_norm = side
+            prev_pending = _prev_pending_qty(symbol, side_norm)
+            delta_pending = pending_qty - prev_pending
+            if delta_pending < 0.0 and abs(delta_pending) <= 1e-9:
+                delta_pending = 0.0
+            update_open = getattr(account, "update_open_order", None)
+            if (
+                callable(update_open)
+                and symbol
+                and isinstance(symbol, str)
+                and side_norm
+            ):
+                with contextlib.suppress(Exception):
+                    update_open(symbol, side_norm, delta_pending)
             try:
                 cur_qty = float(account.current_exposure(symbol)[0])
             except Exception:
