@@ -219,7 +219,7 @@ class Broker:
         side: str,
         price: float,
         qty: float,
-        tif: str = "GTC|PO",
+        tif: str = "GTC",
         on_partial_fill: Optional[Callable[[Order, dict], str | None]] = None,
         on_order_expiry: Optional[Callable[[Order, dict], str | None]] = None,
         on_order_ack: Optional[Callable[[Order, dict], None]] = None,
@@ -304,7 +304,11 @@ class Broker:
             price=price,
             post_only=post_only,
             time_in_force=time_in_force,
+            timeout=expiry,
         )
+
+        if expiry is not None:
+            order.timeout = expiry
 
         while remaining > 0 and attempts < max_attempts:
             attempts += 1
@@ -318,6 +322,8 @@ class Broker:
                 post_only=post_only,
                 time_in_force=time_in_force,
             )
+            if order.timeout is not None:
+                kwargs["timeout"] = order.timeout
             if slip_bps is not None:
                 kwargs["slip_bps"] = slip_bps
             if signal_ts is not None:

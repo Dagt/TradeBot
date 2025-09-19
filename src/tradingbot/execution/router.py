@@ -136,6 +136,8 @@ class ExecutionRouter:
     ) -> dict:
         """Build an :class:`Order` and forward to :meth:`execute`."""
 
+        timeout = kwargs.pop("timeout", None)
+
         order = Order(
             symbol=symbol,
             side=side,
@@ -148,6 +150,7 @@ class ExecutionRouter:
             reduce_only=reduce_only,
             reason=kwargs.get("reason"),
             slip_bps=kwargs.get("slip_bps"),
+            timeout=timeout,
         )
         return await self.execute(order, signal_ts=signal_ts, **kwargs)
 
@@ -527,6 +530,7 @@ class ExecutionRouter:
                     time_in_force=order.time_in_force,
                     reduce_only=order.reduce_only,
                     reason=getattr(order, "reason", None),
+                    timeout=order.timeout,
                 )
                 for attr in ("_step_size", "_min_qty", "_min_notional", "_mark_price"):
                     setattr(new_order, attr, getattr(order, attr, None))
@@ -811,6 +815,7 @@ class ExecutionRouter:
                 time_in_force=order.time_in_force,
                 reduce_only=order.reduce_only,
                 reason=getattr(order, "reason", None),
+                timeout=order.timeout,
             )
             for attr in ("_step_size", "_min_qty", "_min_notional", "_mark_price"):
                 setattr(new_order, attr, getattr(order, attr, None))
