@@ -234,6 +234,14 @@ class ExchangeAdapter(ABC):
                                     )
                                 )
                                 continue
+                            if data.get("event") == "ping" or data.get("op") == "ping":
+                                response: dict[str, object] = {"op": "pong"}
+                                if "event" in data:
+                                    response["event"] = "pong"
+                                if "args" in data:
+                                    response["args"] = data["args"]
+                                await ws.send(json.dumps(response))
+                                continue
                             yield msg
                     finally:
                         ping_task.cancel()

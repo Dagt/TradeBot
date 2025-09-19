@@ -93,6 +93,110 @@ async def test_ws_adapter_reconnect(monkeypatch):
     assert [s for s in sleeps if s >= 1][:2] == [1, 2]
 
 
+@pytest.mark.asyncio
+async def test_ws_messages_handle_ping_and_heartbeat(monkeypatch):
+    class DummyAdapter(ExchangeAdapter):
+        name = "dummy"
+
+        async def stream_trades(self, symbol: str):  # pragma: no cover - not used
+            raise NotImplementedError
+
+        async def place_order(
+            self,
+            symbol: str,
+            side: str,
+            type_: str,
+            qty: float,
+            price: float | None = None,
+            post_only: bool = False,
+            time_in_force: str | None = None,
+            reduce_only: bool = False,
+        ) -> dict:
+            return {}
+
+        async def cancel_order(self, order_id: str) -> dict:
+            return {}
+
+    ping_message = json.dumps({"event": "ping", "args": [{"channel": "trades"}]})
+    heartbeat_message = json.dumps({"method": "heartbeat"})
+    payload_message = json.dumps({"foo": "bar"})
+
+    class DummyWS:
+        def __init__(self, messages):
+            self.messages = list(messages)
+            self.sent: list[str] = []
+            self.pings = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, msg):
+            self.sent.append(msg)
+
+        async def recv(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise ConnectionError("closed")
+
+        async def ping(self):
+            self.pings += 1
+
+    ws = DummyWS([ping_message, heartbeat_message, payload_message])
+    connect_calls = {"count": 0}
+
+    def fake_connect(*args, **kwargs):
+        connect_calls["count"] += 1
+        return ws
+
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    class DummyMetric:
+        def __init__(self):
+            self.count = 0
+
+        def labels(self, **kwargs):
+            return self
+
+        def inc(self):
+            self.count += 1
+
+    reconnect_metric = DummyMetric()
+    failure_metric = DummyMetric()
+    monkeypatch.setattr("tradingbot.adapters.base.WS_RECONNECTS", reconnect_metric)
+    monkeypatch.setattr("tradingbot.adapters.base.WS_FAILURES", failure_metric)
+
+    adapter = DummyAdapter()
+    adapter.ping_interval = 3600
+
+    gen = adapter._ws_messages(
+        "wss://example",
+        subscribe=json.dumps({"op": "subscribe", "args": [{"channel": "trades"}]})
+    )
+
+    raw = await gen.__anext__()
+    assert json.loads(raw) == {"foo": "bar"}
+    await gen.aclose()
+
+    assert connect_calls["count"] == 1
+    assert len(ws.sent) >= 3
+    pong = json.loads(ws.sent[1])
+    assert pong["op"] == "pong"
+    assert pong.get("args") == [{"channel": "trades"}]
+    if "event" in pong:
+        assert pong["event"] == "pong"
+    heartbeat = json.loads(ws.sent[2])
+    assert heartbeat == {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "public/respond-heartbeat",
+    }
+    assert reconnect_metric.count == 0
+    assert failure_metric.count == 0
+
+
 def test_registered_adapters_are_subclasses():
     for cls in (
         BybitSpotAdapter,
