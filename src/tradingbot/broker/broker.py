@@ -145,10 +145,18 @@ class Broker:
                 res.get("qty") or res.get("filled") or res.get("filled_qty") or 0.0
             )
             filled += qty_filled
-            remaining = max(remaining - qty_filled, 0.0)
+            pending_reported = res.get("pending_qty")
+            if pending_reported is not None:
+                try:
+                    remaining = max(float(pending_reported), 0.0)
+                    res["pending_qty"] = remaining
+                except (TypeError, ValueError):
+                    remaining = max(remaining - qty_filled, 0.0)
+            else:
+                remaining = max(remaining - qty_filled, 0.0)
+                res.setdefault("pending_qty", remaining)
             order.pending_qty = remaining
             res.setdefault("filled_qty", qty_filled)
-            res.setdefault("pending_qty", remaining)
             last_res = res
 
             # Fully filled or adapter rejected/canceled the order
