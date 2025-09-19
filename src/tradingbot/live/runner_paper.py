@@ -294,9 +294,12 @@ async def run_paper(
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     exec_price = float(resp.get("price", price))
-                    risk.account.update_open_order(
-                        symbol, close_side, filled_qty + pending_qty
+                    prev_pending = float(
+                        risk.account.open_orders.get(symbol, {}).get(close_side.lower(), 0.0)
                     )
+                    delta_open = pending_qty - prev_pending + filled_qty
+                    if abs(delta_open) > 1e-9:
+                        risk.account.update_open_order(symbol, close_side, delta_open)
                     risk.on_fill(
                         symbol, close_side, filled_qty, price=exec_price, venue="paper"
                     )
@@ -386,9 +389,12 @@ async def run_paper(
                         filled_qty = float(resp.get("filled_qty", 0.0))
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         exec_price = float(resp.get("price", price))
-                        risk.account.update_open_order(
-                            symbol, side, filled_qty + pending_qty
+                        prev_pending = float(
+                            risk.account.open_orders.get(symbol, {}).get(side.lower(), 0.0)
                         )
+                        delta_open = pending_qty - prev_pending + filled_qty
+                        if abs(delta_open) > 1e-9:
+                            risk.account.update_open_order(symbol, side, delta_open)
                         risk.on_fill(
                             symbol, side, filled_qty, price=exec_price, venue="paper"
                         )
@@ -523,7 +529,12 @@ async def run_paper(
             filled_qty = float(resp.get("filled_qty", 0.0))
             pending_qty = float(resp.get("pending_qty", 0.0))
             exec_price = float(resp.get("price", price))
-            risk.account.update_open_order(symbol, side, filled_qty + pending_qty)
+            prev_pending = float(
+                risk.account.open_orders.get(symbol, {}).get(side.lower(), 0.0)
+            )
+            delta_open = pending_qty - prev_pending + filled_qty
+            if abs(delta_open) > 1e-9:
+                risk.account.update_open_order(symbol, side, delta_open)
             risk.on_fill(
                 symbol, side, filled_qty, price=exec_price, venue="paper"
             )
