@@ -3,8 +3,8 @@ import logging
 from tradingbot.live import runner_paper
 
 
-def test_exposure_metrics_logged_once_for_same_values(caplog):
-    """Repeated ack/paper events with same exposure should log only once."""
+def test_exposure_metrics_dedup_for_repeated_ack_and_paper_events(caplog):
+    """Simulate ack/paper events and ensure repeated states log exposure once."""
 
     runner_paper._clear_exposure_log_registry()
     symbol = "BTC/USDT"
@@ -15,12 +15,20 @@ def test_exposure_metrics_logged_once_for_same_values(caplog):
     caplog.set_level(logging.INFO)
     caplog.clear()
 
-    # Simulate on_order_ack and a repeated handle_paper_event with same state.
-    first_logged = runner_paper._log_exposure_if_changed(symbol, side, exposure, locked)
-    second_logged = runner_paper._log_exposure_if_changed(symbol, side, exposure, locked)
+    # First event represents an order acknowledgement.
+    ack_logged = runner_paper._log_exposure_if_changed(symbol, side, exposure, locked)
 
-    assert first_logged is True
-    assert second_logged is False
+    # Subsequent paper events with the same snapshot should not re-log the line.
+    first_paper_logged = runner_paper._log_exposure_if_changed(
+        symbol, side, exposure, locked
+    )
+    second_paper_logged = runner_paper._log_exposure_if_changed(
+        symbol, side, exposure, locked
+    )
+
+    assert ack_logged is True
+    assert first_paper_logged is False
+    assert second_paper_logged is False
 
     exposure_logs = [
         record.message
@@ -33,8 +41,15 @@ def test_exposure_metrics_logged_once_for_same_values(caplog):
     runner_paper._reset_exposure_log(symbol, side)
     caplog.clear()
 
-    again_logged = runner_paper._log_exposure_if_changed(symbol, side, exposure, locked)
-    assert again_logged is True
+    ack_after_reset = runner_paper._log_exposure_if_changed(
+        symbol, side, exposure, locked
+    )
+    paper_after_reset = runner_paper._log_exposure_if_changed(
+        symbol, side, exposure, locked
+    )
+
+    assert ack_after_reset is True
+    assert paper_after_reset is False
 
     exposure_logs_after_reset = [
         record.message

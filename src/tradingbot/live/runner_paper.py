@@ -1078,8 +1078,10 @@ async def run_paper(
                     locked = _recalc_locked_total()
                     if not getattr(risk.account, "open_orders", {}):
                         locked = 0.0
-                    _log_exposure_if_changed(symbol, side_norm, exposure_qty, locked)
-                    logged_exposure = True
+                    if _log_exposure_if_changed(
+                        symbol, side_norm, exposure_qty, locked
+                    ):
+                        logged_exposure = True
             if not skip_completion:
                 pending_raw = res.get("pending_qty")
                 pending_qty = None
@@ -1415,10 +1417,10 @@ async def run_paper(
                         locked = _recalc_locked_total()
                         if not getattr(risk.account, "open_orders", {}):
                             locked = 0.0
-                        log.info(
-                            "METRICS %s",
-                            json.dumps({"exposure": cur_qty, "locked": locked}),
-                        )
+                        if _log_exposure_if_changed(
+                            symbol, close_side, cur_qty, locked
+                        ):
+                            logged_exposure = True
                     realized_raw = resp.get(
                         "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
                     )
@@ -1595,10 +1597,10 @@ async def run_paper(
                             locked = _recalc_locked_total()
                             if not getattr(risk.account, "open_orders", {}):
                                 locked = 0.0
-                            log.info(
-                                "METRICS %s",
-                                json.dumps({"exposure": cur_qty, "locked": locked}),
-                            )
+                            if _log_exposure_if_changed(
+                                symbol, side, cur_qty, locked
+                            ):
+                                logged_exposure = True
                         realized_raw = resp.get(
                             "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
                         )
@@ -1856,10 +1858,8 @@ async def run_paper(
                 locked = _recalc_locked_total()
                 if not getattr(risk.account, "open_orders", {}):
                     locked = 0.0
-                log.info(
-                    "METRICS %s",
-                    json.dumps({"exposure": cur_qty, "locked": locked}),
-                )
+                if _log_exposure_if_changed(symbol, side, cur_qty, locked):
+                    logged_exposure = True
             realized_raw = resp.get(
                 "realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl)
             )
