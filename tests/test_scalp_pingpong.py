@@ -2,6 +2,8 @@ import pandas as pd
 import yaml
 import pytest
 from tradingbot.core import Account, RiskManager as CoreRiskManager
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
+from tradingbot.risk.service import RiskService
 from tradingbot.strategies.scalp_pingpong import ScalpPingPong, ScalpPingPongConfig
 
 
@@ -52,6 +54,47 @@ def test_scalp_pingpong_generates_trades_across_timeframes(timeframe, closes):
     df = pd.DataFrame({"close": closes})
     cfg = ScalpPingPongConfig(volatility_factor=0.02, min_volatility=0.0)
     strat = ScalpPingPong(cfg=cfg)
-    sig = strat.on_bar({"window": df, "timeframe": timeframe})
+    sig = strat.on_bar(
+        {
+            "window": df,
+            "timeframe": timeframe,
+            "symbol": "BTCUSDT",
+            "exchange": "paper",
+        }
+    )
     assert sig is not None
     assert 0 < sig.strength <= 1.0
+
+
+def test_scalp_pingpong_honours_min_notional(caplog):
+    df = pd.DataFrame({"close": [100.0, 99.0, 98.0, 100.0]})
+    cfg = ScalpPingPongConfig(
+        lookback=2,
+        z_threshold=0.1,
+        volatility_factor=0.02,
+        min_volatility=0.0,
+    )
+
+    account = Account(float("inf"), cash=1_000.0)
+    guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="test"))
+    risk = RiskService(guard, account=account)
+    risk.min_notional = 10.0
+
+    strat = ScalpPingPong(cfg=cfg, risk_service=risk)
+
+    bar = {
+        "window": df,
+        "timeframe": 1,
+        "symbol": "BTCUSDT",
+        "exchange": "paper",
+        "atr": 0.5,
+    }
+
+    with caplog.at_level("INFO"):
+        sig = strat.on_bar(bar)
+
+    assert sig is not None
+    assert sig.strength > 0
+    qty = risk.calc_position_size(sig.strength, bar["window"]["close"].iloc[-1])
+    assert qty * bar["window"]["close"].iloc[-1] >= risk.min_notional
+    assert "orden submínima" not in caplog.text

@@ -31,8 +31,10 @@ class ScalpPingPongConfig:
     z_threshold : float, optional
         Absolute z-score value required to open a trade, by default ``0.2``.
     volatility_factor : float, optional
-        Fraction of the recent volatility (in bps or ATR) used to size
-        positions, default ``0.02``.
+        Fraction of the recent volatility (expressed in basis points) used
+        to size positions.  For example, con una volatilidad de ``50`` bps
+        y un factor de ``0.02`` el aporte de tamaño será ``1.0`` (saturado
+        al límite superior).  Valor por defecto ``0.02``.
     min_volatility : float, optional
         Volatilidad mínima reciente en bps requerida para operar, por defecto ``0``.
     trend_ma : int, optional
@@ -111,7 +113,12 @@ class ScalpPingPong(Strategy):
             vol_bps = vol * 10000
         if vol_bps < self.cfg.min_volatility:
             return None
-        vol_size = max(0.0, min(1.0, vol_bps * self.cfg.volatility_factor / 10000))
+        # ``vol_bps`` ya está expresada en puntos básicos, por lo que el factor
+        # de volatilidad actúa directamente como un multiplicador fraccional.
+        # El tamaño final se acota en ``[0, 1]`` para evitar sobre-apalancamiento
+        # ante lecturas extremas de volatilidad.
+        vol_size = vol_bps * self.cfg.volatility_factor
+        vol_size = max(0.0, min(1.0, vol_size))
 
         trend_dir = 0
         if len(closes) >= trend_ma:
