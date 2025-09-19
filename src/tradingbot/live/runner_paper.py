@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import time
 import contextlib
 import json
+from typing import Any
 import uvicorn
 import ccxt
 
@@ -320,6 +321,57 @@ async def run_paper(
         **{k: v for k, v in broker_kwargs.items() if k in sig.parameters}
     )
     broker.state.cash = initial_cash
+    last_book_snapshot: dict[str, Any] | None = None
+    book_task: asyncio.Task | None = None
+
+    def _convert_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    async def _book_stream() -> None:
+        nonlocal last_book_snapshot
+        stream_bba = getattr(adapter, "stream_bba", None)
+        if not callable(stream_bba):
+            return
+        try:
+            async for snap in stream_bba(symbol):
+                book: dict[str, Any] = {}
+                bid_px = snap.get("bid_px") if isinstance(snap, dict) else None
+                ask_px = snap.get("ask_px") if isinstance(snap, dict) else None
+                bid = _convert_float(bid_px if bid_px is not None else snap.get("bid") if isinstance(snap, dict) else None)
+                ask = _convert_float(ask_px if ask_px is not None else snap.get("ask") if isinstance(snap, dict) else None)
+                bid_qty = _convert_float(snap.get("bid_qty") if isinstance(snap, dict) else None)
+                ask_qty = _convert_float(snap.get("ask_qty") if isinstance(snap, dict) else None)
+                if bid is not None:
+                    book["bid"] = bid
+                    book["bid_px"] = bid
+                if ask is not None:
+                    book["ask"] = ask
+                    book["ask_px"] = ask
+                if bid_qty is not None:
+                    qty_val = max(bid_qty, 0.0)
+                    book["bid_qty"] = qty_val
+                    book["bid_size"] = qty_val
+                if ask_qty is not None:
+                    qty_val = max(ask_qty, 0.0)
+                    book["ask_qty"] = qty_val
+                    book["ask_size"] = qty_val
+                if bid is not None and bid_qty is not None:
+                    book["bids"] = [[bid, max(bid_qty, 0.0)]]
+                if ask is not None and ask_qty is not None:
+                    book["asks"] = [[ask, max(ask_qty, 0.0)]]
+                ts_val = snap.get("ts") if isinstance(snap, dict) else None
+                if ts_val is not None:
+                    book["ts"] = ts_val
+                if book:
+                    last_book_snapshot = book
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log.warning("Book stream failed for %s: %s", symbol, exc)
+
     if hasattr(broker.account, "update_cash"):
         broker.account.update_cash(initial_cash)
     try:
@@ -1188,7 +1240,9 @@ async def run_paper(
 
     warmup_total = getattr(strat, "warmup_bars", 140)
     try:
-        agg = BarAggregator(timeframe=timeframe)
+    agg = BarAggregator(timeframe=timeframe)
+    if callable(getattr(adapter, "stream_bba", None)):
+        book_task = asyncio.create_task(_book_stream())
     except TypeError:
         agg = BarAggregator()
     if not hasattr(agg, "completed"):
@@ -1240,7 +1294,8 @@ async def run_paper(
                     }
                 ),
             )
-            events = broker.update_last_price(symbol, px)
+            book_for_tick = dict(last_book_snapshot) if last_book_snapshot else None
+            events = broker.update_last_price(symbol, px, book=book_for_tick)
             for ev in events or []:
                 await router.handle_paper_event(ev)
             risk.mark_price(symbol, px)
@@ -1287,6 +1342,9 @@ async def run_paper(
                         prev_rpnl,
                         prev_pos_qty,
                     )
+                    current_book = (
+                        dict(last_book_snapshot) if last_book_snapshot else None
+                    )
                     resp = await exec_broker.place_limit(
                         symbol,
                         close_side,
@@ -1297,6 +1355,7 @@ async def run_paper(
                         on_order_expiry=oe_wrapped,
                         on_order_ack=ack_cb,
                         slip_bps=slippage_bps,
+                        book=current_book,
                     )
                     status = str(resp.get("status", ""))
                     filled_qty = float(resp.get("filled_qty", 0.0))
@@ -1463,6 +1522,9 @@ async def run_paper(
                             prev_rpnl,
                             prev_pos_qty,
                         )
+                        current_book = (
+                            dict(last_book_snapshot) if last_book_snapshot else None
+                        )
                         resp = await exec_broker.place_limit(
                             symbol,
                             side,
@@ -1473,6 +1535,7 @@ async def run_paper(
                             on_order_expiry=oe_wrapped,
                             on_order_ack=ack_cb,
                             slip_bps=slippage_bps,
+                            book=current_book,
                         )
                         status = str(resp.get("status", ""))
                         filled_qty = float(resp.get("filled_qty", 0.0))
@@ -1721,6 +1784,7 @@ async def run_paper(
                 prev_rpnl,
                 prev_pos_qty,
             )
+            current_book = dict(last_book_snapshot) if last_book_snapshot else None
             resp = await exec_broker.place_limit(
                 symbol,
                 side,
@@ -1732,6 +1796,7 @@ async def run_paper(
                 on_order_ack=ack_cb,
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
+                book=current_book,
             )
             status = str(resp.get("status", ""))
             filled_qty = float(resp.get("filled_qty", 0.0))
@@ -1843,3 +1908,7 @@ async def run_paper(
             metrics_task.cancel()
             with contextlib.suppress(Exception):
                 await metrics_task
+        if book_task is not None:
+            book_task.cancel()
+            with contextlib.suppress(Exception):
+                await book_task

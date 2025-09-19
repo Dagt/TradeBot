@@ -3,8 +3,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import math
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Iterable, AsyncIterator, AsyncIterable, Mapping, Any
+from typing import (
+    Dict,
+    Optional,
+    Iterable,
+    AsyncIterator,
+    AsyncIterable,
+    Mapping,
+    Any,
+    Sequence,
+)
 from datetime import datetime
 import csv
 
@@ -34,6 +44,7 @@ class PaperState:
     order_id_seq: int = 0
     trade_id_seq: int = 0
     book: Dict[str, Dict[str, "BookOrder"]] = field(default_factory=dict)
+    depth_snapshot: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 @dataclass
 class BookOrder:
@@ -89,6 +100,110 @@ class PaperAdapter(ExchangeAdapter):
         # Dynamic per-symbol slippage estimates used when book data is absent
         self.slip_bps_per_qty_by_symbol: Dict[str, float] = {}
 
+    def _sanitize_book_levels(
+        self, levels: Sequence[Sequence[Any]] | Iterable[Sequence[Any]] | None
+    ) -> list[list[float]]:
+        sanitized: list[list[float]] = []
+        if levels is None:
+            return sanitized
+        for level in levels:
+            try:
+                price = float(level[0])
+                qty = float(level[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if qty < 0:
+                continue
+            sanitized.append([price, qty])
+        return sanitized
+
+    def _resolve_book_snapshot(
+        self, symbol: str, book: Mapping[str, Any] | None
+    ) -> Mapping[str, Any] | None:
+        """Return a sanitized depth snapshot combining ``book`` with cached data."""
+
+        prev = self.state.depth_snapshot.get(symbol, {})
+        if not isinstance(book, Mapping):
+            return prev or None
+
+        snapshot: dict[str, Any] = dict(prev)
+        changed = False
+
+        def _coerce_float(value: Any) -> float | None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _assign_price(dst_key: str, *keys: str) -> None:
+            nonlocal changed
+            for key in keys:
+                if key not in book:
+                    continue
+                val = _coerce_float(book[key])
+                if val is None:
+                    continue
+                snapshot[dst_key] = val
+                snapshot[f"{dst_key}_px"] = val
+                snapshot[f"{dst_key}_price"] = val
+                changed = True
+                return
+
+        def _assign_size(dst_key: str, alias: str, *keys: str) -> None:
+            nonlocal changed
+            for key in keys:
+                if key not in book:
+                    continue
+                val = _coerce_float(book[key])
+                if val is None:
+                    continue
+                size = max(val, 0.0)
+                snapshot[dst_key] = size
+                snapshot[alias] = size
+                changed = True
+                return
+
+        _assign_price("bid", "bid", "bid_px", "bid_price", "best_bid")
+        _assign_price("ask", "ask", "ask_px", "ask_price", "best_ask")
+        _assign_size("bid_size", "bid_qty", "bid_size", "bid_qty", "best_bid_size")
+        _assign_size("ask_size", "ask_qty", "ask_size", "ask_qty", "best_ask_size")
+
+        vol = _coerce_float(book.get("volume")) if hasattr(book, "get") else None
+        if vol is not None:
+            snapshot["volume"] = max(vol, 0.0)
+            changed = True
+
+        bids = self._sanitize_book_levels(book.get("bids"))
+        asks = self._sanitize_book_levels(book.get("asks"))
+        if bids:
+            snapshot["bids"] = bids
+            changed = True
+        if asks:
+            snapshot["asks"] = asks
+            changed = True
+
+        ts = book.get("ts") if hasattr(book, "get") else None
+        if ts is not None:
+            snapshot["ts"] = ts
+            changed = True
+
+        if changed or snapshot:
+            self.state.depth_snapshot[symbol] = snapshot
+            return snapshot
+        return prev or None
+
+    def _book_capacity(self, book: Mapping[str, Any] | None, key: str) -> float:
+        if not isinstance(book, Mapping):
+            return float("inf")
+        raw = book.get(key)
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            return float("inf")
+        if not math.isfinite(val):
+            return float("inf")
+        return max(val, 0.0)
+
     def update_last_price(
         self,
         symbol: str,
@@ -98,7 +213,8 @@ class PaperAdapter(ExchangeAdapter):
     ):
         self.state.last_px[symbol] = px
         self.account.mark_price(symbol, px)
-        return self._match_book(symbol, px, qty, book)
+        snapshot = self._resolve_book_snapshot(symbol, book)
+        return self._match_book(symbol, px, qty, snapshot)
 
     async def stream_trades(
         self,
@@ -152,6 +268,8 @@ class PaperAdapter(ExchangeAdapter):
         book: Mapping[str, Any] | None = None,
     ) -> list[dict]:
         fills: list[dict] = []
+        if book is None:
+            book = self.state.depth_snapshot.get(symbol)
         orders = self.state.book.get(symbol)
         if not orders:
             return fills
@@ -159,8 +277,8 @@ class PaperAdapter(ExchangeAdapter):
         now = datetime.utcnow()
         # Available top-of-book liquidity if provided
         if book is not None:
-            remaining_asks = float(book.get("ask_size", float("inf")))
-            remaining_bids = float(book.get("bid_size", float("inf")))
+            remaining_asks = self._book_capacity(book, "ask_size")
+            remaining_bids = self._book_capacity(book, "bid_size")
         else:
             remaining_asks = remaining_bids = float("inf")
         for oid in list(orders.keys()):
@@ -186,12 +304,26 @@ class PaperAdapter(ExchangeAdapter):
                 )
                 book_side = remaining_asks
             qty_cap = min(order.pending_qty, remaining, avail)
-            if qty_cap <= 0 or book_side <= 0:
+            if qty_cap <= 0:
                 continue
-            if self.slippage_model is not None and book is not None:
+            book_side_val = book_side
+            if book is not None:
+                if not math.isfinite(book_side_val):
+                    book_side_val = float("inf")
+                if book_side_val <= 0:
+                    continue
+            else:
+                if not math.isfinite(book_side_val):
+                    book_side_val = float("inf")
+            if (
+                self.slippage_model is not None
+                and book is not None
+                and math.isfinite(book_side_val)
+                and book_side_val > 0
+            ):
                 bar = dict(book)
                 key = "bid_size" if order.side == "sell" else "ask_size"
-                bar[key] = book_side
+                bar[key] = book_side_val
                 px_slip, fill_qty, new_q = self.slippage_model.fill(
                     order.side, qty_cap, px, bar, queue_pos=order.queue_pos
                 )
@@ -204,7 +336,7 @@ class PaperAdapter(ExchangeAdapter):
                     else (px - px_slip) / px * 10000.0
                 )
             else:
-                fill_qty = min(qty_cap, book_side)
+                fill_qty = min(qty_cap, book_side_val)
                 if fill_qty <= 0:
                     continue
                 px_slip, slip_bps = self._apply_slippage(
@@ -287,7 +419,11 @@ class PaperAdapter(ExchangeAdapter):
         """
 
         # Slippage model path ----------------------------------------------
-        if self.slippage_model is not None and book is not None:
+        if (
+            self.slippage_model is not None
+            and isinstance(book, Mapping)
+            and self._book_capacity(book, "ask_size" if side == "buy" else "bid_size") > 0
+        ):
             adj = self.slippage_model.adjust(side, qty, px, book)
             if side == "buy":
                 slip_bps = (adj - px) / px * 10000.0
@@ -410,6 +546,7 @@ class PaperAdapter(ExchangeAdapter):
                 "order_id": order_id,
                 "trade_id": trade_id,
             }
+        book = self._resolve_book_snapshot(symbol, book)
         working_px = price if price is not None else last
         qty = adjust_qty(qty, working_px, self.min_notional, self.step_size)
         if qty <= 0:
@@ -517,7 +654,7 @@ class PaperAdapter(ExchangeAdapter):
         pos = self.state.pos.get(symbol, PaperPosition())
         if side == "sell":
             qty = min(qty, pos.qty)
-            book_avail = float(book.get("bid_size", float("inf"))) if book else float("inf")
+            book_avail = self._book_capacity(book, "bid_size") if book else float("inf")
             qty = min(qty, book_avail)
             if qty <= 0:
                 return {
@@ -526,14 +663,14 @@ class PaperAdapter(ExchangeAdapter):
                     "order_id": order_id,
                     "trade_id": trade_id,
                 }
-        else:
-            max_aff = (
-                self.state.cash / (px_exec * (1 + fee_bps / 10000.0))
-                if self.state.cash > 0
-                else 0.0
-            )
-            qty = min(qty, max_aff)
-            book_avail = float(book.get("ask_size", float("inf"))) if book else float("inf")
+            else:
+                max_aff = (
+                    self.state.cash / (px_exec * (1 + fee_bps / 10000.0))
+                    if self.state.cash > 0
+                    else 0.0
+                )
+                qty = min(qty, max_aff)
+            book_avail = self._book_capacity(book, "ask_size") if book else float("inf")
             qty = min(qty, book_avail)
             if qty <= 0:
                 return {

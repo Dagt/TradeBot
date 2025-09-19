@@ -290,6 +290,8 @@ class ExecutionRouter:
             SKIPS.inc()
             return {"status": "rejected", "reason": "risk_disabled"}
 
+        book_hint = algo_kwargs.pop("book", None)
+
         if algo:
             from . import algos
 
@@ -438,6 +440,8 @@ class ExecutionRouter:
         timeout = getattr(order, "timeout", None)
         if timeout is not None:
             kwargs["timeout"] = timeout
+        if book_hint is not None:
+            kwargs["book"] = book_hint
 
         try:
             res = await adapter.place_order(**kwargs)
