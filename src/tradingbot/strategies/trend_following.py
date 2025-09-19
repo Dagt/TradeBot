@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics
 from ..data.features import rsi, calc_ofi
@@ -68,7 +70,7 @@ class TrendFollowing(Strategy):
         df: pd.DataFrame = bar["window"]
         tf = bar.get("timeframe")
         tf_minutes = self._tf_minutes(tf)
-        lookback_bars = max(1, int(self.vol_lookback / tf_minutes))
+        lookback_bars = max(1, math.ceil(self.vol_lookback / tf_minutes))
         if len(df) < max(self.rsi_n, lookback_bars) + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"

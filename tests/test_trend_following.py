@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import pytest
 
@@ -50,7 +52,7 @@ def test_trend_following_risk_service_handles_stop_and_size():
 def test_trend_following_generates_signal_across_timeframes(timeframe):
     lookback_min = 60
     tf_minutes = 1 if timeframe == "1m" else 15
-    lookback_bars = lookback_min // tf_minutes
+    lookback_bars = math.ceil(lookback_min / tf_minutes)
     n = max(lookback_bars * 2 + 1, 15)
     prices = [100] * (n - 1) + [110]
     freq = f"{tf_minutes}min"
@@ -59,4 +61,45 @@ def test_trend_following_generates_signal_across_timeframes(timeframe):
     bar = {"window": df, "timeframe": timeframe, "volatility": 0.0}
     sig = strat.on_bar(bar)
     assert sig and sig.side == "buy"
+
+
+def test_trend_following_lookback_window_covers_requested_minutes():
+    lookback_min = 30
+    timeframe = "7m"
+    tf_minutes = 7
+    expected_bars = math.ceil(lookback_min / tf_minutes)
+
+    class DummyRQ:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, symbol, key, window, q, min_periods=None):
+            self.calls.append(
+                {
+                    "symbol": symbol,
+                    "key": key,
+                    "window": window,
+                    "min_periods": min_periods,
+                }
+            )
+
+            class _Dummy:
+                @staticmethod
+                def update(_):
+                    return float("nan")
+
+            return _Dummy()
+
+    prices = [100 + i for i in range(expected_bars * 5 + 10)]
+    freq = f"{tf_minutes}min"
+    df = pd.DataFrame({"close": prices}, index=pd.date_range("2024", periods=len(prices), freq=freq))
+    strat = TrendFollowing(vol_lookback=lookback_min, rsi_n=5)
+    dummy_rq = DummyRQ()
+    strat._rq = dummy_rq
+    bar = {"window": df, "timeframe": timeframe, "volatility": 0.0}
+    strat.on_bar(bar)
+    vol_call = next(call for call in dummy_rq.calls if call["key"] == "vol_bps")
+    assert vol_call["min_periods"] == expected_bars
+    assert vol_call["window"] == expected_bars * 5
+    assert vol_call["min_periods"] * tf_minutes >= lookback_min
 
