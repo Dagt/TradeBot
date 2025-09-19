@@ -92,3 +92,69 @@ async def test_trade_pnl_accumulates_consecutive_wins():
     await api_main.update_bot_stats(2, {"pnl": 12})
     stats = api_main._BOTS[2]["stats"]
     assert stats["pnl"] == pytest.approx(12)
+
+
+@pytest.mark.asyncio
+async def test_partial_fills_and_cancel_tracking():
+    api_main._BOTS.clear()
+    api_main._BOTS[3] = {"stats": {}}
+
+    await api_main.update_bot_stats(3, {"event": "order"})
+
+    partial_fill = {
+        "event": "fill",
+        "order_id": "order-fill",
+        "pending_qty": 0.5,
+        "filled_qty": 0.5,
+        "qty": 0.5,
+        "fee": 0.1,
+        "slippage_bps": 1.0,
+        "maker": True,
+    }
+    await api_main.update_bot_stats(3, partial_fill)
+
+    final_fill = {
+        "event": "fill",
+        "order_id": "order-fill",
+        "pending_qty": 0.0,
+        "filled_qty": 0.5,
+        "qty": 0.5,
+        "fee": 0.1,
+        "slippage_bps": 1.0,
+        "maker": False,
+    }
+    await api_main.update_bot_stats(3, final_fill)
+
+    stats = api_main._BOTS[3]["stats"]
+    assert stats["fills"] == 1
+    assert stats["fees_usd"] == pytest.approx(0.2)
+
+    await api_main.update_bot_stats(3, {"event": "order"})
+    await api_main.update_bot_stats(
+        3,
+        {
+            "event": "cancel",
+            "order_id": "order-cancel",
+            "pending_qty": 1.0,
+            "filled_qty": 0.0,
+        },
+    )
+
+    stats = api_main._BOTS[3]["stats"]
+    assert stats["cancels"] == 1
+    assert stats["orders"] == 2
+    assert stats["cancel_ratio"] == pytest.approx(0.5)
+
+    await api_main.update_bot_stats(
+        3,
+        {
+            "event": "cancel",
+            "order_id": "order-fill",
+            "pending_qty": 0.0,
+            "filled_qty": 0.25,
+        },
+    )
+
+    stats = api_main._BOTS[3]["stats"]
+    assert stats["cancels"] == 1
+    assert api_main._BOTS[3].get("_pending_by_order") == {}

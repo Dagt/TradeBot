@@ -1199,6 +1199,8 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
         if not info:
             return
         buf = info.setdefault("stats", {})
+        orders_state: dict[str, dict] = info.setdefault("_pending_by_order", {})
+        counted_orders: set[str] = info.setdefault("_counted_orders", set())
         data: dict = {}
         if stats:
             data.update(stats)
@@ -1213,7 +1215,6 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
             buf["orders"] = buf.get("orders", 0) + 1
         elif event == "fill":
             qty = float(data.get("qty", 0.0))
-            buf["fills"] = buf.get("fills", 0) + 1
             fee = float(data.get("fee", 0.0))
             buf["fees_usd"] = buf.get("fees_usd", 0.0) + fee
             slip = float(data.get("slippage_bps", 0.0))
@@ -1233,6 +1234,52 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
                 buf["maker_taker_ratio"] = mqty / tqty
             else:
                 buf["maker_taker_ratio"] = mqty
+
+            order_id_val = data.get("order_id")
+            order_key = str(order_id_val) if order_id_val is not None else None
+            pending_known = False
+            pending_qty_val: float | None = None
+            raw_pending = data.get("pending_qty")
+            if raw_pending is not None:
+                try:
+                    pending_qty_val = float(raw_pending)
+                except (TypeError, ValueError):
+                    pending_qty_val = None
+                else:
+                    pending_known = True
+                    if abs(pending_qty_val) <= 1e-9:
+                        pending_qty_val = 0.0
+            raw_filled = data.get("filled_qty")
+            if raw_filled is not None:
+                try:
+                    filled_qty_val = float(raw_filled)
+                except (TypeError, ValueError):
+                    filled_qty_val = qty
+            else:
+                filled_qty_val = qty
+
+            if order_key is not None:
+                state = orders_state.get(order_key, {})
+                if abs(filled_qty_val) > 1e-9:
+                    state["has_fill"] = True
+                if pending_known and pending_qty_val is not None:
+                    state["pending_qty"] = pending_qty_val
+                if pending_known and pending_qty_val is not None:
+                    if pending_qty_val <= 0:
+                        if order_key not in counted_orders:
+                            buf["fills"] = buf.get("fills", 0) + 1
+                            counted_orders.add(order_key)
+                        orders_state.pop(order_key, None)
+                    else:
+                        orders_state[order_key] = state
+                else:
+                    if order_key not in counted_orders:
+                        buf["fills"] = buf.get("fills", 0) + 1
+                        counted_orders.add(order_key)
+                    orders_state.pop(order_key, None)
+            else:
+                buf["fills"] = buf.get("fills", 0) + 1
+
             if pnl_val is not None:
                 try:
                     pnl = float(pnl_val)
@@ -1249,7 +1296,23 @@ async def update_bot_stats(pid: int, stats: dict | None = None, **kwargs) -> Non
             }
             trades_buf.append(trade_data)
         elif event == "cancel":
-            buf["cancels"] = buf.get("cancels", 0) + 1
+            order_id_val = data.get("order_id")
+            order_key = str(order_id_val) if order_id_val is not None else None
+            raw_filled = data.get("filled_qty")
+            filled_qty_val = 0.0
+            if raw_filled is not None:
+                try:
+                    filled_qty_val = float(raw_filled)
+                except (TypeError, ValueError):
+                    filled_qty_val = 0.0
+            has_fill = abs(filled_qty_val) > 1e-9
+            if order_key is not None:
+                state = orders_state.pop(order_key, None)
+                if state and state.get("has_fill"):
+                    has_fill = True
+                counted_orders.discard(order_key)
+            if not has_fill:
+                buf["cancels"] = buf.get("cancels", 0) + 1
         elif event == "skip":
             buf["skips"] = buf.get("skips", 0) + 1
         elif event == "trade":
