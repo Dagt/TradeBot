@@ -1,3 +1,6 @@
+from datetime import timedelta
+from types import MethodType
+
 import pytest
 
 from tradingbot.execution.order_types import Order
@@ -149,3 +152,63 @@ async def test_expiry_event_triggers_callback():
     for ev in events:
         await router.handle_paper_event(ev)
     assert strat.expiry_called is True
+
+
+@pytest.mark.asyncio
+async def test_router_forwards_timeout_and_logs_cancel_event(monkeypatch):
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    symbol = "BTC/USDT"
+    adapter.update_last_price(symbol, 100.0)
+
+    captured: dict[str, float | None] = {"timeout": None}
+    original_place_order = adapter.place_order
+
+    async def _tracking_place_order(self, *args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        return await original_place_order(*args, **kwargs)
+
+    monkeypatch.setattr(
+        adapter,
+        "place_order",
+        MethodType(_tracking_place_order, adapter),
+    )
+
+    cancel_events: list[dict] = []
+
+    def _on_expiry(order, res):
+        cancel_events.append({"event": "cancel", "res": dict(res)})
+        return None
+
+    router = ExecutionRouter(adapter, on_order_expiry=_on_expiry)
+
+    timeout = 0.05
+    order = Order(
+        symbol=symbol,
+        side="buy",
+        type_="limit",
+        qty=1.0,
+        price=90.0,
+        time_in_force="GTD",
+        timeout=timeout,
+    )
+
+    res = await router.execute(order)
+    assert res["status"] == "new"
+    assert captured["timeout"] == pytest.approx(timeout)
+
+    order_id = res.get("order_id")
+    book_for_symbol = adapter.state.book.get(symbol)
+    assert book_for_symbol is not None and order_id in book_for_symbol
+    book_order = book_for_symbol[order_id]
+    book_order.placed_at = book_order.placed_at - timedelta(seconds=timeout + 0.05)
+
+    events = adapter.update_last_price(symbol, adapter.state.last_px[symbol])
+    assert events, "PaperAdapter should emit expiry events"
+    assert cancel_events == []
+
+    for event in events:
+        assert event["status"] in {"expired", "partial"}
+        await router.handle_paper_event(event)
+
+    assert cancel_events and cancel_events[0]["event"] == "cancel"
