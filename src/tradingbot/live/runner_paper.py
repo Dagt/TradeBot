@@ -519,10 +519,23 @@ async def run_paper(
             side=side_for_risk,
         )
         locked_total = _recalc_locked_total()
+        order_id_val = None
+        if isinstance(res, dict):
+            order_id_val = res.get("order_id") or res.get("client_order_id")
+        pending_metric = metric_pending_val
+        if abs(pending_metric) <= 1e-9:
+            pending_metric = 0.0
         log.info(
             "METRICS %s",
             json.dumps(
-                {"event": "cancel", "reason": res.get("reason"), "locked": locked_total}
+                {
+                    "event": "cancel",
+                    "reason": res.get("reason"),
+                    "locked": locked_total,
+                    "order_id": order_id_val,
+                    "pending_qty": pending_metric,
+                    "filled_qty": filled_qty,
+                }
             ),
         )
 
@@ -666,6 +679,18 @@ async def run_paper(
                     exec_price,
                     base_price,
                 )
+                pending_qty = None
+                if isinstance(res, dict):
+                    pending_raw = res.get("pending_qty")
+                    if pending_raw is not None:
+                        try:
+                            pending_qty = float(pending_raw)
+                        except (TypeError, ValueError):
+                            pending_qty = None
+                if pending_qty is not None and abs(pending_qty) <= 1e-9:
+                    pending_qty = 0.0
+                if isinstance(res, dict) and pending_qty is not None:
+                    res["pending_qty"] = pending_qty
                 metrics_payload = {
                     "event": "fill",
                     "side": side,
@@ -678,22 +703,25 @@ async def run_paper(
                         else 0.0
                     ),
                     "maker": maker_flag,
+                    "order_id": order_id,
+                    "pending_qty": pending_qty,
+                    "filled_qty": filled_qty,
                 }
                 log.info("METRICS %s", json.dumps(metrics_payload))
                 if symbol and side_norm:
-                    pending_qty = None
+                    pending_value = pending_qty
                     if isinstance(res, dict):
                         pending_raw = res.get("pending_qty")
                         if pending_raw is not None:
                             try:
-                                pending_qty = float(pending_raw)
+                                pending_value = float(pending_raw)
                             except (TypeError, ValueError):
-                                pending_qty = None
-                    if pending_qty is not None and abs(pending_qty) <= 1e-9:
-                        pending_qty = 0.0
-                    if pending_qty is not None and isinstance(res, dict):
-                        res["pending_qty"] = pending_qty
-                    if pending_qty is not None:
+                                pending_value = None
+                    if pending_value is not None and abs(pending_value) <= 1e-9:
+                        pending_value = 0.0
+                    if pending_value is not None and isinstance(res, dict):
+                        res["pending_qty"] = pending_value
+                    if pending_value is not None:
                         adapters_to_update: list[object] = []
                         for candidate in (adapter, rest):
                             if candidate is not None and candidate not in adapters_to_update:
@@ -702,7 +730,7 @@ async def run_paper(
                             handler = getattr(candidate, "on_paper_fill", None)
                             if callable(handler):
                                 try:
-                                    handler(symbol, side_norm, pending_qty)
+                                    handler(symbol, side_norm, pending_value)
                                 except Exception:  # pragma: no cover - defensive
                                     pass
                     account_open_orders = getattr(risk.account, "open_orders", None)
@@ -712,13 +740,13 @@ async def run_paper(
                         prev_pending = float(
                             account_open_orders.get(symbol, {}).get(side_norm, 0.0) or 0.0
                         )
-                    if pending_qty is not None and callable(update_open):
+                    if pending_value is not None and callable(update_open):
                         if isinstance(account_open_orders, dict):
-                            delta_pending = pending_qty - prev_pending
+                            delta_pending = pending_value - prev_pending
                             if abs(delta_pending) > 1e-12:
                                 update_open(symbol, side_norm, delta_pending)
                         else:
-                            update_open(symbol, side_norm, pending_qty)
+                            update_open(symbol, side_norm, pending_value)
                     target_qty = None
                     if isinstance(res, dict) and res.get("pos_qty") is not None:
                         try:
@@ -1020,6 +1048,7 @@ async def run_paper(
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     if abs(pending_qty) <= 1e-9:
                         pending_qty = 0.0
+                    order_id_val = resp.get("order_id") or resp.get("client_order_id")
                     exec_price = float(resp.get("price", price))
                     if status == "rejected":
                         if resp.get("reason") == "insufficient_cash":
@@ -1108,6 +1137,9 @@ async def run_paper(
                                     "pnl": delta_rpnl,
                                     "slippage_bps": slippage,
                                     "maker": maker,
+                                    "order_id": order_id_val,
+                                    "pending_qty": pending_qty,
+                                    "filled_qty": filled_qty,
                                 }
                             ),
                         )
@@ -1179,6 +1211,7 @@ async def run_paper(
                         pending_qty = float(resp.get("pending_qty", 0.0))
                         if abs(pending_qty) <= 1e-9:
                             pending_qty = 0.0
+                        order_id_val = resp.get("order_id") or resp.get("client_order_id")
                         exec_price = float(resp.get("price", price))
                         if status == "rejected":
                             if resp.get("reason") == "insufficient_cash":
@@ -1268,6 +1301,9 @@ async def run_paper(
                                         "pnl": delta_rpnl,
                                         "slippage_bps": slippage,
                                         "maker": maker,
+                                        "order_id": order_id_val,
+                                        "pending_qty": pending_qty,
+                                        "filled_qty": filled_qty,
                                     }
                                 ),
                             )
@@ -1421,6 +1457,7 @@ async def run_paper(
             pending_qty = float(resp.get("pending_qty", 0.0))
             if abs(pending_qty) <= 1e-9:
                 pending_qty = 0.0
+            order_id_val = resp.get("order_id") or resp.get("client_order_id")
             exec_price = float(resp.get("price", price))
             if status == "rejected":
                 if resp.get("reason") == "insufficient_cash":
@@ -1504,6 +1541,9 @@ async def run_paper(
                             "pnl": delta_rpnl,
                             "slippage_bps": slippage,
                             "maker": maker,
+                            "order_id": order_id_val,
+                            "pending_qty": pending_qty,
+                            "filled_qty": filled_qty,
                         }
                     ),
                 )
