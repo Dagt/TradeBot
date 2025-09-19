@@ -30,7 +30,11 @@ class TrendFollowing(Strategy):
         # ``vol_lookback`` se especifica en minutos y se escalará al timeframe
         # real en ``on_bar``.
         self.vol_lookback = kwargs.get("vol_lookback", self.rsi_n)
-        self.min_volatility = 0.0
+        self._min_volatility_override = kwargs.get("min_volatility")
+        if self._min_volatility_override is not None:
+            self.min_volatility = float(self._min_volatility_override)
+        else:
+            self.min_volatility = 0.0
         self.risk_service = kwargs.get("risk_service")
         self._rq = RollingQuantileCache()
 
@@ -88,8 +92,9 @@ class TrendFollowing(Strategy):
                 min_periods=lookback_bars,
             )
             val = rq_vol.update(vol_bps)
-            self.min_volatility = 0.0 if pd.isna(val) else float(val)
-        else:
+            if self._min_volatility_override is None:
+                self.min_volatility = 0.0 if pd.isna(val) else float(val)
+        elif self._min_volatility_override is None:
             self.min_volatility = 0.0
         if pd.isna(vol_bps) or vol_bps < self.min_volatility:
             return None

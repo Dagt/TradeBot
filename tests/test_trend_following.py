@@ -60,3 +60,18 @@ def test_trend_following_generates_signal_across_timeframes(timeframe):
     sig = strat.on_bar(bar)
     assert sig and sig.side == "buy"
 
+
+def test_trend_following_respects_explicit_min_volatility():
+    prices = [100 + i * 0.01 for i in range(30)]
+    df = pd.DataFrame({"close": prices})
+    bar = {"window": df, "timeframe": "1m"}
+
+    strat_override = TrendFollowing(min_volatility=5.0)
+    sig_override = strat_override.on_bar(bar)
+    assert sig_override is None
+    assert strat_override.min_volatility == pytest.approx(5.0)
+
+    strat_auto = TrendFollowing()
+    sig_auto = strat_auto.on_bar(bar)
+    assert sig_auto and sig_auto.side == "buy"
+
