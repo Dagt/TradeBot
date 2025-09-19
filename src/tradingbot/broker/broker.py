@@ -222,6 +222,7 @@ class Broker:
         tif: str = "GTC|PO",
         on_partial_fill: Optional[Callable[[Order, dict], str | None]] = None,
         on_order_expiry: Optional[Callable[[Order, dict], str | None]] = None,
+        on_order_ack: Optional[Callable[[Order, dict], None]] = None,
         signal_ts: float | None = None,
         *,
         slip_bps: float | None = None,
@@ -250,6 +251,11 @@ class Broker:
             Callback executed when an order expires (``GTD``). Should return
             ``"re_quote"`` to place the remaining quantity again. Any other
             value cancels the remainder.
+        on_order_ack: callable, optional
+            Callback executed after the adapter acknowledges the order
+            submission. Receives the :class:`Order` instance and the adapter
+            response dictionary. Exceptions are ignored so callers don't need
+            to guard against logging failures.
 
         Returns
         -------
@@ -355,6 +361,12 @@ class Broker:
 
             status = tracker_status if tracker_status is not None else res.get("status")
             status_lc = str(status or "").lower()
+
+            if on_order_ack is not None:
+                try:
+                    on_order_ack(order, dict(res))
+                except Exception:
+                    pass
 
             if tracker is not None and tracker.event.is_set():
                 break
