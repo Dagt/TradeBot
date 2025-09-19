@@ -663,6 +663,7 @@ async def run_paper(
 
     def _wrap_cb(orig_cb, *, call_cancel=False):
         def _cb(order, res):
+            logged_exposure = False
             status = ""
             if isinstance(res, dict):
                 status = str(res.get("status", "")).lower()
@@ -900,6 +901,7 @@ async def run_paper(
                         "METRICS %s",
                         json.dumps({"exposure": exposure_qty, "locked": locked}),
                     )
+                    logged_exposure = True
             if not skip_completion:
                 pending_raw = res.get("pending_qty")
                 pending_qty = None
@@ -953,12 +955,16 @@ async def run_paper(
                             )
                         except Exception:
                             exposure_after = 0.0
-                    log.info(
-                        "METRICS %s",
-                        json.dumps(
-                            {"exposure": exposure_after, "locked": locked_after_completion}
-                        ),
-                    )
+                    if not logged_exposure:
+                        log.info(
+                            "METRICS %s",
+                            json.dumps(
+                                {
+                                    "exposure": exposure_after,
+                                    "locked": locked_after_completion,
+                                }
+                            ),
+                        )
                     baseline_qty = None
                     baseline_pnl = None
                     baseline_key = None
