@@ -431,6 +431,102 @@ async def run_paper(
         except (TypeError, ValueError):
             return 0.0
 
+    def _make_order_ack_logger(
+        symbol: str,
+        side: str,
+        price: float,
+        qty_hint: float,
+        prev_rpnl: float,
+        prev_pos_qty: float,
+    ):
+        """Create a callback that emits metrics once an order is acknowledged."""
+
+        qty_hint_val = float(qty_hint)
+
+        def _on_ack(order, res):
+            if not isinstance(res, dict):
+                return
+            status = str(res.get("status", "")).lower()
+            if status in {"rejected", "error"}:
+                return
+            order_id_val = res.get("order_id") or res.get("client_order_id")
+            if order_id_val is not None and str(order_id_val) in logged_order_ids:
+                return
+
+            px_val = res.get("price")
+            if px_val is None and order is not None:
+                px_val = getattr(order, "price", None)
+            if px_val is None:
+                px_val = price
+            try:
+                px_float = float(px_val)
+            except (TypeError, ValueError):
+                px_float = float(price)
+
+            qty_val = res.get("pending_qty")
+            if qty_val in (None, ""):
+                qty_val = res.get("qty")
+            if qty_val in (None, "") and order is not None:
+                qty_val = getattr(order, "qty", None)
+            if qty_val in (None, ""):
+                qty_val = res.get("filled_qty")
+            try:
+                qty_float = float(qty_val)
+            except (TypeError, ValueError):
+                qty_float = qty_hint_val
+            if qty_float <= 0:
+                try:
+                    qty_float = float(res.get("filled_qty") or qty_hint_val)
+                except (TypeError, ValueError):
+                    qty_float = qty_hint_val
+
+            try:
+                pnl_snapshot = float(getattr(broker.state, "realized_pnl", 0.0))
+            except (TypeError, ValueError):
+                pnl_snapshot = 0.0
+
+            log.info(
+                "METRICS %s",
+                json.dumps(
+                    {
+                        "event": "order",
+                        "side": side,
+                        "price": px_float,
+                        "qty": qty_float,
+                        "fee": 0.0,
+                        "pnl": pnl_snapshot,
+                    }
+                ),
+            )
+            if order_id_val is not None:
+                logged_order_ids.add(str(order_id_val))
+            _capture_baseline(order_id_val, prev_rpnl, prev_pos_qty)
+
+            account = getattr(risk, "account", None)
+            if account is None:
+                return
+            try:
+                cur_qty = float(account.current_exposure(symbol)[0])
+            except Exception:
+                cur_qty = 0.0
+            if step_size > 0 and abs(cur_qty) < step_size:
+                cur_qty = 0.0
+                try:
+                    positions = getattr(account, "positions", None)
+                    if isinstance(positions, dict):
+                        positions[symbol] = 0.0
+                except Exception:
+                    pass
+            locked = _recalc_locked_total()
+            if not getattr(account, "open_orders", {}):
+                locked = 0.0
+            log.info(
+                "METRICS %s",
+                json.dumps({"exposure": cur_qty, "locked": locked}),
+            )
+
+        return _on_ack
+
     def on_order_cancel(res: dict) -> None:
         """Handle broker order cancellation notifications."""
         if not isinstance(res, dict):
@@ -1033,6 +1129,14 @@ async def run_paper(
                         continue
                     pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
                     oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
+                    ack_cb = _make_order_ack_logger(
+                        symbol,
+                        close_side,
+                        price,
+                        qty_close,
+                        prev_rpnl,
+                        prev_pos_qty,
+                    )
                     resp = await exec_broker.place_limit(
                         symbol,
                         close_side,
@@ -1041,6 +1145,7 @@ async def run_paper(
                         tif=tif,
                         on_partial_fill=pf_wrapped,
                         on_order_expiry=oe_wrapped,
+                        on_order_ack=ack_cb,
                         slip_bps=slippage_bps,
                     )
                     status = str(resp.get("status", ""))
@@ -1066,22 +1171,26 @@ async def run_paper(
                         log_order = True
                         order_qty = filled_qty
                     if log_order:
-                        log.info(
-                            "METRICS %s",
-                            json.dumps(
-                                {
-                                    "event": "order",
-                                    "side": close_side,
-                                    "price": price,
-                                    "qty": order_qty,
-                                    "fee": 0.0,
-                                    "pnl": broker.state.realized_pnl,
-                                }
-                            ),
-                        )
+                        should_log_order = True
                         oid = resp.get("order_id")
-                        if oid is not None:
-                            logged_order_ids.add(str(oid))
+                        if oid is not None and str(oid) in logged_order_ids:
+                            should_log_order = False
+                        if should_log_order:
+                            log.info(
+                                "METRICS %s",
+                                json.dumps(
+                                    {
+                                        "event": "order",
+                                        "side": close_side,
+                                        "price": price,
+                                        "qty": order_qty,
+                                        "fee": 0.0,
+                                        "pnl": broker.state.realized_pnl,
+                                    }
+                                ),
+                            )
+                            if oid is not None:
+                                logged_order_ids.add(str(oid))
                         _capture_baseline(
                             resp.get("order_id") or resp.get("client_order_id"),
                             prev_rpnl,
@@ -1196,6 +1305,14 @@ async def run_paper(
                             continue
                         pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
                         oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
+                        ack_cb = _make_order_ack_logger(
+                            symbol,
+                            side,
+                            price,
+                            qty_scale,
+                            prev_rpnl,
+                            prev_pos_qty,
+                        )
                         resp = await exec_broker.place_limit(
                             symbol,
                             side,
@@ -1204,6 +1321,7 @@ async def run_paper(
                             tif=tif,
                             on_partial_fill=pf_wrapped,
                             on_order_expiry=oe_wrapped,
+                            on_order_ack=ack_cb,
                             slip_bps=slippage_bps,
                         )
                         status = str(resp.get("status", ""))
@@ -1229,22 +1347,26 @@ async def run_paper(
                             log_order = True
                             order_qty = filled_qty
                         if log_order:
-                            log.info(
-                                "METRICS %s",
-                                json.dumps(
-                                    {
-                                        "event": "order",
-                                        "side": side,
-                                        "price": price,
-                                        "qty": order_qty,
-                                        "fee": 0.0,
-                                        "pnl": broker.state.realized_pnl,
-                                    }
-                                ),
-                            )
+                            should_log_order = True
                             oid = resp.get("order_id")
-                            if oid is not None:
-                                logged_order_ids.add(str(oid))
+                            if oid is not None and str(oid) in logged_order_ids:
+                                should_log_order = False
+                            if should_log_order:
+                                log.info(
+                                    "METRICS %s",
+                                    json.dumps(
+                                        {
+                                            "event": "order",
+                                            "side": side,
+                                            "price": price,
+                                            "qty": order_qty,
+                                            "fee": 0.0,
+                                            "pnl": broker.state.realized_pnl,
+                                        }
+                                    ),
+                                )
+                                if oid is not None:
+                                    logged_order_ids.add(str(oid))
                             _capture_baseline(
                                 resp.get("order_id") or resp.get("client_order_id"),
                                 prev_rpnl,
@@ -1441,6 +1563,14 @@ async def run_paper(
                 prev_rpnl = total_pnl
             pf_wrapped = _with_baseline(on_pf, prev_rpnl, prev_pos_qty)
             oe_wrapped = _with_baseline(on_oe, prev_rpnl, prev_pos_qty)
+            ack_cb = _make_order_ack_logger(
+                symbol,
+                side,
+                price,
+                qty,
+                prev_rpnl,
+                prev_pos_qty,
+            )
             resp = await exec_broker.place_limit(
                 symbol,
                 side,
@@ -1449,6 +1579,7 @@ async def run_paper(
                 tif=tif,
                 on_partial_fill=pf_wrapped,
                 on_order_expiry=oe_wrapped,
+                on_order_ack=ack_cb,
                 signal_ts=signal_ts,
                 slip_bps=slippage_bps,
             )
@@ -1475,22 +1606,26 @@ async def run_paper(
                 log_order = True
                 order_qty = filled_qty
             if log_order:
-                log.info(
-                    "METRICS %s",
-                    json.dumps(
-                        {
-                            "event": "order",
-                            "side": side,
-                            "price": price,
-                            "qty": order_qty,
-                            "fee": 0.0,
-                            "pnl": broker.state.realized_pnl,
-                        }
-                    ),
-                )
+                should_log_order = True
                 oid = resp.get("order_id")
-                if oid is not None:
-                    logged_order_ids.add(str(oid))
+                if oid is not None and str(oid) in logged_order_ids:
+                    should_log_order = False
+                if should_log_order:
+                    log.info(
+                        "METRICS %s",
+                        json.dumps(
+                            {
+                                "event": "order",
+                                "side": side,
+                                "price": price,
+                                "qty": order_qty,
+                                "fee": 0.0,
+                                "pnl": broker.state.realized_pnl,
+                            }
+                        ),
+                    )
+                    if oid is not None:
+                        logged_order_ids.add(str(oid))
                 _capture_baseline(
                     resp.get("order_id") or resp.get("client_order_id"),
                     prev_rpnl,
