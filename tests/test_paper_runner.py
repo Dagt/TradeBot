@@ -24,7 +24,12 @@ class DummyWS:
     def __init__(self):
         meta = types.SimpleNamespace(
             client=types.SimpleNamespace(symbols=[]),
-            rules_for=lambda s: SimpleNamespace(qty_step=1e-9, price_step=0.1),
+            rules_for=lambda s: SimpleNamespace(
+                qty_step=1e-9,
+                price_step=0.1,
+                min_qty=1e-9,
+                min_notional=10.0,
+            ),
         )
         self.rest = types.SimpleNamespace(meta=meta)
 
@@ -320,6 +325,52 @@ async def test_run_paper(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_paper_missing_symbol_metadata(monkeypatch):
+    meta_holder: dict[str, object] = {}
+
+    class EmptyMeta:
+        def __init__(self) -> None:
+            self.client = types.SimpleNamespace(symbols=[], markets={})
+            self.load_calls = 0
+
+        def load_markets(self) -> None:
+            self.load_calls += 1
+
+        def rules_for(self, symbol: str):  # pragma: no cover - simple stub
+            return SimpleNamespace(qty_step=0.0, price_step=0.0, min_notional=0.0, min_qty=0.0)
+
+    class EmptyWS:
+        def __init__(self) -> None:
+            meta = EmptyMeta()
+            meta_holder["meta"] = meta
+            self.rest = types.SimpleNamespace(meta=meta)
+
+    monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), EmptyWS)
+    monkeypatch.setattr(rp, "BarAggregator", DummyAgg)
+    monkeypatch.setattr(rp, "STRATEGIES", {"dummy": DummyStrat})
+    monkeypatch.setattr(rp, "REST_ADAPTERS", {})
+    monkeypatch.setattr(rp, "RiskService", lambda *a, **k: DummyRisk())
+    monkeypatch.setattr(rp, "ExecutionRouter", DummyRouter)
+    monkeypatch.setattr(rp, "Broker", DummyExecBroker)
+    monkeypatch.setattr(rp, "PaperAdapter", DummyBroker)
+    monkeypatch.setattr(rp.uvicorn, "Server", DummyServer)
+    monkeypatch.setattr(rp, "_CAN_PG", False)
+    monkeypatch.setattr(
+        rp,
+        "settings",
+        types.SimpleNamespace(tick_size=0.1, risk_purge_minutes=0),
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await rp.run_paper(symbol=normalize("BTC-USDT"), strategy_name="dummy")
+
+    assert "--step-size" in str(excinfo.value)
+    meta = meta_holder.get("meta")
+    assert isinstance(meta, EmptyMeta)
+    assert meta.load_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_run_paper_clears_existing_pending_after_fill(monkeypatch):
     monkeypatch.setattr(rp, "BinanceWSAdapter", lambda: DummyWS())
     monkeypatch.setitem(rp.WS_ADAPTERS, ("binance", "spot"), DummyWS)
@@ -566,7 +617,12 @@ class AsyncDummyWS:
     def __init__(self, trades):
         meta = types.SimpleNamespace(
             client=types.SimpleNamespace(symbols=[]),
-            rules_for=lambda s: SimpleNamespace(qty_step=1e-9, price_step=0.1, min_notional=0.0),
+            rules_for=lambda s: SimpleNamespace(
+                qty_step=1e-9,
+                price_step=0.1,
+                min_qty=1e-9,
+                min_notional=10.0,
+            ),
         )
         self.rest = types.SimpleNamespace(meta=meta)
         self._trades = trades

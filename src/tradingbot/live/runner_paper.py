@@ -68,6 +68,10 @@ REST_ADAPTERS = {
 }
 
 
+_SPOT_MIN_QTY_FALLBACK = 1e-4
+_SPOT_MIN_NOTIONAL_FALLBACK = 10.0
+
+
 async def _start_metrics(port: int) -> tuple[uvicorn.Server, asyncio.Task[None]]:
     """Launch the monitoring panel in the background."""
     config = uvicorn.Config(panel.app, host="0.0.0.0", port=port, log_level="info")
@@ -150,8 +154,11 @@ async def run_paper(
                 adapter.rest = rest
     tick_size = 0.0
     min_qty_val = 0.0
-    try:
-        if rest is not None and hasattr(rest, "meta"):
+
+    if rest is not None and hasattr(rest, "meta"):
+
+        def _update_symbol_rules() -> None:
+            nonlocal min_qty_val, min_notional, step_size, tick_size
             rules, _ = resolve_symbol_rules(rest.meta, raw_symbol, symbol)
             qty_step = float(getattr(rules, "qty_step", 0.0) or 0.0)
             if step_size <= 0 and qty_step > 0:
@@ -166,12 +173,63 @@ async def run_paper(
             except (TypeError, ValueError):
                 min_qty_val = 0.0
             tick_size = float(getattr(rules, "price_step", 0.0) or 0.0)
-        elif step_size <= 0:
-            step_size = 1e-9
-    except Exception:
-        if step_size <= 0:
-            step_size = 1e-9
-        tick_size = 0.0
+
+        def _current_missing() -> list[str]:
+            missing: list[str] = []
+            if step_size <= 0:
+                missing.append("step_size")
+            if min_qty_val <= 0:
+                missing.append("min_qty")
+            if min_notional <= 0 and market == "spot":
+                missing.append("min_notional")
+            return missing
+
+        def _refresh_metadata() -> bool:
+            load_markets = getattr(getattr(rest, "meta", None), "load_markets", None)
+            if callable(load_markets):
+                try:
+                    load_markets()
+                    return True
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    log.warning("Failed to refresh markets for %s: %s", symbol, exc)
+            return False
+
+        for attempt in range(2):
+            try:
+                _update_symbol_rules()
+            except Exception:
+                if attempt == 0 and _refresh_metadata():
+                    continue
+                if step_size <= 0:
+                    step_size = 1e-9
+                tick_size = 0.0
+                break
+
+            missing_fields = _current_missing()
+            if missing_fields:
+                if attempt == 0 and _refresh_metadata():
+                    continue
+                hint_map = {
+                    "step_size": "--step-size",
+                    "min_qty": "--step-size",
+                    "min_notional": "--min-notional",
+                }
+                missing_desc = []
+                for field in missing_fields:
+                    hint = hint_map.get(field)
+                    if hint:
+                        missing_desc.append(f"{field} (set via {hint})")
+                    else:
+                        missing_desc.append(field)
+                details = ", ".join(missing_desc)
+                raise RuntimeError(
+                    "Missing symbol metadata for "
+                    f"{symbol}: {details}. Reloaded markets but values remain unset; "
+                    "provide explicit overrides via CLI."
+                )
+            break
+    elif step_size <= 0:
+        step_size = 1e-9
     import inspect
     slippage_model = SlippageModel(
         volume_impact=0.1,
@@ -221,8 +279,13 @@ async def run_paper(
     min_qty_value = min_qty_val if min_qty_val > 0 else 0.0
     step_value = step_size if step_size > 0 else 0.0
     min_order_qty = max(min_qty_value, step_value)
-    risk.min_order_qty = min_order_qty if min_order_qty > 0 else 1e-9
-    risk.min_notional = float(min_notional if min_notional > 0 else 0.0)
+    if min_order_qty <= 0:
+        min_order_qty = _SPOT_MIN_QTY_FALLBACK if market == "spot" else 1e-9
+    risk.min_order_qty = min_order_qty
+    notional_value = float(min_notional) if min_notional and min_notional > 0 else 0.0
+    if notional_value <= 0 and market == "spot":
+        notional_value = _SPOT_MIN_NOTIONAL_FALLBACK
+    risk.min_notional = float(notional_value)
 
     trades_closed = 0
     trades_won = 0
