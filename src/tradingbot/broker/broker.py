@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Mapping
 
 from ..config import settings
 from ..execution.order_types import Order
@@ -134,7 +134,9 @@ class Broker:
         if tracker is not None:
             tracker.update(res)
 
-    def update_last_price(self, symbol: str, px: float) -> list[dict[str, Any]]:
+    def update_last_price(
+        self, symbol: str, px: float, **kwargs: Any
+    ) -> list[dict[str, Any]]:
         """Update last price on the underlying adapter if supported.
 
         Any fills returned by the adapter are forwarded to the execution
@@ -144,6 +146,36 @@ class Broker:
         """
 
         collected: list[dict[str, Any]] = []
+
+        def _invoke_update(fn, *args):
+            if not callable(fn):
+                return None
+            if not kwargs:
+                return fn(*args)
+            try:
+                return fn(*args, **kwargs)
+            except TypeError:
+                try:
+                    sig = inspect.signature(fn)
+                except (TypeError, ValueError):
+                    return fn(*args)
+                accepts_kwargs = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in sig.parameters.values()
+                )
+                if accepts_kwargs:
+                    return fn(*args, **kwargs)
+                filtered = {
+                    key: kwargs[key]
+                    for key in kwargs
+                    if key in sig.parameters and key not in {"self"}
+                }
+                if filtered:
+                    try:
+                        return fn(*args, **filtered)
+                    except TypeError:
+                        return fn(*args)
+                return fn(*args)
 
         def _handle_fills(fills, venue: str | None = None) -> None:
             if not fills:
@@ -190,13 +222,13 @@ class Broker:
 
         upd = getattr(self.adapter, "update_last_price", None)
         if callable(upd):
-            fills = upd(symbol, px)
+            fills = _invoke_update(upd, symbol, px)
             _handle_fills(fills, getattr(self.adapter, "name", None))
         elif hasattr(self.adapter, "adapters"):
             for ad in getattr(self.adapter, "adapters", {}).values():
                 upd = getattr(ad, "update_last_price", None)
                 if callable(upd):
-                    fills = upd(symbol, px)
+                    fills = _invoke_update(upd, symbol, px)
                     _handle_fills(fills, getattr(ad, "name", None))
         return collected
 
@@ -226,6 +258,7 @@ class Broker:
         signal_ts: float | None = None,
         *,
         slip_bps: float | None = None,
+        book: Mapping[str, Any] | None = None,
     ) -> dict:
         """Place a limit order respecting ``tif`` semantics.
 
@@ -326,6 +359,8 @@ class Broker:
                 kwargs["timeout"] = order.timeout
             if slip_bps is not None:
                 kwargs["slip_bps"] = slip_bps
+            if book is not None:
+                kwargs["book"] = book
             if signal_ts is not None:
                 sig = inspect.signature(self.adapter.place_order)
                 params = sig.parameters
