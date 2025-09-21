@@ -1242,9 +1242,9 @@ async def run_paper(
 
     warmup_total = getattr(strat, "warmup_bars", 140)
     try:
-    agg = BarAggregator(timeframe=timeframe)
-    if callable(getattr(adapter, "stream_bba", None)):
-        book_task = asyncio.create_task(_book_stream())
+        agg = BarAggregator(timeframe=timeframe)
+        if callable(getattr(adapter, "stream_bba", None)):
+            book_task = asyncio.create_task(_book_stream())
     except TypeError:
         agg = BarAggregator()
     if not hasattr(agg, "completed"):
