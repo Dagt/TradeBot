@@ -106,6 +106,72 @@ def test_fills_csv_export(tmp_path, monkeypatch):
     assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])
 
 
+def test_l2_orders_fill_with_infinite_depth(monkeypatch):
+    class BuyOnce:
+        def __init__(self):
+            self.sent = False
+
+        def on_bar(self, _):
+            if self.sent:
+                return None
+            self.sent = True
+            return SimpleNamespace(side="buy", strength=1.0)
+
+    monkeypatch.setitem(STRATEGIES, "buyonce_l2", BuyOnce)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2, 3, 4],
+            "open": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000, 1000, 1000],
+            "ask_size": [1.0, 1.0, 1.0, 1.0, 1.0],
+            "bid_size": [1.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("buyonce_l2", "SYM")],
+        latency=1,
+        window=1,
+        use_l2=True,
+        risk_per_trade=0.1,
+        verbose_fills=True,
+    )
+
+    res = engine.run()
+    orders = res["orders"]
+    assert orders, "expected the engine to record the submitted order"
+    order_summary = orders[0]
+    assert order_summary["filled"] == pytest.approx(
+        order_summary["qty"]
+    ), "the order should be fully filled once the queue is depleted"
+
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    assert not fills[fills["reason"] == "order"].empty
+
+
 def test_realized_pnl_excludes_slippage(monkeypatch):
     class LimitStrategy:
         def __init__(self, risk_service=None):
@@ -567,7 +633,7 @@ def test_l2_queue_partial_and_cancel(tmp_path, monkeypatch):
         cancel_unfilled=True,
     )
 
-    assert pytest.approx(res["orders"][0]["filled"], rel=1e-9) == 0.0
+    assert 0.0 < res["orders"][0]["filled"] < res["orders"][0]["qty"]
     assert len(res["fills"]) == 0
 
 
