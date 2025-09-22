@@ -99,3 +99,46 @@ def test_backtest_default_limit_price(monkeypatch):
     assert order["avg_price"] == pytest.approx(close_price)
     assert fill[3] == pytest.approx(close_price)
     assert limit_price_from_close("buy", close_price, 0.0) == pytest.approx(close_price)
+
+
+def test_backtest_limit_price_never_hit(monkeypatch):
+    """A limit order should remain unfilled if the bar never touches its price."""
+
+    limit = 90.0
+
+    class NeverHitStrategy:
+        def __init__(self, risk_service=None):
+            self.called = False
+
+        def on_bar(self, _):
+            if self.called:
+                return None
+            self.called = True
+            return SimpleNamespace(side="buy", strength=1.0, limit_price=limit)
+
+    monkeypatch.setitem(STRATEGIES, "never_hit", NeverHitStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2],
+            "open": [100.0, 100.0, 100.0],
+            "high": [105.0, 104.0, 103.0],
+            "low": [95.0, 95.5, 95.2],
+            "close": [100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data}, [("never_hit", "SYM")], latency=1, window=1, verbose_fills=True
+    )
+    res = engine.run()
+
+    assert len(res["orders"]) == 1
+    order = res["orders"][0]
+
+    assert order["place_price"] == pytest.approx(limit)
+    assert order["filled"] == 0
+    assert order["avg_price"] == 0.0
+    assert res["fills"] == []
+    assert res["cancel_count"] == 1
