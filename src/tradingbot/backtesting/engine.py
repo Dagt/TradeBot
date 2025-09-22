@@ -20,6 +20,7 @@ from ..risk.service import RiskService
 from ..core.account import Account as CoreAccount
 from ..risk.exceptions import StopLossExceeded
 from ..strategies import STRATEGIES
+from ..execution.order_sizer import adjust_qty
 from ..data.features import returns, calc_ofi
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ log = logging.getLogger(__name__)
 MIN_FILL_QTY = 0.0
 # Minimum absolute order quantity. Orders below this are discarded.
 MIN_ORDER_QTY = 1e-9
+
+_SPOT_MIN_QTY_FALLBACK = 1e-4
+_SPOT_MIN_NOTIONAL_FALLBACK = 10.0
 
 
 @njit(cache=True)
@@ -131,6 +135,15 @@ class Order:
     latency: int | None = field(default=None, compare=False)
     post_only: bool = field(default=False, compare=False)
     trailing_pct: float | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class VenueConstraints:
+    """Size rules enforced before queuing or executing orders."""
+
+    min_qty: float = MIN_ORDER_QTY
+    min_notional: float = 0.0
+    step_size: float = 0.0
 
 
 class SlippageModel:
@@ -342,6 +355,9 @@ class EventDrivenBacktestEngine:
         min_fill_qty: float = MIN_FILL_QTY,
         min_order_qty: float = MIN_ORDER_QTY,
         fast: bool = False,
+        min_qty: float | None = None,
+        step_size: float = 0.0,
+        min_notional: float = 0.0,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -361,8 +377,20 @@ class EventDrivenBacktestEngine:
         self.stress = stress or StressConfig()
         self.verbose_fills = bool(verbose_fills)
         self.min_fill_qty = float(min_fill_qty)
-        self.min_order_qty = float(min_order_qty)
+        base_min_qty = float(min_qty) if min_qty is not None else float(min_order_qty)
+        self._global_min_qty_supplied = bool(
+            (min_qty is not None) or (float(min_order_qty) != MIN_ORDER_QTY)
+        )
+        self._global_min_notional_supplied = bool(min_notional != 0.0)
+        self.min_qty = base_min_qty
+        # Maintain backward compatibility with existing attribute usage
+        self.min_order_qty = base_min_qty
+        self.step_size = float(step_size)
+        self.min_notional = float(min_notional)
         self.fast = bool(fast)
+        self.default_constraints = VenueConstraints(
+            self.min_qty, self.min_notional, self.step_size
+        )
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -385,6 +413,9 @@ class EventDrivenBacktestEngine:
         self.exchange_mode: Dict[str, str] = {}
         self.exchange_tick_size: Dict[str, float] = {}
         self.exchange_min_fill_qty: Dict[str, float] = {}
+        self.exchange_min_qty: Dict[str, float] = {}
+        self.exchange_step_size: Dict[str, float] = {}
+        self.exchange_min_notional: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
         default_maker_bps = self.fee_bps
         default_taker_bps = self.fee_bps
@@ -398,6 +429,15 @@ class EventDrivenBacktestEngine:
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
             self.exchange_tick_size[exch] = float(cfg.get("tick_size", 0.0))
             self.exchange_min_fill_qty[exch] = float(cfg.get("min_fill_qty", 0.0))
+            min_qty_cfg = cfg.get("min_qty", cfg.get("min_order_qty"))
+            if min_qty_cfg is not None:
+                self.exchange_min_qty[exch] = float(min_qty_cfg)
+            step_cfg = cfg.get("step_size")
+            if step_cfg is not None:
+                self.exchange_step_size[exch] = float(step_cfg)
+            min_notional_cfg = cfg.get("min_notional")
+            if min_notional_cfg is not None:
+                self.exchange_min_notional[exch] = float(min_notional_cfg)
             market_type = cfg.get("market_type")
             if market_type is None:
                 if exch.endswith("_spot"):
@@ -424,6 +464,7 @@ class EventDrivenBacktestEngine:
         self.strategies: Dict[Tuple[str, str], object] = {}
         self.risk: Dict[Tuple[str, str], RiskService] = {}
         self.strategy_exchange: Dict[Tuple[str, str], str] = {}
+        self.strategy_constraints: Dict[Tuple[str, str], VenueConstraints] = {}
         for strat_info in strategies:
             if len(strat_info) == 2:
                 strat_name, symbol = strat_info  # type: ignore[misc]
@@ -445,9 +486,12 @@ class EventDrivenBacktestEngine:
                 risk_pct=self._risk_pct,
                 market_type=mt,
             )
-            svc.min_order_qty = self.min_order_qty
+            constraints = self._resolve_constraints(exchange, market_mode)
+            svc.min_order_qty = constraints.min_qty
+            svc.min_notional = constraints.min_notional
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
+            self.strategy_constraints[key] = constraints
             try:
                 strat = strat_cls(risk_service=svc)
             except TypeError:
@@ -457,6 +501,36 @@ class EventDrivenBacktestEngine:
 
         # Internal flag to avoid repeated on_bar calls per bar index
         self._last_on_bar_i: int = -1
+
+    def _resolve_constraints(self, exchange: str, market_mode: str) -> VenueConstraints:
+        min_qty = self.exchange_min_qty.get(exchange)
+        min_qty_from_exchange = min_qty is not None
+        if min_qty is None:
+            min_qty = self.min_qty
+        min_notional = self.exchange_min_notional.get(exchange)
+        min_notional_from_exchange = min_notional is not None
+        if min_notional is None:
+            min_notional = self.min_notional
+        step_size = self.exchange_step_size.get(exchange)
+        if step_size is None:
+            step_size = self.step_size
+        if market_mode == "spot":
+            if (
+                (not min_qty_from_exchange and not self._global_min_qty_supplied)
+                or (min_qty is None)
+                or min_qty <= 0
+            ):
+                min_qty = _SPOT_MIN_QTY_FALLBACK
+            if (
+                (not min_notional_from_exchange and not self._global_min_notional_supplied)
+                or (min_notional is None)
+                or min_notional <= 0
+            ):
+                min_notional = _SPOT_MIN_NOTIONAL_FALLBACK
+        return VenueConstraints(float(min_qty), float(min_notional), float(step_size))
+
+    def _strategy_constraints(self, key: Tuple[str, str]) -> VenueConstraints:
+        return self.strategy_constraints.get(key, self.default_constraints)
 
     # ------------------------------------------------------------------
     def run(self, fills_csv: str | None = None) -> dict:
@@ -545,13 +619,15 @@ class EventDrivenBacktestEngine:
                     svc.update_correlation(corr_df, 0.8)
                     svc.update_covariance(cov_df, 0.8)
             for (strat, sym), svc in self.risk.items():
+                key = (strat, sym)
+                constraints = self._strategy_constraints(key)
                 arrs = data_arrays[sym]
                 sym_len = data_lengths[sym]
                 if i < sym_len:
                     price = float(arrs["close"][i])
                     pos_qty, _ = svc.account.current_exposure(sym)
                     trade = svc.get_trade(sym)
-                    if trade and abs(pos_qty) > self.min_order_qty:
+                    if trade and abs(pos_qty) > constraints.min_qty:
                         svc.update_trailing(trade, price)
                         trade["_trail_done"] = True
                         trade["current_price"] = price
@@ -561,7 +637,8 @@ class EventDrivenBacktestEngine:
                                 trade.get("strength", 1.0), price, clamp=False
                             )
                             delta_qty = target - abs(pos_qty)
-                            if abs(delta_qty) > self.min_order_qty:
+                            qty_raw = abs(delta_qty)
+                            if qty_raw > constraints.min_qty:
                                 side = (
                                     trade["side"]
                                     if delta_qty > 0
@@ -588,7 +665,16 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
-                                svc.account.update_open_order(sym, side, abs(delta_qty))
+                                qty = adjust_qty(
+                                    qty_raw,
+                                    price,
+                                    constraints.min_notional or None,
+                                    constraints.step_size or None,
+                                    constraints.min_qty or None,
+                                )
+                                if qty <= 0:
+                                    continue
+                                svc.account.update_open_order(sym, side, qty)
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
@@ -597,11 +683,11 @@ class EventDrivenBacktestEngine:
                                     strat,
                                     sym,
                                     side,
-                                    abs(delta_qty),
+                                    qty,
                                     exchange,
                                     price,
                                     price,
-                                    abs(delta_qty),
+                                    qty,
                                     0.0,
                                     0.0,
                                     queue_pos,
@@ -614,7 +700,7 @@ class EventDrivenBacktestEngine:
                         elif decision == "close":
                             delta_qty = -pos_qty
                             pending_qty = abs(delta_qty)
-                            if pending_qty > self.min_order_qty:
+                            if pending_qty > constraints.min_qty:
                                 side = "sell" if pos_qty > 0 else "buy"
                                 exchange = self.strategy_exchange[(strat, sym)]
                                 base_latency = self.exchange_latency.get(
@@ -637,7 +723,16 @@ class EventDrivenBacktestEngine:
                                         else 0.0
                                     )
                                     queue_pos = min(avail, depth)
-                                svc.account.update_open_order(sym, side, pending_qty)
+                                qty = adjust_qty(
+                                    pending_qty,
+                                    price,
+                                    constraints.min_notional or None,
+                                    constraints.step_size or None,
+                                    constraints.min_qty or None,
+                                )
+                                if qty <= 0:
+                                    continue
+                                svc.account.update_open_order(sym, side, qty)
                                 order_seq += 1
                                 order = Order(
                                     exec_index,
@@ -646,11 +741,11 @@ class EventDrivenBacktestEngine:
                                     strat,
                                     sym,
                                     side,
-                                    pending_qty,
+                                    qty,
                                     exchange,
                                     price,
                                     price,
-                                    pending_qty,
+                                    qty,
                                     0.0,
                                     0.0,
                                     queue_pos,
@@ -690,6 +785,7 @@ class EventDrivenBacktestEngine:
                         price = max(market_price, order.limit_price)
 
                 svc = self.risk[(order.strategy, order.symbol)]
+                constraints = self._strategy_constraints((order.strategy, order.symbol))
                 mode = self.exchange_mode.get(order.exchange, "perp")
 
                 if self.slippage:
@@ -757,6 +853,21 @@ class EventDrivenBacktestEngine:
                     order.exchange, self.min_fill_qty
                 )
                 if fill_qty <= 0 or fill_qty < min_fill_qty:
+                    if not self.cancel_unfilled:
+                        order.execute_index = i + 1
+                        heapq.heappush(order_queue, order)
+                    continue
+
+                if constraints.min_qty > 0 and fill_qty < constraints.min_qty:
+                    if not self.cancel_unfilled:
+                        order.execute_index = i + 1
+                        heapq.heappush(order_queue, order)
+                    continue
+
+                if (
+                    constraints.min_notional > 0
+                    and fill_qty * price < constraints.min_notional
+                ):
                     if not self.cancel_unfilled:
                         order.execute_index = i + 1
                         heapq.heappush(order_queue, order)
@@ -912,12 +1023,13 @@ class EventDrivenBacktestEngine:
             # After executing pending orders, evaluate TP/SL/Trailing exits
             for (strat_name, symbol), state in list(position_levels.items()):
                 svc = self.risk[(strat_name, symbol)]
+                constraints = self._strategy_constraints((strat_name, symbol))
                 arrs = data_arrays[symbol]
                 sym_len = data_lengths[symbol]
                 if i >= sym_len:
                     continue
                 qty = svc.account.current_exposure(symbol)[0]
-                if abs(qty) < self.min_order_qty:
+                if abs(qty) < constraints.min_qty:
                     continue
                 if state.get("entry_i") == i:
                     continue
@@ -1023,6 +1135,7 @@ class EventDrivenBacktestEngine:
                     if i < self.window or i >= sym_len:
                         continue
                     svc = self.risk[(strat_name, symbol)]
+                    constraints = self._strategy_constraints((strat_name, symbol))
                     pos_qty, _ = svc.account.current_exposure(symbol)
                     trade = svc.get_trade(symbol)
                     start_idx = i - self.window
@@ -1070,7 +1183,8 @@ class EventDrivenBacktestEngine:
                             delta_qty = target - abs(pos_qty)
                         else:
                             continue
-                        if abs(delta_qty) < self.min_order_qty:
+                        qty_raw = abs(delta_qty)
+                        if qty_raw < constraints.min_qty:
                             continue
                         if decision == "close":
                             side = "buy" if delta_qty > 0 else "sell"
@@ -1080,7 +1194,15 @@ class EventDrivenBacktestEngine:
                                 if delta_qty > 0
                                 else ("sell" if trade["side"] == "buy" else "buy")
                             )
-                        qty = abs(delta_qty)
+                        qty = adjust_qty(
+                            qty_raw,
+                            place_price,
+                            constraints.min_notional or None,
+                            constraints.step_size or None,
+                            constraints.min_qty or None,
+                        )
+                        if qty <= 0:
+                            continue
                         notional = qty * place_price
                         if not svc.register_order(symbol, notional):
                             continue
@@ -1142,10 +1264,18 @@ class EventDrivenBacktestEngine:
                         volatility=atr_map.get(symbol),
                         target_volatility=tgt_map.get(symbol),
                     )
-                    if not allowed or abs(delta) < self.min_order_qty:
+                    if not allowed or abs(delta) < constraints.min_qty:
                         continue
                     side = "buy" if delta > 0 else "sell"
-                    qty = abs(delta)
+                    qty = adjust_qty(
+                        abs(delta),
+                        place_price,
+                        constraints.min_notional or None,
+                        constraints.step_size or None,
+                        constraints.min_qty or None,
+                    )
+                    if qty <= 0:
+                        continue
                     notional = qty * place_price
                     if not svc.register_order(symbol, notional):
                         continue
@@ -1209,6 +1339,7 @@ class EventDrivenBacktestEngine:
                     sym_len = data_lengths[symbol]
                     if i >= sym_len:
                         continue
+                    constraints = self._strategy_constraints((strat_name, symbol))
                     current_price = float(arrs["close"][i])
                     svc.mark_price(symbol, current_price)
                     check_price = current_price
@@ -1221,9 +1352,16 @@ class EventDrivenBacktestEngine:
                         svc.check_limits(check_price)
                     except StopLossExceeded:
                         delta = -svc.account.current_exposure(symbol)[0]
-                        if abs(delta) > self.min_order_qty:
+                        qty = adjust_qty(
+                            abs(delta),
+                            current_price,
+                            constraints.min_notional or None,
+                            constraints.step_size or None,
+                            constraints.min_qty or None,
+                        )
+                        if qty <= 0 or qty < constraints.min_qty:
+                            continue
                             side = "buy" if delta > 0 else "sell"
-                            qty = abs(delta)
                             exchange = self.strategy_exchange[(strat_name, symbol)]
                             base_latency = self.exchange_latency.get(exchange, self.latency)
                             delay = max(1, int(base_latency * self.stress.latency))
@@ -1272,11 +1410,20 @@ class EventDrivenBacktestEngine:
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
             pos = svc.account.current_exposure(symbol)[0]
-            if abs(pos) > self.min_order_qty:
+            constraints = self._strategy_constraints((strat_name, symbol))
+            if abs(pos) > constraints.min_qty:
                 arrs = data_arrays[symbol]
                 price_idx = min(last_index, data_lengths[symbol] - 1)
                 last_price = float(arrs["close"][price_idx])
-                qty = abs(pos)
+                qty = adjust_qty(
+                    abs(pos),
+                    last_price,
+                    constraints.min_notional or None,
+                    constraints.step_size or None,
+                    constraints.min_qty or None,
+                )
+                if qty <= 0:
+                    continue
                 side = "sell" if pos > 0 else "buy"
                 exchange = self.strategy_exchange[(strat_name, symbol)]
                 fee_model = self.exchange_fees.get(exchange, self.default_fee)
@@ -1431,6 +1578,9 @@ def run_backtest_csv(
     fills_csv: str | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
     min_order_qty: float = MIN_ORDER_QTY,
+    min_qty: float | None = None,
+    step_size: float = 0.0,
+    min_notional: float = 0.0,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -1454,6 +1604,9 @@ def run_backtest_csv(
         verbose_fills=verbose_fills,
         min_fill_qty=min_fill_qty,
         min_order_qty=min_order_qty,
+        min_qty=min_qty,
+        step_size=step_size,
+        min_notional=min_notional,
     )
     return engine.run(fills_csv=fills_csv)
 
@@ -1482,6 +1635,9 @@ def run_backtest_mlflow(
     fills_csv: str | None = None,
     min_fill_qty: float = MIN_FILL_QTY,
     min_order_qty: float = MIN_ORDER_QTY,
+    min_qty: float | None = None,
+    step_size: float = 0.0,
+    min_notional: float = 0.0,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -1517,6 +1673,9 @@ def run_backtest_mlflow(
             fills_csv=fills_csv,
             min_fill_qty=min_fill_qty,
             min_order_qty=min_order_qty,
+            min_qty=min_qty,
+            step_size=step_size,
+            min_notional=min_notional,
         )
         log_backtest_metrics(result)
         return result
