@@ -101,9 +101,86 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         prev = svc.pos.realized_pnl
         svc.add_fill(row.side, row.qty, row.price)
         delta = svc.pos.realized_pnl - prev
-        expected.append(delta - row.fee_cost + row.slippage_pnl)
+        expected.append(delta - row.fee_cost)
     assert np.allclose(df["realized_pnl"], expected)
     assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])
+
+
+def test_realized_pnl_excludes_slippage(monkeypatch):
+    class LimitStrategy:
+        def __init__(self, risk_service=None):
+            self.sent = False
+
+        def on_bar(self, _):
+            if self.sent:
+                return None
+            self.sent = True
+            return SimpleNamespace(side="buy", strength=1.0, limit_price=101.0)
+
+    monkeypatch.setitem(STRATEGIES, "limit_slippage", LimitStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2],
+            "open": [100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("limit_slippage", "SYM")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+    )
+    res = engine.run()
+
+    order_summary = res["orders"][0]
+
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    assert len(fills) == 2
+
+    first_fill = fills.iloc[0]
+    assert first_fill.reason == "order"
+    assert first_fill.side == "buy"
+    assert first_fill.slippage_pnl > 0
+    assert order_summary["place_price"] > first_fill.price
+
+    first_fee = first_fill.fee_cost
+    assert first_fill.realized_pnl == pytest.approx(-first_fee)
+    assert first_fill.realized_pnl_total == pytest.approx(-first_fee)
+
+    final_fill = fills.iloc[-1]
+    assert final_fill.reason == "liquidation"
+    assert final_fill.side == "sell"
+
+    final_fee = final_fill.fee_cost
+    assert final_fill.realized_pnl == pytest.approx(-final_fee)
+    assert final_fill.realized_pnl_total == pytest.approx(-(first_fee + final_fee))
+
+    assert res["slippage"] == pytest.approx(-first_fill.slippage_pnl)
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
