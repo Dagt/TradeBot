@@ -947,7 +947,7 @@ class EventDrivenBacktestEngine:
                 )
                 slip_cash = slip * fill_qty
                 slippage_total += slip_cash
-                slippage_pnl = -slip_cash
+                slippage_pnl = slip_cash
                 fill_count += 1
 
                 trade_value = fill_qty * price
