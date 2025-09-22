@@ -211,6 +211,48 @@ class PaperAdapter(ExchangeAdapter):
             return float("inf")
         return max(val, 0.0)
 
+    def _has_volume_proxy(self, book: Mapping[str, Any] | None) -> bool:
+        if not isinstance(book, Mapping):
+            return False
+        for key in ("volume", "base_volume", "quote_volume", "turnover"):
+            if key not in book:
+                continue
+            raw = book.get(key)
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(val) and val > 0:
+                return True
+        return False
+
+    def _depth_capacity_from_snapshot(
+        self,
+        book: Mapping[str, Any] | None,
+        side: str,
+        levels_cache: dict[str, list[list[float]]] | None = None,
+    ) -> float:
+        if not isinstance(book, Mapping):
+            return 0.0
+        key = "ask_size" if side == "buy" else "bid_size"
+        cap = self._book_capacity(book, key)
+        if math.isfinite(cap) and cap > 0:
+            return cap
+        levels_key = "asks" if side == "buy" else "bids"
+        levels: list[list[float]] | None = None
+        if levels_cache is not None:
+            levels = levels_cache.get(levels_key)
+        if levels is None:
+            levels = self._sanitize_book_levels(book.get(levels_key))
+            if levels_cache is not None:
+                levels_cache[levels_key] = levels
+        if not levels:
+            return 0.0
+        total = 0.0
+        for _, qty in levels:
+            total += max(qty, 0.0)
+        return total if total > 0 else 0.0
+
     def update_last_price(
         self,
         symbol: str,
@@ -288,6 +330,17 @@ class PaperAdapter(ExchangeAdapter):
             remaining_bids = self._book_capacity(book, "bid_size")
         else:
             remaining_asks = remaining_bids = float("inf")
+        levels_cache: dict[str, list[list[float]]] = {}
+        has_volume_proxy = self._has_volume_proxy(book)
+        depth_caps = {
+            "buy": self._depth_capacity_from_snapshot(book, "buy", levels_cache),
+            "sell": self._depth_capacity_from_snapshot(book, "sell", levels_cache),
+        }
+        if book is not None:
+            if math.isinf(remaining_asks) and depth_caps["buy"] > 0:
+                remaining_asks = depth_caps["buy"]
+            if math.isinf(remaining_bids) and depth_caps["sell"] > 0:
+                remaining_bids = depth_caps["sell"]
         for oid in list(orders.keys()):
             if remaining <= 0:
                 break
@@ -314,7 +367,13 @@ class PaperAdapter(ExchangeAdapter):
             if qty_cap <= 0:
                 continue
             book_side_val = book_side
+            depth_cap = depth_caps["buy" if order.side == "buy" else "sell"]
             if book is not None:
+                if depth_cap > 0:
+                    if not math.isfinite(book_side_val):
+                        book_side_val = depth_cap
+                    else:
+                        book_side_val = min(book_side_val, depth_cap)
                 if not math.isfinite(book_side_val):
                     book_side_val = float("inf")
                 if book_side_val <= 0:
@@ -324,13 +383,13 @@ class PaperAdapter(ExchangeAdapter):
                     book_side_val = float("inf")
             if (
                 self.slippage_model is not None
-                and book is not None
-                and math.isfinite(book_side_val)
-                and book_side_val > 0
+                and isinstance(book, Mapping)
+                and has_volume_proxy
+                and depth_cap > 0
             ):
                 bar = dict(book)
                 key = "bid_size" if order.side == "sell" else "ask_size"
-                bar[key] = book_side_val
+                bar[key] = depth_cap
                 px_slip, fill_qty, new_q = self.slippage_model.fill(
                     order.side, qty_cap, px, bar, queue_pos=order.queue_pos
                 )
@@ -426,19 +485,7 @@ class PaperAdapter(ExchangeAdapter):
         """
 
         # Slippage model path ----------------------------------------------
-        has_liquidity_proxy = False
-        if isinstance(book, Mapping):
-            for key in ("volume", "base_volume", "quote_volume", "turnover"):
-                raw = book.get(key)
-                if raw is None:
-                    continue
-                try:
-                    val = float(raw)
-                except (TypeError, ValueError):
-                    continue
-                if math.isfinite(val) and val > 0:
-                    has_liquidity_proxy = True
-                    break
+        has_liquidity_proxy = self._has_volume_proxy(book)
 
         if (
             self.slippage_model is not None
