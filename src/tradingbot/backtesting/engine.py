@@ -47,7 +47,12 @@ def _slippage_core(
     ofi_impact: float,
     pct: float,
 ) -> float:
-    impact = volume_impact * qty / max(volume, 1e-9)
+    if qty <= 0.0:
+        impact = 0.0
+    elif volume > 0.0:
+        impact = volume_impact * qty / volume
+    else:
+        impact = 0.0
     slip = spread / 2 + impact + ofi_impact * ofi_val + price * pct
     return price + slip if side_is_buy else price - slip
 
@@ -252,9 +257,20 @@ class SlippageModel:
         """
         spread = self._compute_spread(bar)
         vol = float(bar.get("volume", 0.0))
+        if math.isnan(vol):
+            vol = 0.0
         ofi_val = self._ofi_from_bar(bar)
         vol_key = "ask_size" if side == "buy" else "bid_size"
         avail = float(bar.get(vol_key, qty))
+        if math.isnan(avail):
+            avail = 0.0
+        if qty <= 0.0:
+            return float(price), 0.0, float(queue_pos)
+        eff_avail = max(0.0, avail - queue_pos)
+        if math.isnan(eff_avail):
+            eff_avail = 0.0
+        if vol <= 0.0 or eff_avail <= 0.0:
+            return float(price), 0.0, float(queue_pos)
         side_is_buy = side == "buy"
         adj_price, fill_qty, new_queue = _fill_core(
             side_is_buy,
