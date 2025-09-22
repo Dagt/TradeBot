@@ -168,9 +168,16 @@ class PaperAdapter(ExchangeAdapter):
         _assign_size("bid_size", "bid_qty", "bid_size", "bid_qty", "best_bid_size")
         _assign_size("ask_size", "ask_qty", "ask_size", "ask_qty", "best_ask_size")
 
-        vol = _coerce_float(book.get("volume")) if hasattr(book, "get") else None
-        if vol is not None:
-            snapshot["volume"] = max(vol, 0.0)
+        if hasattr(book, "get") and "volume" in book:
+            vol = _coerce_float(book.get("volume"))
+            if vol is not None and math.isfinite(vol):
+                snapshot["volume"] = max(vol, 0.0)
+                changed = True
+            elif "volume" in snapshot:
+                snapshot.pop("volume", None)
+                changed = True
+        elif "volume" in snapshot and "volume" in prev:
+            snapshot.pop("volume", None)
             changed = True
 
         bids = self._sanitize_book_levels(book.get("bids"))
@@ -419,9 +426,24 @@ class PaperAdapter(ExchangeAdapter):
         """
 
         # Slippage model path ----------------------------------------------
+        has_liquidity_proxy = False
+        if isinstance(book, Mapping):
+            for key in ("volume", "base_volume", "quote_volume", "turnover"):
+                raw = book.get(key)
+                if raw is None:
+                    continue
+                try:
+                    val = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(val) and val > 0:
+                    has_liquidity_proxy = True
+                    break
+
         if (
             self.slippage_model is not None
             and isinstance(book, Mapping)
+            and has_liquidity_proxy
             and self._book_capacity(book, "ask_size" if side == "buy" else "bid_size") > 0
         ):
             adj = self.slippage_model.adjust(side, qty, px, book)
