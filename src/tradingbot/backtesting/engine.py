@@ -33,6 +33,8 @@ MIN_ORDER_QTY = 1e-9
 _SPOT_MIN_QTY_FALLBACK = 1e-4
 _SPOT_MIN_NOTIONAL_FALLBACK = 10.0
 
+LIQUIDITY_FLOOR_RATIO = 1e-6
+
 
 @njit(cache=True)
 def _fee_calc(cash: float, rate: float) -> float:
@@ -53,10 +55,13 @@ def _slippage_core(
 ) -> float:
     if qty <= 0.0:
         impact = 0.0
-    elif volume > 0.0:
-        impact = volume_impact * qty / volume
     else:
-        impact = 0.0
+        volume_floor = abs(qty) * LIQUIDITY_FLOOR_RATIO
+        if volume > volume_floor:
+            impact = volume_impact * qty / volume
+        else:
+            linear = price * pct if pct else 0.0
+            return price + linear if side_is_buy else price - linear
     slip = spread / 2 + impact + ofi_impact * ofi_val + price * pct
     return price + slip if side_is_buy else price - slip
 
@@ -270,29 +275,61 @@ class SlippageModel:
         """
         spread = self._compute_spread(bar)
         vol = float(bar.get("volume", 0.0))
-        if math.isnan(vol):
+        if math.isnan(vol) or math.isinf(vol):
             vol = 0.0
+        vol = max(0.0, vol)
         ofi_val = self._ofi_from_bar(bar)
         vol_key = "ask_size" if side == "buy" else "bid_size"
-        avail = float(bar.get(vol_key, qty))
-        if math.isnan(avail):
-            avail = 0.0
+        raw_avail = bar.get(vol_key)
+        has_depth = False
+        avail = 0.0
+        if raw_avail is not None:
+            try:
+                avail = float(raw_avail)
+            except (TypeError, ValueError):
+                avail = 0.0
+            if math.isnan(avail) or math.isinf(avail):
+                avail = 0.0
+            else:
+                avail = max(0.0, avail)
+                has_depth = True
+        queue_pos_val = float(queue_pos)
+        if math.isnan(queue_pos_val) or math.isinf(queue_pos_val):
+            queue_pos_val = 0.0
         if qty <= 0.0:
-            return float(price), 0.0, float(queue_pos)
-        eff_avail = max(0.0, avail - queue_pos)
-        if math.isnan(eff_avail):
-            eff_avail = 0.0
-        if vol <= 0.0 or eff_avail <= 0.0:
-            return float(price), 0.0, float(queue_pos)
+            return float(price), 0.0, queue_pos_val
+        liquidity_floor = abs(qty) * LIQUIDITY_FLOOR_RATIO
+        if has_depth:
+            liquidity_proxy = max(0.0, avail - queue_pos_val)
+        else:
+            liquidity_proxy = vol
+        if liquidity_proxy <= liquidity_floor:
+            return float(price), 0.0, queue_pos_val
+        exec_qty = min(qty, liquidity_proxy)
+        if not partial and exec_qty < qty:
+            return float(price), 0.0, queue_pos_val
         side_is_buy = side == "buy"
+        if not has_depth:
+            adj_price = _slippage_core(
+                side_is_buy,
+                exec_qty,
+                price,
+                spread,
+                vol,
+                ofi_val,
+                self.volume_impact,
+                self.ofi_impact,
+                self.pct,
+            )
+            return float(adj_price), float(exec_qty), queue_pos_val
         adj_price, fill_qty, new_queue = _fill_core(
             side_is_buy,
-            qty,
+            exec_qty,
             price,
             spread,
             vol,
             avail,
-            queue_pos,
+            queue_pos_val,
             self.volume_impact,
             self.ofi_impact,
             ofi_val,
@@ -789,7 +826,9 @@ class EventDrivenBacktestEngine:
                 mode = self.exchange_mode.get(order.exchange, "perp")
 
                 if self.slippage:
-                    bar = {vol_key: avail}
+                    bar: dict[str, float] = {}
+                    if vol_arr is not None:
+                        bar[vol_key] = float(vol_arr[i])
                     for k in (
                         "high",
                         "low",
