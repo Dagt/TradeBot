@@ -443,54 +443,6 @@ class EventDrivenBacktestEngine:
         self._last_on_bar_i: int = -1
 
     # ------------------------------------------------------------------
-    def _limit_hit(
-        self,
-        order: Order,
-        arrs: Mapping[str, Any],
-        index: int,
-    ) -> bool:
-        """Return ``True`` if the current bar touches the order's limit price."""
-
-        limit = order.limit_price
-        if limit is None:
-            return True
-
-        def _first_valid_price(keys: tuple[str, ...]) -> float | None:
-            for key in keys:
-                series = arrs.get(key)
-                if series is None:
-                    continue
-                value = float(series[index])
-                if math.isnan(value):
-                    continue
-                return value
-            return None
-
-        if order.side == "buy":
-            ask_price = _first_valid_price(("ask", "ask_px", "ask_price"))
-            if ask_price is not None:
-                return ask_price <= limit
-        else:
-            bid_price = _first_valid_price(("bid", "bid_px", "bid_price"))
-            if bid_price is not None:
-                return bid_price >= limit
-
-        if order.side == "buy":
-            low_arr = arrs.get("low")
-            if low_arr is not None:
-                low_val = float(low_arr[index])
-                if not math.isnan(low_val):
-                    return low_val <= limit
-        else:
-            high_arr = arrs.get("high")
-            if high_arr is not None:
-                high_val = float(high_arr[index])
-                if not math.isnan(high_val):
-                    return high_val >= limit
-
-        return False
-
-    # ------------------------------------------------------------------
     def run(self, fills_csv: str | None = None) -> dict:
         """Execute the backtest and return summary results.
 
@@ -723,12 +675,6 @@ class EventDrivenBacktestEngine:
 
                 svc = self.risk[(order.strategy, order.symbol)]
                 mode = self.exchange_mode.get(order.exchange, "perp")
-
-                if order.limit_price is not None and not self._limit_hit(order, arrs, i):
-                    fill_qty = 0.0
-                    order.execute_index = i + 1
-                    heapq.heappush(order_queue, order)
-                    continue
 
                 if self.slippage:
                     bar = {vol_key: avail}
