@@ -1,3 +1,4 @@
+import asyncio
 import math
 
 import pytest
@@ -36,3 +37,38 @@ def test_apply_slippage_with_volume_uses_model():
     assert math.isfinite(slip_bps)
     assert px > 100.0
     assert slip_bps > 0.0
+
+
+@pytest.mark.asyncio
+async def test_match_book_without_volume_uses_linear_fill():
+    model = SlippageModel(volume_impact=0.2, pct=0.0)
+    adapter = PaperAdapter(slippage_model=model)
+    adapter.state.cash = 1000.0
+    symbol = "BTC/USDT"
+    adapter.update_last_price(symbol, 100.0)
+
+    order = await adapter.place_order(
+        symbol,
+        "buy",
+        "limit",
+        1.0,
+        price=99.0,
+        timeout=0.01,
+    )
+    assert order["status"] == "new"
+
+    book = {"bid": 98.5, "ask": 99.0, "ask_size": 5.0}
+
+    fills = adapter.update_last_price(symbol, 99.0, book=book)
+    fill_events = [f for f in fills if f.get("order_id") == order["order_id"]]
+    assert fill_events
+    fill = fill_events[0]
+    assert fill["status"] == "filled"
+    assert fill["qty"] == pytest.approx(1.0)
+
+    await asyncio.sleep(0.02)
+    follow_up = adapter.update_last_price(symbol, 100.0)
+    assert not any(
+        evt.get("order_id") == order["order_id"] and evt.get("status") == "expired"
+        for evt in follow_up
+    )
