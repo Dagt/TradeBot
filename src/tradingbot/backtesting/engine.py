@@ -655,10 +655,14 @@ class EventDrivenBacktestEngine:
                 vol_arr = arrs.get(vol_key)
                 if self.use_l2:
                     avail = float(vol_arr[i]) if vol_arr is not None else 0.0
-                    depth = self.exchange_depth.get(order.exchange, self.default_depth)
-                    order.queue_pos = min(order.queue_pos + avail, depth)
+                    depth = self.exchange_depth.get(
+                        order.exchange, self.default_depth
+                    )
+                    queue_pos = order.queue_pos
                 else:
                     avail = order.remaining_qty
+                    depth = None
+                    queue_pos = 0.0
                     order.queue_pos = 0.0
                 if "bid" in arrs and "ask" in arrs:
                     market_price = float(
@@ -689,18 +693,29 @@ class EventDrivenBacktestEngine:
                         arr_k = arrs.get(k)
                         if arr_k is not None:
                             bar[k] = float(arr_k[i])
-                    price, fill_qty, order.queue_pos = self.slippage.fill(
+                    price, fill_qty, new_queue_pos = self.slippage.fill(
                         order.side,
                         order.remaining_qty,
                         price,
                         bar,
-                        order.queue_pos,
+                        queue_pos,
                         self.partial_fills,
                     )
+                    if self.use_l2:
+                        if math.isfinite(depth):
+                            order.queue_pos = min(new_queue_pos, depth)
+                        else:
+                            order.queue_pos = new_queue_pos
+                    else:
+                        order.queue_pos = 0.0
                 else:
                     if self.use_l2:
-                        eff_avail = max(0.0, avail - order.queue_pos)
-                        order.queue_pos = max(0.0, order.queue_pos - avail)
+                        eff_avail = max(0.0, avail - queue_pos)
+                        new_queue_pos = max(0.0, queue_pos - avail)
+                        if math.isfinite(depth):
+                            order.queue_pos = min(new_queue_pos, depth)
+                        else:
+                            order.queue_pos = new_queue_pos
                     else:
                         eff_avail = avail
                         order.queue_pos = 0.0
