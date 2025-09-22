@@ -794,7 +794,7 @@ class EventDrivenBacktestEngine:
                 prev_qty = svc.account.current_exposure(order.symbol)[0]
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
-                realized_pnl = new_rpnl - prev_rpnl - fee_cost - slip_cash
+                realized_pnl = new_rpnl - prev_rpnl - fee_cost
                 slippage_pnl = -slip_cash
                 realized_pnl_total += realized_pnl
                 svc.pos.realized_pnl = prev_rpnl + realized_pnl
@@ -1270,7 +1270,7 @@ class EventDrivenBacktestEngine:
                 svc.on_fill(symbol, side, qty, last_price)
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 slippage_pnl = 0.0
-                realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
+                realized_pnl = new_rpnl - prev_rpnl - fee_cost
                 realized_pnl_total += realized_pnl
                 svc.pos.realized_pnl = prev_rpnl + realized_pnl
                 if side == "sell":
