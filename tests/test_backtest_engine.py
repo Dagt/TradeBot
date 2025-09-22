@@ -101,12 +101,12 @@ def test_fills_csv_export(tmp_path, monkeypatch):
         prev = svc.pos.realized_pnl
         svc.add_fill(row.side, row.qty, row.price)
         delta = svc.pos.realized_pnl - prev
-        expected.append(delta - row.fee_cost)
+        expected.append(delta - row.fee_cost - row.slippage_pnl)
     assert np.allclose(df["realized_pnl"], expected)
     assert np.allclose(df["realized_pnl"].cumsum(), df["realized_pnl_total"])
 
 
-def test_realized_pnl_excludes_slippage(monkeypatch):
+def test_realized_pnl_includes_slippage(monkeypatch):
     class LimitStrategy:
         def __init__(self, risk_service=None):
             self.sent = False
@@ -169,8 +169,12 @@ def test_realized_pnl_excludes_slippage(monkeypatch):
     assert order_summary["place_price"] > first_fill.price
 
     first_fee = first_fill.fee_cost
-    assert first_fill.realized_pnl == pytest.approx(-first_fee)
-    assert first_fill.realized_pnl_total == pytest.approx(-first_fee)
+    assert first_fill.realized_pnl == pytest.approx(
+        -(first_fee + first_fill.slippage_pnl)
+    )
+    assert first_fill.realized_pnl_total == pytest.approx(
+        -(first_fee + first_fill.slippage_pnl)
+    )
 
     final_fill = fills.iloc[-1]
     assert final_fill.reason == "liquidation"
@@ -178,7 +182,9 @@ def test_realized_pnl_excludes_slippage(monkeypatch):
 
     final_fee = final_fill.fee_cost
     assert final_fill.realized_pnl == pytest.approx(-final_fee)
-    assert final_fill.realized_pnl_total == pytest.approx(-(first_fee + final_fee))
+    assert final_fill.realized_pnl_total == pytest.approx(
+        -(first_fee + final_fee + first_fill.slippage_pnl)
+    )
 
     assert res["slippage"] == pytest.approx(-first_fill.slippage_pnl)
 
@@ -244,6 +250,91 @@ def test_spot_long_only_enforced(tmp_path, monkeypatch):
         fills.apply(lambda r: r.qty if r.side == "buy" else -r.qty, axis=1).cumsum()
     )
     assert (pos >= -1e-9).all()
+
+
+def test_slippage_bps_reduces_realized_and_equity(monkeypatch):
+    class FixedSlippage:
+        def __init__(self, pct: float = 0.0) -> None:
+            self.pct = pct
+
+        def fill(
+            self,
+            side: str,
+            qty: float,
+            price: float,
+            bar,
+            queue_pos: float = 0.0,
+            partial: bool = True,
+        ) -> tuple[float, float, float]:
+            adj = price * (1 + self.pct) if side == "buy" else price * (1 - self.pct)
+            return float(adj), float(qty), 0.0
+
+    class WideLimitStrategy:
+        def __init__(self, risk_service=None):
+            self.step = 0
+
+        def on_bar(self, _):
+            self.step += 1
+            if self.step == 1:
+                return SimpleNamespace(side="buy", strength=1.0, limit_price=1e9)
+            if self.step == 5:
+                return SimpleNamespace(side="sell", strength=1.0, limit_price=-1e9)
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "wide_limit", WideLimitStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": range(10),
+            "open": [100.0] * 10,
+            "high": [100.0] * 10,
+            "low": [100.0] * 10,
+            "close": [100.0] * 10,
+            "volume": [1000] * 10,
+        }
+    )
+
+    def _run(slippage_bps: float) -> tuple[pd.DataFrame, dict]:
+        slip = FixedSlippage()
+        engine = EventDrivenBacktestEngine(
+            {"SYM": data},
+            [("wide_limit", "SYM")],
+            latency=1,
+            window=1,
+            slippage=slip,
+            slippage_bps=slippage_bps,
+            initial_equity=1_000_000.0,
+            verbose_fills=True,
+        )
+        result = engine.run()
+        fills_df = pd.DataFrame(
+            result["fills"],
+            columns=[
+                "timestamp",
+                "reason",
+                "side",
+                "price",
+                "qty",
+                "strategy",
+                "symbol",
+                "exchange",
+                "fee_cost",
+                "slippage_pnl",
+                "realized_pnl",
+                "realized_pnl_total",
+                "equity_after",
+            ],
+        )
+        return fills_df, result
+
+    fills_no_slip, res_no_slip = _run(0.0)
+    fills_with_slip, res_with_slip = _run(100.0)
+
+    final_realized_no_slip = fills_no_slip["realized_pnl_total"].iloc[-1]
+    final_realized_with_slip = fills_with_slip["realized_pnl_total"].iloc[-1]
+
+    assert final_realized_with_slip < final_realized_no_slip
+    assert res_with_slip["equity"] < res_no_slip["equity"]
 
 
 def test_spot_short_signal_rejected(tmp_path, monkeypatch):
