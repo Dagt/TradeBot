@@ -1101,7 +1101,22 @@ class EventDrivenBacktestEngine:
                     fee_model = self.exchange_fees.get(exchange, self.default_fee)
                     trade_value = exit_qty * exit_price
                     fee_cost = fee_model.calculate(trade_value, maker=False)
-                    slippage_pnl = 0.0
+                    entry_price: float | None = None
+                    trade_info = getattr(svc, "trades", {}).get(symbol)
+                    if isinstance(trade_info, dict):
+                        maybe_entry = trade_info.get("entry_price")
+                        if maybe_entry is not None:
+                            entry_price = float(maybe_entry)
+                    if entry_price is not None:
+                        slip = (
+                            exit_price - entry_price
+                            if side == "sell"
+                            else entry_price - exit_price
+                        )
+                        slippage_pnl = slip * exit_qty
+                        slippage_total += slippage_pnl
+                    else:
+                        slippage_pnl = 0.0
                     prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     if side == "sell":
                         cash += trade_value - fee_cost
@@ -1468,7 +1483,22 @@ class EventDrivenBacktestEngine:
                 fee_model = self.exchange_fees.get(exchange, self.default_fee)
                 trade_value = qty * last_price
                 fee_cost = fee_model.calculate(trade_value, maker=False)
-                slippage_pnl = 0.0
+                entry_price: float | None = None
+                trade_info = getattr(svc, "trades", {}).get(symbol)
+                if isinstance(trade_info, dict):
+                    maybe_entry = trade_info.get("entry_price")
+                    if maybe_entry is not None:
+                        entry_price = float(maybe_entry)
+                if entry_price is not None:
+                    slip = (
+                        last_price - entry_price
+                        if side == "sell"
+                        else entry_price - last_price
+                    )
+                    slippage_pnl = slip * qty
+                    slippage_total += slippage_pnl
+                else:
+                    slippage_pnl = 0.0
                 prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 svc.on_fill(symbol, side, qty, last_price)
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
