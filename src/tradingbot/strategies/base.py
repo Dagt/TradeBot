@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import re
 import time
 
 import yaml
@@ -29,6 +30,39 @@ class Signal:
     reduce_only: bool = False
     limit_price: float | None = None
     signal_ts: float | None = None
+
+def timeframe_to_minutes(tf: str | int | float | None) -> float:
+    """Return the timeframe duration expressed in minutes.
+
+    Parameters
+    ----------
+    tf:
+        Timeframe expressed as strings like ``"1m"`` or ``"1h"``.  Numerical
+        values are interpreted directly as minutes.  When ``None`` is passed
+        the function falls back to ``1`` minute.
+    """
+
+    if tf is None:
+        return 1.0
+    if isinstance(tf, (int, float)):
+        val = float(tf)
+        return 1.0 if val <= 0 else val
+    tf_str = str(tf).strip().lower()
+    if not tf_str:
+        return 1.0
+    if tf_str.isdigit():
+        val = float(tf_str)
+        return 1.0 if val <= 0 else val
+    m = re.fullmatch(r"(\d+)([smhd])", tf_str)
+    if not m:
+        return 1.0
+    value = float(m.group(1))
+    unit = m.group(2)
+    factors = {"s": 1.0 / 60.0, "m": 1.0, "h": 60.0, "d": 1440.0}
+    factor = factors.get(unit, 1.0)
+    minutes = value * factor
+    return 1.0 if minutes <= 0 else minutes
+
 
 class Strategy(ABC):
     name: str
@@ -241,7 +275,12 @@ def record_signal_metrics(liquidity):
 
     def decorator(fn):
         def wrapper(self: Strategy, bar: dict[str, Any]) -> Signal | None:  # type: ignore[misc]
-            if not liquidity.passes(bar, bar.get("timeframe")):
+            tf = bar.get("timeframe")
+            if tf is None:
+                tf = getattr(self, "timeframe", None)
+                if tf is not None:
+                    bar.setdefault("timeframe", tf)
+            if not liquidity.passes(bar, tf):
                 return None
             start = time.monotonic()
             sig = fn(self, bar)
@@ -256,6 +295,8 @@ def record_signal_metrics(liquidity):
             if not hasattr(self, "_last_signal"):
                 self._last_signal = {}
             if symbol:
+                key = (symbol, bar.get("timeframe"))
+                self._last_signal[key] = sig
                 self._last_signal[symbol] = sig
 
             # Risk-based sizing is now handled within ``RiskService.check_order``
@@ -286,4 +327,10 @@ def record_signal_metrics(liquidity):
     return decorator
 
 
-__all__ = ["Signal", "Strategy", "load_params", "record_signal_metrics"]
+__all__ = [
+    "Signal",
+    "Strategy",
+    "load_params",
+    "record_signal_metrics",
+    "timeframe_to_minutes",
+]

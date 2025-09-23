@@ -135,8 +135,12 @@ async def run_live_binance(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
-    params = params or {}
-    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    params = dict(params or {})
+    params.setdefault("timeframe", timeframe)
+    if config_path is not None:
+        strat = strat_cls(config_path=config_path, **params)
+    else:
+        strat = strat_cls(**params)
     router = ExecutionRouter([
         broker
     ], prefer="maker")
@@ -330,7 +334,7 @@ async def run_live_binance(
         if len(df) < 140:  # warmup básico
             continue
 
-        bar = {"window": df, "symbol": symbol}
+        bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
         signal = strat.on_bar(bar)
         if signal is None:
             continue

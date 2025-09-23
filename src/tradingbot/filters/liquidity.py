@@ -130,10 +130,20 @@ class LiquidityFilterManager:
         )
         self._filters: dict[tuple[str, str], LiquidityFilter] = {}
 
+    def _normalize_timeframe(self, timeframe: str | int | float | None) -> str:
+        if timeframe is None:
+            return "1m"
+        if isinstance(timeframe, (int, float)):
+            if timeframe <= 0:
+                return "1m"
+            return f"{float(timeframe)}m" if timeframe < 1 else f"{int(timeframe)}m"
+        return str(timeframe).lower() or "1m"
+
     def _update_metrics(self, symbol: str, timeframe: str, bar: dict[str, Any]) -> LiquidityFilter:
         """Record metrics for ``symbol``/``timeframe`` and recompute thresholds."""
 
-        hist = self._history[(symbol, timeframe)]
+        tf_norm = self._normalize_timeframe(timeframe)
+        hist = self._history[(symbol, tf_norm)]
 
         spread = bar.get("spread")
         if spread is None and {"ask", "bid"} <= bar.keys():
@@ -153,7 +163,7 @@ class LiquidityFilterManager:
         if vol is not None:
             hist["volatility"].append(float(vol))
 
-        filt = self._filters.get((symbol, timeframe), LiquidityFilter())
+        filt = self._filters.get((symbol, tf_norm), LiquidityFilter())
         if hist["spread"]:
             filt.max_spread = float(pd.Series(hist["spread"]).quantile(0.95))
         if hist["volume"]:
@@ -161,7 +171,7 @@ class LiquidityFilterManager:
         if hist["volatility"]:
             filt.max_volatility = float(pd.Series(hist["volatility"]).quantile(0.95))
 
-        self._filters[(symbol, timeframe)] = filt
+        self._filters[(symbol, tf_norm)] = filt
         return filt
 
     def passes(
@@ -176,11 +186,12 @@ class LiquidityFilterManager:
             return filt.check(bar)
 
         symbol = bar.get("symbol")
-        tf = timeframe or bar.get("timeframe")
+        tf = timeframe or bar.get("timeframe") or getattr(self, "default_timeframe", "1m")
+        tf_norm = self._normalize_timeframe(tf)
         if symbol and tf:
             with self._lock:
-                hist = self._history[(symbol, tf)]
-                filt = self._filters.get((symbol, tf), LiquidityFilter())
+                hist = self._history[(symbol, tf_norm)]
+                filt = self._filters.get((symbol, tf_norm), LiquidityFilter())
                 samples = max(
                     len(hist["spread"]),
                     len(hist["volume"]),
@@ -188,7 +199,7 @@ class LiquidityFilterManager:
                 )
                 if samples >= self.MIN_SAMPLES and not filt.check(bar):
                     return False
-                self._update_metrics(symbol, tf, bar)
+                self._update_metrics(symbol, tf_norm, bar)
             return True
         else:
             return self._default_filter.check(bar)

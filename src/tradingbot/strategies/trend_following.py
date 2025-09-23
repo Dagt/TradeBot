@@ -1,7 +1,8 @@
 import math
 
+import math
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi, calc_ofi
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
@@ -38,21 +39,18 @@ class TrendFollowing(Strategy):
         else:
             self.min_volatility = 0.0
         self.risk_service = kwargs.get("risk_service")
+        self.timeframe = str(kwargs.get("timeframe", "1m"))
         self._rq = RollingQuantileCache()
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _tf_minutes(tf: str | None) -> int:
+    def _tf_minutes(tf: str | None, default: str | None = None) -> int:
         """Convert timeframe strings like ``'1m'`` or ``'15m'`` to minutes."""
 
-        if not tf:
-            return 1
-        tf = tf.lower()
-        if tf.endswith("m"):
-            return int(tf[:-1] or 1)
-        if tf.endswith("h"):
-            return int(tf[:-1] or 1) * 60
-        return 1
+        if tf is None:
+            tf = default
+        minutes = timeframe_to_minutes(tf)
+        return max(1, int(math.ceil(minutes)))
 
     def auto_threshold(self, symbol: str, last_rsi: float, vol_bps: float) -> float:
         """Derive RSI threshold based on recent volatility.
@@ -72,8 +70,8 @@ class TrendFollowing(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        tf = bar.get("timeframe")
-        tf_minutes = self._tf_minutes(tf)
+        tf = bar.get("timeframe", self.timeframe)
+        tf_minutes = self._tf_minutes(tf, self.timeframe)
         lookback_bars = max(1, math.ceil(self.vol_lookback / tf_minutes))
         if len(df) < max(self.rsi_n, lookback_bars) + 1:
             return None

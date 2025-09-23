@@ -4,7 +4,15 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .base import Strategy, Signal, load_params, record_signal_metrics
+import math
+
+from .base import (
+    Strategy,
+    Signal,
+    load_params,
+    record_signal_metrics,
+    timeframe_to_minutes,
+)
 from ..data.features import rsi
 from ..filters.liquidity import LiquidityFilterManager
 
@@ -73,8 +81,10 @@ class ScalpPingPong(Strategy):
     ):
         params = {**load_params(config_path), **kwargs}
         params.pop("risk_service", None)
+        tf = str(params.pop("timeframe", kwargs.get("timeframe", "1m")))
         self.cfg = cfg or ScalpPingPongConfig(**params)
         self.risk_service = kwargs.get("risk_service")
+        self.timeframe = tf
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
         returns = closes.pct_change().dropna()
@@ -90,10 +100,10 @@ class ScalpPingPong(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        tf = int(bar.get("timeframe", 1)) or 1
-        lookback = max(1, int(self.cfg.lookback / tf))
-        trend_ma = max(1, int(self.cfg.trend_ma / tf))
-        trend_rsi_n = max(1, int(self.cfg.trend_rsi_n / tf))
+        tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
+        lookback = max(1, int(math.ceil(self.cfg.lookback / tf_minutes)))
+        trend_ma = max(1, int(math.ceil(self.cfg.trend_ma / tf_minutes)))
+        trend_rsi_n = max(1, int(math.ceil(self.cfg.trend_rsi_n / tf_minutes)))
 
         if len(df) < lookback + 1:
             return None

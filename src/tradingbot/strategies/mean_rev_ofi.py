@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from .base import Strategy, Signal, load_params, record_signal_metrics
+from .base import (
+    Strategy,
+    Signal,
+    load_params,
+    record_signal_metrics,
+    timeframe_to_minutes,
+)
 from ..data.features import calc_ofi, returns
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
@@ -62,18 +68,14 @@ class MeanRevOFI(Strategy):
         self.vol_threshold_bps = 0.0
         self.min_volatility = float(params.get("min_volatility", min_volatility))
         self._rq = RollingQuantileCache()
-
-    def _tf_minutes(self, timeframe: str) -> float:
-        unit = timeframe[-1].lower()
-        value = float(timeframe[:-1])
-        factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
-        return value * factors.get(unit, 0)
+        tf = str(params.get("timeframe", "3m"))
+        self.timeframe = tf
+        self._base_tf_minutes = timeframe_to_minutes(tf)
 
     def _scaled_vol_window(self, timeframe: str | None) -> int:
-        if timeframe is None:
-            return self.vol_window
-        tf_min = self._tf_minutes(timeframe)
-        base_min = 3.0
+        tf_ref = timeframe or self.timeframe
+        tf_min = timeframe_to_minutes(tf_ref)
+        base_min = self._base_tf_minutes if self._base_tf_minutes > 0 else 3.0
         return max(1, int(round(self.vol_window * base_min / tf_min)))
 
     @record_signal_metrics(liquidity)

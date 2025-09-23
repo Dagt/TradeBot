@@ -1,17 +1,9 @@
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+import math
+
+from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi
 from ..filters.liquidity import LiquidityFilterManager
-
-
-def _tf_to_minutes(tf: str) -> int:
-    """Convert a timeframe like ``1m`` or ``1h`` to minutes."""
-    tf = tf.lower()
-    if tf.endswith("m"):
-        return int(tf[:-1])
-    if tf.endswith("h"):
-        return int(tf[:-1]) * 60
-    raise ValueError(f"unsupported timeframe: {tf}")
 
 liquidity = LiquidityFilterManager()
 
@@ -37,9 +29,9 @@ class MeanReversion(Strategy):
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
 
-        tf = kwargs.get("timeframe", "1m")
+        tf = str(kwargs.get("timeframe", "1m"))
         self.timeframe = tf
-        tf_minutes = _tf_to_minutes(tf)
+        tf_minutes = timeframe_to_minutes(tf)
 
         trend_ma_min = kwargs.get("trend_ma", 50)
         self.trend_ma = max(1, int(trend_ma_min / tf_minutes))
@@ -54,7 +46,10 @@ class MeanReversion(Strategy):
 
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
-        self.time_stop = kwargs.get("time_stop", 10 if tf in {"30m", "1h"} else 0)
+        default_time_stop = 10.0 if tf_minutes >= 30.0 else 0.0
+        time_stop_param = float(kwargs.get("time_stop", default_time_stop))
+        self._time_stop_minutes = time_stop_param
+        self.time_stop = 0
         self._open_bars: dict[str, int] = {}
         self.risk_service = kwargs.get("risk_service")
 
@@ -78,13 +73,21 @@ class MeanReversion(Strategy):
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
 
-        if self.time_stop and self.risk_service is not None and bar.get("symbol"):
+        tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
+        time_stop_bars = (
+            0
+            if self._time_stop_minutes <= 0
+            else max(1, int(math.ceil(self._time_stop_minutes / tf_minutes)))
+        )
+        self.time_stop = time_stop_bars
+
+        if time_stop_bars and self.risk_service is not None and bar.get("symbol"):
             sym = bar["symbol"]
             trade = self.risk_service.get_trade(sym)
             if trade:
                 cnt = self._open_bars.get(sym, 0) + 1
                 self._open_bars[sym] = cnt
-                if cnt >= self.time_stop:
+                if cnt >= time_stop_bars:
                     side_exit = "sell" if trade.get("side") == "buy" else "buy"
                     return self.finalize_signal(bar, price, Signal(side_exit, 1.0))
             else:

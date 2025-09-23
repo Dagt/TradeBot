@@ -1,7 +1,12 @@
 import math
-import re
 import pandas as pd
-from .base import Strategy, Signal, load_params, record_signal_metrics
+from .base import (
+    Strategy,
+    Signal,
+    load_params,
+    record_signal_metrics,
+    timeframe_to_minutes,
+)
 from ..data.features import atr, keltner_channels
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
@@ -99,25 +104,28 @@ class BreakoutATR(Strategy):
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
         self.volume_factor = float(params.get("volume_factor", 1.5))
-        tf = params.get("timeframe", "3m")
-        self.cooldown_bars = int(params.get("cooldown_bars", 3 if tf in {"1m", "3m"} else 0))
+        tf = str(params.get("timeframe", "3m"))
+        self.timeframe = tf
+        tf_minutes = timeframe_to_minutes(tf)
+        cooldown_param = params.get("cooldown_bars")
+        if cooldown_param is None:
+            cooldown_param = 3.0
+        self._cooldown_minutes = float(cooldown_param)
+        self.cooldown_bars = self._cooldown_for(tf_minutes)
         self._cooldown = 0
         self._last_rpnl = 0.0
-        self.timeframe = tf
         # ``mult`` se calcula dinámicamente en ``on_bar``.
         self.mult = 1.0
         self._rq = RollingQuantileCache()
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
-        if not tf:
-            return 1.0
-        m = re.fullmatch(r"(\d+)([smhd])", str(tf))
-        if not m:
-            return 1.0
-        value, unit = int(m.group(1)), m.group(2)
-        factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
-        return value * factors.get(unit, 1.0)
+        return timeframe_to_minutes(tf)
+
+    def _cooldown_for(self, tf_minutes: float) -> int:
+        if self._cooldown_minutes <= 0:
+            return 0
+        return max(1, int(math.ceil(self._cooldown_minutes / max(tf_minutes, 1e-9))))
 
     def _offset_fraction(self, tf_mult: float) -> float:
         """Return the ATR fraction used to cross the market with limit orders."""
@@ -133,7 +141,9 @@ class BreakoutATR(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        tf_mult = self._tf_multiplier(bar.get("timeframe"))
+        tf_val = bar.get("timeframe", self.timeframe)
+        tf_mult = self._tf_multiplier(tf_val)
+        self.cooldown_bars = self._cooldown_for(tf_mult)
 
         # Ajusta parámetros según el timeframe
         if tf_mult <= 3:

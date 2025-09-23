@@ -301,13 +301,15 @@ class SlippageModel:
         liquidity_floor = abs(qty) * LIQUIDITY_FLOOR_RATIO
         if has_depth:
             liquidity_proxy = max(0.0, avail - queue_pos_val)
+            if liquidity_proxy <= liquidity_floor:
+                return float(price), 0.0, queue_pos_val
+            exec_qty = min(qty, liquidity_proxy)
+            if not partial and exec_qty < qty:
+                return float(price), 0.0, queue_pos_val
         else:
-            liquidity_proxy = vol
-        if liquidity_proxy <= liquidity_floor:
-            return float(price), 0.0, queue_pos_val
-        exec_qty = min(qty, liquidity_proxy)
-        if not partial and exec_qty < qty:
-            return float(price), 0.0, queue_pos_val
+            if vol <= liquidity_floor:
+                return float(price), 0.0, queue_pos_val
+            exec_qty = qty
         side_is_buy = side == "buy"
         if not has_depth:
             adj_price = _slippage_core(
@@ -377,9 +379,10 @@ class EventDrivenBacktestEngine:
         latency: int = 1,
         window: int = 120,
         slippage: SlippageModel | None = None,
-        fee_bps: float = 10.0,
+        fee_bps: float = 0.108839,
         slippage_bps: float = 0.0,
         exchange_configs: Dict[str, Dict[str, float]] | None = None,
+        timeframes: Mapping[str, str] | str | None = None,
         use_l2: bool = False,
         partial_fills: bool = True,
         cancel_unfilled: bool = False,
@@ -397,8 +400,17 @@ class EventDrivenBacktestEngine:
         min_notional: float = 0.0,
     ) -> None:
         self.data = data
+        if isinstance(timeframes, str):
+            self.timeframes = {sym: str(timeframes) for sym in data}
+        elif timeframes is None:
+            self.timeframes = {sym: "1m" for sym in data}
+        else:
+            self.timeframes = {sym: str(tf) for sym, tf in timeframes.items()}
+            for sym in data:
+                self.timeframes.setdefault(sym, "1m")
         self.latency = int(latency)
         self.window = int(window)
+        self._slippage_supplied = slippage is not None
         self.slippage = slippage
         self.fee_bps = float(fee_bps)
         self.slippage_bps = float(slippage_bps)
@@ -529,11 +541,23 @@ class EventDrivenBacktestEngine:
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
             self.strategy_constraints[key] = constraints
+            init_kwargs: Dict[str, Any] = {}
+            tf_value = self.timeframes.get(symbol)
+            if tf_value is not None:
+                init_kwargs["timeframe"] = tf_value
             try:
-                strat = strat_cls(risk_service=svc)
+                strat = strat_cls(risk_service=svc, **init_kwargs)
             except TypeError:
-                strat = strat_cls()
+                try:
+                    strat = strat_cls(**init_kwargs)
+                except TypeError:
+                    strat = strat_cls()
                 setattr(strat, "risk_service", svc)
+                if tf_value is not None and not hasattr(strat, "timeframe"):
+                    setattr(strat, "timeframe", tf_value)
+            else:
+                if tf_value is not None and not hasattr(strat, "timeframe"):
+                    setattr(strat, "timeframe", tf_value)
             self.strategies[key] = strat
 
         # Internal flag to avoid repeated on_bar calls per bar index
@@ -1143,7 +1167,6 @@ class EventDrivenBacktestEngine:
                             else entry_price - exit_price
                         )
                         slippage_pnl = -slip * exit_qty
-                        slippage_total += slippage_pnl
                     else:
                         slippage_pnl = 0.0
                     prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
@@ -1222,12 +1245,18 @@ class EventDrivenBacktestEngine:
                     pos_qty, _ = svc.account.current_exposure(symbol)
                     trade = svc.get_trade(symbol)
                     start_idx = i - self.window
+                    tf_val = self.timeframes.get(symbol)
                     if getattr(strat, "needs_window_df", True):
                         window_df = df.iloc[start_idx:i]
-                        sig = strat.on_bar({"window": window_df, "symbol": symbol})
+                        bar_ctx = {"window": window_df, "symbol": symbol}
+                        if tf_val is not None:
+                            bar_ctx["timeframe"] = tf_val
+                        sig = strat.on_bar(bar_ctx)
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         bar_arrays["symbol"] = symbol
+                        if tf_val is not None:
+                            bar_arrays["timeframe"] = tf_val
                         sig = strat.on_bar(bar_arrays)
                     limit_price = (
                         sig.get("limit_price")
@@ -1236,7 +1265,6 @@ class EventDrivenBacktestEngine:
                     )
                     if limit_price is None:
                         place_price = float(arrs["close"][i])
-                        limit_price = place_price
                     else:
                         place_price = float(limit_price)
                         limit_price = place_price
@@ -1254,7 +1282,6 @@ class EventDrivenBacktestEngine:
                         )
                         if limit_price is None:
                             place_price = float(arrs["close"][i])
-                            limit_price = place_price
                         else:
                             place_price = float(limit_price)
                             limit_price = place_price
@@ -1518,16 +1545,27 @@ class EventDrivenBacktestEngine:
                     maybe_entry = trade_info.get("entry_price")
                     if maybe_entry is not None:
                         entry_price = float(maybe_entry)
-                if entry_price is not None:
+                include_liq_slip_attr = getattr(
+                    self.slippage, "include_liquidation_slippage", None
+                )
+                if include_liq_slip_attr is None:
+                    if type(self.slippage) is SlippageModel:
+                        include_liq_slip = not self._slippage_supplied
+                    else:
+                        include_liq_slip = True
+                else:
+                    include_liq_slip = bool(include_liq_slip_attr)
+                if include_liq_slip and entry_price is not None:
                     slip = (
                         last_price - entry_price
                         if side == "sell"
                         else entry_price - last_price
                     )
                     slippage_pnl = -slip * qty
-                    slippage_total += slippage_pnl
                 else:
                     slippage_pnl = 0.0
+                if include_liq_slip:
+                    slippage_total += slippage_pnl
                 prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 svc.on_fill(symbol, side, qty, last_price)
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
@@ -1679,6 +1717,7 @@ def run_backtest_csv(
     min_qty: float | None = None,
     step_size: float = 0.0,
     min_notional: float = 0.0,
+    timeframes: Mapping[str, str] | str | None = None,
 ) -> dict:
     """Convenience wrapper to run the engine from CSV files."""
 
@@ -1705,6 +1744,7 @@ def run_backtest_csv(
         min_qty=min_qty,
         step_size=step_size,
         min_notional=min_notional,
+        timeframes=timeframes,
     )
     return engine.run(fills_csv=fills_csv)
 
@@ -1736,6 +1776,7 @@ def run_backtest_mlflow(
     min_qty: float | None = None,
     step_size: float = 0.0,
     min_notional: float = 0.0,
+    timeframes: Mapping[str, str] | str | None = None,
 ) -> dict:
     """Run the backtest and log results to an MLflow run.
 
@@ -1771,10 +1812,11 @@ def run_backtest_mlflow(
             fills_csv=fills_csv,
             min_fill_qty=min_fill_qty,
             min_order_qty=min_order_qty,
-            min_qty=min_qty,
-            step_size=step_size,
-            min_notional=min_notional,
-        )
+        min_qty=min_qty,
+        step_size=step_size,
+        min_notional=min_notional,
+        timeframes=timeframes,
+    )
         log_backtest_metrics(result)
         return result
 
