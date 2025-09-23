@@ -816,10 +816,39 @@ class EventDrivenBacktestEngine:
                     market_price = float(arrs["close"][i])
                 price = market_price
                 if order.limit_price is not None:
+                    limit_price = float(order.limit_price)
+                    limit_touched = True
                     if order.side == "buy":
-                        price = min(market_price, order.limit_price)
+                        low_arr = arrs.get("low")
+                        low_val = None
+                        if low_arr is not None:
+                            try:
+                                low_val = float(low_arr[i])
+                            except (TypeError, ValueError):
+                                low_val = None
+                        if low_val is not None and not math.isnan(low_val):
+                            limit_touched = low_val <= limit_price
+                        else:
+                            limit_touched = market_price <= limit_price
+                        price = min(market_price, limit_price)
                     else:
-                        price = max(market_price, order.limit_price)
+                        high_arr = arrs.get("high")
+                        high_val = None
+                        if high_arr is not None:
+                            try:
+                                high_val = float(high_arr[i])
+                            except (TypeError, ValueError):
+                                high_val = None
+                        if high_val is not None and not math.isnan(high_val):
+                            limit_touched = high_val >= limit_price
+                        else:
+                            limit_touched = market_price >= limit_price
+                        price = max(market_price, limit_price)
+                    if not limit_touched:
+                        if not self.cancel_unfilled:
+                            order.execute_index = i + 1
+                            heapq.heappush(order_queue, order)
+                        continue
 
                 svc = self.risk[(order.strategy, order.symbol)]
                 constraints = self._strategy_constraints((order.strategy, order.symbol))
