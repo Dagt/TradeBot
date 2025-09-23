@@ -121,17 +121,70 @@ class Strategy(ABC):
         trade = rs.get_trade(symbol) if symbol else None
         if trade:
             atr = bar.get("atr") or bar.get("volatility")
+            is_dict = isinstance(trade, dict)
+            _missing = object()
+            atr_prev = _missing
             if atr is not None:
-                trade["atr"] = atr
+                if is_dict:
+                    atr_prev = trade.get("atr") if "atr" in trade else _missing
+                    trade["atr"] = atr
+                else:
+                    atr_prev = getattr(trade, "atr") if hasattr(trade, "atr") else _missing
+                    setattr(trade, "atr", atr)
             rs.update_trailing(trade, price)
-            if isinstance(trade, dict):
+            if is_dict:
+                had_trail = "_trail_done" in trade
+                trail_prev = trade.get("_trail_done") if had_trail else _missing
                 trade["_trail_done"] = True
             else:
+                had_trail = hasattr(trade, "_trail_done")
+                trail_prev = getattr(trade, "_trail_done") if had_trail else _missing
                 setattr(trade, "_trail_done", True)
             sig_dict = None
             if signal is not None:
                 sig_dict = {"side": signal.side, "strength": signal.strength}
-            decision = rs.manage_position({**trade, "current_price": price}, sig_dict)
+            if is_dict:
+                had_price = "current_price" in trade
+                prev_price = trade.get("current_price") if had_price else None
+                trade["current_price"] = price
+            else:
+                had_price = hasattr(trade, "current_price")
+                prev_price = getattr(trade, "current_price") if had_price else None
+                setattr(trade, "current_price", price)
+            try:
+                decision = rs.manage_position(trade, sig_dict)
+            finally:
+                if is_dict:
+                    if had_price:
+                        trade["current_price"] = prev_price
+                    else:
+                        trade.pop("current_price", None)
+                    if had_trail:
+                        trade["_trail_done"] = trail_prev
+                    else:
+                        trade.pop("_trail_done", None)
+                    if atr is not None:
+                        if atr_prev is _missing:
+                            trade.pop("atr", None)
+                        else:
+                            trade["atr"] = atr_prev
+                else:
+                    if had_price:
+                        setattr(trade, "current_price", prev_price)
+                    else:
+                        if hasattr(trade, "current_price"):
+                            delattr(trade, "current_price")
+                    if had_trail:
+                        setattr(trade, "_trail_done", trail_prev)
+                    else:
+                        if hasattr(trade, "_trail_done"):
+                            delattr(trade, "_trail_done")
+                    if atr is not None:
+                        if atr_prev is _missing:
+                            if hasattr(trade, "atr"):
+                                delattr(trade, "atr")
+                        else:
+                            setattr(trade, "atr", atr_prev)
             if decision == "close":
                 side = "sell" if trade.get("side") == "buy" else "buy"
                 close = Signal(side, 1.0)
