@@ -7,7 +7,8 @@ exchanges:
 strategies:
   default: breakout_atr
   params:
-    breakout_atr: {}
+    breakout_atr:
+      offset_frac: 0.02  # Fracción base del ATR usada para cruzar el último precio con órdenes límite
     mean_rev_ofi:
       ofi_window: 20
       zscore_threshold: 1.0

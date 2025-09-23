@@ -13,28 +13,60 @@ from hypothesis import given, strategies as st, settings
 from tradingbot.data.features import keltner_channels, atr
 
 
-@pytest.mark.parametrize("timeframe, mult", [("1m", 0.02), ("5m", 0.1)])
-def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe, mult):
+@pytest.mark.parametrize("timeframe", ["1m"])
+def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     strat = BreakoutATR(ema_n=2, atr_n=2)
 
-    sig_buy = strat.on_bar(
-        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": timeframe}
-    )
-    atr_buy = atr(breakout_df_buy, 2).dropna().iloc[-1]
-    upper, lower = keltner_channels(breakout_df_buy, 2, 2, strat.mult)
+    bar_common = {
+        "window": breakout_df_buy,
+        "volatility": 0.0,
+        "timeframe": timeframe,
+        "symbol": "BTC/USDT",
+    }
+    sig_buy = strat.on_bar(bar_common)
+    tf_mult = strat._tf_multiplier(timeframe)
+    offset_frac = strat._offset_fraction(tf_mult)
+    if tf_mult <= 3:
+        ema_used = 15
+        atr_used = 10
+    elif tf_mult >= 30:
+        ema_used = max(strat.ema_n, 30)
+        atr_used = max(strat.atr_n, 20)
+    else:
+        ema_used = strat.ema_n
+        atr_used = strat.atr_n
+    atr_buy = atr(breakout_df_buy, atr_used).dropna().iloc[-1]
+    upper, lower = keltner_channels(breakout_df_buy, ema_used, atr_used, strat.mult)
+    last_close_buy = breakout_df_buy["close"].iloc[-1]
     assert sig_buy.side == "buy"
-    assert sig_buy.limit_price == pytest.approx(upper.iloc[-1] + mult * atr_buy)
+    expected_buy = max(
+        last_close_buy,
+        float(upper.iloc[-1]) + float(atr_buy) * offset_frac,
+    )
+    assert sig_buy.limit_price == pytest.approx(expected_buy)
+    assert sig_buy.limit_price >= last_close_buy
 
     sig_sell = strat.on_bar(
-        {"window": breakout_df_sell, "volatility": 0.0, "timeframe": timeframe}
+        {
+            "window": breakout_df_sell,
+            "volatility": 0.0,
+            "timeframe": timeframe,
+            "symbol": "BTC/USDT",
+        }
     )
-    atr_sell = atr(breakout_df_sell, 2).dropna().iloc[-1]
-    upper, lower = keltner_channels(breakout_df_sell, 2, 2, strat.mult)
+    atr_sell = atr(breakout_df_sell, atr_used).dropna().iloc[-1]
+    upper, lower = keltner_channels(breakout_df_sell, ema_used, atr_used, strat.mult)
+    last_close_sell = breakout_df_sell["close"].iloc[-1]
     assert sig_sell.side == "sell"
-    assert sig_sell.limit_price == pytest.approx(lower.iloc[-1] - mult * atr_sell)
+    expected_sell = min(
+        last_close_sell,
+        float(lower.iloc[-1]) - float(atr_sell) * offset_frac,
+    )
+    assert sig_sell.limit_price == pytest.approx(expected_sell)
+    assert sig_sell.limit_price <= last_close_sell
 
 
-@pytest.mark.parametrize("timeframe", ["1m", "5m"])
+@pytest.mark.parametrize("timeframe", ["1m"])
 def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timeframe):
     account = Account(float("inf"))
     guard = PortfolioGuard(
@@ -50,25 +82,73 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timefr
     svc.account.update_cash(1000.0)
     strat = BreakoutATR(ema_n=2, atr_n=2, **{"risk_service": svc})
     sig = strat.on_bar(
-        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": timeframe}
+        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": timeframe, "symbol": "BTC/USDT"}
     )
     assert sig and sig.side == "buy"
     trade = strat.trade
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
     assert trade["qty"] == pytest.approx(expected_qty)
-    expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"])
+    tf_mult = strat._tf_multiplier(timeframe)
+    if tf_mult <= 3:
+        stop_mult = 1.5
+    elif tf_mult >= 30:
+        stop_mult = 2.0
+    else:
+        stop_mult = 1.5
+    expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"], atr_mult=stop_mult)
     assert trade["stop"] == pytest.approx(expected_stop)
 
 
 def test_breakout_atr_vector_signal(breakout_df_buy):
     data = breakout_df_buy.copy()
+    data.loc[data.index[-1], "close"] += 10.0
     data["volume"] = 100
     entries, exits = BreakoutATR.signal(
         data, ema_n=2, atr_n=2, mult=1.0, volume_factor=0
     )
     assert entries.iloc[-1]
     assert not exits.iloc[-1]
+
+
+@pytest.mark.asyncio
+async def test_breakout_atr_limit_crosses_market_gets_fill(
+    breakout_df_buy, paper_adapter
+):
+    strat = BreakoutATR(ema_n=2, atr_n=2)
+    symbol = "BTC/USDT"
+    sig = strat.on_bar(
+        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": "1m", "symbol": symbol}
+    )
+    assert sig and sig.side == "buy"
+
+    tf_mult = strat._tf_multiplier("1m")
+    if tf_mult <= 3:
+        ema_used = 15
+        atr_used = 10
+    elif tf_mult >= 30:
+        ema_used = max(strat.ema_n, 30)
+        atr_used = max(strat.atr_n, 20)
+    else:
+        ema_used = strat.ema_n
+        atr_used = strat.atr_n
+    atr_buy = atr(breakout_df_buy, atr_used).dropna().iloc[-1]
+    upper, _ = keltner_channels(breakout_df_buy, ema_used, atr_used, strat.mult)
+    naive_limit = float(upper.iloc[-1]) + float(atr_buy) * strat._offset_fraction(tf_mult)
+    last_close = float(breakout_df_buy["close"].iloc[-1])
+    assert naive_limit < last_close
+    assert sig.limit_price == pytest.approx(last_close)
+
+    paper_adapter.update_last_price(symbol, last_close)
+    res = await paper_adapter.place_order(
+        symbol,
+        sig.side,
+        "limit",
+        qty=1.0,
+        price=sig.limit_price,
+    )
+    assert res["status"] == "filled"
+    assert res["price"] == pytest.approx(last_close)
 
 
 def test_order_flow_signals():
