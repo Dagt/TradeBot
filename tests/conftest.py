@@ -81,26 +81,28 @@ def paper_adapter():
 @pytest.fixture
 def breakout_df_buy():
     import pandas as pd
-    data = {
-        "open": [1, 2, 3, 4],
-        "high": [2, 3, 4, 5],
-        "low": [0.5, 1.5, 2.5, 3.5],
-        "close": [1.5, 2.5, 3.5, 8.0],
-        "volume": [1, 1, 1, 1],
-    }
+    opens = [float(i) for i in range(1, 21)]
+    highs = [o + 1.0 for o in opens]
+    lows = [o - 0.5 for o in opens]
+    closes = [o + 0.5 for o in opens]
+    closes[-1] = closes[-2] + 4.0
+    highs[-1] = closes[-1] + 0.5
+    volume = [1.0] * (len(opens) - 1) + [3.0]
+    data = {"open": opens, "high": highs, "low": lows, "close": closes, "volume": volume}
     return pd.DataFrame(data)
 
 
 @pytest.fixture
 def breakout_df_sell():
     import pandas as pd
-    data = {
-        "open": [1, 2, 3, 4],
-        "high": [2, 3, 4, 5],
-        "low": [0.5, 1.5, 2.5, 3.5],
-        "close": [1.5, 2.5, 3.5, -2.0],
-        "volume": [1, 1, 1, 1],
-    }
+    opens = [float(i) for i in range(1, 21)]
+    highs = [o + 1.0 for o in opens]
+    lows = [o - 0.5 for o in opens]
+    closes = [o - 0.5 for o in opens]
+    closes[-1] = closes[-2] - 12.0
+    lows[-1] = closes[-1] - 0.5
+    volume = [1.0] * (len(opens) - 1) + [3.0]
+    data = {"open": opens, "high": highs, "low": lows, "close": closes, "volume": volume}
     return pd.DataFrame(data)
 
 

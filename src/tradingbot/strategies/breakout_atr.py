@@ -1,3 +1,4 @@
+import math
 import re
 import pandas as pd
 from .base import Strategy, Signal, load_params, record_signal_metrics
@@ -9,7 +10,7 @@ PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
     "vol_quantile": "Percentil base para filtrar baja volatilidad (1m)",
-    "offset_frac": "Fracción base del ATR usada como offset (1m)",
+    "offset_frac": "Fracción base del ATR usada para cruzar el mercado (1m)",
     "volume_factor": "Multiplicador de volumen mínimo requerido",
     "cooldown_bars": "Barras a esperar tras una pérdida",
 }
@@ -25,9 +26,10 @@ class BreakoutATR(Strategy):
     barra usando percentiles recientes del ATR, por lo que el usuario no
     necesita ajustar parámetros adicionales para filtrar períodos de baja
     volatilidad. Las órdenes límite aplican un pequeño offset basado en el
-    ATR y lo incrementan de forma progresiva si la orden expira sin
-    ejecutarse, buscando mejorar la tasa de ejecución sin requerir
-    parámetros adicionales.
+    ATR, cruzan el último precio negociado para garantizar ejecuciones
+    inmediatas o en la siguiente barra y lo incrementan de forma
+    progresiva si la orden expira sin ejecutarse, buscando mejorar la tasa
+    de ejecución sin requerir parámetros adicionales.
     """
 
     name = "breakout_atr"
@@ -117,6 +119,17 @@ class BreakoutATR(Strategy):
         factors = {"s": 1 / 60, "m": 1, "h": 60, "d": 1440}
         return value * factors.get(unit, 1.0)
 
+    def _offset_fraction(self, tf_mult: float) -> float:
+        """Return the ATR fraction used to cross the market with limit orders."""
+
+        base = self.base_offset_frac
+        if tf_mult <= 1:
+            return base
+        if tf_mult <= 3:
+            return base * 0.75
+        scale = max(tf_mult ** 0.5, 1.5)
+        return base * min(scale, 6.0)
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
@@ -199,7 +212,10 @@ class BreakoutATR(Strategy):
                 min_periods=self.atr_n * 2,
             )
             mult_quant = float(rq_mult.update(atr_val))
-            self.mult = mult_quant / atr_val if atr_val else 1.0
+            if not math.isfinite(mult_quant) or not atr_val:
+                self.mult = 1.0
+            else:
+                self.mult = mult_quant / atr_val
 
             rq_target = self._rq.get(
                 symbol,
@@ -234,13 +250,11 @@ class BreakoutATR(Strategy):
         strength = 1.0
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        if tf_mult <= 1:
-            offset = atr_val * 0.05
-        elif tf_mult <= 3:
-            offset = atr_val * 0.04
+        offset = atr_val * self._offset_fraction(tf_mult)
+        if side == "buy":
+            sig.limit_price = max(last_close, level + offset)
         else:
-            offset = atr_val * 0.02 * tf_mult
-        sig.limit_price = level + offset if side == "buy" else level - offset
+            sig.limit_price = min(last_close, level - offset)
 
         symbol = bar.get("symbol")
         if symbol:
