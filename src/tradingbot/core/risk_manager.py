@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, MutableMapping
+import math
 
 from .account import Account
 from ..execution.normalize import adjust_order, SymbolRules
@@ -173,6 +174,10 @@ class RiskManager:
             mult = float(atr_mult) if atr_mult is not None else float(self.atr_mult)
             delta = mult * float(atr)
         else:
+            if self.risk_pct <= 0:
+                return (
+                    float("-inf") if side.lower() in {"buy", "long"} else float("inf")
+                )
             delta = float(entry_price) * float(self.risk_pct)
         if side.lower() in {"buy", "long"}:
             return float(entry_price) - delta
@@ -193,6 +198,9 @@ class RiskManager:
         atr = float(_get(trade, "atr", 0.0))
         stage = int(_get(trade, "stage", 0))
         qty = float(_get(trade, "qty", 1.0))
+
+        if not math.isfinite(stop):
+            return
 
         # Distance from entry to stop defines the initial risk per unit
         risk = abs(entry - stop)

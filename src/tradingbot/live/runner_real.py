@@ -183,7 +183,12 @@ async def _run_symbol(
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
     params = params or {}
-    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    params = dict(params or {})
+    params.setdefault("timeframe", timeframe)
+    if config_path is not None:
+        strat = strat_cls(config_path=config_path, **params)
+    else:
+        strat = strat_cls(**params)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,
@@ -1001,7 +1006,7 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        bar = {"window": df, "symbol": symbol}
+        bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
         sig = strat.on_bar(bar)
         if sig is None:
             continue

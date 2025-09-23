@@ -304,6 +304,7 @@ def backtest_db(
             slippage=slippage,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
+            timeframes={symbol: timeframe},
         )
         params = _parse_params(param) if isinstance(param, list) else {}
         if not isinstance(config, str):
@@ -316,6 +317,7 @@ def backtest_db(
         kwargs = dict(params)
         if config is not None:
             kwargs["config_path"] = config
+        kwargs.setdefault("timeframe", timeframe)
         strat = strat_cls(**kwargs)
         eng.strategies[(strategy, symbol)] = strat
         result = eng.run(fills_csv=fills_csv)

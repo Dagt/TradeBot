@@ -525,11 +525,11 @@ async def run_paper(
     params = dict(params or {})
     leverage_value = params.pop("leverage", 1)
     log.info("METRICS %s", json.dumps({"leverage": leverage_value}))
-    strat = (
-        strat_cls(config_path=config_path, **params)
-        if (config_path or params)
-        else strat_cls()
-    )
+    params.setdefault("timeframe", timeframe)
+    if config_path is not None:
+        strat = strat_cls(config_path=config_path, **params)
+    else:
+        strat = strat_cls(**params)
     strat.risk_service = risk
 
     def _recalc_locked_total() -> float:
@@ -1670,7 +1670,7 @@ async def run_paper(
                     log.info("Warm-up progress %d/%d", progress, warmup_total)
                     last_progress, last_log = progress, now
                 continue
-            bar = {"window": df, "symbol": symbol}
+            bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
             signal = strat.on_bar(bar)
             if signal is None:
                 continue

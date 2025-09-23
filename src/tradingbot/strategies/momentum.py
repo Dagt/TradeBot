@@ -1,6 +1,6 @@
 import math
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi, returns, atr
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
@@ -46,25 +46,22 @@ class Momentum(Strategy):
         self.vol_window = kwargs.get("vol_window", 20)
         self.risk_service = kwargs.get("risk_service")
         # Cooldown management after losing trades
-        tf = kwargs.get("timeframe", "1m")
-        self.cooldown_bars = kwargs.get("cooldown_bars", 3 if tf in {"1m", "3m"} else 0)
+        tf = str(kwargs.get("timeframe", "1m"))
+        self.timeframe = tf
+        tf_minutes = timeframe_to_minutes(tf)
+        cooldown_param = kwargs.get("cooldown_bars")
+        if cooldown_param is None:
+            cooldown_param = 3.0
+        self._cooldown_minutes = float(cooldown_param)
+        self.cooldown_bars = self._cooldown_for(tf_minutes)
         self._cooldown = 0
         self._last_rpnl = 0.0
         self._rq = RollingQuantileCache()
 
-    def _tf_to_minutes(self, tf: str | None) -> int:
-        """Convert timeframe strings like ``1m`` or ``15m`` to minutes."""
-
-        if not tf:
-            return 1
-        tf = tf.lower()
-        if tf.endswith("m"):
-            return int(tf[:-1])
-        if tf.endswith("h"):
-            return int(tf[:-1]) * 60
-        if tf.endswith("d"):
-            return int(tf[:-1]) * 60 * 24
-        return 1
+    def _cooldown_for(self, tf_minutes: float) -> int:
+        if self._cooldown_minutes <= 0:
+            return 0
+        return max(1, int(math.ceil(self._cooldown_minutes / max(tf_minutes, 1e-9))))
 
     def auto_threshold(self, symbol: str, last_rsi: float, n: int) -> float:
         """Automatically derive RSI threshold from recent values.
@@ -83,7 +80,8 @@ class Momentum(Strategy):
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
 
-        tf_min = self._tf_to_minutes(bar.get("timeframe"))
+        tf_min = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
+        self.cooldown_bars = self._cooldown_for(tf_min)
         fast_n = max(5, int(math.ceil(self.fast_ema / tf_min)))
         slow_n = max(5, int(math.ceil(self.slow_ema / tf_min)))
         rsi_n = max(5, int(math.ceil(self.rsi_n / tf_min)))

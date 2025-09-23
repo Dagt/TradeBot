@@ -1,5 +1,6 @@
+import math
 import pandas as pd
-from .base import Strategy, Signal, record_signal_metrics
+from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
 
@@ -32,15 +33,22 @@ class BreakoutVol(Strategy):
     _DEFAULT_MULT_Q = 0.8
 
     def __init__(self, **kwargs):
-        self.lookback = kwargs.get("lookback", 10)
-        self.volatility_factor = kwargs.get("volatility_factor", 0.02)
         self.risk_service = kwargs.get("risk_service")
-        tf = kwargs.get("timeframe", "3m")
+        tf = str(kwargs.get("timeframe", "3m"))
+        self.timeframe = tf
+        tf_minutes = timeframe_to_minutes(tf)
         self._vol_quantile = self._VOL_QUANTILES.get(tf, self._DEFAULT_VOL_Q)
         self._mult_quantile = self._MULT_QUANTILES.get(tf, self._DEFAULT_MULT_Q)
-        self.timeframe = tf
-        self.cooldown_bars = kwargs.get("cooldown_bars", 3 if tf in {"1m", "3m"} else 0)
-        self.vol_ma_n = kwargs.get("volume_ma_n", 20)
+        self.volatility_factor = float(kwargs.get("volatility_factor", 0.02))
+        self._lookback_minutes = float(kwargs.get("lookback", 10))
+        self.base_lookback = self._lookback_minutes
+        self._volume_ma_minutes = float(kwargs.get("volume_ma_n", 20))
+        self.base_volume_ma = self._volume_ma_minutes
+        cooldown_param = kwargs.get("cooldown_bars")
+        if cooldown_param is None:
+            cooldown_param = 3.0
+        self._cooldown_minutes = float(cooldown_param)
+        self.cooldown_bars = self._cooldown_for(tf_minutes)
         self._cooldown = 0
         self._last_rpnl = 0.0
         self._last_month: int | None = None
@@ -49,10 +57,20 @@ class BreakoutVol(Strategy):
         self.min_volatility = 0.0
         self._rq = RollingQuantileCache()
 
+    def _cooldown_for(self, tf_minutes: float) -> int:
+        if self._cooldown_minutes <= 0:
+            return 0
+        return max(1, int(math.ceil(self._cooldown_minutes / max(tf_minutes, 1e-9))))
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        if len(df) < self.lookback + 1:
+        tf_val = bar.get("timeframe", self.timeframe)
+        tf_minutes = timeframe_to_minutes(tf_val)
+        lookback = max(2, int(math.ceil(self._lookback_minutes / tf_minutes)))
+        vol_ma_n = max(1, int(math.ceil(self._volume_ma_minutes / tf_minutes)))
+        self.cooldown_bars = self._cooldown_for(tf_minutes)
+        if len(df) < lookback + 1:
             return None
 
         if self.risk_service is not None:
@@ -65,18 +83,18 @@ class BreakoutVol(Strategy):
             return None
 
         closes = df["close"]
-        mean = closes.rolling(self.lookback).mean().iloc[-1]
-        std_series = closes.rolling(self.lookback).std().dropna()
+        mean = closes.rolling(lookback).mean().iloc[-1]
+        std_series = closes.rolling(lookback).std().dropna()
         std = float(std_series.iloc[-1])
-        window = min(len(std_series), self.lookback * 5)
+        window = min(len(std_series), lookback * 5)
         symbol = bar.get("symbol", "")
-        if window >= self.lookback and std > 0.0:
+        if window >= lookback and std > 0.0:
             rq_std = self._rq.get(
                 symbol,
                 "std",
-                window=self.lookback * 5,
+                window=lookback * 5,
                 q=self._mult_quantile,
-                min_periods=self.lookback,
+                min_periods=lookback,
             )
             mult_quant = float(rq_std.update(std))
             self.mult = mult_quant / std
@@ -96,29 +114,29 @@ class BreakoutVol(Strategy):
                 [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
                 axis=1,
             ).max(axis=1)
-            atr_series = tr.rolling(self.lookback).mean().dropna()
+            atr_series = tr.rolling(lookback).mean().dropna()
             atr_val = float(atr_series.iloc[-1]) if len(atr_series) else 0.0
 
         returns = closes.pct_change().dropna()
-        vol_series = returns.rolling(self.lookback).std().dropna()
+        vol_series = returns.rolling(lookback).std().dropna()
         vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
         vol_bps = vol * 10000
-        window = min(len(vol_series), self.lookback * 5)
-        if window >= self.lookback * 2:
+        window = min(len(vol_series), lookback * 5)
+        if window >= lookback * 2:
             rq_vol = self._rq.get(
                 symbol,
                 "vol",
-                window=self.lookback * 5,
+                window=lookback * 5,
                 q=self._vol_quantile,
-                min_periods=self.lookback * 2,
+                min_periods=lookback * 2,
             )
             vol_quant = float(rq_vol.update(vol))
             rq_vol_bps = self._rq.get(
                 symbol,
                 "vol_bps",
-                window=self.lookback * 5,
+                window=lookback * 5,
                 q=self._vol_quantile,
-                min_periods=self.lookback * 2,
+                min_periods=lookback * 2,
             )
             vol_bps_quant = float(rq_vol_bps.update(vol_bps))
             self.min_volatility = vol_bps_quant
@@ -135,8 +153,11 @@ class BreakoutVol(Strategy):
 
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
-        vol_ma = df["volume"].rolling(self.vol_ma_n).mean().iloc[-1]
-        if self.timeframe in {"1m", "3m"} and df["volume"].iloc[-1] <= vol_ma:
+        vol_ma = df["volume"].rolling(vol_ma_n).mean().iloc[-1]
+        self.vol_ma_n = vol_ma_n
+        self.lookback = lookback
+        tf_str = str(tf_val)
+        if tf_str in {"1m", "3m"} and df["volume"].iloc[-1] <= vol_ma:
             return self.finalize_signal(bar, last, None)
 
         side: str | None = None
