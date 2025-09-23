@@ -118,3 +118,145 @@ def test_realized_pnl_penalizes_adverse_slippage(monkeypatch):
 
     total_slippage_cost = first_fill.slippage_pnl + second_fill.slippage_pnl
     assert result["slippage"] == pytest.approx(total_slippage_cost)
+
+
+def test_final_liquidation_records_adverse_slippage(monkeypatch):
+    class HoldLong:
+        def __init__(self):
+            self._sent = False
+
+        def on_bar(self, _):
+            if self._sent:
+                return None
+            self._sent = True
+            return SimpleNamespace(side="buy", strength=1.0, limit_price=100.0)
+
+    monkeypatch.setitem(STRATEGIES, "hold_long_slip", HoldLong)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2, 3],
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0, 80.0],
+            "volume": [1000.0, 1000.0, 1000.0, 1000.0],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("hold_long_slip", "SYM")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+        fee_bps=0.0,
+        risk_pct=50,
+    )
+
+    result = engine.run()
+
+    fills = pd.DataFrame(
+        result["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    assert len(fills) >= 2
+    entry_fill = fills.iloc[0]
+    liquidation = fills.iloc[-1]
+    assert liquidation.reason == "liquidation"
+    assert liquidation.side == "sell"
+
+    entry_price = float(entry_fill.price)
+    exit_price = float(liquidation.price)
+    qty = float(liquidation.qty)
+    expected_slip = (exit_price - entry_price) * qty
+
+    assert liquidation.slippage_pnl == pytest.approx(expected_slip)
+    assert liquidation.realized_pnl == pytest.approx(0.0)
+    assert result["slippage"] == pytest.approx(fills["slippage_pnl"].sum())
+
+
+def test_final_liquidation_records_favorable_slippage(monkeypatch):
+    class HoldShort:
+        def __init__(self):
+            self._sent = False
+
+        def on_bar(self, _):
+            if self._sent:
+                return None
+            self._sent = True
+            return SimpleNamespace(side="sell", strength=1.0, limit_price=100.0)
+
+    monkeypatch.setitem(STRATEGIES, "hold_short_slip", HoldShort)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2, 3],
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0, 90.0],
+            "volume": [1000.0, 1000.0, 1000.0, 1000.0],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("hold_short_slip", "SYM")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+        fee_bps=0.0,
+        risk_pct=50,
+    )
+
+    result = engine.run()
+
+    fills = pd.DataFrame(
+        result["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    assert len(fills) >= 2
+    entry_fill = fills.iloc[0]
+    liquidation = fills.iloc[-1]
+    assert liquidation.reason == "liquidation"
+    assert liquidation.side == "buy"
+
+    entry_price = float(entry_fill.price)
+    exit_price = float(liquidation.price)
+    qty = float(liquidation.qty)
+    expected_slip = (entry_price - exit_price) * qty
+
+    assert liquidation.slippage_pnl == pytest.approx(expected_slip)
+    assert liquidation.realized_pnl == pytest.approx(0.0)
+    assert result["slippage"] == pytest.approx(fills["slippage_pnl"].sum())
