@@ -3,14 +3,14 @@ from types import SimpleNamespace
 import pytest
 from omegaconf import OmegaConf
 
-from tradingbot.cli import main as cli_main
+from tradingbot.cli.commands import backtesting as cli_backtesting
 from tradingbot.backtest import event_engine as ev_module
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, STRATEGIES
 from tradingbot.config.hydra_conf import load_config
 from tradingbot.storage import timescale as ts_module
 
 
-def _run_backtest(monkeypatch, venue):
+def _run_backtest(monkeypatch, venue, param_override=None):
     captured = {}
 
     class DummyEngine(EventDrivenBacktestEngine):
@@ -39,7 +39,7 @@ def _run_backtest(monkeypatch, venue):
 
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
 
-    cli_main.backtest_db(
+    cli_backtesting.backtest_db(
         venue=venue,
         symbol="BTC/USDT",
         strategy="dummy",
@@ -51,6 +51,7 @@ def _run_backtest(monkeypatch, venue):
         fee_bps=5.0,
         slippage_bps=1.0,
         verbose_fills=False,
+        param=param_override or [],
     )
     return captured["engine"]
 
@@ -73,6 +74,7 @@ def test_backtest_db_futures_config(monkeypatch):
     assert eng.exchange_tick_size["binance_futures"] == cfg["tick_size"]
     rs = eng.risk[("dummy", "BTCUSDT")]
     assert rs.allow_short is True
+    assert eng.strategies[("dummy", "BTCUSDT")].timeframe == "3m"
 
 
 def test_backtest_db_spot_config(monkeypatch):
@@ -88,6 +90,7 @@ def test_backtest_db_spot_config(monkeypatch):
     assert eng.exchange_tick_size["binance_spot"] == cfg["tick_size"]
     rs = eng.risk[("dummy", "BTCUSDT")]
     assert rs.allow_short is False
+    assert eng.strategies[("dummy", "BTCUSDT")].timeframe == "3m"
 
 
 def test_backtest_db_normalizes_symbol(monkeypatch):
@@ -124,7 +127,7 @@ def test_backtest_db_normalizes_symbol(monkeypatch):
 
     monkeypatch.setitem(STRATEGIES, "dummy", DummyStrategy)
 
-    cli_main.backtest_db(
+    cli_backtesting.backtest_db(
         venue="binance_spot",
         symbol="BTC/USDT",
         strategy="dummy",
@@ -136,6 +139,12 @@ def test_backtest_db_normalizes_symbol(monkeypatch):
         fee_bps=5.0,
         slippage_bps=1.0,
         verbose_fills=False,
+        param=[],
     )
 
     assert captured["symbol"] == "BTCUSDT"
+
+
+def test_backtest_db_param_timeframe_override(monkeypatch):
+    eng = _run_backtest(monkeypatch, "binance_futures", ["timeframe=15m"])
+    assert eng.strategies[("dummy", "BTCUSDT")].timeframe == "15m"

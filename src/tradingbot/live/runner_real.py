@@ -145,6 +145,13 @@ async def _run_symbol(
     ws_cls, exec_cls, venue = ADAPTERS[(exchange, market)]
     raw_symbol = cfg.symbol
     symbol = normalize(cfg.symbol)
+    params = dict(params or {})
+    timeframe_value = params.get("timeframe", timeframe)
+    if timeframe_value is None:
+        timeframe_value = timeframe
+    timeframe_value = str(timeframe_value)
+    params["timeframe"] = timeframe_value
+    timeframe = timeframe_value
     timeframe_seconds = ccxt.Exchange.parse_timeframe(timeframe)
     expiry = timeframe_seconds
     log.info("Connecting to %s %s for %s", exchange, market, symbol)
@@ -182,8 +189,22 @@ async def _run_symbol(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
-    params = params or {}
-    strat = strat_cls(config_path=config_path, **params) if (config_path or params) else strat_cls()
+    strat_kwargs = dict(params)
+    if config_path is not None:
+        strat_kwargs["config_path"] = config_path
+    if strat_kwargs:
+        try:
+            strat = strat_cls(**strat_kwargs)
+        except TypeError:
+            fallback_kwargs = dict(strat_kwargs)
+            fallback_kwargs.pop("timeframe", None)
+            strat = strat_cls(**fallback_kwargs) if fallback_kwargs else strat_cls()
+            setattr(strat, "timeframe", timeframe_value)
+        else:
+            setattr(strat, "timeframe", timeframe_value)
+    else:
+        strat = strat_cls()
+        setattr(strat, "timeframe", timeframe_value)
     guard = PortfolioGuard(
         GuardConfig(
             total_cap_pct=total_cap_pct,

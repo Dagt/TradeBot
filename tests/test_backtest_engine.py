@@ -34,6 +34,54 @@ class DummyStrategy:
         return SimpleNamespace(side=side, strength=1.0)
 
 
+def test_event_engine_assigns_strategy_timeframe(monkeypatch):
+    class WithTimeframe:
+        def __init__(self, *, risk_service, timeframe):
+            self.risk_service = risk_service
+            self.timeframe = timeframe
+
+        def on_bar(self, bar):
+            return None
+
+    class WithoutTimeframe:
+        def __init__(self):
+            self.timeframe = "default"
+
+        def on_bar(self, bar):
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "with_tf", WithTimeframe)
+    monkeypatch.setitem(STRATEGIES, "without_tf", WithoutTimeframe)
+
+    df = pd.DataFrame(
+        {
+            "timestamp": [0, 1],
+            "open": [1.0, 1.0],
+            "high": [1.0, 1.0],
+            "low": [1.0, 1.0],
+            "close": [1.0, 1.0],
+            "volume": [1.0, 1.0],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM1": df, "SYM2": df},
+        [("with_tf", "SYM1"), ("without_tf", "SYM2")],
+        strategy_timeframes={
+            ("with_tf", "SYM1"): "15m",
+            ("without_tf", "SYM2"): "30m",
+        },
+    )
+
+    with_tf = engine.strategies[("with_tf", "SYM1")]
+    without_tf = engine.strategies[("without_tf", "SYM2")]
+
+    assert with_tf.timeframe == "15m"
+    assert with_tf.risk_service is engine.risk[("with_tf", "SYM1")]
+    assert without_tf.timeframe == "30m"
+    assert without_tf.risk_service is engine.risk[("without_tf", "SYM2")]
+
+
 def _make_csv(tmp_path):
     rng = pd.date_range("2021-01-01", periods=50, freq="T")
     price = np.linspace(100, 150, num=50)

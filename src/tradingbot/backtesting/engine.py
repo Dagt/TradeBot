@@ -395,6 +395,7 @@ class EventDrivenBacktestEngine:
         min_qty: float | None = None,
         step_size: float = 0.0,
         min_notional: float = 0.0,
+        strategy_timeframes: Mapping[Tuple[str, str], str] | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -497,6 +498,14 @@ class EventDrivenBacktestEngine:
                 )
         self.default_fee = FeeModel(default_maker_bps, default_taker_bps)
         self.default_depth = float("inf")
+        self.strategy_timeframes: Dict[Tuple[str, str], str] = {}
+        if strategy_timeframes:
+            for key, value in strategy_timeframes.items():
+                if not isinstance(key, tuple) or len(key) != 2:
+                    continue
+                if value is None:
+                    continue
+                self.strategy_timeframes[(key[0], key[1])] = str(value)
 
         self.strategies: Dict[Tuple[str, str], object] = {}
         self.risk: Dict[Tuple[str, str], RiskService] = {}
@@ -529,11 +538,26 @@ class EventDrivenBacktestEngine:
             self.risk[key] = svc
             self.strategy_exchange[key] = exchange
             self.strategy_constraints[key] = constraints
+            tf_value = self.strategy_timeframes.get(key)
             try:
-                strat = strat_cls(risk_service=svc)
+                if tf_value is not None:
+                    strat = strat_cls(risk_service=svc, timeframe=tf_value)
+                else:
+                    strat = strat_cls(risk_service=svc)
             except TypeError:
-                strat = strat_cls()
+                if tf_value is not None:
+                    try:
+                        strat = strat_cls(timeframe=tf_value)
+                    except TypeError:
+                        strat = strat_cls()
+                else:
+                    strat = strat_cls()
                 setattr(strat, "risk_service", svc)
+            else:
+                if getattr(strat, "risk_service", None) is None:
+                    setattr(strat, "risk_service", svc)
+            if tf_value is not None and getattr(strat, "timeframe", None) != tf_value:
+                setattr(strat, "timeframe", tf_value)
             self.strategies[key] = strat
 
         # Internal flag to avoid repeated on_bar calls per bar index

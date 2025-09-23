@@ -6,12 +6,24 @@ import sys
 from pathlib import Path
 
 import typer
+from typer.models import OptionInfo
 
 from ...logging_conf import setup_logging
 from ..utils import _parse_params, _parse_risk_pct, _validate_backtest_venue
 from tradingbot.analysis.backtest_report import generate_report
 
 app = typer.Typer(help="Backtesting utilities")
+
+
+def _normalize_timeframe(value: str | OptionInfo | None, default: str) -> str:
+    """Resolve CLI option defaults into concrete string timeframes."""
+
+    candidate: str | OptionInfo | None = value
+    if isinstance(candidate, OptionInfo):
+        candidate = candidate.default
+    if candidate is Ellipsis or candidate is None:
+        candidate = default
+    return str(candidate)
 
 
 @app.command("cfg-validate")
@@ -44,6 +56,7 @@ def backtest(
     data: str,
     symbol: str = "BTC/USDT",
     strategy: str = typer.Option("breakout_atr", help="Strategy name"),
+    timeframe: str = typer.Option("1m", "--timeframe", help="Bar timeframe"),
     config: str | None = typer.Option(
         None, "--config", help="YAML config for the strategy"
     ),
@@ -79,8 +92,15 @@ def backtest(
     bt_cfg = {}
     min_fill_qty = float(getattr(bt_cfg, "min_fill_qty", MIN_FILL_QTY))
     slippage = None
+    timeframe = _normalize_timeframe(timeframe, "1m")
     params = _parse_params(param) if isinstance(param, list) else {}
     kwargs = dict(params)
+    strategy_timeframe = kwargs.get("timeframe")
+    if strategy_timeframe is not None:
+        strategy_timeframe = _normalize_timeframe(strategy_timeframe, timeframe)
+    else:
+        strategy_timeframe = timeframe
+    kwargs["timeframe"] = strategy_timeframe
     if config is not None:
         kwargs["config_path"] = config
     from ...strategies import STRATEGIES
@@ -88,7 +108,17 @@ def backtest(
     strat_cls = STRATEGIES.get(strategy)
     if strat_cls is None:
         raise typer.BadParameter(f"unknown strategy: {strategy}")
-    strat = strat_cls(**kwargs)
+    try:
+        strat = strat_cls(**kwargs)
+    except TypeError:
+        kwargs_no_tf = dict(kwargs)
+        kwargs_no_tf.pop("timeframe", None)
+        strat = strat_cls(**kwargs_no_tf) if kwargs_no_tf else strat_cls()
+        if strategy_timeframe is not None:
+            setattr(strat, "timeframe", strategy_timeframe)
+    else:
+        if strategy_timeframe is not None:
+            setattr(strat, "timeframe", strategy_timeframe)
     eng = EventDrivenBacktestEngine(
         {symbol: df},
         [(strategy, symbol)],
@@ -100,6 +130,9 @@ def backtest(
         slippage=slippage,
         fee_bps=fee_bps,
         slippage_bps=slippage_bps,
+        strategy_timeframes={
+            (strategy, symbol): strategy_timeframe,
+        },
     )
     result = eng.run(fills_csv=fills_csv)
     typer.echo(result)
@@ -249,7 +282,7 @@ def backtest_db(
 
     setup_logging()
     symbol = normalize(symbol)
-    timeframe = timeframe.lower()
+    timeframe = _normalize_timeframe(timeframe, "3m").lower()
     engine = get_engine()
     try:
         start_dt = datetime.fromisoformat(start)
@@ -293,6 +326,18 @@ def backtest_db(
             typer.echo(f"missing config for {venue}")
             raise typer.Exit()
         exchange_cfg = {venue: venue_cfg}
+        params = _parse_params(param) if isinstance(param, list) else {}
+        if not isinstance(config, str):
+            config = None
+        kwargs = dict(params)
+        strategy_timeframe = kwargs.get("timeframe")
+        if strategy_timeframe is not None:
+            strategy_timeframe = _normalize_timeframe(strategy_timeframe, timeframe)
+        else:
+            strategy_timeframe = timeframe
+        kwargs["timeframe"] = strategy_timeframe
+        if config is not None:
+            kwargs["config_path"] = config
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol, venue)],
@@ -304,19 +349,26 @@ def backtest_db(
             slippage=slippage,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
+            strategy_timeframes={
+                (strategy, symbol): strategy_timeframe,
+            },
         )
-        params = _parse_params(param) if isinstance(param, list) else {}
-        if not isinstance(config, str):
-            config = None
         from ...strategies import STRATEGIES
 
         strat_cls = STRATEGIES.get(strategy)
         if strat_cls is None:
             raise typer.BadParameter(f"unknown strategy: {strategy}")
-        kwargs = dict(params)
-        if config is not None:
-            kwargs["config_path"] = config
-        strat = strat_cls(**kwargs)
+        strat_kwargs = dict(kwargs)
+        try:
+            strat = strat_cls(**strat_kwargs)
+        except TypeError:
+            strat_kwargs.pop("timeframe", None)
+            strat = strat_cls(**strat_kwargs) if strat_kwargs else strat_cls()
+            if strategy_timeframe is not None:
+                setattr(strat, "timeframe", strategy_timeframe)
+        else:
+            if strategy_timeframe is not None:
+                setattr(strat, "timeframe", strategy_timeframe)
         eng.strategies[(strategy, symbol)] = strat
         result = eng.run(fills_csv=fills_csv)
         typer.echo(result)

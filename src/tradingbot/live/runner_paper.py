@@ -195,6 +195,13 @@ async def run_paper(
     """
     raw_symbol = symbol
     symbol = normalize(symbol)
+    params = dict(params or {})
+    timeframe_value = params.get("timeframe", timeframe)
+    if timeframe_value is None:
+        timeframe_value = timeframe
+    timeframe_value = str(timeframe_value)
+    params["timeframe"] = timeframe_value
+    timeframe = timeframe_value
     timeframe_seconds = ccxt.Exchange.parse_timeframe(timeframe)
     expiry = timeframe_seconds
     exchange, market = venue.split("_", 1)
@@ -522,14 +529,24 @@ async def run_paper(
     strat_cls = STRATEGIES.get(strategy_name)
     if strat_cls is None:
         raise ValueError(f"unknown strategy: {strategy_name}")
-    params = dict(params or {})
     leverage_value = params.pop("leverage", 1)
     log.info("METRICS %s", json.dumps({"leverage": leverage_value}))
-    strat = (
-        strat_cls(config_path=config_path, **params)
-        if (config_path or params)
-        else strat_cls()
-    )
+    strat_kwargs = dict(params)
+    if config_path is not None:
+        strat_kwargs["config_path"] = config_path
+    if strat_kwargs:
+        try:
+            strat = strat_cls(**strat_kwargs)
+        except TypeError:
+            fallback_kwargs = dict(strat_kwargs)
+            fallback_kwargs.pop("timeframe", None)
+            strat = strat_cls(**fallback_kwargs) if fallback_kwargs else strat_cls()
+            setattr(strat, "timeframe", timeframe_value)
+        else:
+            setattr(strat, "timeframe", timeframe_value)
+    else:
+        strat = strat_cls()
+        setattr(strat, "timeframe", timeframe_value)
     strat.risk_service = risk
 
     def _recalc_locked_total() -> float:
