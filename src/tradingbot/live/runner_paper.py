@@ -1670,7 +1670,7 @@ async def run_paper(
                     log.info("Warm-up progress %d/%d", progress, warmup_total)
                     last_progress, last_log = progress, now
                 continue
-            bar = {"window": df, "symbol": symbol}
+            bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
             signal = strat.on_bar(bar)
             if signal is None:
                 continue

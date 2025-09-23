@@ -1001,7 +1001,7 @@ async def _run_symbol(
         df: pd.DataFrame = agg.last_n_bars_df(200)
         if len(df) < 140:
             continue
-        bar = {"window": df, "symbol": symbol}
+        bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
         sig = strat.on_bar(bar)
         if sig is None:
             continue

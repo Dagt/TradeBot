@@ -330,7 +330,7 @@ async def run_live_binance(
         if len(df) < 140:  # warmup básico
             continue
 
-        bar = {"window": df, "symbol": symbol}
+        bar = {"window": df, "symbol": symbol, "timeframe": timeframe}
         signal = strat.on_bar(bar)
         if signal is None:
             continue

@@ -395,6 +395,7 @@ class EventDrivenBacktestEngine:
         min_qty: float | None = None,
         step_size: float = 0.0,
         min_notional: float = 0.0,
+        timeframes: Mapping[str, str] | str | None = None,
     ) -> None:
         self.data = data
         self.latency = int(latency)
@@ -428,6 +429,14 @@ class EventDrivenBacktestEngine:
         self.default_constraints = VenueConstraints(
             self.min_qty, self.min_notional, self.step_size
         )
+
+        if isinstance(timeframes, Mapping):
+            self._timeframes = {str(sym): str(tf) for sym, tf in timeframes.items()}
+        elif timeframes is None:
+            self._timeframes = {}
+        else:
+            tf_val = str(timeframes)
+            self._timeframes = {str(sym): tf_val for sym in data}
 
         # Set global random seeds for reproducibility
         self.seed = seed
@@ -568,6 +577,9 @@ class EventDrivenBacktestEngine:
 
     def _strategy_constraints(self, key: Tuple[str, str]) -> VenueConstraints:
         return self.strategy_constraints.get(key, self.default_constraints)
+
+    def _timeframe_for(self, symbol: str) -> str | None:
+        return self._timeframes.get(str(symbol))
 
     # ------------------------------------------------------------------
     def run(self, fills_csv: str | None = None) -> dict:
@@ -1224,10 +1236,17 @@ class EventDrivenBacktestEngine:
                     start_idx = i - self.window
                     if getattr(strat, "needs_window_df", True):
                         window_df = df.iloc[start_idx:i]
-                        sig = strat.on_bar({"window": window_df, "symbol": symbol})
+                        bar_ctx = {"window": window_df, "symbol": symbol}
+                        timeframe_val = self._timeframe_for(symbol)
+                        if timeframe_val is not None:
+                            bar_ctx["timeframe"] = timeframe_val
+                        sig = strat.on_bar(bar_ctx)
                     else:
                         bar_arrays = {col: arrs[col][start_idx:i] for col in arrs}
                         bar_arrays["symbol"] = symbol
+                        timeframe_val = self._timeframe_for(symbol)
+                        if timeframe_val is not None:
+                            bar_arrays["timeframe"] = timeframe_val
                         sig = strat.on_bar(bar_arrays)
                     limit_price = (
                         sig.get("limit_price")
