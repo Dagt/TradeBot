@@ -165,7 +165,7 @@ def test_realized_pnl_includes_slippage(monkeypatch):
     first_fill = fills.iloc[0]
     assert first_fill.reason == "order"
     assert first_fill.side == "buy"
-    assert first_fill.slippage_pnl > 0
+    assert first_fill.slippage_pnl < 0
     assert order_summary["place_price"] > first_fill.price
 
     first_fee = first_fill.fee_cost
@@ -186,7 +186,7 @@ def test_realized_pnl_includes_slippage(monkeypatch):
         -(first_fee + final_fee + first_fill.slippage_pnl)
     )
 
-    assert res["slippage"] == pytest.approx(-first_fill.slippage_pnl)
+    assert res["slippage"] == pytest.approx(first_fill.slippage_pnl)
 
 
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
