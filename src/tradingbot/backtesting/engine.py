@@ -941,11 +941,11 @@ class EventDrivenBacktestEngine:
                     continue
 
                 slip = (
-                    price - order.place_price
+                    order.place_price - price
                     if order.side == "buy"
-                    else order.place_price - price
+                    else price - order.place_price
                 )
-                slip_cash = slip * fill_qty
+                slip_cash = -slip * fill_qty
                 slippage_total += slip_cash
                 slippage_pnl = slip_cash
                 fill_count += 1
@@ -1113,7 +1113,7 @@ class EventDrivenBacktestEngine:
                             if side == "sell"
                             else entry_price - exit_price
                         )
-                        slippage_pnl = slip * exit_qty
+                        slippage_pnl = -slip * exit_qty
                         slippage_total += slippage_pnl
                     else:
                         slippage_pnl = 0.0
@@ -1495,7 +1495,7 @@ class EventDrivenBacktestEngine:
                         if side == "sell"
                         else entry_price - last_price
                     )
-                    slippage_pnl = slip * qty
+                    slippage_pnl = -slip * qty
                     slippage_total += slippage_pnl
                 else:
                     slippage_pnl = 0.0
