@@ -941,11 +941,15 @@ class EventDrivenBacktestEngine:
                     continue
 
                 slip = (
-                    price - order.place_price
+                    order.place_price - price
                     if order.side == "buy"
-                    else order.place_price - price
+                    else price - order.place_price
                 )
-                slip_cash = slip * fill_qty
+                # ``slip`` is defined as expected minus executed price for buys and
+                # executed minus expected for sells so that a worse fill yields a
+                # negative ``slip``.  Negate it to express ``slippage_pnl`` as a
+                # positive cost when execution is worse than anticipated.
+                slip_cash = -slip * fill_qty
                 slippage_total += slip_cash
                 slippage_pnl = slip_cash
                 fill_count += 1

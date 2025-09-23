@@ -35,6 +35,33 @@ class FixedAdverseSlippage(SlippageModel):
         return adj_price, qty, queue_pos
 
 
+class FixedFavorableSlippage(SlippageModel):
+    """Slippage model that enforces favorable fills for both sides."""
+
+    def __init__(self, delta: float = 0.5) -> None:
+        super().__init__(volume_impact=0.0, pct=0.0)
+        self.delta = float(delta)
+
+    def fill(
+        self,
+        side: str,
+        qty: float,
+        price: float,
+        bar,
+        queue_pos: float,
+        partial: bool,
+    ):
+        frame = inspect.currentframe()
+        order = frame.f_back.f_locals.get("order") if frame and frame.f_back else None
+        if order is not None:
+            if side == "buy":
+                order.limit_price = order.place_price - self.delta
+            else:
+                order.limit_price = order.place_price + self.delta
+        adj_price = price - (self.delta if side == "buy" else -self.delta)
+        return adj_price, qty, queue_pos
+
+
 def test_realized_pnl_penalizes_adverse_slippage(monkeypatch):
     class SingleFillStrategy:
         def __init__(self, risk_service=None):
@@ -103,6 +130,95 @@ def test_realized_pnl_penalizes_adverse_slippage(monkeypatch):
 
     assert second_fill.side == "sell"
     assert second_fill.slippage_pnl > 0
+
+    entry_price = first_fill.price
+    exit_qty = second_fill.qty
+    expected_second = (
+        (second_fill.price - entry_price) * exit_qty
+        - second_fill.fee_cost
+        - second_fill.slippage_pnl
+    )
+    assert second_fill.realized_pnl == pytest.approx(expected_second)
+    assert second_fill.realized_pnl_total == pytest.approx(
+        first_fill.realized_pnl + second_fill.realized_pnl
+    )
+
+    total_slippage_cost = first_fill.slippage_pnl + second_fill.slippage_pnl
+    assert result["slippage"] == pytest.approx(total_slippage_cost)
+
+
+def test_realized_pnl_rewards_favorable_slippage(monkeypatch):
+    class TwoFillStrategy:
+        def __init__(self, risk_service=None):
+            self._step = 0
+
+        def on_bar(self, _):
+            if self._step == 0:
+                self._step += 1
+                return SimpleNamespace(side="buy", strength=1.0, limit_price=100.0)
+            if self._step == 1:
+                self._step += 1
+                return SimpleNamespace(side="sell", strength=1.0, limit_price=100.0)
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "favorable_slip", TwoFillStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2, 3, 4, 5],
+            "open": [100.0] * 6,
+            "high": [100.0] * 6,
+            "low": [100.0] * 6,
+            "close": [100.0] * 6,
+            "volume": [1000.0] * 6,
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("favorable_slip", "SYM")],
+        latency=1,
+        window=1,
+        slippage=FixedFavorableSlippage(0.5),
+        verbose_fills=True,
+    )
+
+    result = engine.run()
+
+    fills = pd.DataFrame(
+        result["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    # Two fills are expected: entry (buy) and explicit exit (sell)
+    assert len(fills) >= 2
+
+    first_fill = fills.iloc[0]
+    second_fill = fills.iloc[1]
+
+    assert first_fill.side == "buy"
+    assert first_fill.slippage_pnl < 0
+
+    expected_first = -(first_fill.fee_cost + first_fill.slippage_pnl)
+    assert first_fill.realized_pnl == pytest.approx(expected_first)
+    assert first_fill.realized_pnl_total == pytest.approx(expected_first)
+
+    assert second_fill.side == "sell"
+    assert second_fill.slippage_pnl < 0
 
     entry_price = first_fill.price
     exit_qty = second_fill.qty
