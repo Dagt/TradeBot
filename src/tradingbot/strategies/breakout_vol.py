@@ -7,6 +7,7 @@ from ..filters.liquidity import LiquidityFilterManager
 PARAM_INFO = {
     "lookback": "Ventana para medias y desviación estándar",
     "volatility_factor": "Factor para dimensionar según volatilidad",
+    "max_offset_pct": "Porcentaje máximo del precio para el offset del límite",
 }
 
 
@@ -19,7 +20,9 @@ class BreakoutVol(Strategy):
     El multiplicador del canal y la volatilidad mínima se estiman como
     percentiles recientes, de modo que la estrategia se adapta a las
     condiciones cambiantes del mercado sin necesidad de ajustar parámetros
-    manualmente.
+    manualmente.  Los precios límite se sitúan en puntos básicos respecto al
+    último precio observado y se acotan por porcentaje máximo para evitar
+    deslizamientos extremos.
     """
 
     name = "breakout_vol"
@@ -40,6 +43,7 @@ class BreakoutVol(Strategy):
         self._vol_quantile = self._VOL_QUANTILES.get(tf, self._DEFAULT_VOL_Q)
         self._mult_quantile = self._MULT_QUANTILES.get(tf, self._DEFAULT_MULT_Q)
         self.volatility_factor = float(kwargs.get("volatility_factor", 0.02))
+        self.max_offset_pct = max(0.0, float(kwargs.get("max_offset_pct", 0.015)))
         self._lookback_minutes = float(kwargs.get("lookback", 10))
         self.base_lookback = self._lookback_minutes
         self._volume_ma_minutes = float(kwargs.get("volume_ma_n", 20))
@@ -168,11 +172,26 @@ class BreakoutVol(Strategy):
         if side is None:
             return self.finalize_signal(bar, last, None)
         sig = Signal(side, size)
-        volatility_ref = atr_val if atr_val > 0 else std
-        if volatility_ref <= 0:
-            volatility_ref = max(abs(last) * 0.001, 1e-6)
         buffer_factor = 0.5
-        offset = volatility_ref * buffer_factor
+        abs_last = max(abs(last), 1e-9)
+        atr_bps = (atr_val / abs_last) * 10000.0 if atr_val > 0 else 0.0
+        offset_basis_bps = max(vol_bps, atr_bps)
+        if offset_basis_bps <= 0.0:
+            std_bps = (std / abs_last) * 10000.0 if std > 0 else 0.0
+            offset_basis_bps = std_bps if std_bps > 0 else 10.0
+        offset_bps = offset_basis_bps * buffer_factor
+        max_offset_pct = max(0.0, float(self.max_offset_pct))
+        if max_offset_pct > 0.0:
+            offset_bps = min(offset_bps, max_offset_pct * 10000.0)
+        offset = abs_last * (offset_bps / 10000.0)
+        limit_offset_pct = offset_bps / 10000.0
+        bar["limit_offset"] = offset
+        bar["limit_offset_bps"] = offset_bps
+        bar["limit_offset_pct"] = limit_offset_pct
+        bar_context = bar.setdefault("context", {})
+        bar_context["limit_offset"] = offset
+        bar_context["limit_offset_bps"] = offset_bps
+        bar_context["limit_offset_pct"] = limit_offset_pct
         if sig.side == "buy":
             sig.limit_price = last + offset
         else:
