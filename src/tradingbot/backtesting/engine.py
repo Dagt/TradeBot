@@ -34,6 +34,7 @@ _SPOT_MIN_QTY_FALLBACK = 1e-4
 _SPOT_MIN_NOTIONAL_FALLBACK = 10.0
 
 LIQUIDITY_FLOOR_RATIO = 1e-6
+PRICE_TOLERANCE = 1e-9
 
 
 @njit(cache=True)
@@ -628,6 +629,7 @@ class EventDrivenBacktestEngine:
         order_queue: List[Order] = []
         orders: List[Order] = []
         position_levels: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        post_only_flags: Dict[Tuple[str, str], bool] = {}
         slippage_total = 0.0
         funding_total = 0.0
         fill_count = 0
@@ -996,14 +998,30 @@ class EventDrivenBacktestEngine:
                         heapq.heappush(order_queue, order)
                     continue
 
-                slip = (
-                    order.place_price - price
-                    if order.side == "buy"
-                    else price - order.place_price
+                limit_price = (
+                    float(order.limit_price)
+                    if order.limit_price is not None
+                    else float(order.place_price)
                 )
-                slip_cash = -slip * fill_qty
-                slippage_total += slip_cash
-                slippage_pnl = slip_cash
+                fill_respects_limit = False
+                if order.post_only:
+                    if order.side == "buy":
+                        fill_respects_limit = price <= limit_price + PRICE_TOLERANCE
+                    else:
+                        fill_respects_limit = price >= limit_price - PRICE_TOLERANCE
+                if order.post_only and fill_respects_limit:
+                    slip_cash = 0.0
+                    slippage_pnl = 0.0
+                else:
+                    slip = (
+                        order.place_price - price
+                        if order.side == "buy"
+                        else price - order.place_price
+                    )
+                    slip_cash = -slip * fill_qty
+                    slippage_total += slip_cash
+                    slippage_pnl = slip_cash
+                was_post_only_maker = order.post_only and fill_respects_limit
                 fill_count += 1
 
                 trade_value = fill_qty * price
@@ -1025,14 +1043,20 @@ class EventDrivenBacktestEngine:
                 prev_sign = 1 if prev_qty > 0 else -1 if prev_qty < 0 else 0
                 new_sign = 1 if new_qty > 0 else -1 if new_qty < 0 else 0
                 if new_sign == 0:
+                    post_only_flags.pop(key, None)
                     position_levels.pop(key, None)
                 elif prev_sign == 0 or prev_sign != new_sign:
+                    post_only_flags[key] = was_post_only_maker
                     position_levels[key] = {
                         "entry_i": i,
                         "trail_pct": order.trailing_pct,
                         "best_price": price,
                     }
                 else:
+                    if abs(new_qty) > abs(prev_qty):
+                        post_only_flags[key] = (
+                            post_only_flags.get(key, False) and was_post_only_maker
+                        )
                     state = position_levels.get(key)
                     if state is not None:
                         state["entry_i"] = i
@@ -1163,7 +1187,10 @@ class EventDrivenBacktestEngine:
                         maybe_entry = trade_info.get("entry_price")
                         if maybe_entry is not None:
                             entry_price = float(maybe_entry)
-                    if entry_price is not None:
+                    post_only_entry = bool(post_only_flags.get((strat_name, symbol)))
+                    if post_only_entry:
+                        slippage_pnl = 0.0
+                    elif entry_price is not None:
                         slip = (
                             exit_price - entry_price
                             if side == "sell"
@@ -1185,6 +1212,7 @@ class EventDrivenBacktestEngine:
                     realized_pnl_total += realized_pnl
                     svc.pos.realized_pnl = prev_rpnl + realized_pnl
                     position_levels.pop((strat_name, symbol), None)
+                    post_only_flags.pop((strat_name, symbol), None)
                     mtm_after = 0.0
                     for (strat_s, sym_s), svc_s in self.risk.items():
                         arrs_s = data_arrays[sym_s]
@@ -1596,7 +1624,10 @@ class EventDrivenBacktestEngine:
                         include_liq_slip = True
                 else:
                     include_liq_slip = bool(include_liq_slip_attr)
-                if include_liq_slip and entry_price is not None:
+                post_only_entry = bool(post_only_flags.get((strat_name, symbol)))
+                if post_only_entry:
+                    slippage_pnl = 0.0
+                elif include_liq_slip and entry_price is not None:
                     slip = (
                         last_price - entry_price
                         if side == "sell"
@@ -1605,7 +1636,7 @@ class EventDrivenBacktestEngine:
                     slippage_pnl = -slip * qty
                 else:
                     slippage_pnl = 0.0
-                if include_liq_slip:
+                if include_liq_slip and not post_only_entry:
                     slippage_total += slippage_pnl
                 prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 svc.on_fill(symbol, side, qty, last_price)
@@ -1619,6 +1650,7 @@ class EventDrivenBacktestEngine:
                     cash -= trade_value + fee_cost
                 sync_cash()
                 fill_count += 1
+                post_only_flags.pop((strat_name, symbol), None)
                 if collect_fills:
                     timestamp = (
                         arrs.get("timestamp")[price_idx]

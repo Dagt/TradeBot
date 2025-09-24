@@ -189,6 +189,73 @@ def test_realized_pnl_includes_slippage(monkeypatch):
     assert res["slippage"] == pytest.approx(first_fill.slippage_pnl)
 
 
+def test_post_only_maker_has_zero_slippage(monkeypatch):
+    class PostOnlyStrategy:
+        def __init__(self, risk_service=None):
+            self.sent = False
+
+        def on_bar(self, _):
+            if self.sent:
+                return None
+            self.sent = True
+            return SimpleNamespace(
+                side="buy",
+                strength=1.0,
+                post_only=True,
+                limit_price=100.0,
+            )
+
+    monkeypatch.setitem(STRATEGIES, "post_only_maker", PostOnlyStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2, 3],
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0, 100.0],
+            "volume": [1000.0, 1000.0, 1000.0, 1000.0],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("post_only_maker", "SYM")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+    )
+    res = engine.run()
+
+    fills = pd.DataFrame(
+        res["fills"],
+        columns=[
+            "timestamp",
+            "reason",
+            "side",
+            "price",
+            "qty",
+            "strategy",
+            "symbol",
+            "exchange",
+            "fee_cost",
+            "slippage_pnl",
+            "realized_pnl",
+            "realized_pnl_total",
+            "equity_after",
+        ],
+    )
+
+    order_fills = fills[fills["reason"] == "order"]
+    assert not order_fills.empty
+    assert np.allclose(order_fills["slippage_pnl"], 0.0)
+
+    liq_fills = fills[fills["reason"] == "liquidation"]
+    assert not liq_fills.empty
+    assert np.allclose(liq_fills["slippage_pnl"], 0.0)
+
+    assert res["slippage"] == pytest.approx(0.0)
+
 def test_spot_long_only_enforced(tmp_path, monkeypatch):
     rng = pd.date_range("2021-01-01", periods=4, freq="T")
     df = pd.DataFrame(
