@@ -82,11 +82,19 @@ class Momentum(Strategy):
 
         tf_min = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
         self.cooldown_bars = self._cooldown_for(tf_min)
-        fast_n = max(5, int(math.ceil(self.fast_ema / tf_min)))
-        slow_n = max(5, int(math.ceil(self.slow_ema / tf_min)))
-        rsi_n = max(5, int(math.ceil(self.rsi_n / tf_min)))
-        atr_n = max(5, int(math.ceil(self.atr_n / tf_min)))
-        vol_window = max(2, int(math.ceil(self.vol_window / tf_min)))
+
+        fast_minutes = max(float(self.fast_ema), 0.0)
+        slow_minutes = max(float(self.slow_ema), fast_minutes)
+        fast_n = max(1, int(math.ceil(fast_minutes / max(tf_min, 1e-9))))
+        slow_n = max(1, int(math.ceil(slow_minutes / max(tf_min, 1e-9))))
+        if slow_n <= fast_n:
+            ratio = slow_minutes / max(fast_minutes, 1e-9)
+            scaled_slow = int(math.ceil(fast_n * ratio))
+            slow_n = max(fast_n + 1, scaled_slow)
+
+        rsi_n = max(2, int(math.ceil(float(self.rsi_n) / max(tf_min, 1e-9))))
+        atr_n = max(2, int(math.ceil(float(self.atr_n) / max(tf_min, 1e-9))))
+        vol_window = max(2, int(math.ceil(float(self.vol_window) / max(tf_min, 1e-9))))
 
         if len(df) < max(slow_n, rsi_n, atr_n) + 2:
             return None
@@ -114,7 +122,16 @@ class Momentum(Strategy):
 
         roc_val = float(closes.pct_change(self.roc_n).iloc[-1])
 
-        atr_series = atr(df, atr_n)
+        if "high" in df.columns and "low" in df.columns:
+            ohlc = df
+        else:
+            ohlc = df.copy()
+            if "high" not in ohlc:
+                ohlc["high"] = ohlc["close"]
+            if "low" not in ohlc:
+                ohlc["low"] = ohlc["close"]
+
+        atr_series = atr(ohlc, atr_n)
         atr_val = float(atr_series.iloc[-1])
         bar["atr"] = atr_val
 
