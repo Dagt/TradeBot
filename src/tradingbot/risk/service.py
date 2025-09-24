@@ -46,7 +46,7 @@ class RiskService:
         bus=None,
         engine=None,
         account: CoreAccount | None = None,
-        risk_per_trade: float = 0.01,
+        risk_per_trade: float = 1.0,
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
         profit_lock_usd: float = 1.0,
@@ -393,7 +393,7 @@ class RiskService:
         *,
         volatility: float | None = None,
         target_volatility: float | None = None,
-        clamp: bool = True,
+        clamp: bool = False,
     ) -> float:
         return self.rm.calc_position_size(
             signal_strength,

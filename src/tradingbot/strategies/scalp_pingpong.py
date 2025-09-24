@@ -138,12 +138,8 @@ class ScalpPingPong(Strategy):
         bar["volatility"] = price_vol
         target_bps = max(vol_bps, self.cfg.min_volatility)
         bar["target_volatility"] = abs_price * (target_bps / 10000.0)
-        # ``vol_bps`` ya está expresada en puntos básicos, por lo que el factor
-        # de volatilidad actúa directamente como un multiplicador fraccional.
-        # El tamaño final se acota en ``[0, 1]`` para evitar sobre-apalancamiento
-        # ante lecturas extremas de volatilidad.
         vol_size = vol_bps * self.cfg.volatility_factor
-        vol_size = max(0.0, min(1.0, vol_size))
+        vol_size = max(0.2, min(3.0, vol_size))
 
         trend_dir = 0
         if len(closes) >= trend_ma:
@@ -170,14 +166,28 @@ class ScalpPingPong(Strategy):
 
         if z <= -z_buy:
             side = "buy"
-            strength = min(1.0, abs(z) / z_buy)
+            strength = max(0.3, min(2.5, abs(z) / z_buy))
         elif z >= z_sell:
             side = "sell"
-            strength = min(1.0, abs(z) / z_sell)
+            strength = max(0.3, min(2.5, abs(z) / z_sell))
         else:
             return None
-        size = min(1.0, strength * vol_size)
+        size = max(0.3, min(3.0, strength * vol_size))
         if size <= 0:
             return self.finalize_signal(bar, price, None)
         sig = Signal(side, size)
+        offset = max(price_vol * 0.5, abs_price * 0.0005)
+        direction = 1 if side == "buy" else -1
+        sig.limit_price = price + direction * offset
+        sig.metadata.update(
+            {
+                "base_price": price,
+                "limit_offset": abs(offset),
+                "max_offset": abs(price_vol * 1.5),
+                "step_mult": 0.4,
+                "chase": False,
+                "decay": 0.6,
+                "min_offset": abs_price * 0.0002,
+            }
+        )
         return self.finalize_signal(bar, price, sig)

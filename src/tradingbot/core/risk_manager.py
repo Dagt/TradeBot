@@ -61,7 +61,7 @@ class RiskManager:
     """
 
     account: Account
-    risk_per_trade: float = 0.1
+    risk_per_trade: float = 1.0
     atr_mult: float = 2.0
     risk_pct: float = 0.01
     profit_lock_usd: float = 1.0
@@ -130,9 +130,9 @@ class RiskManager:
             Order side (``buy`` or ``sell``) forwarded to the normalisation helper.
         """
 
-        sig = float(signal_strength)
+        sig = max(float(signal_strength), 0.0)
         if clamp:
-            sig = min(max(sig, 0.0), 1.0)
+            sig = min(sig, 1.0)
 
         balance = float(self.account.get_available_balance())
         rpt = self.risk_per_trade if risk_per_trade is None else float(risk_per_trade)

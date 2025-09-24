@@ -167,13 +167,13 @@ class BreakoutVol(Strategy):
         bar["volatility"] = abs_last * vol
         bar["target_volatility"] = max(target_vol, 0.0)
 
-        size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
+        size = max(0.2, min(3.0, vol_bps * self.volatility_factor))
 
         vol_ma = df["volume"].rolling(vol_ma_n).mean().iloc[-1]
         self.vol_ma_n = vol_ma_n
         self.lookback = lookback
         tf_str = str(tf_val)
-        if tf_str in {"1m", "3m"} and df["volume"].iloc[-1] <= vol_ma:
+        if vol_ma > 0 and df["volume"].iloc[-1] < 0.8 * vol_ma:
             return self.finalize_signal(bar, last, None)
 
         side: str | None = None
@@ -203,16 +203,25 @@ class BreakoutVol(Strategy):
         bar_context["limit_offset"] = offset
         bar_context["limit_offset_bps"] = offset_bps
         bar_context["limit_offset_pct"] = limit_offset_pct
-        if sig.side == "buy":
-            sig.limit_price = last + offset
-        else:
-            sig.limit_price = last - offset
+        direction = 1 if sig.side == "buy" else -1
+        base_price = last
+        sig.limit_price = base_price + direction * offset
+        sig.metadata.update(
+            {
+                "base_price": base_price,
+                "limit_offset": abs(offset),
+                "max_offset": abs(abs_last * max_offset_pct) if max_offset_pct else abs(offset) * 3,
+                "step_mult": 0.5,
+                "chase": True,
+            }
+        )
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 size,
                 last,
                 volatility=abs_last * vol,
                 target_volatility=bar.get("target_volatility"),
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(last, side, vol)
             self.trade = {
@@ -223,6 +232,7 @@ class BreakoutVol(Strategy):
                 "atr": vol,
                 "target_volatility": bar.get("target_volatility"),
                 "atr_price": atr_val,
+                "strength": size,
             }
 
         symbol = bar.get("symbol", "")
