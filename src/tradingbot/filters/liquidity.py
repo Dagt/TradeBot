@@ -20,7 +20,7 @@ from typing import Any
 from threading import Lock
 
 import pandas as pd
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 from ..config.hydra_conf import load_config
 
@@ -33,18 +33,18 @@ class LiquidityFilter:
     min_volume: float = 0.0
     max_volatility: float = float("inf")
 
-    def check(self, bar: dict[str, Any]) -> bool:
-        """Return ``True`` if ``bar`` passes all liquidity checks."""
+    def check_with_reason(self, bar: dict[str, Any]) -> tuple[bool, str | None]:
+        """Return pass/fail flag and the violated metric if any."""
 
         spread = bar.get("spread")
         if spread is None and {"ask", "bid"} <= bar.keys():
             spread = float(bar["ask"]) - float(bar["bid"])
         if spread is not None and spread > self.max_spread:
-            return False
+            return False, "spread"
 
         volume = bar.get("volume")
         if volume is not None and volume < self.min_volume:
-            return False
+            return False, "volume"
 
         vol = bar.get("volatility")
         if vol is None:
@@ -52,9 +52,13 @@ class LiquidityFilter:
             if isinstance(window, pd.DataFrame) and "close" in window.columns and len(window) > 1:
                 vol = window["close"].pct_change().dropna().std()
         if vol is not None and vol > self.max_volatility:
-            return False
+            return False, "volatility"
 
-        return True
+        return True, None
+
+    def check(self, bar: dict[str, Any]) -> bool:
+        ok, _ = self.check_with_reason(bar)
+        return ok
 
 
 def _load_default_filter() -> LiquidityFilter:
@@ -129,6 +133,7 @@ class LiquidityFilterManager:
             }
         )
         self._filters: dict[tuple[str, str], LiquidityFilter] = {}
+        self._stats: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
 
     def _normalize_timeframe(self, timeframe: str | int | float | None) -> str:
         if timeframe is None:
@@ -165,11 +170,27 @@ class LiquidityFilterManager:
 
         filt = self._filters.get((symbol, tf_norm), LiquidityFilter())
         if hist["spread"]:
-            filt.max_spread = float(pd.Series(hist["spread"]).quantile(0.95))
+            series = pd.Series(hist["spread"])
+            median = float(series.median())
+            p90 = float(series.quantile(0.9))
+            p95 = float(series.quantile(0.95))
+            limit = max(p95, p90 * 1.2, median * 3.0)
+            filt.max_spread = max(limit, median * 1.2)
         if hist["volume"]:
-            filt.min_volume = float(pd.Series(hist["volume"]).quantile(0.05))
+            series = pd.Series(hist["volume"])
+            median = float(series.median())
+            p10 = float(series.quantile(0.1))
+            p05 = float(series.quantile(0.05))
+            floor = min(p10, p05) * 0.5
+            adaptive = max(floor, median * 0.1)
+            filt.min_volume = max(0.0, adaptive)
         if hist["volatility"]:
-            filt.max_volatility = float(pd.Series(hist["volatility"]).quantile(0.95))
+            series = pd.Series(hist["volatility"])
+            median = float(series.median())
+            p95 = float(series.quantile(0.95))
+            p90 = float(series.quantile(0.9))
+            cap = max(p95 * 1.5, p90 * 2.0, median * 5.0)
+            filt.max_volatility = max(cap, median * 2.0)
 
         self._filters[(symbol, tf_norm)] = filt
         return filt
@@ -197,12 +218,27 @@ class LiquidityFilterManager:
                     len(hist["volume"]),
                     len(hist["volatility"]),
                 )
-                if samples >= self.MIN_SAMPLES and not filt.check(bar):
+                passed, reason = filt.check_with_reason(bar)
+                if samples >= self.MIN_SAMPLES and not passed:
+                    info = bar.setdefault("_liquidity", {})
+                    info["reason"] = reason or "unknown"
+                    info["thresholds"] = {
+                        "max_spread": filt.max_spread,
+                        "min_volume": filt.min_volume,
+                        "max_volatility": filt.max_volatility,
+                    }
+                    info["timeframe"] = tf_norm
+                    self._stats[(symbol, tf_norm)][info["reason"]] += 1
+                    self._update_metrics(symbol, tf_norm, bar)
                     return False
                 self._update_metrics(symbol, tf_norm, bar)
             return True
         else:
-            return self._default_filter.check(bar)
+            passed, reason = self._default_filter.check_with_reason(bar)
+            if not passed:
+                info = bar.setdefault("_liquidity", {})
+                info["reason"] = reason or "unknown"
+            return passed
 
 
 __all__ = ["LiquidityFilter", "LiquidityFilterManager"]

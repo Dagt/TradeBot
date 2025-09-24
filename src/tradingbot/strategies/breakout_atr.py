@@ -103,7 +103,7 @@ class BreakoutATR(Strategy):
         # Valores base parametrizables para 1m.
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
-        self.volume_factor = float(params.get("volume_factor", 1.5))
+        self.volume_factor = max(0.0, float(params.get("volume_factor", 1.0)))
         tf = str(params.get("timeframe", "3m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
@@ -274,20 +274,29 @@ class BreakoutATR(Strategy):
                 return None
         strength = 0.6
         if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
-            strength = max(0.3, min(1.0, atr_bps / atr_bps_quant))
+            ratio = atr_bps / max(atr_bps_quant, 1e-9)
+            strength = max(0.3, min(3.0, ratio))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         offset = atr_val * self._offset_fraction(tf_mult)
         abs_price = max(abs(last_close), 1e-9)
-        max_offset = abs_price * 0.003
+        max_offset = abs_price * 0.006
         min_offset = abs_price * 0.0005
         offset = max(min_offset, min(offset, max_offset))
-        if side == "buy":
-            ref_price = max(last_close, level)
-            sig.limit_price = ref_price + offset
-        else:
-            ref_price = min(last_close, level)
-            sig.limit_price = ref_price - offset
+        direction = 1 if side == "buy" else -1
+        ref_price = max(last_close, level) if side == "buy" else min(last_close, level)
+        base_price = ref_price
+        limit_price = base_price + direction * offset
+        sig.limit_price = limit_price
+        sig.metadata.update(
+            {
+                "base_price": base_price,
+                "limit_offset": abs(offset),
+                "max_offset": abs(max_offset),
+                "step_mult": 0.75,
+                "chase": True,
+            }
+        )
 
         symbol = bar.get("symbol")
         if symbol:
@@ -304,6 +313,7 @@ class BreakoutATR(Strategy):
                 last_close,
                 volatility=atr_val,
                 target_volatility=target_vol,
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(
                 last_close, side, atr_val, atr_mult=stop_mult
@@ -317,6 +327,7 @@ class BreakoutATR(Strategy):
                 "target_volatility": target_vol,
                 "bars_held": 0,
                 "max_hold": max_hold,
+                "strength": strength,
             }
 
         return self.finalize_signal(bar, last_close, sig)

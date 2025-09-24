@@ -389,7 +389,7 @@ async def run_paper(
     guard.refresh_usd_caps(initial_cash)
     corr = CorrelationService()
     if risk_per_trade is None:
-        risk_per_trade_val = abs(risk_pct) if risk_pct > 0 else 1.0
+        risk_per_trade_val = 1.0
     else:
         risk_per_trade_val = float(risk_per_trade)
     risk = RiskService(

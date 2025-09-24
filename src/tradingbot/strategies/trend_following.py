@@ -119,7 +119,7 @@ class TrendFollowing(Strategy):
             base_strength = (lower_threshold - last_rsi) / max(1.0, lower_threshold)
         if side is None:
             return None
-        base_strength = max(0.0, min(1.0, base_strength))
+        base_strength = max(0.0, base_strength)
         direction = 1.0 if side == "buy" else -1.0
         if ofi_val == 0:
             ofi_factor = 1.0
@@ -127,14 +127,30 @@ class TrendFollowing(Strategy):
             ofi_factor = max(0.0, math.copysign(1.0, ofi_val) * direction)
             if ofi_factor == 0.0:
                 return None
-        strength = max(0.0, min(1.0, base_strength * ofi_factor))
+        last_volume = 0.0
+        if "volume" in df.columns:
+            try:
+                last_volume = float(df["volume"].iloc[-1])
+            except (TypeError, ValueError):
+                last_volume = 0.0
+        volume_ref = max(abs(last_volume), 1e-9)
+        intensity = 1.0 + min(abs(ofi_val) / volume_ref, 2.0)
+        strength = max(0.3, min(3.0, base_strength * ofi_factor * intensity))
         sig = Signal(side, strength)
-        if side == "buy":
-            limit_price = max(price + entry_volatility, prev_close + entry_volatility)
-        else:
-            limit_price = min(price - entry_volatility, prev_close - entry_volatility)
-            limit_price = max(0.0, limit_price)
-        sig.limit_price = limit_price
+        raw_offset = entry_volatility if entry_volatility > 0 else price_abs * 0.001
+        direction_int = 1 if side == "buy" else -1
+        base_price = price
+        limit_price = base_price + direction_int * raw_offset
+        sig.limit_price = max(0.0, limit_price)
+        sig.metadata.update(
+            {
+                "base_price": base_price,
+                "limit_offset": abs(raw_offset),
+                "max_offset": abs(price_abs * 0.008),
+                "step_mult": 0.6,
+                "chase": True,
+            }
+        )
 
         if symbol:
             if not hasattr(self, "_last_atr"):
@@ -164,6 +180,7 @@ class TrendFollowing(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
+                clamp=False,
             )
             atr_val = None
             for candidate in (bar.get("atr"), bar.get("volatility")):
@@ -187,5 +204,6 @@ class TrendFollowing(Strategy):
                 "stop": stop,
                 "atr": atr_val,
                 "target_volatility": bar.get("target_volatility"),
+                "strength": strength,
             }
         return self.finalize_signal(bar, price, sig)
