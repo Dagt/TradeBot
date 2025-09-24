@@ -262,9 +262,11 @@ class BreakoutATR(Strategy):
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         offset = atr_val * self._offset_fraction(tf_mult)
         if side == "buy":
-            sig.limit_price = max(last_close, level + offset)
+            ref_price = max(last_close, level)
+            sig.limit_price = ref_price + offset
         else:
-            sig.limit_price = min(last_close, level - offset)
+            ref_price = min(last_close, level)
+            sig.limit_price = ref_price - offset
 
         symbol = bar.get("symbol")
         if symbol:
