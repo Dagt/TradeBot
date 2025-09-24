@@ -40,7 +40,19 @@ def test_trend_following_risk_service_handles_stop_and_size():
     strat = TrendFollowing(rsi_n=2, **{"risk_service": svc})
     sig = strat.on_bar({"window": df, "atr": 1.0, "volatility": 0.0})
     assert sig and sig.side == "buy"
-    assert sig.limit_price == pytest.approx(df["close"].iloc[-1])
+    price = df["close"].iloc[-1]
+    prev_close = df["close"].iloc[-2]
+    tf_minutes = TrendFollowing._tf_minutes(strat.timeframe, strat.timeframe)
+    lookback_bars = max(1, math.ceil(strat.vol_lookback / tf_minutes))
+    ret = df["close"].pct_change().dropna()
+    vol_series = ret.rolling(lookback_bars).std().dropna()
+    vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
+    price_abs = price if price > 0 else 1.0
+    min_offset = price_abs * 0.001
+    vol_offset = price_abs * abs(vol_bps) / 10000.0 if vol_bps else 0.0
+    entry_vol = max(min_offset, vol_offset)
+    expected_limit = max(price + entry_vol, prev_close + entry_vol)
+    assert sig.limit_price == pytest.approx(expected_limit)
     trade = strat.trade
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])

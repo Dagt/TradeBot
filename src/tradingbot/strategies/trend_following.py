@@ -1,6 +1,4 @@
 import math
-
-import math
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi, calc_ofi
@@ -78,9 +76,14 @@ class TrendFollowing(Strategy):
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
+        prev_close = float(prices.iloc[-2])
         returns = prices.pct_change().dropna()
         vol_series = returns.rolling(lookback_bars).std().dropna()
         vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
+        price_abs = price if price > 0 else 1.0
+        min_offset = price_abs * 0.001
+        vol_offset = price_abs * abs(vol_bps) / 10000.0 if vol_bps else 0.0
+        entry_volatility = max(min_offset, vol_offset)
         window = min(len(vol_series), lookback_bars * 5)
         symbol = bar.get("symbol", "")
         if window >= lookback_bars:
@@ -125,9 +128,49 @@ class TrendFollowing(Strategy):
                 return None
         strength = max(0.0, min(1.0, base_strength * ofi_factor))
         sig = Signal(side, strength)
+        if side == "buy":
+            limit_price = max(price + entry_volatility, prev_close + entry_volatility)
+        else:
+            limit_price = min(price - entry_volatility, prev_close - entry_volatility)
+            limit_price = max(0.0, limit_price)
+        sig.limit_price = limit_price
+
+        if symbol:
+            if not hasattr(self, "_last_atr"):
+                self._last_atr: dict[str, float] = {}
+            self._last_atr[symbol] = entry_volatility
+
+        vol_candidate = bar.get("volatility")
+        should_set_vol = False
+        if vol_candidate is None:
+            should_set_vol = True
+        else:
+            try:
+                vol_val = float(vol_candidate)
+            except (TypeError, ValueError):
+                should_set_vol = True
+            else:
+                if not math.isfinite(vol_val) or vol_val <= 0:
+                    should_set_vol = True
+        if should_set_vol:
+            bar["volatility"] = entry_volatility
+
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(strength, price)
-            atr_val = bar.get("atr") or bar.get("volatility")
+            atr_val = None
+            for candidate in (bar.get("atr"), bar.get("volatility")):
+                if candidate is None:
+                    continue
+                try:
+                    atr_val = float(candidate)
+                except (TypeError, ValueError):
+                    atr_val = None
+                    continue
+                if math.isfinite(atr_val) and atr_val > 0:
+                    break
+                atr_val = None
+            if atr_val is None:
+                atr_val = entry_volatility
             stop = self.risk_service.initial_stop(price, side, atr_val)
             self.trade = {
                 "side": side,
