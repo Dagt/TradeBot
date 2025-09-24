@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import math
 import re
 import time
 
@@ -151,6 +152,22 @@ class Strategy(ABC):
         if rs is None:
             return signal
 
+        def _positive(value: Any) -> float | None:
+            try:
+                val = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(val) or val <= 0.0:
+                return None
+            return val
+
+        volatility = None
+        for key in ("atr", "volatility"):
+            volatility = _positive(bar.get(key))
+            if volatility is not None:
+                break
+        target_volatility = _positive(bar.get("target_volatility"))
+
         symbol = bar.get("symbol")
         trade = rs.get_trade(symbol) if symbol else None
         if trade:
@@ -230,7 +247,12 @@ class Strategy(ABC):
                 return signal
             return None
         if signal is not None:
-            qty = rs.calc_position_size(signal.strength, price)
+            qty = rs.calc_position_size(
+                signal.strength,
+                price,
+                volatility=volatility,
+                target_volatility=target_volatility,
+            )
             notional = abs(qty) * price
             if qty < rs.min_order_qty or (
                 getattr(rs, "min_notional", 0.0) and notional < rs.min_notional

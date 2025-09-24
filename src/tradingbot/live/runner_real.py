@@ -134,7 +134,7 @@ async def _run_symbol(
     params: dict | None = None,
     config_path: str | None = None,
     timeframe: str = "1m",
-    risk_per_trade: float = 1.0,
+    risk_per_trade: float | None = None,
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
@@ -222,13 +222,17 @@ async def _run_symbol(
     broker.account.market_type = market
     exec_broker = Broker(exec_adapter if not dry_run else broker)
     tif = f"GTD:{expiry}|PO"
+    if risk_per_trade is None:
+        risk_per_trade_val = abs(cfg.risk_pct) if cfg.risk_pct > 0 else 1.0
+    else:
+        risk_per_trade_val = float(risk_per_trade)
     risk = RiskService(
         guard,
         dguard,
         corr_service=corr,
         account=broker.account,
         risk_pct=cfg.risk_pct,
-        risk_per_trade=risk_per_trade,
+        risk_per_trade=risk_per_trade_val,
         market_type=market,
     )
     min_qty_value = min_qty_val if min_qty_val > 0 else 0.0
@@ -1170,7 +1174,7 @@ async def run_live_real(
     config_path: str | None = None,
     params: dict | None = None,
     timeframe: str = "1m",
-    risk_per_trade: float = 1.0,
+    risk_per_trade: float | None = None,
     maker_fee_bps: float | None = None,
     taker_fee_bps: float | None = None,
     slippage_bps: float = 0.0,
@@ -1220,6 +1224,10 @@ async def run_live_real(
             log.warning("metrics port %s in use, trying %s", port, port + 1)
             port += 1
             continue
+    if risk_per_trade is None:
+        risk_per_trade_val = abs(risk_pct) if risk_pct > 0 else 1.0
+    else:
+        risk_per_trade_val = float(risk_per_trade)
     tasks = [
         _run_symbol(
             exchange,
@@ -1238,7 +1246,7 @@ async def run_live_real(
             params=params,
             config_path=config_path,
             timeframe=timeframe,
-            risk_per_trade=risk_per_trade,
+            risk_per_trade=risk_per_trade_val,
             maker_fee_bps=maker_fee_bps,
             taker_fee_bps=taker_fee_bps,
             slippage_bps=slippage_bps,

@@ -392,7 +392,7 @@ class EventDrivenBacktestEngine:
         seed: int | None = None,
         initial_equity: float = 1000.0,
         risk_pct: float = 0.0,
-        risk_per_trade: float = 1.0,
+        risk_per_trade: float | None = None,
         verbose_fills: bool = False,
         min_fill_qty: float = MIN_FILL_QTY,
         min_order_qty: float = MIN_ORDER_QTY,
@@ -455,7 +455,10 @@ class EventDrivenBacktestEngine:
 
         self.initial_equity = float(initial_equity)
         self._risk_pct = _validate_risk_pct(risk_pct)
-        self.risk_per_trade = float(risk_per_trade)
+        if risk_per_trade is None:
+            self.risk_per_trade = self._risk_pct if self._risk_pct > 0 else 1.0
+        else:
+            self.risk_per_trade = float(risk_per_trade)
 
         # Exchange specific configurations
         self.exchange_latency: Dict[str, int] = {}
@@ -564,6 +567,25 @@ class EventDrivenBacktestEngine:
 
         # Internal flag to avoid repeated on_bar calls per bar index
         self._last_on_bar_i: int = -1
+
+    def _effective_delay(
+        self, exchange: str, base_latency: int | float | None = None
+    ) -> int:
+        """Return the number of bars to wait before an order can execute."""
+
+        if base_latency is None:
+            base_latency = self.exchange_latency.get(exchange, self.latency)
+        try:
+            base = float(base_latency)
+        except (TypeError, ValueError):
+            base = float(self.latency)
+        base = max(0.0, base)
+        latency_factor = float(getattr(self.stress, "latency", 0.0))
+        latency_factor = max(0.0, latency_factor)
+        if base <= 0.0 or latency_factor <= 0.0:
+            return 0
+        delay = int(round(base * latency_factor))
+        return 1 if delay <= 0 else delay
 
     def _resolve_constraints(self, exchange: str, market_mode: str) -> VenueConstraints:
         min_qty = self.exchange_min_qty.get(exchange)
@@ -827,7 +849,7 @@ class EventDrivenBacktestEngine:
                                 base_latency = self.exchange_latency.get(
                                     exchange, self.latency
                                 )
-                                delay = max(1, int(base_latency * self.stress.latency))
+                                delay = self._effective_delay(exchange, base_latency)
                                 exec_index = i + delay
                                 queue_pos = 0.0
                                 if self.use_l2:
@@ -886,7 +908,7 @@ class EventDrivenBacktestEngine:
                                 base_latency = self.exchange_latency.get(
                                     exchange, self.latency
                                 )
-                                delay = max(1, int(base_latency * self.stress.latency))
+                                delay = self._effective_delay(exchange, base_latency)
                                 exec_index = i + delay
                                 queue_pos = 0.0
                                 if self.use_l2:
@@ -1521,7 +1543,7 @@ class EventDrivenBacktestEngine:
                         svc.account.update_open_order(symbol, side, qty)
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
-                        delay = max(1, int(base_latency * self.stress.latency))
+                        delay = self._effective_delay(exchange, base_latency)
                         exec_index = i + delay
                         queue_pos = 0.0
                         if self.use_l2:
@@ -1614,7 +1636,7 @@ class EventDrivenBacktestEngine:
                     svc.account.update_open_order(symbol, side, qty)
                     exchange = self.strategy_exchange[(strat_name, symbol)]
                     base_latency = self.exchange_latency.get(exchange, self.latency)
-                    delay = max(1, int(base_latency * self.stress.latency))
+                    delay = self._effective_delay(exchange, base_latency)
                     exec_index = i + delay
                     queue_pos = 0.0
                     if self.use_l2:
@@ -1696,7 +1718,7 @@ class EventDrivenBacktestEngine:
                         side = "buy" if delta > 0 else "sell"
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
-                        delay = max(1, int(base_latency * self.stress.latency))
+                        delay = self._effective_delay(exchange, base_latency)
                         exec_index = i + delay
                         order_seq += 1
                         order = Order(

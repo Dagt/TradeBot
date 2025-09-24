@@ -175,6 +175,18 @@ class Momentum(Strategy):
             if pd.isna(vol) or vol < min_volatility:
                 return None
 
+        abs_price = max(abs(price), 1e-9)
+        price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
+        bar["volatility"] = price_vol
+        target_vol = price_vol
+        drops = vol_series.dropna()
+        if not drops.empty:
+            median_window = min(len(drops), max(vol_window, MIN_BARS))
+            target_candidate = float(drops.iloc[-median_window:].median())
+            if math.isfinite(target_candidate) and target_candidate > 0:
+                target_vol = abs_price * max(target_candidate, vol)
+        bar["target_volatility"] = target_vol
+
         # Momentum rules with RSI and ROC confirmation in all timeframes
         side: str | None = None
         rsi_thresh = self.auto_threshold(symbol, last_rsi, n=rsi_n) if self.use_rsi else 50.0
@@ -205,7 +217,12 @@ class Momentum(Strategy):
 
         if self.risk_service is not None:
             stop_mult = 1.5 if tf_min <= 5 else 2.0
-            qty = self.risk_service.calc_position_size(strength, price)
+            qty = self.risk_service.calc_position_size(
+                strength,
+                price,
+                volatility=bar.get("volatility"),
+                target_volatility=bar.get("target_volatility"),
+            )
             stop = self.risk_service.initial_stop(
                 price, side, atr_val, atr_mult=stop_mult
             )
@@ -221,6 +238,7 @@ class Momentum(Strategy):
                 "qty": qty,
                 "stop": stop,
                 "atr": atr_val,
+                "target_volatility": bar.get("target_volatility"),
                 "bars_held": 0,
                 "max_hold": max_hold,
             }
