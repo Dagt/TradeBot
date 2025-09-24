@@ -133,6 +133,7 @@ class Order:
     exchange: str = field(default="default", compare=False)
     place_price: float = field(default=0.0, compare=False)
     limit_price: float | None = field(default=None, compare=False)
+    mark_price: float = field(default=0.0, compare=False)
     remaining_qty: float = field(default=0.0, compare=False)
     filled_qty: float = field(default=0.0, compare=False)
     total_cost: float = field(default=0.0, compare=False)
@@ -738,23 +739,24 @@ class EventDrivenBacktestEngine:
                                 svc.account.update_open_order(sym, side, qty)
                                 order_seq += 1
                                 order = Order(
-                                    exec_index,
-                                    order_seq,
-                                    i,
-                                    strat,
-                                    sym,
-                                    side,
-                                    qty,
-                                    exchange,
-                                    price,
-                                    price,
-                                    qty,
-                                    0.0,
-                                    0.0,
-                                    queue_pos,
-                                    None,
-                                    False,
-                                    None,
+                                    execute_index=exec_index,
+                                    order_id=order_seq,
+                                    place_index=i,
+                                    strategy=strat,
+                                    symbol=sym,
+                                    side=side,
+                                    qty=qty,
+                                    exchange=exchange,
+                                    place_price=price,
+                                    limit_price=price,
+                                    mark_price=price,
+                                    remaining_qty=qty,
+                                    filled_qty=0.0,
+                                    total_cost=0.0,
+                                    queue_pos=queue_pos,
+                                    latency=None,
+                                    post_only=False,
+                                    trailing_pct=None,
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
@@ -796,23 +798,24 @@ class EventDrivenBacktestEngine:
                                 svc.account.update_open_order(sym, side, qty)
                                 order_seq += 1
                                 order = Order(
-                                    exec_index,
-                                    order_seq,
-                                    i,
-                                    strat,
-                                    sym,
-                                    side,
-                                    qty,
-                                    exchange,
-                                    price,
-                                    price,
-                                    qty,
-                                    0.0,
-                                    0.0,
-                                    queue_pos,
-                                    None,
-                                    False,
-                                    None,
+                                    execute_index=exec_index,
+                                    order_id=order_seq,
+                                    place_index=i,
+                                    strategy=strat,
+                                    symbol=sym,
+                                    side=side,
+                                    qty=qty,
+                                    exchange=exchange,
+                                    place_price=price,
+                                    limit_price=price,
+                                    mark_price=price,
+                                    remaining_qty=qty,
+                                    filled_qty=0.0,
+                                    total_cost=0.0,
+                                    queue_pos=queue_pos,
+                                    latency=None,
+                                    post_only=False,
+                                    trailing_pct=None,
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
@@ -1258,38 +1261,73 @@ class EventDrivenBacktestEngine:
                         if tf_val is not None:
                             bar_arrays["timeframe"] = tf_val
                         sig = strat.on_bar(bar_arrays)
-                    limit_price = (
+                    raw_limit = (
                         sig.get("limit_price")
                         if isinstance(sig, dict)
                         else getattr(sig, "limit_price", None)
                     )
+                    market_price = float(arrs["close"][i])
+                    limit_price = None
+                    if raw_limit is not None:
+                        try:
+                            limit_candidate = float(raw_limit)
+                        except (TypeError, ValueError):
+                            limit_candidate = None
+                        else:
+                            if math.isfinite(limit_candidate):
+                                limit_price = limit_candidate
                     if limit_price is None:
-                        place_price = float(arrs["close"][i])
-                    else:
-                        place_price = float(limit_price)
-                        limit_price = place_price
-                    svc.mark_price(symbol, place_price)
+                        limit_price = market_price
+                    if isinstance(sig, dict):
+                        sig["limit_price"] = limit_price
+                    elif hasattr(sig, "__dict__"):
+                        setattr(sig, "limit_price", limit_price)
+                    mark_price = market_price
+                    price_for_order = limit_price if limit_price is not None else mark_price
+                    svc.mark_price(symbol, mark_price)
                     if equity < 0:
                         continue
                     if trade:
-                        trade["current_price"] = place_price
+                        trade["current_price"] = mark_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
-                        limit_price = (
+                        raw_limit = (
                             sig.get("limit_price")
                             if isinstance(sig, dict)
                             else getattr(sig, "limit_price", None)
                         )
+                        market_price = float(arrs["close"][i])
+                        limit_price = None
+                        if raw_limit is not None:
+                            try:
+                                limit_candidate = float(raw_limit)
+                            except (TypeError, ValueError):
+                                limit_candidate = None
+                            else:
+                                if math.isfinite(limit_candidate):
+                                    limit_price = limit_candidate
                         if limit_price is None:
-                            place_price = float(arrs["close"][i])
-                        else:
-                            place_price = float(limit_price)
-                            limit_price = place_price
-                        svc.mark_price(symbol, place_price)
+                            limit_price = market_price
+                        if isinstance(sig, dict):
+                            sig["limit_price"] = limit_price
+                        elif hasattr(sig, "__dict__"):
+                            setattr(sig, "limit_price", limit_price)
+                        mark_price = market_price
+                        price_for_order = limit_price if limit_price is not None else mark_price
+                        svc.mark_price(symbol, mark_price)
+                        if decision in {"close", "scale_in", "scale_out"}:
+                            limit_price = mark_price
+                            price_for_order = mark_price
+                            if isinstance(sig, dict):
+                                sig["limit_price"] = limit_price
+                            elif hasattr(sig, "__dict__"):
+                                setattr(sig, "limit_price", limit_price)
                         if decision == "close":
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
-                            target = svc.calc_position_size(sig.strength, place_price, clamp=False)
+                            target = svc.calc_position_size(
+                                sig.strength, mark_price, clamp=False
+                            )
                             delta_qty = target - abs(pos_qty)
                         else:
                             continue
@@ -1306,14 +1344,14 @@ class EventDrivenBacktestEngine:
                             )
                         qty = adjust_qty(
                             qty_raw,
-                            place_price,
+                            price_for_order,
                             constraints.min_notional or None,
                             constraints.step_size or None,
                             constraints.min_qty or None,
                         )
                         if qty <= 0:
                             continue
-                        notional = qty * place_price
+                        notional = qty * mark_price
                         if not svc.register_order(symbol, notional):
                             continue
                         svc.account.update_open_order(symbol, side, qty)
@@ -1333,23 +1371,24 @@ class EventDrivenBacktestEngine:
                         post_only = bool(getattr(sig, "post_only", False))
                         order_seq += 1
                         order = Order(
-                            exec_index,
-                            order_seq,
-                            i,
-                            strat_name,
-                            symbol,
-                            side,
-                            qty,
-                            exchange,
-                            place_price,
-                            limit_price,
-                            qty,
-                            0.0,
-                            0.0,
-                            queue_pos,
-                            None,
-                            post_only,
-                            None,
+                            execute_index=exec_index,
+                            order_id=order_seq,
+                            place_index=i,
+                            strategy=strat_name,
+                            symbol=symbol,
+                            side=side,
+                            qty=qty,
+                            exchange=exchange,
+                            place_price=price_for_order,
+                            limit_price=limit_price,
+                            mark_price=mark_price,
+                            remaining_qty=qty,
+                            filled_qty=0.0,
+                            total_cost=0.0,
+                            queue_pos=queue_pos,
+                            latency=None,
+                            post_only=post_only,
+                            trailing_pct=None,
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)
@@ -1368,7 +1407,7 @@ class EventDrivenBacktestEngine:
                     allowed, _reason, delta = svc.check_order(
                         symbol,
                         sig.side,
-                        place_price,
+                        mark_price,
                         strength=sig.strength,
                         pending_qty=pending,
                         volatility=atr_map.get(symbol),
@@ -1379,14 +1418,14 @@ class EventDrivenBacktestEngine:
                     side = "buy" if delta > 0 else "sell"
                     qty = adjust_qty(
                         abs(delta),
-                        place_price,
+                        price_for_order,
                         constraints.min_notional or None,
                         constraints.step_size or None,
                         constraints.min_qty or None,
                     )
                     if qty <= 0:
                         continue
-                    notional = qty * place_price
+                    notional = qty * mark_price
                     if not svc.register_order(symbol, notional):
                         continue
                     svc.account.update_open_order(symbol, side, qty)
@@ -1404,23 +1443,24 @@ class EventDrivenBacktestEngine:
                     post_only = bool(getattr(sig, "post_only", False))
                     order_seq += 1
                     order = Order(
-                        exec_index,
-                        order_seq,
-                        i,
-                        strat_name,
-                        symbol,
-                        side,
-                        qty,
-                        exchange,
-                        place_price,
-                        limit_price,
-                        qty,
-                        0.0,
-                        0.0,
-                        queue_pos,
-                        None,
-                        post_only,
-                        None,
+                        execute_index=exec_index,
+                        order_id=order_seq,
+                        place_index=i,
+                        strategy=strat_name,
+                        symbol=symbol,
+                        side=side,
+                        qty=qty,
+                        exchange=exchange,
+                        place_price=price_for_order,
+                        limit_price=limit_price,
+                        mark_price=mark_price,
+                        remaining_qty=qty,
+                        filled_qty=0.0,
+                        total_cost=0.0,
+                        queue_pos=queue_pos,
+                        latency=None,
+                        post_only=post_only,
+                        trailing_pct=None,
                     )
                     orders.append(order)
                     heapq.heappush(order_queue, order)
@@ -1471,33 +1511,34 @@ class EventDrivenBacktestEngine:
                         )
                         if qty <= 0 or qty < constraints.min_qty:
                             continue
-                            side = "buy" if delta > 0 else "sell"
-                            exchange = self.strategy_exchange[(strat_name, symbol)]
-                            base_latency = self.exchange_latency.get(exchange, self.latency)
-                            delay = max(1, int(base_latency * self.stress.latency))
-                            exec_index = i + delay
-                            order_seq += 1
-                            order = Order(
-                                exec_index,
-                                order_seq,
-                                i,
-                                strat_name,
-                                symbol,
-                                side,
-                                qty,
-                                exchange,
-                                current_price,
-                                None,
-                                qty,
-                                0.0,
-                                0.0,
-                                0.0,
-                                None,
-                                False,
-                                None,
-                            )
-                            orders.append(order)
-                            heapq.heappush(order_queue, order)
+                        side = "buy" if delta > 0 else "sell"
+                        exchange = self.strategy_exchange[(strat_name, symbol)]
+                        base_latency = self.exchange_latency.get(exchange, self.latency)
+                        delay = max(1, int(base_latency * self.stress.latency))
+                        exec_index = i + delay
+                        order_seq += 1
+                        order = Order(
+                            execute_index=exec_index,
+                            order_id=order_seq,
+                            place_index=i,
+                            strategy=strat_name,
+                            symbol=symbol,
+                            side=side,
+                            qty=qty,
+                            exchange=exchange,
+                            place_price=current_price,
+                            limit_price=None,
+                            mark_price=current_price,
+                            remaining_qty=qty,
+                            filled_qty=0.0,
+                            total_cost=0.0,
+                            queue_pos=0.0,
+                            latency=None,
+                            post_only=False,
+                            trailing_pct=None,
+                        )
+                        orders.append(order)
+                        heapq.heappush(order_queue, order)
 
             # Track equity after processing each bar
             mtm = sum(
@@ -1640,6 +1681,7 @@ class EventDrivenBacktestEngine:
                 "qty": o.qty,
                 "filled": o.filled_qty,
                 "place_price": o.place_price,
+                "mark_price": o.mark_price,
                 "avg_price": o.total_cost / o.filled_qty if o.filled_qty else 0.0,
                 "exchange": o.exchange,
                 "latency": o.latency,
