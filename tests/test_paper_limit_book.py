@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from tradingbot.execution.paper import PaperAdapter, PaperPosition
+from tradingbot.execution.paper import PaperAdapter, PaperPosition, PRICE_TOLERANCE
 from tradingbot.backtesting.engine import SlippageModel
 
 
@@ -18,11 +18,51 @@ async def test_post_only_limit_rests_then_maker_fill():
     assert res["status"] == "new"
     assert res["pending_qty"] == pytest.approx(1.0)
 
-    fills = adapter.update_last_price("BTC/USDT", 105.0, qty=1.0)
+    fill_price = res["price"]
+    fills = adapter.update_last_price("BTC/USDT", fill_price, qty=1.0)
     fill = [f for f in fills if f.get("order_id") == res["order_id"]][0]
     assert fill["status"] == "filled"
     assert fill["qty"] == pytest.approx(1.0)
     assert fill["fee_type"] == "maker"
+
+
+@pytest.mark.asyncio
+async def test_post_only_limit_adjusts_price_to_book_best_ask():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 100.0)
+    book = {"bid": 99.0, "ask": 101.0}
+    res = await adapter.place_order(
+        "BTC/USDT",
+        "buy",
+        "limit",
+        1.0,
+        price=105.0,
+        post_only=True,
+        book=book,
+    )
+    assert res["status"] == "new"
+    assert res["price"] == pytest.approx(book["ask"] - PRICE_TOLERANCE)
+    assert res["pending_qty"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_post_only_limit_rejects_when_best_ask_non_positive():
+    adapter = PaperAdapter()
+    adapter.state.cash = 1000.0
+    adapter.update_last_price("BTC/USDT", 1.0)
+    book = {"bid": 0.0, "ask": 0.0}
+    res = await adapter.place_order(
+        "BTC/USDT",
+        "buy",
+        "limit",
+        1.0,
+        price=0.01,
+        post_only=True,
+        book=book,
+    )
+    assert res["status"] == "rejected"
+    assert res["reason"] == "post_only_invalid_reference"
 
 
 @pytest.mark.asyncio
@@ -148,16 +188,20 @@ async def test_limit_order_queue_simulation():
         "BTC/USDT", "buy", "limit", 5.0, price=99.0, book={"ask_size": 5.0}
     )
     assert res["status"] == "new"
-    adapter.update_last_price(
-        "BTC/USDT", 99.0, qty=5.0, book={"ask_size": 5.0}
+    fills_partial = adapter.update_last_price(
+        "BTC/USDT", 99.0, qty=5.0, book={"ask_size": 8.0, "volume": 100.0}
     )
-    fills = adapter.update_last_price(
-        "BTC/USDT", 99.0, qty=3.0, book={"ask_size": 3.0}
+    partial = fills_partial[0]
+    assert partial["status"] == "partial"
+    assert partial["qty"] == pytest.approx(3.0)
+    assert partial["pending_qty"] == pytest.approx(2.0)
+    fills_final = adapter.update_last_price(
+        "BTC/USDT", 99.0, qty=2.0, book={"ask_size": 2.0, "volume": 100.0}
     )
-    fill = fills[0]
-    assert fill["status"] == "partial"
-    assert fill["qty"] == pytest.approx(3.0)
-    assert fill["pending_qty"] == pytest.approx(2.0)
+    final = fills_final[0]
+    assert final["status"] == "filled"
+    assert final["qty"] == pytest.approx(2.0)
+    assert final["pending_qty"] == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio

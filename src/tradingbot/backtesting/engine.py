@@ -595,6 +595,121 @@ class EventDrivenBacktestEngine:
     def _strategy_constraints(self, key: Tuple[str, str]) -> VenueConstraints:
         return self.strategy_constraints.get(key, self.default_constraints)
 
+    def _enforce_post_only_limit(
+        self,
+        *,
+        side: str,
+        limit_price: float | None,
+        mark_price: float,
+        arrs: Mapping[str, Any],
+        index: int,
+        strat_name: str,
+        symbol: str,
+    ) -> float | None:
+        """Ensure a post-only order stays on the maker side or return ``None``."""
+
+        if limit_price is None or not math.isfinite(limit_price):
+            log.info(
+                "Rejected post-only %s order for %s/%s: missing limit",
+                side,
+                strat_name,
+                symbol,
+            )
+            return None
+
+        def _safe_price(key: str) -> float | None:
+            arr = arrs.get(key)
+            if arr is None:
+                return None
+            try:
+                value = float(arr[index])
+            except (TypeError, ValueError):
+                return None
+            if math.isnan(value):
+                return None
+            return value
+
+        best_bid = _safe_price("bid")
+        best_ask = _safe_price("ask")
+        close_px = _safe_price("close")
+        if close_px is None or not math.isfinite(close_px):
+            close_px = mark_price
+        ref_price = best_ask if side == "buy" else best_bid
+        if ref_price is None or not math.isfinite(ref_price):
+            ref_price = close_px
+        if ref_price is None or not math.isfinite(ref_price):
+            log.info(
+                "Rejected post-only %s order for %s/%s: no reference price",
+                side,
+                strat_name,
+                symbol,
+            )
+            return None
+
+        def _fmt(value: float | None) -> str:
+            return f"{value:.10g}" if value is not None and math.isfinite(value) else "nan"
+
+        adjusted = limit_price
+        if side == "buy":
+            threshold = ref_price - PRICE_TOLERANCE
+            if not math.isfinite(threshold) or threshold <= 0.0:
+                log.info(
+                    "Rejected post-only buy order for %s/%s: invalid threshold %s",
+                    strat_name,
+                    symbol,
+                    _fmt(threshold),
+                )
+                return None
+            if limit_price > threshold:
+                adjusted = min(limit_price, threshold)
+                if adjusted <= 0.0 or adjusted >= ref_price:
+                    log.info(
+                        "Rejected post-only buy order for %s/%s: limit %s vs ask %s",
+                        strat_name,
+                        symbol,
+                        _fmt(limit_price),
+                        _fmt(ref_price),
+                    )
+                    return None
+                log.info(
+                    "Adjusted post-only buy order for %s/%s: limit %s -> %s (best ask %s)",
+                    strat_name,
+                    symbol,
+                    _fmt(limit_price),
+                    _fmt(adjusted),
+                    _fmt(ref_price),
+                )
+        else:
+            threshold = ref_price + PRICE_TOLERANCE
+            if not math.isfinite(threshold):
+                log.info(
+                    "Rejected post-only sell order for %s/%s: invalid threshold %s",
+                    strat_name,
+                    symbol,
+                    _fmt(threshold),
+                )
+                return None
+            if limit_price < threshold:
+                adjusted = max(limit_price, threshold)
+                if adjusted <= 0.0 or adjusted <= ref_price:
+                    log.info(
+                        "Rejected post-only sell order for %s/%s: limit %s vs bid %s",
+                        strat_name,
+                        symbol,
+                        _fmt(limit_price),
+                        _fmt(ref_price),
+                    )
+                    return None
+                log.info(
+                    "Adjusted post-only sell order for %s/%s: limit %s -> %s (best bid %s)",
+                    strat_name,
+                    symbol,
+                    _fmt(limit_price),
+                    _fmt(adjusted),
+                    _fmt(ref_price),
+                )
+        return adjusted
+
     # ------------------------------------------------------------------
     def run(self, fills_csv: str | None = None) -> dict:
         """Execute the backtest and return summary results.
@@ -1013,16 +1128,12 @@ class EventDrivenBacktestEngine:
                     slip_cash = 0.0
                     slippage_pnl = 0.0
                 else:
-                    expected_price = (
-                        float(order.mark_price)
-                        if order.mark_price
-                        else float(order.place_price)
+                    slip = (
+                        float(order.place_price) - price
+                        if order.side == "buy"
+                        else price - float(order.place_price)
                     )
-                    if order.side == "buy":
-                        slip = expected_price - price
-                    else:
-                        slip = price - expected_price
-                    slip_cash = slip * fill_qty
+                    slip_cash = -slip * fill_qty
                     slippage_total += slip_cash
                     slippage_pnl = slip_cash
                 was_post_only_maker = order.post_only and fill_respects_limit
@@ -1032,12 +1143,14 @@ class EventDrivenBacktestEngine:
                 fee_cost = fee_model.calculate(trade_value, maker=maker)
                 prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 if order.side == "buy":
-                    cash -= trade_value + fee_cost
+                    delta_cash = -(trade_value + fee_cost)
                 else:
-                    cash += trade_value - fee_cost
-                sync_cash()
+                    delta_cash = trade_value - fee_cost
+                cash += delta_cash
+                svc.account.update_cash(delta_cash)
                 prev_qty = svc.account.current_exposure(order.symbol)[0]
                 svc.on_fill(order.symbol, order.side, fill_qty, price)
+                sync_cash()
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
                 realized_pnl_total += realized_pnl
@@ -1205,12 +1318,14 @@ class EventDrivenBacktestEngine:
                         slippage_pnl = 0.0
                     prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     if side == "sell":
-                        cash += trade_value - fee_cost
+                        delta_cash = trade_value - fee_cost
                     else:
-                        cash -= trade_value + fee_cost
-                    sync_cash()
+                        delta_cash = -(trade_value + fee_cost)
+                    cash += delta_cash
+                    svc.account.update_cash(delta_cash)
                     prev_qty = svc.account.current_exposure(symbol)[0]
                     svc.on_fill(symbol, side, exit_qty, exit_price)
+                    sync_cash()
                     new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
                     realized_pnl_total += realized_pnl
@@ -1371,10 +1486,29 @@ class EventDrivenBacktestEngine:
                                 if delta_qty > 0
                                 else ("sell" if trade["side"] == "buy" else "buy")
                             )
-                        limit_for_sizing = limit_price if limit_price is not None else mark_price
+                        post_only = bool(getattr(sig, "post_only", False))
+                        if post_only:
+                            enforced_limit = self._enforce_post_only_limit(
+                                side=side,
+                                limit_price=limit_price,
+                                mark_price=mark_price,
+                                arrs=arrs,
+                                index=i,
+                                strat_name=strat_name,
+                                symbol=symbol,
+                            )
+                            if enforced_limit is None:
+                                continue
+                            if enforced_limit != limit_price:
+                                limit_price = enforced_limit
+                                if isinstance(sig, dict):
+                                    sig["limit_price"] = limit_price
+                                elif hasattr(sig, "__dict__"):
+                                    setattr(sig, "limit_price", limit_price)
+                        price_for_order = limit_price if limit_price is not None else mark_price
                         qty = adjust_qty(
                             qty_raw,
-                            limit_for_sizing,
+                            price_for_order,
                             constraints.min_notional or None,
                             constraints.step_size or None,
                             constraints.min_qty or None,
@@ -1398,7 +1532,6 @@ class EventDrivenBacktestEngine:
                             vol_arr = arrs.get(vol_key)
                             avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                             queue_pos = min(avail, depth)
-                        post_only = bool(getattr(sig, "post_only", False))
                         order_seq += 1
                         order = Order(
                             execute_index=exec_index,
@@ -1409,7 +1542,7 @@ class EventDrivenBacktestEngine:
                             side=side,
                             qty=qty,
                             exchange=exchange,
-                            place_price=mark_price,
+                            place_price=price_for_order,
                             limit_price=limit_price,
                             mark_price=mark_price,
                             remaining_qty=qty,
@@ -1446,10 +1579,29 @@ class EventDrivenBacktestEngine:
                     if not allowed or abs(delta) < constraints.min_qty:
                         continue
                     side = "buy" if delta > 0 else "sell"
-                    limit_for_sizing = limit_price if limit_price is not None else mark_price
+                    post_only = bool(getattr(sig, "post_only", False))
+                    if post_only:
+                        enforced_limit = self._enforce_post_only_limit(
+                            side=side,
+                            limit_price=limit_price,
+                            mark_price=mark_price,
+                            arrs=arrs,
+                            index=i,
+                            strat_name=strat_name,
+                            symbol=symbol,
+                        )
+                        if enforced_limit is None:
+                            continue
+                        if enforced_limit != limit_price:
+                            limit_price = enforced_limit
+                            if isinstance(sig, dict):
+                                sig["limit_price"] = limit_price
+                            elif hasattr(sig, "__dict__"):
+                                setattr(sig, "limit_price", limit_price)
+                    price_for_order = limit_price if limit_price is not None else mark_price
                     qty = adjust_qty(
                         abs(delta),
-                        limit_for_sizing,
+                        price_for_order,
                         constraints.min_notional or None,
                         constraints.step_size or None,
                         constraints.min_qty or None,
@@ -1471,7 +1623,6 @@ class EventDrivenBacktestEngine:
                         vol_arr = arrs.get(vol_key)
                         avail = float(vol_arr[i]) if vol_arr is not None else 0.0
                         queue_pos = min(avail, depth)
-                    post_only = bool(getattr(sig, "post_only", False))
                     order_seq += 1
                     order = Order(
                         execute_index=exec_index,
@@ -1482,7 +1633,7 @@ class EventDrivenBacktestEngine:
                         side=side,
                         qty=qty,
                         exchange=exchange,
-                        place_price=mark_price,
+                        place_price=price_for_order,
                         limit_price=limit_price,
                         mark_price=mark_price,
                         remaining_qty=qty,
@@ -1642,15 +1793,17 @@ class EventDrivenBacktestEngine:
                 if include_liq_slip and not post_only_entry:
                     slippage_total += slippage_pnl
                 prev_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
+                if side == "sell":
+                    delta_cash = trade_value - fee_cost
+                else:
+                    delta_cash = -(trade_value + fee_cost)
+                cash += delta_cash
+                svc.account.update_cash(delta_cash)
                 svc.on_fill(symbol, side, qty, last_price)
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
                 realized_pnl_total += realized_pnl
                 svc.pos.realized_pnl = prev_rpnl + realized_pnl
-                if side == "sell":
-                    cash += trade_value - fee_cost
-                else:
-                    cash -= trade_value + fee_cost
                 sync_cash()
                 fill_count += 1
                 post_only_flags.pop((strat_name, symbol), None)

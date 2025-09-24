@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import time
-import inspect
-import uuid
 import contextlib
+import inspect
+import math
+import time
+import uuid
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple, TYPE_CHECKING
 
@@ -33,6 +34,14 @@ if TYPE_CHECKING:
     from ..risk.service import RiskService
 
 log = get_logger(__name__)
+
+PRICE_TOLERANCE = 1e-9
+
+
+def ceil_to_step(x: float, step: float | None) -> float:
+    if step in (None, 0):
+        return x
+    return round(math.ceil(x / step) * step, 12)
 
 
 class ExecutionRouter:
@@ -400,6 +409,159 @@ class ExecutionRouter:
                     order._min_notional = float(min_notional_attr)
                 except (TypeError, ValueError):
                     order._min_notional = None
+        best_bid = None
+        best_ask = None
+        if order.post_only:
+            def _safe_price(value):
+                try:
+                    val = float(value)
+                except (TypeError, ValueError):
+                    return None
+                return val if math.isfinite(val) else None
+
+            def _best_from_book(book_data, *, is_ask: bool) -> float | None:
+                if not book_data or not hasattr(book_data, "get"):
+                    return None
+                levels_key = "asks" if is_ask else "bids"
+                levels = book_data.get(levels_key)
+                if levels:
+                    try:
+                        first = levels[0]
+                        price = float(first[0])
+                    except (TypeError, ValueError, IndexError):
+                        price = None
+                    if price is not None and math.isfinite(price):
+                        return price
+                keys = (
+                    ("ask", "ask_px", "ask_price", "best_ask")
+                    if is_ask
+                    else ("bid", "bid_px", "bid_price", "best_bid")
+                )
+                for key in keys:
+                    price = _safe_price(book_data.get(key))
+                    if price is not None:
+                        return price
+                return None
+
+            book_candidates: list = []
+            if book_hint:
+                book_candidates.append(book_hint)
+            if book:
+                book_candidates.append(book)
+            depth_snapshot = (
+                getattr(state, "depth_snapshot", {}).get(order.symbol)
+                if state and hasattr(state, "depth_snapshot")
+                else None
+            )
+            if depth_snapshot:
+                book_candidates.append(depth_snapshot)
+            for candidate in book_candidates:
+                if best_bid is None:
+                    best_bid = _best_from_book(candidate, is_ask=False)
+                if best_ask is None:
+                    best_ask = _best_from_book(candidate, is_ask=True)
+                if best_bid is not None and best_ask is not None:
+                    break
+            try:
+                limit_before = float(order.price) if order.price is not None else None
+            except (TypeError, ValueError):
+                limit_before = None
+            if limit_before is None or not math.isfinite(limit_before):
+                log.info("Rejecting post-only order %s on %s: missing limit", order, venue)
+                SKIPS.inc()
+                return {"status": "rejected", "reason": "post_only_no_price"}
+            fallback_price = float(mark_price or 0.0)
+            ref_price = best_ask if order.side == "buy" else best_bid
+            if ref_price is None:
+                ref_price = fallback_price
+            if ref_price is None or not math.isfinite(ref_price):
+                log.info(
+                    "Rejecting post-only %s order for %s on %s: no reference price (limit=%s)",
+                    order.side,
+                    order.symbol,
+                    venue,
+                    f"{limit_before:.10g}" if math.isfinite(limit_before) else "nan",
+                )
+                SKIPS.inc()
+                return {"status": "rejected", "reason": "post_only_no_reference"}
+            step = None
+            if rules and getattr(rules, "price_step", None):
+                try:
+                    step_val = float(rules.price_step)
+                except (TypeError, ValueError):
+                    step_val = None
+                else:
+                    if step_val > 0:
+                        step = step_val
+            fmt = lambda v: f"{v:.10g}" if v is not None and math.isfinite(v) else "nan"
+            new_limit = limit_before
+            if order.side == "buy":
+                threshold = ref_price - PRICE_TOLERANCE
+                if not math.isfinite(threshold) or threshold <= 0.0:
+                    log.info(
+                        "Rejecting post-only buy order for %s on %s: invalid threshold %s",
+                        order.symbol,
+                        venue,
+                        fmt(threshold),
+                    )
+                    SKIPS.inc()
+                    return {"status": "rejected", "reason": "post_only_invalid_reference"}
+                if limit_before > threshold:
+                    new_limit = min(limit_before, threshold)
+                    if step:
+                        new_limit = floor_to_step(new_limit, step)
+                    if new_limit <= 0.0 or new_limit >= ref_price:
+                        log.info(
+                            "Rejecting post-only buy order for %s on %s: limit %s vs ask %s",
+                            order.symbol,
+                            venue,
+                            fmt(limit_before),
+                            fmt(ref_price),
+                        )
+                        SKIPS.inc()
+                        return {"status": "rejected", "reason": "post_only_would_cross"}
+                    log.info(
+                        "Adjusted post-only buy order for %s on %s: limit %s -> %s (best ask %s)",
+                        order.symbol,
+                        venue,
+                        fmt(limit_before),
+                        fmt(new_limit),
+                        fmt(ref_price),
+                    )
+            else:
+                threshold = ref_price + PRICE_TOLERANCE
+                if not math.isfinite(threshold):
+                    log.info(
+                        "Rejecting post-only sell order for %s on %s: invalid threshold %s",
+                        order.symbol,
+                        venue,
+                        fmt(threshold),
+                    )
+                    SKIPS.inc()
+                    return {"status": "rejected", "reason": "post_only_invalid_reference"}
+                if limit_before < threshold:
+                    new_limit = max(limit_before, threshold)
+                    if step:
+                        new_limit = ceil_to_step(new_limit, step)
+                    if new_limit <= 0.0 or new_limit <= ref_price:
+                        log.info(
+                            "Rejecting post-only sell order for %s on %s: limit %s vs bid %s",
+                            order.symbol,
+                            venue,
+                            fmt(limit_before),
+                            fmt(ref_price),
+                        )
+                        SKIPS.inc()
+                        return {"status": "rejected", "reason": "post_only_would_cross"}
+                    log.info(
+                        "Adjusted post-only sell order for %s on %s: limit %s -> %s (best bid %s)",
+                        order.symbol,
+                        venue,
+                        fmt(limit_before),
+                        fmt(new_limit),
+                        fmt(ref_price),
+                    )
+            order.price = new_limit
         if rules is not None:
             adj = adjust_order(order.price, order.qty, float(mark_price or 0.0), rules, order.side)
             if not adj.ok:
