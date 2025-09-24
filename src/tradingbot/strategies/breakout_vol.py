@@ -168,6 +168,15 @@ class BreakoutVol(Strategy):
         if side is None:
             return self.finalize_signal(bar, last, None)
         sig = Signal(side, size)
+        volatility_ref = atr_val if atr_val > 0 else std
+        if volatility_ref <= 0:
+            volatility_ref = max(abs(last) * 0.001, 1e-6)
+        buffer_factor = 0.5
+        offset = volatility_ref * buffer_factor
+        if sig.side == "buy":
+            sig.limit_price = last + offset
+        else:
+            sig.limit_price = last - offset
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(size, last)
             stop = self.risk_service.initial_stop(last, side, vol)
