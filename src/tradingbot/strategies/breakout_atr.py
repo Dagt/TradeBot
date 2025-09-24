@@ -132,11 +132,11 @@ class BreakoutATR(Strategy):
 
         base = self.base_offset_frac
         if tf_mult <= 1:
-            return base
-        if tf_mult <= 3:
             return base * 0.75
-        scale = max(tf_mult ** 0.5, 1.5)
-        return base * min(scale, 6.0)
+        if tf_mult <= 3:
+            return base * 0.6
+        scale = max(tf_mult ** 0.5, 1.2)
+        return base * min(scale, 3.0)
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -183,6 +183,7 @@ class BreakoutATR(Strategy):
         atr_bps = atr_val / abs(last_close) * 10000 if last_close else 0.0
         # Expose current ATR so runners and the RiskManager can adapt sizing
         bar["atr"] = atr_val
+        bar["volatility"] = atr_val
 
         if tf_mult <= 1:
             vol_q = 0.3
@@ -193,6 +194,7 @@ class BreakoutATR(Strategy):
 
         window = min(len(atr_series), self.atr_n * 5)
         symbol = bar.get("symbol", "")
+        target_vol = atr_val
         if window >= self.atr_n * 2:
             rq_atr = self._rq.get(
                 symbol,
@@ -211,7 +213,17 @@ class BreakoutATR(Strategy):
                 min_periods=self.atr_n * 2,
             )
             atr_bps_quant = float(rq_bps.update(atr_bps))
-            if atr_val < atr_quant or atr_bps < atr_bps_quant:
+            atr_floor = 0.0 if not math.isfinite(atr_quant) else 0.85 * atr_quant
+            bps_floor = 0.0 if not math.isfinite(atr_bps_quant) else 0.85 * atr_bps_quant
+            if (
+                math.isfinite(atr_floor)
+                and atr_floor > 0
+                and atr_val < atr_floor
+            ) or (
+                math.isfinite(bps_floor)
+                and bps_floor > 0
+                and atr_bps < bps_floor
+            ):
                 return None
 
             rq_mult = self._rq.get(
@@ -225,7 +237,9 @@ class BreakoutATR(Strategy):
             if not math.isfinite(mult_quant) or not atr_val:
                 self.mult = 1.0
             else:
-                self.mult = mult_quant / atr_val
+                ratio = mult_quant / atr_val if atr_val else 1.0
+                ratio = max(1.0, ratio)
+                self.mult = min(3.5, ratio)
 
             rq_target = self._rq.get(
                 symbol,
@@ -234,11 +248,12 @@ class BreakoutATR(Strategy):
                 q=0.5,
                 min_periods=self.atr_n * 2,
             )
-            target_vol = float(rq_target.update(atr_val))
+            target_val = float(rq_target.update(atr_val))
+            if math.isfinite(target_val) and target_val > 0:
+                target_vol = target_val
             bar["target_volatility"] = target_vol
         else:
             self.mult = 1.0
-            target_vol = atr_val
             bar["target_volatility"] = target_vol
 
         upper, lower = keltner_channels(df, ema_n, atr_n, self.mult)
@@ -257,10 +272,16 @@ class BreakoutATR(Strategy):
             avg_vol = vol_series.iloc[-20:].mean()
             if vol_series.iloc[-1] <= self.volume_factor * avg_vol:
                 return None
-        strength = 1.0
+        strength = 0.6
+        if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
+            strength = max(0.3, min(1.0, atr_bps / atr_bps_quant))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         offset = atr_val * self._offset_fraction(tf_mult)
+        abs_price = max(abs(last_close), 1e-9)
+        max_offset = abs_price * 0.003
+        min_offset = abs_price * 0.0005
+        offset = max(min_offset, min(offset, max_offset))
         if side == "buy":
             ref_price = max(last_close, level)
             sig.limit_price = ref_price + offset
@@ -278,7 +299,12 @@ class BreakoutATR(Strategy):
             self._last_target_vol[symbol] = target_vol
 
         if self.risk_service is not None:
-            qty = self.risk_service.calc_position_size(strength, last_close)
+            qty = self.risk_service.calc_position_size(
+                strength,
+                last_close,
+                volatility=atr_val,
+                target_volatility=target_vol,
+            )
             stop = self.risk_service.initial_stop(
                 last_close, side, atr_val, atr_mult=stop_mult
             )
@@ -288,6 +314,7 @@ class BreakoutATR(Strategy):
                 "qty": qty,
                 "stop": stop,
                 "atr": atr_val,
+                "target_volatility": target_vol,
                 "bars_held": 0,
                 "max_hold": max_hold,
             }

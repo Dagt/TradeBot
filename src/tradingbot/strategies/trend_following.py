@@ -1,4 +1,5 @@
 import math
+import math
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi, calc_ofi
@@ -81,7 +82,7 @@ class TrendFollowing(Strategy):
         vol_series = returns.rolling(lookback_bars).std().dropna()
         vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
         price_abs = price if price > 0 else 1.0
-        min_offset = price_abs * 0.001
+        min_offset = price_abs * 0.0005
         vol_offset = price_abs * abs(vol_bps) / 10000.0 if vol_bps else 0.0
         entry_volatility = max(min_offset, vol_offset)
         window = min(len(vol_series), lookback_bars * 5)
@@ -154,9 +155,16 @@ class TrendFollowing(Strategy):
                     should_set_vol = True
         if should_set_vol:
             bar["volatility"] = entry_volatility
+        base_target_bps = max(vol_bps, self.min_volatility)
+        bar["target_volatility"] = price_abs * (base_target_bps / 10000.0) if base_target_bps > 0 else entry_volatility
 
         if self.risk_service is not None:
-            qty = self.risk_service.calc_position_size(strength, price)
+            qty = self.risk_service.calc_position_size(
+                strength,
+                price,
+                volatility=bar.get("volatility"),
+                target_volatility=bar.get("target_volatility"),
+            )
             atr_val = None
             for candidate in (bar.get("atr"), bar.get("volatility")):
                 if candidate is None:
@@ -178,5 +186,6 @@ class TrendFollowing(Strategy):
                 "qty": qty,
                 "stop": stop,
                 "atr": atr_val,
+                "target_volatility": bar.get("target_volatility"),
             }
         return self.finalize_signal(bar, price, sig)

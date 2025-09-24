@@ -106,6 +106,7 @@ class BreakoutVol(Strategy):
             self.mult = 1.0
 
         last = float(closes.iloc[-1])
+        abs_last = max(abs(last), 1e-9)
         upper = mean + self.mult * std
         lower = mean - self.mult * std
 
@@ -126,6 +127,7 @@ class BreakoutVol(Strategy):
         vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
         vol_bps = vol * 10000
         window = min(len(vol_series), lookback * 5)
+        target_vol = abs_last * vol
         if window >= lookback * 2:
             rq_vol = self._rq.get(
                 symbol,
@@ -144,7 +146,13 @@ class BreakoutVol(Strategy):
             )
             vol_bps_quant = float(rq_vol_bps.update(vol_bps))
             self.min_volatility = vol_bps_quant
-            if vol < vol_quant or vol_bps < vol_bps_quant:
+            slack_vol = 0.85 * vol_quant if math.isfinite(vol_quant) else 0.0
+            slack_bps = 0.85 * vol_bps_quant if math.isfinite(vol_bps_quant) else 0.0
+            if (
+                slack_vol > 0 and vol < slack_vol
+            ) or (
+                slack_bps > 0 and vol_bps < slack_bps
+            ):
                 return None
             # Ajuste dinámico del multiplicador cuando la volatilidad es baja
             low_vol_threshold = vol_quant * 1.5
@@ -152,8 +160,12 @@ class BreakoutVol(Strategy):
                 factor = max(0.5, vol / low_vol_threshold)
                 self.mult *= factor
             self.mult = max(0.5, self.mult)
+            target_base = vol_quant if math.isfinite(vol_quant) and vol_quant > 0 else vol
+            target_vol = abs_last * max(target_base, vol)
         else:
             self.min_volatility = 0.0
+        bar["volatility"] = abs_last * vol
+        bar["target_volatility"] = max(target_vol, 0.0)
 
         size = max(0.0, min(1.0, vol_bps * self.volatility_factor))
 
@@ -173,7 +185,6 @@ class BreakoutVol(Strategy):
             return self.finalize_signal(bar, last, None)
         sig = Signal(side, size)
         buffer_factor = 0.5
-        abs_last = max(abs(last), 1e-9)
         atr_bps = (atr_val / abs_last) * 10000.0 if atr_val > 0 else 0.0
         offset_basis_bps = max(vol_bps, atr_bps)
         if offset_basis_bps <= 0.0:
@@ -197,7 +208,12 @@ class BreakoutVol(Strategy):
         else:
             sig.limit_price = last - offset
         if self.risk_service is not None:
-            qty = self.risk_service.calc_position_size(size, last)
+            qty = self.risk_service.calc_position_size(
+                size,
+                last,
+                volatility=abs_last * vol,
+                target_volatility=bar.get("target_volatility"),
+            )
             stop = self.risk_service.initial_stop(last, side, vol)
             self.trade = {
                 "side": side,
@@ -205,6 +221,7 @@ class BreakoutVol(Strategy):
                 "qty": qty,
                 "stop": stop,
                 "atr": vol,
+                "target_volatility": bar.get("target_volatility"),
                 "atr_price": atr_val,
             }
 

@@ -172,7 +172,7 @@ async def run_paper(
     params: dict | None = None,
     timeframe: str = "1m",
     initial_cash: float = 1000.0,
-    risk_per_trade: float = 1.0,
+    risk_per_trade: float | None = None,
     total_cap_pct: float | None = None,
     per_symbol_cap_pct: float | None = None,
     maker_fee_bps: float | None = None,
@@ -388,12 +388,16 @@ async def run_paper(
     )
     guard.refresh_usd_caps(initial_cash)
     corr = CorrelationService()
+    if risk_per_trade is None:
+        risk_per_trade_val = abs(risk_pct) if risk_pct > 0 else 1.0
+    else:
+        risk_per_trade_val = float(risk_per_trade)
     risk = RiskService(
         guard,
         corr_service=corr,
         account=broker.account,
         risk_pct=risk_pct,
-        risk_per_trade=risk_per_trade,
+        risk_per_trade=risk_per_trade_val,
         market_type=market,
     )
     min_qty_value = min_qty_val if min_qty_val > 0 else 0.0

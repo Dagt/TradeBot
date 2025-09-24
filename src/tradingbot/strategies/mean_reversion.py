@@ -115,13 +115,23 @@ class MeanReversion(Strategy):
                 self._open_bars[sym] = 0
 
         returns = price_series.pct_change().dropna()
-        vol = (
-            returns.rolling(self.rsi_n).std().iloc[-1]
+        vol_series = (
+            returns.rolling(self.rsi_n).std()
             if len(returns) >= self.rsi_n
-            else 0.0
+            else pd.Series(dtype=float)
         )
+        vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
         if vol * 10000 < self.min_volatility:
             return None
+        abs_price = max(abs(price), 1e-9)
+        price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
+        bar["volatility"] = price_vol
+        target_vol = price_vol
+        if len(vol_series.dropna()):
+            target_candidate = float(vol_series.dropna().median())
+            if math.isfinite(target_candidate) and target_candidate > 0:
+                target_vol = abs_price * max(target_candidate, vol)
+        bar["target_volatility"] = target_vol
 
         high = df.get("high")
         low = df.get("low")
@@ -182,7 +192,12 @@ class MeanReversion(Strategy):
 
         sig = Signal(side, strength)
         if self.risk_service is not None:
-            qty = self.risk_service.calc_position_size(strength, price)
+            qty = self.risk_service.calc_position_size(
+                strength,
+                price,
+                volatility=bar.get("volatility"),
+                target_volatility=bar.get("target_volatility"),
+            )
             stop = self.risk_service.initial_stop(price, side, atr_val)
             if (
                 side == "sell"
@@ -196,6 +211,7 @@ class MeanReversion(Strategy):
                 "qty": qty,
                 "stop": stop,
                 "atr": atr_val,
+                "target_volatility": bar.get("target_volatility"),
             }
 
         return self.finalize_signal(bar, price, sig)

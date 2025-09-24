@@ -133,6 +133,11 @@ class ScalpPingPong(Strategy):
             vol_bps = vol * 10000
         if vol_bps < self.cfg.min_volatility:
             return None
+        abs_price = max(abs(price), 1e-9)
+        price_vol = abs_price * (vol_bps / 10000.0)
+        bar["volatility"] = price_vol
+        target_bps = max(vol_bps, self.cfg.min_volatility)
+        bar["target_volatility"] = abs_price * (target_bps / 10000.0)
         # ``vol_bps`` ya está expresada en puntos básicos, por lo que el factor
         # de volatilidad actúa directamente como un multiplicador fraccional.
         # El tamaño final se acota en ``[0, 1]`` para evitar sobre-apalancamiento
