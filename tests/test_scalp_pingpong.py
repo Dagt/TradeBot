@@ -1,9 +1,12 @@
+import math
+
 import pandas as pd
 import yaml
 import pytest
 from tradingbot.core import Account, RiskManager as CoreRiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
+from tradingbot.strategies.base import timeframe_to_minutes
 from tradingbot.strategies.scalp_pingpong import ScalpPingPong, ScalpPingPongConfig
 
 
@@ -98,3 +101,20 @@ def test_scalp_pingpong_honours_min_notional(caplog):
     qty = risk.calc_position_size(sig.strength, bar["window"]["close"].iloc[-1])
     assert qty * bar["window"]["close"].iloc[-1] >= risk.min_notional
     assert "orden submínima" not in caplog.text
+
+
+@pytest.mark.parametrize("timeframe", ["15m", "1h"])
+def test_scalp_pingpong_high_timeframe_zscore_breaks_zero(timeframe):
+    closes = [100.0, 101.0, 99.0, 102.0]
+    df = pd.DataFrame({"close": closes})
+    cfg = ScalpPingPongConfig(lookback=15, z_threshold=0.2, volatility_factor=0.02, min_volatility=0.0)
+    strat = ScalpPingPong(cfg=cfg)
+
+    tf_minutes = timeframe_to_minutes(timeframe)
+    lookback = max(2, math.ceil(cfg.lookback / tf_minutes))
+    z = strat._calc_zscore(df["close"], lookback)
+    assert z != 0
+
+    sig = strat.on_bar({"window": df, "timeframe": timeframe, "symbol": "BTCUSDT", "exchange": "paper"})
+    assert sig is not None
+    assert sig.strength > 0

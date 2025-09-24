@@ -87,23 +87,27 @@ class ScalpPingPong(Strategy):
         self.timeframe = tf
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
+        lookback = max(2, int(lookback))
         returns = closes.pct_change().dropna()
         if len(returns) < lookback:
             return 0.0
-        mean = returns.rolling(lookback).mean().iloc[-1]
-        std = returns.rolling(lookback).std().iloc[-1]
-        if std == 0 or pd.isna(std):
+        window = returns.iloc[-lookback:]
+        std = window.std(ddof=1)
+        if pd.isna(std) or std <= 0:
             return 0.0
-        z = (returns.iloc[-1] - mean) / std
+        mean = window.mean()
+        z = (window.iloc[-1] - mean) / std
+        if pd.isna(z) or not math.isfinite(float(z)):
+            return 0.0
         return float(z)
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
-        lookback = max(1, int(math.ceil(self.cfg.lookback / tf_minutes)))
-        trend_ma = max(1, int(math.ceil(self.cfg.trend_ma / tf_minutes)))
-        trend_rsi_n = max(1, int(math.ceil(self.cfg.trend_rsi_n / tf_minutes)))
+        lookback = max(2, int(math.ceil(self.cfg.lookback / tf_minutes)))
+        trend_ma = max(2, int(math.ceil(self.cfg.trend_ma / tf_minutes)))
+        trend_rsi_n = max(2, int(math.ceil(self.cfg.trend_rsi_n / tf_minutes)))
 
         if len(df) < lookback + 1:
             return None
