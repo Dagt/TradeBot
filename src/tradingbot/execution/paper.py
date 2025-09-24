@@ -30,6 +30,8 @@ except Exception:  # pragma: no cover - fallback when backtesting is unavailable
 
 log = logging.getLogger(__name__)
 
+PRICE_TOLERANCE = 1e-9
+
 @dataclass
 class PaperPosition:
     qty: float = 0.0
@@ -617,6 +619,129 @@ class PaperAdapter(ExchangeAdapter):
             }
         book = self._resolve_book_snapshot(symbol, book)
         working_px = price if price is not None else last
+        if post_only and type_.lower() == "limit":
+            def _book_price(keys: tuple[str, ...]) -> float | None:
+                if book is None:
+                    return None
+                for key in keys:
+                    val = book.get(key) if hasattr(book, "get") else None
+                    if val is None:
+                        continue
+                    try:
+                        px = float(val)
+                    except (TypeError, ValueError):
+                        continue
+                    if math.isfinite(px):
+                        return px
+                return None
+
+            try:
+                limit_before = float(price) if price is not None else None
+            except (TypeError, ValueError):
+                limit_before = None
+            if limit_before is None or not math.isfinite(limit_before):
+                log.info(
+                    "Rejecting post-only limit order for %s: missing limit", symbol
+                )
+                return {
+                    "status": "rejected",
+                    "reason": "post_only_no_price",
+                    "order_id": order_id,
+                    "trade_id": trade_id,
+                }
+            best_bid = _book_price(("bid", "bid_px", "bid_price", "best_bid"))
+            best_ask = _book_price(("ask", "ask_px", "ask_price", "best_ask"))
+            ref_price = best_ask if side == "buy" else best_bid
+            if ref_price is None or not math.isfinite(ref_price):
+                ref_price = float(last)
+            if ref_price is None or not math.isfinite(ref_price):
+                log.info(
+                    "Rejecting post-only limit order for %s: no reference price (limit=%s)",
+                    symbol,
+                    f"{limit_before:.10g}" if math.isfinite(limit_before) else "nan",
+                )
+                return {
+                    "status": "rejected",
+                    "reason": "post_only_no_reference",
+                    "order_id": order_id,
+                    "trade_id": trade_id,
+                }
+            fmt = lambda v: f"{v:.10g}" if v is not None and math.isfinite(v) else "nan"
+            new_limit = limit_before
+            if side == "buy":
+                threshold = ref_price - PRICE_TOLERANCE
+                if not math.isfinite(threshold) or threshold <= 0.0:
+                    log.info(
+                        "Rejecting post-only buy order for %s: invalid threshold %s",
+                        symbol,
+                        fmt(threshold),
+                    )
+                    return {
+                        "status": "rejected",
+                        "reason": "post_only_invalid_reference",
+                        "order_id": order_id,
+                        "trade_id": trade_id,
+                    }
+                if limit_before > threshold:
+                    new_limit = min(limit_before, threshold)
+                    if new_limit <= 0.0 or new_limit >= ref_price:
+                        log.info(
+                            "Rejecting post-only buy order for %s: limit %s vs ask %s",
+                            symbol,
+                            fmt(limit_before),
+                            fmt(ref_price),
+                        )
+                        return {
+                            "status": "rejected",
+                            "reason": "post_only_would_cross",
+                            "order_id": order_id,
+                            "trade_id": trade_id,
+                        }
+                    log.info(
+                        "Adjusted post-only buy order for %s: limit %s -> %s (best ask %s)",
+                        symbol,
+                        fmt(limit_before),
+                        fmt(new_limit),
+                        fmt(ref_price),
+                    )
+            else:
+                threshold = ref_price + PRICE_TOLERANCE
+                if not math.isfinite(threshold):
+                    log.info(
+                        "Rejecting post-only sell order for %s: invalid threshold %s",
+                        symbol,
+                        fmt(threshold),
+                    )
+                    return {
+                        "status": "rejected",
+                        "reason": "post_only_invalid_reference",
+                        "order_id": order_id,
+                        "trade_id": trade_id,
+                    }
+                if limit_before < threshold:
+                    new_limit = max(limit_before, threshold)
+                    if new_limit <= 0.0 or new_limit <= ref_price:
+                        log.info(
+                            "Rejecting post-only sell order for %s: limit %s vs bid %s",
+                            symbol,
+                            fmt(limit_before),
+                            fmt(ref_price),
+                        )
+                        return {
+                            "status": "rejected",
+                            "reason": "post_only_would_cross",
+                            "order_id": order_id,
+                            "trade_id": trade_id,
+                        }
+                    log.info(
+                        "Adjusted post-only sell order for %s: limit %s -> %s (best bid %s)",
+                        symbol,
+                        fmt(limit_before),
+                        fmt(new_limit),
+                        fmt(ref_price),
+                    )
+            price = float(new_limit)
+            working_px = price
         qty = adjust_qty(qty, working_px, self.min_notional, self.step_size)
         if qty <= 0:
             return {
