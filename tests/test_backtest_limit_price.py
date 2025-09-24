@@ -50,11 +50,13 @@ def test_backtest_limit_price(monkeypatch):
     fill = res["fills"][0]
     fill_price = fill[3]
 
-    assert order["place_price"] == pytest.approx(limit)
+    close_price = data["close"].iloc[1]
+    assert order["place_price"] == pytest.approx(close_price)
+    assert order["mark_price"] == pytest.approx(close_price)
     assert order["avg_price"] == pytest.approx(limit)
     assert fill_price == pytest.approx(limit)
-    # Place price, average fill price and actual fill should all match the limit
-    assert fill_price == order["avg_price"] == order["place_price"]
+    # Average fill price and actual fill should match the limit, while placement reflects the mark
+    assert fill_price == order["avg_price"]
     # Confirm the fill price differs from the bar close to ensure the limit was honoured
     assert fill_price != data["close"].iloc[-1]
 
@@ -96,6 +98,7 @@ def test_backtest_default_limit_price(monkeypatch):
     close_price = data["close"].iloc[1]
 
     assert order["place_price"] == pytest.approx(close_price)
+    assert order["mark_price"] == pytest.approx(close_price)
     assert order["avg_price"] == pytest.approx(close_price)
     assert fill[3] == pytest.approx(close_price)
     assert limit_price_from_close("buy", close_price, 0.0) == pytest.approx(close_price)

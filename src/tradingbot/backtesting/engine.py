@@ -996,10 +996,11 @@ class EventDrivenBacktestEngine:
                         heapq.heappush(order_queue, order)
                     continue
 
+                expected_price = order.mark_price or order.place_price
                 slip = (
-                    order.place_price - price
+                    expected_price - price
                     if order.side == "buy"
-                    else price - order.place_price
+                    else price - expected_price
                 )
                 slip_cash = -slip * fill_qty
                 slippage_total += slip_cash
@@ -1283,7 +1284,7 @@ class EventDrivenBacktestEngine:
                     elif hasattr(sig, "__dict__"):
                         setattr(sig, "limit_price", limit_price)
                     mark_price = market_price
-                    price_for_order = limit_price if limit_price is not None else mark_price
+                    price_for_order = mark_price
                     svc.mark_price(symbol, mark_price)
                     if equity < 0:
                         continue
@@ -1313,7 +1314,7 @@ class EventDrivenBacktestEngine:
                         elif hasattr(sig, "__dict__"):
                             setattr(sig, "limit_price", limit_price)
                         mark_price = market_price
-                        price_for_order = limit_price if limit_price is not None else mark_price
+                        price_for_order = mark_price
                         svc.mark_price(symbol, mark_price)
                         if decision in {"close", "scale_in", "scale_out"}:
                             limit_price = mark_price
@@ -1344,7 +1345,7 @@ class EventDrivenBacktestEngine:
                             )
                         qty = adjust_qty(
                             qty_raw,
-                            price_for_order,
+                            limit_price if limit_price is not None else mark_price,
                             constraints.min_notional or None,
                             constraints.step_size or None,
                             constraints.min_qty or None,
@@ -1418,7 +1419,7 @@ class EventDrivenBacktestEngine:
                     side = "buy" if delta > 0 else "sell"
                     qty = adjust_qty(
                         abs(delta),
-                        price_for_order,
+                        limit_price if limit_price is not None else mark_price,
                         constraints.min_notional or None,
                         constraints.step_size or None,
                         constraints.min_qty or None,
