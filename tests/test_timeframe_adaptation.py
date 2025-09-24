@@ -66,12 +66,21 @@ def test_mean_reversion_time_stop_scales():
     df = _make_ohlcv(80)
     strat_fast = MeanReversion(timeframe="1m", time_stop=10, min_volatility=0)
     strat_slow = MeanReversion(timeframe="1h", time_stop=10, min_volatility=0)
+    strat_default_30m = MeanReversion(timeframe="30m", min_volatility=0)
+    strat_default_1h = MeanReversion(timeframe="1h", min_volatility=0)
 
     strat_fast.on_bar({"window": df, "timeframe": "1m", "symbol": "X"})
     strat_slow.on_bar({"window": df, "timeframe": "1h", "symbol": "X"})
+    strat_default_30m.on_bar({"window": df, "timeframe": "30m", "symbol": "X"})
+    strat_default_1h.on_bar({"window": df, "timeframe": "1h", "symbol": "X"})
 
     assert strat_fast.time_stop == 10
-    assert strat_slow.time_stop == 1
+    assert strat_slow.time_stop == 10
+    assert strat_default_30m.time_stop == 5
+    assert strat_default_1h.time_stop == 3
+
+    strat_slow.on_bar({"window": df, "timeframe": "4h", "symbol": "X"})
+    assert strat_slow.time_stop == 3
 
 
 def test_scalp_pingpong_lookback_scales():

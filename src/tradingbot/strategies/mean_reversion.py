@@ -32,6 +32,7 @@ class MeanReversion(Strategy):
         tf = str(kwargs.get("timeframe", "1m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
+        self._base_timeframe_minutes = tf_minutes
 
         trend_ma_min = kwargs.get("trend_ma", 50)
         self.trend_ma = max(1, int(trend_ma_min / tf_minutes))
@@ -46,9 +47,25 @@ class MeanReversion(Strategy):
 
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
-        default_time_stop = 10.0 if tf_minutes >= 30.0 else 0.0
-        time_stop_param = float(kwargs.get("time_stop", default_time_stop))
-        self._time_stop_minutes = time_stop_param
+        default_time_stop_bars = 0.0
+        min_time_stop_bars = 1
+        if tf_minutes >= 30.0:
+            if tf_minutes < 60.0:
+                min_time_stop_bars = 5
+            else:
+                min_time_stop_bars = 3
+            default_time_stop_bars = float(min_time_stop_bars)
+
+        self._time_stop_target_bars = 0
+        self._min_time_stop_bars = 0
+        time_stop_param = float(kwargs.get("time_stop", default_time_stop_bars))
+        if time_stop_param > 0:
+            target_bars = int(math.ceil(time_stop_param))
+            target_bars = max(min_time_stop_bars, target_bars)
+            self._time_stop_target_bars = target_bars
+            self._min_time_stop_bars = min_time_stop_bars
+
+        self._time_stop_minutes = self._time_stop_target_bars * tf_minutes if self._time_stop_target_bars else 0
         self.time_stop = 0
         self._open_bars: dict[str, int] = {}
         self.risk_service = kwargs.get("risk_service")
@@ -73,12 +90,16 @@ class MeanReversion(Strategy):
         rsi_series = rsi(df, self.rsi_n)
         last_rsi = rsi_series.iloc[-1]
 
-        tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
-        time_stop_bars = (
-            0
-            if self._time_stop_minutes <= 0
-            else max(1, int(math.ceil(self._time_stop_minutes / tf_minutes)))
-        )
+        bar_timeframe = bar.get("timeframe", self.timeframe)
+        tf_minutes = timeframe_to_minutes(bar_timeframe)
+        base_minutes = self._base_timeframe_minutes
+        if self._time_stop_target_bars <= 0 or tf_minutes <= 0:
+            time_stop_bars = 0
+        else:
+            desired_minutes = self._time_stop_target_bars * base_minutes
+            scaled_bars = int(math.ceil(desired_minutes / tf_minutes))
+            min_bars = self._min_time_stop_bars or 1
+            time_stop_bars = max(min_bars, scaled_bars)
         self.time_stop = time_stop_bars
 
         if time_stop_bars and self.risk_service is not None and bar.get("symbol"):
