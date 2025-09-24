@@ -1013,12 +1013,16 @@ class EventDrivenBacktestEngine:
                     slip_cash = 0.0
                     slippage_pnl = 0.0
                 else:
-                    slip = (
-                        order.place_price - price
-                        if order.side == "buy"
-                        else price - order.place_price
+                    expected_price = (
+                        float(order.mark_price)
+                        if order.mark_price
+                        else float(order.place_price)
                     )
-                    slip_cash = -slip * fill_qty
+                    if order.side == "buy":
+                        slip = expected_price - price
+                    else:
+                        slip = price - expected_price
+                    slip_cash = slip * fill_qty
                     slippage_total += slip_cash
                     slippage_pnl = slip_cash
                 was_post_only_maker = order.post_only and fill_respects_limit
@@ -1295,6 +1299,7 @@ class EventDrivenBacktestEngine:
                         else getattr(sig, "limit_price", None)
                     )
                     market_price = float(arrs["close"][i])
+                    mark_price = market_price
                     limit_price = None
                     if raw_limit is not None:
                         try:
@@ -1305,13 +1310,11 @@ class EventDrivenBacktestEngine:
                             if math.isfinite(limit_candidate):
                                 limit_price = limit_candidate
                     if limit_price is None:
-                        limit_price = market_price
+                        limit_price = mark_price
                     if isinstance(sig, dict):
                         sig["limit_price"] = limit_price
                     elif hasattr(sig, "__dict__"):
                         setattr(sig, "limit_price", limit_price)
-                    mark_price = market_price
-                    price_for_order = limit_price if limit_price is not None else mark_price
                     svc.mark_price(symbol, mark_price)
                     if equity < 0:
                         continue
@@ -1325,6 +1328,7 @@ class EventDrivenBacktestEngine:
                             else getattr(sig, "limit_price", None)
                         )
                         market_price = float(arrs["close"][i])
+                        mark_price = market_price
                         limit_price = None
                         if raw_limit is not None:
                             try:
@@ -1335,17 +1339,14 @@ class EventDrivenBacktestEngine:
                                 if math.isfinite(limit_candidate):
                                     limit_price = limit_candidate
                         if limit_price is None:
-                            limit_price = market_price
+                            limit_price = mark_price
                         if isinstance(sig, dict):
                             sig["limit_price"] = limit_price
                         elif hasattr(sig, "__dict__"):
                             setattr(sig, "limit_price", limit_price)
-                        mark_price = market_price
-                        price_for_order = limit_price if limit_price is not None else mark_price
                         svc.mark_price(symbol, mark_price)
                         if decision in {"close", "scale_in", "scale_out"}:
                             limit_price = mark_price
-                            price_for_order = mark_price
                             if isinstance(sig, dict):
                                 sig["limit_price"] = limit_price
                             elif hasattr(sig, "__dict__"):
@@ -1370,9 +1371,10 @@ class EventDrivenBacktestEngine:
                                 if delta_qty > 0
                                 else ("sell" if trade["side"] == "buy" else "buy")
                             )
+                        limit_for_sizing = limit_price if limit_price is not None else mark_price
                         qty = adjust_qty(
                             qty_raw,
-                            price_for_order,
+                            limit_for_sizing,
                             constraints.min_notional or None,
                             constraints.step_size or None,
                             constraints.min_qty or None,
@@ -1407,7 +1409,7 @@ class EventDrivenBacktestEngine:
                             side=side,
                             qty=qty,
                             exchange=exchange,
-                            place_price=price_for_order,
+                            place_price=mark_price,
                             limit_price=limit_price,
                             mark_price=mark_price,
                             remaining_qty=qty,
@@ -1444,9 +1446,10 @@ class EventDrivenBacktestEngine:
                     if not allowed or abs(delta) < constraints.min_qty:
                         continue
                     side = "buy" if delta > 0 else "sell"
+                    limit_for_sizing = limit_price if limit_price is not None else mark_price
                     qty = adjust_qty(
                         abs(delta),
-                        price_for_order,
+                        limit_for_sizing,
                         constraints.min_notional or None,
                         constraints.step_size or None,
                         constraints.min_qty or None,
@@ -1479,7 +1482,7 @@ class EventDrivenBacktestEngine:
                         side=side,
                         qty=qty,
                         exchange=exchange,
-                        place_price=price_for_order,
+                        place_price=mark_price,
                         limit_price=limit_price,
                         mark_price=mark_price,
                         remaining_qty=qty,
