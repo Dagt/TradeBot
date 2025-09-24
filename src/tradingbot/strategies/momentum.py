@@ -8,6 +8,12 @@ from ..filters.liquidity import LiquidityFilterManager
 
 liquidity = LiquidityFilterManager()
 
+# Minimum number of bars to compute momentum indicators reliably on higher
+# timeframes.  This prevents ``fast``/``slow`` EMA and RSI windows collapsing
+# to one or two observations when the configured minutes are shorter than the
+# candle size (e.g. running 10-minute EMAs on 15-minute bars).
+MIN_BARS = 5
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "min_volume": "Volumen mínimo requerido",
@@ -83,20 +89,21 @@ class Momentum(Strategy):
         tf_min = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
         self.cooldown_bars = self._cooldown_for(tf_min)
 
+        bar_minutes = max(tf_min, 1e-9)
         fast_minutes = max(float(self.fast_ema), 0.0)
         slow_minutes = max(float(self.slow_ema), fast_minutes)
-        fast_n = max(1, int(math.ceil(fast_minutes / max(tf_min, 1e-9))))
-        slow_n = max(1, int(math.ceil(slow_minutes / max(tf_min, 1e-9))))
+        fast_n = max(MIN_BARS, int(math.ceil(fast_minutes / bar_minutes)))
+        slow_n = max(MIN_BARS, int(math.ceil(slow_minutes / bar_minutes)))
         if slow_n <= fast_n:
             ratio = slow_minutes / max(fast_minutes, 1e-9)
             scaled_slow = int(math.ceil(fast_n * ratio))
             slow_n = max(fast_n + 1, scaled_slow)
 
-        rsi_n = max(2, int(math.ceil(float(self.rsi_n) / max(tf_min, 1e-9))))
-        atr_n = max(2, int(math.ceil(float(self.atr_n) / max(tf_min, 1e-9))))
-        vol_window = max(2, int(math.ceil(float(self.vol_window) / max(tf_min, 1e-9))))
+        rsi_n = max(MIN_BARS, int(math.ceil(float(self.rsi_n) / bar_minutes)))
+        atr_n = max(MIN_BARS, int(math.ceil(float(self.atr_n) / bar_minutes)))
+        vol_window = max(MIN_BARS, int(math.ceil(float(self.vol_window) / bar_minutes)))
 
-        if len(df) < max(slow_n, rsi_n, atr_n) + 2:
+        if len(df) < max(slow_n, rsi_n, atr_n, vol_window) + 2:
             return None
 
         if self.risk_service is not None:

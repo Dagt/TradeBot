@@ -66,6 +66,11 @@ class ScalpPingPongConfig:
 
 liquidity = LiquidityFilterManager()
 
+# Enforce a floor on rolling windows when working with higher timeframe bars so
+# that momentum and mean-reversion indicators never collapse to just a handful
+# of observations.
+MIN_BARS = 5
+
 
 class ScalpPingPong(Strategy):
     """Mean-reversion scalping strategy using z-score of returns."""
@@ -87,7 +92,7 @@ class ScalpPingPong(Strategy):
         self.timeframe = tf
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
-        lookback = max(2, int(lookback))
+        lookback = max(MIN_BARS, int(lookback))
         returns = closes.pct_change().dropna()
         if len(returns) < lookback:
             return 0.0
@@ -105,9 +110,10 @@ class ScalpPingPong(Strategy):
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
-        lookback = max(2, int(math.ceil(self.cfg.lookback / tf_minutes)))
-        trend_ma = max(2, int(math.ceil(self.cfg.trend_ma / tf_minutes)))
-        trend_rsi_n = max(2, int(math.ceil(self.cfg.trend_rsi_n / tf_minutes)))
+        bar_minutes = max(tf_minutes, 1e-9)
+        lookback = max(MIN_BARS, int(math.ceil(self.cfg.lookback / bar_minutes)))
+        trend_ma = max(MIN_BARS, int(math.ceil(self.cfg.trend_ma / bar_minutes)))
+        trend_rsi_n = max(MIN_BARS, int(math.ceil(self.cfg.trend_rsi_n / bar_minutes)))
 
         if len(df) < lookback + 1:
             return None
