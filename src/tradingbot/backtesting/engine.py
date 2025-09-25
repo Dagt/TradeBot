@@ -1008,7 +1008,10 @@ class EventDrivenBacktestEngine:
                             limit_touched = low_val <= limit_price + tol
                         else:
                             limit_touched = market_price <= limit_price + tol
-                        price = min(market_price, limit_price)
+                        if not order.post_only and not self.use_l2:
+                            price = limit_price
+                        else:
+                            price = min(market_price, limit_price)
                     else:
                         high_arr = arrs.get("high")
                         high_val = None
@@ -1021,7 +1024,10 @@ class EventDrivenBacktestEngine:
                             limit_touched = high_val >= limit_price - tol
                         else:
                             limit_touched = market_price >= limit_price - tol
-                        price = max(market_price, limit_price)
+                        if not order.post_only and not self.use_l2:
+                            price = limit_price
+                        else:
+                            price = max(market_price, limit_price)
                     if not limit_touched:
                         if not self.cancel_unfilled:
                             order.execute_index = i + 1
