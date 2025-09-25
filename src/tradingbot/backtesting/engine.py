@@ -992,6 +992,10 @@ class EventDrivenBacktestEngine:
                 else:
                     market_price = float(arrs["close"][i])
                 price = market_price
+                svc = self.risk[(order.strategy, order.symbol)]
+                constraints = self._strategy_constraints((order.strategy, order.symbol))
+                mode = self.exchange_mode.get(order.exchange, "perp")
+
                 if order.limit_price is not None:
                     limit_price = float(order.limit_price)
                     limit_touched = True
@@ -1030,13 +1034,59 @@ class EventDrivenBacktestEngine:
                             price = max(market_price, limit_price)
                     if not limit_touched:
                         if not self.cancel_unfilled:
-                            order.execute_index = i + 1
-                            heapq.heappush(order_queue, order)
-                        continue
+                            action = None
+                            strat_key = (order.strategy, order.symbol)
+                            strat_obj = self.strategies.get(strat_key)
+                            cb = getattr(strat_obj, "on_order_expiry", None) if strat_obj else None
+                            if cb is not None:
+                                pending_qty = max(order.remaining_qty, 0.0)
+                                res = {
+                                    "pending_qty": pending_qty,
+                                    "price": limit_price,
+                                    "fill_price": None,
+                                }
+                                setattr(order, "pending_qty", pending_qty)
+                                current_price = None
+                                try:
+                                    current_price = float(order.limit_price)
+                                except (TypeError, ValueError):
+                                    try:
+                                        current_price = float(order.place_price)
+                                    except (TypeError, ValueError):
+                                        current_price = None
+                                if current_price is not None:
+                                    setattr(order, "price", current_price)
+                                try:
+                                    action = cb(order, res)
+                                except Exception:  # pragma: no cover - defensive logging
+                                    log.exception(
+                                        "on_order_expiry failed for %s %s",
+                                        order.strategy,
+                                        order.symbol,
+                                    )
+                                    action = None
+                                if action in {"re_quote", "re-quote", "requote"}:
+                                    new_price_val = getattr(order, "price", None)
+                                    try:
+                                        new_price = float(new_price_val)
+                                    except (TypeError, ValueError):
+                                        new_price = None
+                                    if new_price is not None:
+                                        order.limit_price = new_price
+                                        order.place_price = new_price
+                            else:
+                                action = "re_quote"
 
-                svc = self.risk[(order.strategy, order.symbol)]
-                constraints = self._strategy_constraints((order.strategy, order.symbol))
-                mode = self.exchange_mode.get(order.exchange, "perp")
+                            if action in {"re_quote", "re-quote", "requote"}:
+                                order.execute_index = i + 1
+                                heapq.heappush(order_queue, order)
+                            else:
+                                svc.complete_order(
+                                    order.exchange,
+                                    symbol=order.symbol,
+                                    side=order.side,
+                                )
+                        continue
 
                 if self.slippage:
                     bar: dict[str, float] = {}
