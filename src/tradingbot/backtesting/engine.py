@@ -137,6 +137,7 @@ class Order:
     side: str = field(compare=False)  # "buy" or "sell"
     qty: float = field(compare=False)
     exchange: str = field(default="default", compare=False)
+    price: float | None = field(default=None, compare=False)
     place_price: float = field(default=0.0, compare=False)
     limit_price: float | None = field(default=None, compare=False)
     mark_price: float = field(default=0.0, compare=False)
@@ -897,6 +898,7 @@ class EventDrivenBacktestEngine:
                                     side=side,
                                     qty=qty,
                                     exchange=exchange,
+                                    price=price,
                                     place_price=price,
                                     limit_price=price,
                                     mark_price=price,
@@ -956,6 +958,7 @@ class EventDrivenBacktestEngine:
                                     side=side,
                                     qty=qty,
                                     exchange=exchange,
+                                    price=price,
                                     place_price=price,
                                     limit_price=price,
                                     mark_price=price,
@@ -1030,8 +1033,66 @@ class EventDrivenBacktestEngine:
                             price = max(market_price, limit_price)
                     if not limit_touched:
                         if not self.cancel_unfilled:
-                            order.execute_index = i + 1
-                            heapq.heappush(order_queue, order)
+                            key = (order.strategy, order.symbol)
+                            strat_obj = self.strategies.get(key)
+                            callback = getattr(strat_obj, "on_order_expiry", None)
+                            action_normalized = None
+                            callback_invoked = False
+                            if callable(callback):
+                                callback_invoked = True
+                                base_price = order.limit_price
+                                if base_price is None:
+                                    base_price = order.place_price
+                                price_hint = None
+                                if base_price is not None:
+                                    try:
+                                        price_hint = float(base_price)
+                                    except (TypeError, ValueError):
+                                        price_hint = None
+                                order.price = price_hint
+                                payload = {
+                                    "status": "expired",
+                                    "pending_qty": float(order.remaining_qty),
+                                    "filled_qty": 0.0,
+                                    "symbol": order.symbol,
+                                    "side": order.side,
+                                    "price": price_hint,
+                                    "order_id": order.order_id,
+                                }
+                                result = callback(order, payload)
+                                if isinstance(result, str):
+                                    action_normalized = result.replace("-", "_").lower()
+                            requeue = True
+                            if callback_invoked:
+                                if action_normalized in {"re_quote", "requote"}:
+                                    new_limit = getattr(order, "price", None)
+                                    if new_limit is not None:
+                                        try:
+                                            new_limit_val = float(new_limit)
+                                        except (TypeError, ValueError):
+                                            new_limit_val = None
+                                        else:
+                                            if math.isfinite(new_limit_val):
+                                                order.limit_price = new_limit_val
+                                                order.place_price = new_limit_val
+                                else:
+                                    requeue = False
+                            if requeue:
+                                order.execute_index = i + 1
+                                heapq.heappush(order_queue, order)
+                            else:
+                                svc_cancel = self.risk.get(key)
+                                if svc_cancel is not None:
+                                    pending_qty = float(order.remaining_qty)
+                                    if pending_qty:
+                                        svc_cancel.account.update_open_order(
+                                            order.symbol, order.side, -pending_qty
+                                        )
+                                    svc_cancel.complete_order(
+                                        order.exchange,
+                                        symbol=order.symbol,
+                                        side=order.side,
+                                    )
                         continue
 
                 svc = self.risk[(order.strategy, order.symbol)]
@@ -1585,6 +1646,7 @@ class EventDrivenBacktestEngine:
                             side=side,
                             qty=qty,
                             exchange=exchange,
+                            price=price_for_order,
                             place_price=price_for_order,
                             limit_price=limit_price,
                             mark_price=mark_price,
@@ -1676,6 +1738,7 @@ class EventDrivenBacktestEngine:
                         side=side,
                         qty=qty,
                         exchange=exchange,
+                        price=price_for_order,
                         place_price=price_for_order,
                         limit_price=limit_price,
                         mark_price=mark_price,
@@ -1756,6 +1819,7 @@ class EventDrivenBacktestEngine:
                             side=side,
                             qty=qty,
                             exchange=exchange,
+                            price=current_price,
                             place_price=current_price,
                             limit_price=None,
                             mark_price=current_price,
