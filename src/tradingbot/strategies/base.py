@@ -68,6 +68,9 @@ def timeframe_to_minutes(tf: str | int | float | None) -> float:
 
 class Strategy(ABC):
     name: str
+    max_signal_strength: float = 3.0
+    min_signal_strength: float = 0.3
+    min_strength_fraction: float = 0.1
 
     @abstractmethod
     def on_bar(self, bar: dict[str, Any]) -> Signal | None:
@@ -76,7 +79,7 @@ class Strategy(ABC):
     # ------------------------------------------------------------------
     def _requote_key(self, order: Order) -> tuple[str | None, str | None]:
         return getattr(order, "symbol", None), getattr(order, "side", None)
-
+      
     def _track_requote(
         self,
         order: Order | None = None,
@@ -272,7 +275,6 @@ class Strategy(ABC):
                 break
         target_volatility = _positive(bar.get("target_volatility"))
 
-        symbol = bar.get("symbol")
         trade = rs.get_trade(symbol) if symbol else None
         if trade:
             atr = bar.get("atr") or bar.get("volatility")
@@ -351,8 +353,13 @@ class Strategy(ABC):
                 return signal
             return None
         if signal is not None:
+            if symbol:
+                strength_val = (
+                    signal["strength"] if isinstance(signal, dict) else signal.strength
+                )
+                rs.update_signal_strength(symbol, strength_val)
             qty = rs.calc_position_size(
-                signal.strength,
+                signal["strength"] if isinstance(signal, dict) else signal.strength,
                 price,
                 volatility=volatility,
                 target_volatility=target_volatility,

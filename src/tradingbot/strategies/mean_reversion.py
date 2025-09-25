@@ -25,6 +25,7 @@ class MeanReversion(Strategy):
     """
 
     name = "mean_reversion"
+    max_signal_strength = 2.5
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
