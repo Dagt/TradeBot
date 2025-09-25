@@ -974,13 +974,13 @@ async def _run_symbol(
                         prev_rpnl,
                         prev_pos_qty,
                     )
-                        risk.account.update_open_order(symbol, side, pending_qty)
-                        cur_qty = risk.account.current_exposure(symbol)[0]
-                        locked = _recalc_locked_total()
-                        log.info(
-                            "METRICS %s",
-                            json.dumps({"exposure": cur_qty, "locked": locked}),
-                        )
+                    risk.account.update_open_order(symbol, side, pending_qty)
+                    cur_qty = risk.account.current_exposure(symbol)[0]
+                    locked = _recalc_locked_total()
+                    log.info(
+                        "METRICS %s",
+                        json.dumps({"exposure": cur_qty, "locked": locked}),
+                    )
                     risk.on_fill(
                         symbol,
                         side,
@@ -1125,12 +1125,12 @@ async def _run_symbol(
             prev_rpnl,
             prev_pos_qty,
         )
-            risk.account.update_open_order(symbol, side, pending_qty)
-            cur_qty = risk.account.current_exposure(symbol)[0]
-            locked = _recalc_locked_total()
-            log.info(
-                "METRICS %s",
-                json.dumps({"exposure": cur_qty, "locked": locked}),
+        risk.account.update_open_order(symbol, side, pending_qty)
+        cur_qty = risk.account.current_exposure(symbol)[0]
+        locked = _recalc_locked_total()
+        log.info(
+            "METRICS %s",
+            json.dumps({"exposure": cur_qty, "locked": locked}),
         )
         risk.on_fill(
             symbol, side, filled_qty, venue=venue if not dry_run else "paper"

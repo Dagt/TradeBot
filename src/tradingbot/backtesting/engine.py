@@ -389,7 +389,7 @@ class EventDrivenBacktestEngine:
         latency: int = 1,
         window: int = 120,
         slippage: SlippageModel | None = None,
-        fee_bps: float = 0.108839,
+        fee_bps: float | None = None,
         slippage_bps: float = 0.0,
         exchange_configs: Dict[str, Dict[str, float]] | None = None,
         timeframes: Mapping[str, str] | str | None = None,
@@ -409,6 +409,9 @@ class EventDrivenBacktestEngine:
         step_size: float = 0.0,
         min_notional: float = 0.0,
     ) -> None:
+        if fee_bps is None:
+            fee_bps = 10.0
+
         self.data = data
         if isinstance(timeframes, str):
             self.timeframes = {sym: str(timeframes) for sym in data}
@@ -992,6 +995,7 @@ class EventDrivenBacktestEngine:
                 if order.limit_price is not None:
                     limit_price = float(order.limit_price)
                     limit_touched = True
+                    tol = PRICE_TOLERANCE
                     if order.side == "buy":
                         low_arr = arrs.get("low")
                         low_val = None
@@ -1001,9 +1005,9 @@ class EventDrivenBacktestEngine:
                             except (TypeError, ValueError):
                                 low_val = None
                         if low_val is not None and not math.isnan(low_val):
-                            limit_touched = low_val <= limit_price
+                            limit_touched = low_val <= limit_price + tol
                         else:
-                            limit_touched = market_price <= limit_price
+                            limit_touched = market_price <= limit_price + tol
                         price = min(market_price, limit_price)
                     else:
                         high_arr = arrs.get("high")
@@ -1014,9 +1018,9 @@ class EventDrivenBacktestEngine:
                             except (TypeError, ValueError):
                                 high_val = None
                         if high_val is not None and not math.isnan(high_val):
-                            limit_touched = high_val >= limit_price
+                            limit_touched = high_val >= limit_price - tol
                         else:
-                            limit_touched = market_price >= limit_price
+                            limit_touched = market_price >= limit_price - tol
                         price = max(market_price, limit_price)
                     if not limit_touched:
                         if not self.cancel_unfilled:
@@ -1454,12 +1458,11 @@ class EventDrivenBacktestEngine:
                         else:
                             if math.isfinite(limit_candidate):
                                 limit_price = limit_candidate
-                    if limit_price is None:
-                        limit_price = mark_price
+                    stored_limit = limit_price if limit_price is not None else mark_price
                     if isinstance(sig, dict):
-                        sig["limit_price"] = limit_price
+                        sig["limit_price"] = stored_limit
                     elif hasattr(sig, "__dict__"):
-                        setattr(sig, "limit_price", limit_price)
+                        setattr(sig, "limit_price", stored_limit)
                     svc.mark_price(symbol, mark_price)
                     if equity < 0:
                         continue
@@ -1483,12 +1486,11 @@ class EventDrivenBacktestEngine:
                             else:
                                 if math.isfinite(limit_candidate):
                                     limit_price = limit_candidate
-                        if limit_price is None:
-                            limit_price = mark_price
+                        stored_limit = limit_price if limit_price is not None else mark_price
                         if isinstance(sig, dict):
-                            sig["limit_price"] = limit_price
+                            sig["limit_price"] = stored_limit
                         elif hasattr(sig, "__dict__"):
-                            setattr(sig, "limit_price", limit_price)
+                            setattr(sig, "limit_price", stored_limit)
                         svc.mark_price(symbol, mark_price)
                         if decision in {"close", "scale_in", "scale_out"}:
                             limit_price = mark_price
@@ -1536,6 +1538,11 @@ class EventDrivenBacktestEngine:
                                 elif hasattr(sig, "__dict__"):
                                     setattr(sig, "limit_price", limit_price)
                         price_for_order = limit_price if limit_price is not None else mark_price
+                        pending_same_side = (
+                            svc.account.open_orders.get(symbol, {}).get(side, 0.0)
+                        )
+                        if pending_same_side >= constraints.min_qty:
+                            continue
                         qty = adjust_qty(
                             qty_raw,
                             price_for_order,
@@ -1724,6 +1731,11 @@ class EventDrivenBacktestEngine:
                         if qty <= 0 or qty < constraints.min_qty:
                             continue
                         side = "buy" if delta > 0 else "sell"
+                        pending_same_side = (
+                            svc.account.open_orders.get(symbol, {}).get(side, 0.0)
+                        )
+                        if pending_same_side >= constraints.min_qty:
+                            continue
                         exchange = self.strategy_exchange[(strat_name, symbol)]
                         base_latency = self.exchange_latency.get(exchange, self.latency)
                         delay = self._effective_delay(exchange, base_latency)
@@ -1751,6 +1763,7 @@ class EventDrivenBacktestEngine:
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)
+                        svc.account.update_open_order(symbol, side, qty)
 
             # Track equity after processing each bar
             mtm = sum(
@@ -1891,6 +1904,12 @@ class EventDrivenBacktestEngine:
 
         pnl = equity_curve[-1] - self.initial_equity
 
+        filled_keys = {
+            (o.strategy, o.symbol, o.side)
+            for o in orders
+            if o.filled_qty > 0
+        }
+
         orders_summary = [
             {
                 "strategy": o.strategy,
@@ -1905,6 +1924,8 @@ class EventDrivenBacktestEngine:
                 "latency": o.latency,
             }
             for o in orders
+            if o.filled_qty > 0
+            or (o.strategy, o.symbol, o.side) not in filled_keys
         ]
 
         order_count = len(orders)

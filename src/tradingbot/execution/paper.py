@@ -495,7 +495,16 @@ class PaperAdapter(ExchangeAdapter):
             and has_liquidity_proxy
             and self._book_capacity(book, "ask_size" if side == "buy" else "bid_size") > 0
         ):
-            adj = self.slippage_model.adjust(side, qty, px, book)
+            adj, fill_qty, _ = self.slippage_model.fill(
+                side,
+                qty,
+                px,
+                book,
+                queue_pos=0.0,
+                partial=True,
+            )
+            if fill_qty <= 0:
+                adj = float(px)
             if side == "buy":
                 slip_bps = (adj - px) / px * 10000.0
             else:
