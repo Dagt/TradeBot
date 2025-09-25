@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import math
@@ -31,6 +31,7 @@ class Signal:
     reduce_only: bool = False
     limit_price: float | None = None
     signal_ts: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 def timeframe_to_minutes(tf: str | int | float | None) -> float:
     """Return the timeframe duration expressed in minutes.
@@ -67,10 +68,149 @@ def timeframe_to_minutes(tf: str | int | float | None) -> float:
 
 class Strategy(ABC):
     name: str
+    max_signal_strength: float = 3.0
+    min_signal_strength: float = 0.3
+    min_strength_fraction: float = 0.1
 
     @abstractmethod
     def on_bar(self, bar: dict[str, Any]) -> Signal | None:
         ...
+
+    # ------------------------------------------------------------------
+    def _requote_key(self, order: Order) -> tuple[str | None, str | None]:
+        return getattr(order, "symbol", None), getattr(order, "side", None)
+
+    def _normalize_strength(self, strength: float | None) -> float:
+        """Project raw signal ``strength`` to a 0–1 sizing range."""
+
+        if strength is None:
+            return 0.0
+        try:
+            raw = float(strength)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(raw) or raw <= 0.0:
+            return 0.0
+        cap = float(getattr(self, "max_signal_strength", 1.0))
+        if not math.isfinite(cap) or cap <= 0.0:
+            cap = 1.0
+        floor = float(getattr(self, "min_signal_strength", 0.0))
+        if not math.isfinite(floor) or floor < 0.0:
+            floor = 0.0
+        floor = min(floor, cap)
+        min_frac = float(getattr(self, "min_strength_fraction", 0.0))
+        if not math.isfinite(min_frac) or min_frac < 0.0:
+            min_frac = 0.0
+        min_frac = min(min_frac, 1.0)
+        if raw <= floor:
+            return min_frac if raw > 0.0 else 0.0
+        span = cap - floor
+        if span <= 0:
+            return 1.0
+        scaled = (raw - floor) / span
+        scaled = max(0.0, min(scaled, 1.0))
+        return min_frac + (1.0 - min_frac) * scaled
+
+    def _track_requote(
+        self,
+        order: Order | None = None,
+        *,
+        key: tuple[str | None, str | None] | None = None,
+        reset: bool = False,
+    ) -> int:
+        if not hasattr(self, "_requote_attempts"):
+            self._requote_attempts: dict[tuple[str | None, str | None], int] = {}
+        if key is None:
+            if order is None:
+                return 0
+            key = self._requote_key(order)
+        if reset:
+            self._requote_attempts[key] = 0
+        else:
+            self._requote_attempts[key] = self._requote_attempts.get(key, 0) + 1
+        return self._requote_attempts.get(key, 0)
+
+    def _reprice_order(self, order: Order, res: dict[str, Any]) -> None:
+        """Update ``order.price`` using metadata from the last signal."""
+
+        last_sig = getattr(self, "_last_signal", {}).get(order.symbol)
+        if last_sig is None:
+            return
+        meta = getattr(last_sig, "metadata", None) or {}
+        base_price = meta.get("base_price")
+        if base_price is None:
+            base_price = order.price if order.price is not None else res.get("price")
+        try:
+            base_price = float(base_price)
+        except (TypeError, ValueError):
+            return
+        offset = meta.get("limit_offset")
+        if offset is None:
+            offset = 0.0
+        try:
+            offset = abs(float(offset))
+        except (TypeError, ValueError):
+            offset = 0.0
+        if offset == 0.0:
+            atr_map = getattr(self, "_last_atr", {})
+            atr_val = None
+            if isinstance(atr_map, dict):
+                atr_val = atr_map.get(order.symbol)
+            if atr_val is not None:
+                try:
+                    offset = 0.1 * abs(float(atr_val))
+                except (TypeError, ValueError):
+                    offset = 0.0
+            if offset == 0.0 and order.price is not None:
+                try:
+                    offset = abs(float(order.price)) * 0.0005
+                except (TypeError, ValueError):
+                    offset = 0.0
+        max_offset = meta.get("max_offset")
+        try:
+            max_offset = abs(float(max_offset)) if max_offset is not None else None
+        except (TypeError, ValueError):
+            max_offset = None
+        step_mult = meta.get("step_mult", 0.5)
+        try:
+            step_mult = float(step_mult)
+        except (TypeError, ValueError):
+            step_mult = 0.5
+        attempts = 0
+        if hasattr(self, "_requote_attempts"):
+            attempts = self._requote_attempts.get(self._requote_key(order), 0)
+        direction = 1.0 if str(order.side).lower() == "buy" else -1.0
+        chase = bool(meta.get("chase", True))
+        default_requote = "limit_offset" not in meta or not meta
+        if chase:
+            multiplier = 1.0 if default_requote else max(1.0, 1.0 + step_mult * attempts)
+            step = offset * multiplier
+            if max_offset is not None:
+                step = min(step, max_offset)
+        else:
+            decay = meta.get("decay", 0.5)
+            try:
+                decay = float(decay)
+            except (TypeError, ValueError):
+                decay = 0.5
+            min_offset = meta.get("min_offset", 0.0)
+            try:
+                min_offset = abs(float(min_offset))
+            except (TypeError, ValueError):
+                min_offset = 0.0
+            step = offset * (decay ** attempts)
+            step = max(step, min_offset)
+            if max_offset is not None:
+                step = min(step, max_offset)
+        tick_size = meta.get("tick_size")
+        try:
+            tick_size = float(tick_size) if tick_size is not None else None
+        except (TypeError, ValueError):
+            tick_size = None
+        new_price = base_price + direction * step
+        if tick_size and tick_size > 0:
+            new_price = round(new_price / tick_size) * tick_size
+        order.price = new_price
 
     # ------------------------------------------------------------------
     def _edge_still_exists(self, order: Order) -> bool:
@@ -92,7 +232,12 @@ class Strategy(ABC):
         self.pending_qty[order.symbol] = pending
         if pending <= 0:
             return None
-        return "re_quote" if self._edge_still_exists(order) else None
+        if not self._edge_still_exists(order):
+            return None
+        attempts = self._track_requote(order)
+        if attempts > 0:
+            self._reprice_order(order, res)
+        return "re_quote"
 
     # ------------------------------------------------------------------
     def on_order_expiry(self, order: Order, res: dict[str, Any]):
@@ -114,19 +259,8 @@ class Strategy(ABC):
             return None
         if not self._edge_still_exists(order):
             return None
-
-        atr_map = getattr(self, "_last_atr", {})
-        atr_val = atr_map.get(order.symbol)
-        if atr_val:
-            offset = 0.1 * atr_val
-            price = order.price if order.price is not None else res.get("price")
-            if price is None:
-                price = 0.0
-            if order.side == "buy":
-                price += offset
-            else:
-                price -= offset
-            order.price = price
+        self._track_requote(order)
+        self._reprice_order(order, res)
         return "re_quote"
 
     # ------------------------------------------------------------------
@@ -146,8 +280,29 @@ class Strategy(ABC):
         ``limit_price`` and returns the signal unchanged.
         """
 
-        if signal is not None and signal.limit_price is None:
-            signal.limit_price = price
+        symbol = bar.get("symbol")
+        if signal is not None:
+            raw_strength = getattr(signal, "strength", None)
+            if raw_strength is None and isinstance(signal, dict):
+                raw_strength = signal.get("strength")
+            norm_strength = self._normalize_strength(raw_strength)
+            if hasattr(signal, "metadata") and getattr(signal, "metadata") is not None:
+                try:
+                    if raw_strength is not None:
+                        signal.metadata.setdefault("raw_strength", float(raw_strength))
+                except (TypeError, ValueError):
+                    pass
+            if isinstance(signal, dict):
+                signal["strength"] = norm_strength
+            else:
+                signal.strength = norm_strength
+            if symbol:
+                side = signal.get("side") if isinstance(signal, dict) else signal.side
+                self._track_requote(key=(symbol, side), reset=True)
+            if isinstance(signal, dict):
+                signal.setdefault("limit_price", price)
+            elif signal.limit_price is None:
+                signal.limit_price = price
         rs = getattr(self, "risk_service", None)
         if rs is None:
             return signal
@@ -168,7 +323,6 @@ class Strategy(ABC):
                 break
         target_volatility = _positive(bar.get("target_volatility"))
 
-        symbol = bar.get("symbol")
         trade = rs.get_trade(symbol) if symbol else None
         if trade:
             atr = bar.get("atr") or bar.get("volatility")
@@ -247,11 +401,17 @@ class Strategy(ABC):
                 return signal
             return None
         if signal is not None:
+            if symbol:
+                strength_val = (
+                    signal["strength"] if isinstance(signal, dict) else signal.strength
+                )
+                rs.update_signal_strength(symbol, strength_val)
             qty = rs.calc_position_size(
-                signal.strength,
+                signal["strength"] if isinstance(signal, dict) else signal.strength,
                 price,
                 volatility=volatility,
                 target_volatility=target_volatility,
+                clamp=False,
             )
             notional = abs(qty) * price
             if qty < rs.min_order_qty or (

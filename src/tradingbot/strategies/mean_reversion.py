@@ -25,6 +25,7 @@ class MeanReversion(Strategy):
     """
 
     name = "mean_reversion"
+    max_signal_strength = 2.5
 
     def __init__(self, **kwargs):
         self.rsi_n = kwargs.get("rsi_n", 14)
@@ -175,14 +176,14 @@ class MeanReversion(Strategy):
                 prev_rsi > last_rsi and price < prev_price
             ):
                 return self.finalize_signal(bar, price, None)
-            strength = min(1.0, (last_rsi - upper) / (100 - upper))
+            strength = max(0.3, min(2.5, (last_rsi - upper) / max(1.0, 100 - upper) * 3.0))
             side = "sell"
         elif last_rsi < lower:
             if self.timeframe in {"5m", "15m"} and not (
                 prev_rsi < last_rsi and price > prev_price
             ):
                 return self.finalize_signal(bar, price, None)
-            strength = min(1.0, (lower - last_rsi) / lower)
+            strength = max(0.3, min(2.5, (lower - last_rsi) / max(1.0, lower) * 3.0))
             side = "buy"
         else:
             return self.finalize_signal(bar, price, None)
@@ -191,12 +192,28 @@ class MeanReversion(Strategy):
             return self.finalize_signal(bar, price, None)
 
         sig = Signal(side, strength)
+        offset = max(atr_val * 0.5, price * 0.001)
+        direction = -1 if side == "sell" else 1
+        base_price = price
+        sig.limit_price = base_price + direction * offset
+        sig.metadata.update(
+            {
+                "base_price": base_price,
+                "limit_offset": abs(offset),
+                "max_offset": abs(price * 0.005),
+                "step_mult": 0.4,
+                "chase": False,
+                "decay": 0.7,
+                "min_offset": price * 0.0005,
+            }
+        )
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 strength,
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(price, side, atr_val)
             if (
@@ -212,6 +229,7 @@ class MeanReversion(Strategy):
                 "stop": stop,
                 "atr": atr_val,
                 "target_volatility": bar.get("target_volatility"),
+                "strength": strength,
             }
 
         return self.finalize_signal(bar, price, sig)

@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 from threading import Lock
+import math
 import time
 
 import pandas as pd
@@ -46,7 +47,7 @@ class RiskService:
         bus=None,
         engine=None,
         account: CoreAccount | None = None,
-        risk_per_trade: float = 0.01,
+        risk_per_trade: float = 1.0,
         atr_mult: float = 2.0,
         risk_pct: float = 0.01,
         profit_lock_usd: float = 1.0,
@@ -85,6 +86,7 @@ class RiskService:
         self.positions_multi: Dict[str, Dict[str, float]] = defaultdict(dict)
         self._entry_price: float | None = None
         self._lock = Lock()
+        self._signal_targets: Dict[str, float] = {}
 
     @property
     def min_order_qty(self) -> float:
@@ -115,6 +117,27 @@ class RiskService:
     def pos(self) -> Position:
         """Current aggregate position."""
         return self._pos
+
+    def update_signal_strength(self, symbol: str, strength: float) -> None:
+        """Persist latest desired ``strength`` for ``symbol``."""
+
+        try:
+            value = float(strength)
+        except (TypeError, ValueError):
+            value = 0.0
+        if not math.isfinite(value) or value <= 0.0:
+            value = 0.0
+        with self._lock:
+            if value <= 0.0:
+                self._signal_targets.pop(symbol, None)
+            else:
+                self._signal_targets[symbol] = value
+            trade = self.trades.get(symbol)
+            if isinstance(trade, dict):
+                if value <= 0.0:
+                    trade.pop("strength", None)
+                else:
+                    trade["strength"] = value
 
     def register_order(self, symbol: str, notional: float) -> bool:
         """Check projected exposure for ``symbol`` before queuing an order.
@@ -303,6 +326,7 @@ class RiskService:
             self.account.update_position(symbol, qty - cur, price=entry_price)
             if abs(qty) < self._min_order_qty:
                 self.trades.pop(symbol, None)
+                self._signal_targets.pop(symbol, None)
                 return
             side = "buy" if qty > 0 else "sell"
             is_new_trade = symbol not in self.trades
@@ -315,6 +339,9 @@ class RiskService:
                 trade.setdefault("stop", self.initial_stop(entry_price, side, atr))
             if is_new_trade:
                 trade["stage"] = 0
+            target_strength = self._signal_targets.get(symbol)
+            if target_strength is not None:
+                trade["strength"] = target_strength
             self.trades[symbol] = trade
 
     def aggregate_positions(self) -> Dict[str, float]:
@@ -343,6 +370,7 @@ class RiskService:
             for sym in list(self.trades.keys()):
                 if sym not in active:
                     self.trades.pop(sym, None)
+                    self._signal_targets.pop(sym, None)
 
             # multi-venue positions
             for venue, book in list(self.positions_multi.items()):
@@ -361,6 +389,9 @@ class RiskService:
                 for sym in list(mapping.keys()):
                     if sym not in active:
                         mapping.pop(sym, None)
+            for sym in list(self._signal_targets.keys()):
+                if sym not in active:
+                    self._signal_targets.pop(sym, None)
 
         # portfolio guard state
         st = getattr(self.guard, "st", None)
@@ -393,7 +424,7 @@ class RiskService:
         *,
         volatility: float | None = None,
         target_volatility: float | None = None,
-        clamp: bool = True,
+        clamp: bool = False,
     ) -> float:
         return self.rm.calc_position_size(
             signal_strength,
@@ -738,6 +769,7 @@ class RiskService:
             cur_qty, _ = self.account.current_exposure(symbol)
             if abs(cur_qty) < self._min_order_qty:
                 self.trades.pop(symbol, None)
+                self._signal_targets.pop(symbol, None)
                 return
             trade = self.trades.get(symbol, {})
             trade.update(
@@ -757,6 +789,9 @@ class RiskService:
                     self.initial_stop(entry_price, trade["side"], atr),
                 )
             trade.setdefault("stage", 0)
+            target_strength = self._signal_targets.get(symbol)
+            if target_strength is not None:
+                trade["strength"] = target_strength
             self.trades[symbol] = trade
 
     def daily_mark(self, broker, symbol: str, price: float, delta_rpnl: float) -> tuple[bool, str]:

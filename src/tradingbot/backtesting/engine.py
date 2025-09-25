@@ -53,6 +53,7 @@ def _slippage_core(
     volume_impact: float,
     ofi_impact: float,
     pct: float,
+    apply_half_spread: bool = True,
 ) -> float:
     if qty <= 0.0:
         impact = 0.0
@@ -63,7 +64,9 @@ def _slippage_core(
         else:
             linear = price * pct if pct else 0.0
             return price + linear if side_is_buy else price - linear
-    slip = spread / 2 + impact + ofi_impact * ofi_val + price * pct
+    slip = impact + ofi_impact * ofi_val + price * pct
+    if apply_half_spread and spread > 0:
+        slip += spread / 2
     return price + slip if side_is_buy else price - slip
 
 
@@ -81,6 +84,7 @@ def _fill_core(
     ofi_val: float,
     pct: float,
     partial: bool,
+    passive: bool,
 ) -> tuple[float, float, float]:
     eff_avail = max(0.0, avail - queue_pos)
     new_queue = max(0.0, queue_pos - avail)
@@ -98,6 +102,7 @@ def _fill_core(
         volume_impact,
         ofi_impact,
         pct,
+        apply_half_spread=not passive,
     )
     return adj_price, fill_qty, new_queue
 
@@ -313,6 +318,7 @@ class SlippageModel:
                 return float(price), 0.0, queue_pos_val
             exec_qty = qty
         side_is_buy = side == "buy"
+        passive = bool(has_depth)
         if not has_depth:
             adj_price = _slippage_core(
                 side_is_buy,
@@ -324,6 +330,7 @@ class SlippageModel:
                 self.volume_impact,
                 self.ofi_impact,
                 self.pct,
+                apply_half_spread=True,
             )
             return float(adj_price), float(exec_qty), queue_pos_val
         adj_price, fill_qty, new_queue = _fill_core(
@@ -339,6 +346,7 @@ class SlippageModel:
             ofi_val,
             self.pct,
             partial,
+            passive,
         )
         return float(adj_price), float(fill_qty), float(new_queue)
 
@@ -456,7 +464,7 @@ class EventDrivenBacktestEngine:
         self.initial_equity = float(initial_equity)
         self._risk_pct = _validate_risk_pct(risk_pct)
         if risk_per_trade is None:
-            self.risk_per_trade = self._risk_pct if self._risk_pct > 0 else 1.0
+            self.risk_per_trade = 1.0
         else:
             self.risk_per_trade = float(risk_per_trade)
 

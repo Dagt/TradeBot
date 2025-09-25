@@ -212,8 +212,24 @@ class Momentum(Strategy):
                 self._last_atr: dict[str, float] = {}
             self._last_atr[symbol] = atr_val
 
-        strength = 1.0
+        gap = abs(last_fast - last_slow) / max(abs(price), 1e-9)
+        momentum = abs(roc_val)
+        slope_mag = abs(slope)
+        raw_strength = (gap * 200.0) + (momentum * 50.0) + (slope_mag * 500.0)
+        strength = max(0.3, min(3.0, raw_strength))
         sig = Signal(side, strength)
+        offset = max(atr_val * 0.5, price * 0.001)
+        direction = 1 if side == "buy" else -1
+        sig.limit_price = price + direction * offset
+        sig.metadata.update(
+            {
+                "base_price": price,
+                "limit_offset": abs(offset),
+                "max_offset": abs(price * 0.006),
+                "step_mult": 0.6,
+                "chase": True,
+            }
+        )
 
         if self.risk_service is not None:
             stop_mult = 1.5 if tf_min <= 5 else 2.0
@@ -222,6 +238,7 @@ class Momentum(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(
                 price, side, atr_val, atr_mult=stop_mult
@@ -241,6 +258,7 @@ class Momentum(Strategy):
                 "target_volatility": bar.get("target_volatility"),
                 "bars_held": 0,
                 "max_hold": max_hold,
+                "strength": strength,
             }
 
         return self.finalize_signal(bar, price, sig)
