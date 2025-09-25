@@ -53,10 +53,59 @@ def test_backtest_limit_price(monkeypatch):
     assert order["place_price"] == pytest.approx(limit)
     assert order["avg_price"] == pytest.approx(limit)
     assert fill_price == pytest.approx(limit)
+    assert fill[9] == pytest.approx(0.0)
     # Place price, average fill price and actual fill should all match the limit
     assert fill_price == order["avg_price"] == order["place_price"]
     # Confirm the fill price differs from the bar close to ensure the limit was honoured
     assert fill_price != data["close"].iloc[-1]
+
+
+def test_backtest_marketable_limit(monkeypatch):
+    """Aggressive limits should execute at the prevailing market price."""
+
+    limit = 110.0
+
+    class AggressiveLimitStrategy:
+        def __init__(self, risk_service=None):
+            self.called = False
+
+        def on_bar(self, _):
+            if self.called:
+                return None
+            self.called = True
+            return SimpleNamespace(side="buy", strength=1.0, limit_price=limit)
+
+    monkeypatch.setitem(STRATEGIES, "aggressive_limit", AggressiveLimitStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2],
+            "open": [100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("aggressive_limit", "SYM")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+    )
+    res = engine.run()
+
+    order = res["orders"][0]
+    fill = res["fills"][0]
+    market_price = data["close"].iloc[1]
+
+    # Even though the submitted limit is above market, the fill occurs at the market price
+    assert order["place_price"] == pytest.approx(limit)
+    assert order["avg_price"] == pytest.approx(market_price)
+    assert fill[3] == pytest.approx(market_price)
+    assert fill[9] == pytest.approx(0.0)
 
 
 def test_backtest_default_limit_price(monkeypatch):

@@ -1161,6 +1161,9 @@ class EventDrivenBacktestEngine:
                 if order.post_only and fill_respects_limit:
                     slip_cash = 0.0
                     slippage_pnl = 0.0
+                elif not self._slippage_supplied and self.slippage_bps == 0.0:
+                    slip_cash = 0.0
+                    slippage_pnl = 0.0
                 else:
                     slip = (
                         float(order.place_price) - price
