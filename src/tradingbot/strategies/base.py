@@ -79,38 +79,7 @@ class Strategy(ABC):
     # ------------------------------------------------------------------
     def _requote_key(self, order: Order) -> tuple[str | None, str | None]:
         return getattr(order, "symbol", None), getattr(order, "side", None)
-
-    def _normalize_strength(self, strength: float | None) -> float:
-        """Project raw signal ``strength`` to a 0–1 sizing range."""
-
-        if strength is None:
-            return 0.0
-        try:
-            raw = float(strength)
-        except (TypeError, ValueError):
-            return 0.0
-        if not math.isfinite(raw) or raw <= 0.0:
-            return 0.0
-        cap = float(getattr(self, "max_signal_strength", 1.0))
-        if not math.isfinite(cap) or cap <= 0.0:
-            cap = 1.0
-        floor = float(getattr(self, "min_signal_strength", 0.0))
-        if not math.isfinite(floor) or floor < 0.0:
-            floor = 0.0
-        floor = min(floor, cap)
-        min_frac = float(getattr(self, "min_strength_fraction", 0.0))
-        if not math.isfinite(min_frac) or min_frac < 0.0:
-            min_frac = 0.0
-        min_frac = min(min_frac, 1.0)
-        if raw <= floor:
-            return min_frac if raw > 0.0 else 0.0
-        span = cap - floor
-        if span <= 0:
-            return 1.0
-        scaled = (raw - floor) / span
-        scaled = max(0.0, min(scaled, 1.0))
-        return min_frac + (1.0 - min_frac) * scaled
-
+      
     def _track_requote(
         self,
         order: Order | None = None,
@@ -280,28 +249,11 @@ class Strategy(ABC):
         ``limit_price`` and returns the signal unchanged.
         """
 
-        symbol = bar.get("symbol")
         if signal is not None:
-            raw_strength = getattr(signal, "strength", None)
-            if raw_strength is None and isinstance(signal, dict):
-                raw_strength = signal.get("strength")
-            norm_strength = self._normalize_strength(raw_strength)
-            if hasattr(signal, "metadata") and getattr(signal, "metadata") is not None:
-                try:
-                    if raw_strength is not None:
-                        signal.metadata.setdefault("raw_strength", float(raw_strength))
-                except (TypeError, ValueError):
-                    pass
-            if isinstance(signal, dict):
-                signal["strength"] = norm_strength
-            else:
-                signal.strength = norm_strength
+            symbol = bar.get("symbol")
             if symbol:
-                side = signal.get("side") if isinstance(signal, dict) else signal.side
-                self._track_requote(key=(symbol, side), reset=True)
-            if isinstance(signal, dict):
-                signal.setdefault("limit_price", price)
-            elif signal.limit_price is None:
+                self._track_requote(key=(symbol, signal.side), reset=True)
+            if signal.limit_price is None:
                 signal.limit_price = price
         rs = getattr(self, "risk_service", None)
         if rs is None:
