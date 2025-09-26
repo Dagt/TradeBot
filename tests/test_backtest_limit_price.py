@@ -164,3 +164,53 @@ def test_expired_limit_order_requote(monkeypatch):
     assert RequoteStrategy.instances[0].last_order.place_price == pytest.approx(
         requote_limit
     )
+
+
+def test_expired_limit_order_clears_open_orders(monkeypatch):
+    """Expired orders without a re-quote should release reserved exposure."""
+
+    limit = 10.0
+
+    class ExpiryStrategy:
+        instances = []
+
+        def __init__(self, risk_service=None):
+            self.submitted = False
+            self.expiry_calls = 0
+            ExpiryStrategy.instances.append(self)
+
+        def on_bar(self, _):
+            if self.submitted:
+                return None
+            self.submitted = True
+            return SimpleNamespace(side="buy", strength=1.0, limit_price=limit)
+
+        def on_order_expiry(self, order, res):
+            self.expiry_calls += 1
+            assert res["pending_qty"] == pytest.approx(order.remaining_qty)
+            return None
+
+    monkeypatch.setitem(STRATEGIES, "expiry", ExpiryStrategy)
+
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 1, 2],
+            "open": [100.0, 100.0, 100.0],
+            "high": [100.0, 100.0, 100.0],
+            "low": [100.0, 100.0, 100.0],
+            "close": [100.0, 100.0, 100.0],
+            "volume": [1000, 1000, 1000],
+        }
+    )
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data}, [("expiry", "SYM")], latency=1, window=1, verbose_fills=True
+    )
+    res = engine.run()
+
+    assert len(res["orders"]) == 1
+    assert res["fills"] == []
+    assert ExpiryStrategy.instances[0].expiry_calls >= 1
+
+    svc = engine.risk[("expiry", "SYM")]
+    assert svc.account.open_orders == {}
