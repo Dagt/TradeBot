@@ -10,9 +10,13 @@ vol_quantile:
     mantenga coherente cuando se opera en diferentes escalas temporales o
     mercados.
 offset_frac:
-    Fracción base del ATR empleada para cruzar el mercado con órdenes límite;
-    al igual que en ``vol_quantile`` el valor se reescala internamente según el
-    ``timeframe``.
+    Fracción base del ATR empleada para cruzar el mercado con órdenes límite.
+    Internamente se modula dinámicamente atendiendo a la pendiente/regimen
+    detectado, al ATR expresado en ``bps`` y al multiplicador temporal actual.
+    Una señal fuerte o un ``timeframe`` más rápido permiten offsets mayores,
+    mientras que mercados lentos reducen el cruce.  La metadata de cada señal
+    expone además un ``partial_take_profit`` para coordinar reducciones con
+    :class:`RiskService`.
 """
 
 import math
@@ -145,16 +149,30 @@ class BreakoutATR(Strategy):
             return 0
         return max(1, int(math.ceil(self._cooldown_minutes / max(tf_minutes, 1e-9))))
 
-    def _offset_fraction(self, tf_mult: float) -> float:
-        """Return the ATR fraction used to cross the market with limit orders."""
+    def _offset_fraction(
+        self,
+        tf_mult: float,
+        regime: float,
+        atr_bps: float,
+        strength: float,
+    ) -> float:
+        """Return the ATR fraction used when crossing with limit orders."""
 
-        base = self.base_offset_frac
-        if tf_mult <= 1:
-            return base * 0.75
-        if tf_mult <= 3:
-            return base * 0.6
-        scale = max(tf_mult ** 0.5, 1.2)
-        return base * min(scale, 3.0)
+        base = max(self.base_offset_frac, 1e-4)
+        ratio = max(tf_mult, 0.25)
+        if ratio <= 1.0:
+            tf_factor = 1.0 + (1.0 - ratio) * 0.45
+        else:
+            tf_factor = 1.0 / (1.0 + 0.35 * math.log1p(ratio - 1.0))
+        regime_abs = abs(regime)
+        regime_factor = 1.0 + min(0.6, regime_abs * 0.25)
+        atr_factor = 1.0
+        if math.isfinite(atr_bps):
+            atr_factor += min(0.5, max(0.0, (atr_bps - 20.0) / 40.0))
+        strength_adj = max(0.0, strength - 1.0)
+        strength_factor = 0.95 + min(0.8, strength_adj * 0.45)
+        frac = base * tf_factor * regime_factor * atr_factor * strength_factor
+        return float(self._clamp(frac, base * 0.4, base * 5.0))
 
     @staticmethod
     def _clamp(value: float, minimum: float, maximum: float) -> float:
@@ -354,18 +372,47 @@ class BreakoutATR(Strategy):
         strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        target_offset = atr_val * self._offset_fraction(tf_mult)
         abs_price = max(abs(last_close), 1e-9)
-        max_offset = abs_price * 0.006
-        min_offset = abs_price * 0.0005
+        offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
+        target_offset = atr_val * offset_frac
+        spread = bar.get("spread")
+        if spread is None and {"ask", "bid"} <= bar.keys():
+            try:
+                spread = float(bar["ask"]) - float(bar["bid"])
+            except (TypeError, ValueError):
+                spread = None
+        spread_pct = None
+        if spread is not None and abs_price > 0:
+            spread_pct = max(0.0, float(spread) / abs_price)
+        liquidity_factor = 1.0
+        if spread_pct is not None:
+            if spread_pct <= 0.0006:
+                liquidity_factor *= 1.35
+            elif spread_pct >= 0.0015:
+                liquidity_factor *= 0.8
+        strength_adj = max(0.0, strength - 1.0)
+        min_offset_pct = 0.0004 * (1.0 + 0.3 * strength_adj)
+        min_offset_pct *= 0.9 + 0.15 * liquidity_factor
+        min_offset = abs_price * min_offset_pct
+        base_max_pct = 0.006
+        regime_boost = 1.0 + min(0.4, max(0.0, regime_abs - 0.8) * 0.25)
+        strength_boost = 1.0 + min(0.6, strength_adj * 0.4)
+        atr_boost = 1.0 + min(0.5, max(0.0, (atr_bps - 25.0) / 60.0))
+        max_offset_pct = base_max_pct * liquidity_factor * regime_boost * strength_boost * atr_boost
+        max_offset_pct = min(max_offset_pct, 0.015)
+        max_offset = abs_price * max_offset_pct
         target_offset = max(min_offset, min(target_offset, max_offset))
+        initial_offset = min(target_offset, max(min_offset, target_offset * 0.35))
+        if not math.isfinite(initial_offset) or initial_offset <= 0:
+            initial_offset = min_offset
+        step_ratio = 0.3 + min(0.35, strength_adj * 0.25) + min(0.2, max(0.0, regime_abs - 0.5) * 0.12)
+        step_ratio *= min(1.4, 0.9 + 0.25 * liquidity_factor)
+        step_increment = max(min_offset, min(target_offset - initial_offset, target_offset * step_ratio))
+        if not math.isfinite(step_increment) or step_increment <= 0:
+            step_increment = min_offset
         base_price = level
         limit_price = base_price
         sig.limit_price = limit_price
-        initial_offset = min_offset
-        step_increment = max(min_offset, (target_offset - initial_offset) * 0.5)
-        if not math.isfinite(step_increment) or step_increment <= 0:
-            step_increment = min_offset
         limit_cap = target_offset
         sig.metadata.update(
             {
@@ -377,6 +424,11 @@ class BreakoutATR(Strategy):
                 "step_mult": 0.75,
                 "chase": True,
                 "regime": regime,
+                "partial_take_profit": {
+                    "qty_pct": float(self._clamp(0.25 + strength_adj * 0.2, 0.2, 0.6)),
+                    "atr_multiple": float(self._clamp(1.2 + strength_adj * 0.35 + regime_abs * 0.15, 1.2, 2.5)),
+                    "mode": "scale_out",
+                },
                 "post_only": True,
             }
         )
@@ -412,6 +464,7 @@ class BreakoutATR(Strategy):
                 "bars_held": 0,
                 "max_hold": max_hold,
                 "strength": strength,
+                "partial_take_profit": sig.metadata.get("partial_take_profit"),
             }
 
         return self.finalize_signal(bar, last_close, sig)
