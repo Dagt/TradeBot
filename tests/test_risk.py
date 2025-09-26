@@ -110,6 +110,83 @@ def test_update_position_sets_initial_stop_and_trailing():
     assert trade["stage"] >= 4
 
 
+def test_manage_position_partial_take_profit_scales_out_and_trails():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(guard, account=Account(float("inf")), risk_pct=0.02, risk_per_trade=1.0)
+    trade = {
+        "side": "buy",
+        "entry_price": 100.0,
+        "current_price": 102.0,
+        "atr": 2.0,
+        "stop": 98.0,
+        "strength": 1.0,
+        "qty": 1.0,
+        "stage": 0,
+        "bars_held": 0,
+        "_trail_done": False,
+        "partial_take_profit": {"qty_pct": 0.4, "atr_multiple": 1.5},
+    }
+
+    action = rs.manage_position(trade)
+    assert action == "hold"
+    assert trade["stage"] >= 1
+    assert trade.get("_ptp_done") in (None, False)
+
+    trade["_trail_done"] = False
+    trade["current_price"] = 104.0
+    action = rs.manage_position(trade)
+    assert action == "scale_out"
+    assert trade["strength"] == pytest.approx(0.6)
+    assert trade["stage"] >= 1
+    assert trade["_ptp_done"] is True
+
+    trade["_trail_done"] = False
+    trade["current_price"] = 108.0
+    action = rs.manage_position(trade)
+    assert action == "hold"
+    assert trade["stage"] >= 3
+    assert trade["stop"] > trade["entry_price"]
+    assert trade["_ptp_done"] is True
+
+
+def test_manage_position_partial_take_profit_resets_on_scale_in():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(guard, account=Account(float("inf")), risk_pct=0.02, risk_per_trade=1.0)
+    trade = {
+        "side": "buy",
+        "entry_price": 100.0,
+        "current_price": 104.0,
+        "atr": 2.0,
+        "stop": 98.0,
+        "strength": 1.0,
+        "qty": 1.0,
+        "stage": 0,
+        "bars_held": 0,
+        "_trail_done": False,
+        "partial_take_profit": {"qty_pct": 0.4, "atr_multiple": 1.5},
+    }
+
+    action = rs.manage_position(trade)
+    assert action == "scale_out"
+    assert trade["strength"] == pytest.approx(0.6)
+    assert trade["_ptp_done"] is True
+
+    trade["_trail_done"] = False
+    trade["current_price"] = 106.0
+    signal = {"side": "buy", "strength": 0.9}
+    action = rs.manage_position(trade, signal)
+    assert action == "scale_in"
+    assert trade["strength"] == pytest.approx(0.9)
+    assert trade.get("_ptp_done") is False
+
+    trade["_trail_done"] = False
+    trade["current_price"] = 112.0
+    action = rs.manage_position(trade)
+    assert action == "scale_out"
+    assert trade["strength"] == pytest.approx(0.9 * (1 - 0.4))
+    assert trade["_ptp_done"] is True
+
+
 @pytest.mark.parametrize("qty", [1.0, -1.0])
 def test_update_position_uses_risk_pct_for_stop(qty):
     """Initial stop should be placed at ``risk_pct`` distance from entry."""
