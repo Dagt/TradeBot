@@ -75,6 +75,43 @@ def test_breakout_atr_regime_scales_strength_and_cooldown():
         assert strat.cooldown_bars <= base_cooldown
 
 
+def test_breakout_atr_vol_quantile_configures_threshold():
+    df = _make_ohlcv(200, slope=0.5)
+    df.loc[df.index[-1], "close"] += 5.0
+    df.loc[df.index[-1], "high"] = df["close"].iloc[-1] + 0.3
+    df.loc[df.index[-1], "volume"] = 200.0
+
+    bar_common = {
+        "window": df,
+        "timeframe": "5m",
+        "volatility": 0.0,
+        "market_type": "perp",
+    }
+
+    strat_low = BreakoutATR(timeframe="5m", vol_quantile=0.2)
+    strat_high = BreakoutATR(timeframe="5m", vol_quantile=0.4)
+
+    bar_low = {**bar_common, "symbol": "QLOW"}
+    bar_high = {**bar_common, "symbol": "QHGH"}
+
+    strat_low.on_bar(bar_low)
+    strat_high.on_bar(bar_high)
+
+    tf_mult = strat_low._tf_multiplier("5m")
+    expected_low = strat_low._vol_quantile_for(tf_mult, "perp")
+    expected_high = strat_high._vol_quantile_for(tf_mult, "perp")
+
+    rq_low = strat_low._rq._cache.get(("QLOW", "atr"))
+    rq_high = strat_high._rq._cache.get(("QHGH", "atr"))
+
+    assert rq_low is not None
+    assert rq_high is not None
+
+    assert expected_low != pytest.approx(expected_high)
+    assert rq_low.q == pytest.approx(expected_low)
+    assert rq_high.q == pytest.approx(expected_high)
+
+
 @pytest.mark.parametrize("timeframe", ["1m"])
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     strat = BreakoutATR(ema_n=2, atr_n=2)
