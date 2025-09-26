@@ -139,6 +139,7 @@ class Order:
     exchange: str = field(default="default", compare=False)
     place_price: float = field(default=0.0, compare=False)
     limit_price: float | None = field(default=None, compare=False)
+    price: float | None = field(default=None, compare=False)
     mark_price: float = field(default=0.0, compare=False)
     remaining_qty: float = field(default=0.0, compare=False)
     filled_qty: float = field(default=0.0, compare=False)
@@ -1029,7 +1030,17 @@ class EventDrivenBacktestEngine:
                         else:
                             price = max(market_price, limit_price)
                     if not limit_touched:
-                        if not self.cancel_unfilled:
+                        expiry_price = float(price)
+                        expiry_res = {
+                            "pending_qty": order.remaining_qty,
+                            "price": expiry_price,
+                        }
+                        order.price = expiry_price
+                        strategy = self.strategies[(order.strategy, order.symbol)]
+                        action = strategy.on_order_expiry(order, expiry_res)
+                        if action == "re_quote" and not self.cancel_unfilled:
+                            order.limit_price = order.price
+                            order.place_price = order.price
                             order.execute_index = i + 1
                             heapq.heappush(order_queue, order)
                         continue
