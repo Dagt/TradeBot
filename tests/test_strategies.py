@@ -30,6 +30,22 @@ def _make_ohlcv(rows: int, *, slope: float = 0.2, noise: float = 0.0) -> pd.Data
     })
 
 
+def _count_signals(strat: BreakoutATR, df: pd.DataFrame, timeframe: str, symbol: str) -> int:
+    count = 0
+    for idx in range(40, len(df)):
+        window = df.iloc[: idx + 1]
+        bar = {
+            "window": window,
+            "timeframe": timeframe,
+            "symbol": symbol,
+            "volatility": 0.0,
+        }
+        sig = strat.on_bar(bar)
+        if sig is not None:
+            count += 1
+    return count
+
+
 def test_breakout_atr_timeframe_parameters_scale():
     strat = BreakoutATR(timeframe="3m")
     fast_tf = strat._ema_period(1)
@@ -72,6 +88,8 @@ def test_breakout_atr_regime_scales_strength_and_cooldown():
     assert sig.metadata["regime"] == pytest.approx(strat.last_regime)
     assert abs(sig.metadata["regime"]) >= 0.55
     assert sig.strength > 0.6
+    assert "regime_threshold" in sig.metadata
+    assert strat.min_regime <= sig.metadata["regime_threshold"] <= strat.max_regime
     if base_cooldown > 0:
         assert strat.cooldown_bars <= base_cooldown
 
@@ -154,6 +172,53 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     assert sig_buy.post_only is True
     assert "regime" in sig_buy.metadata
     assert isinstance(sig_buy.metadata["regime"], float)
+    assert "regime_threshold" in sig_buy.metadata
+    assert strat.min_regime <= sig_buy.metadata["regime_threshold"] <= strat.max_regime
+
+
+def test_breakout_atr_regime_threshold_responds_to_timeframe():
+    df = _make_ohlcv(260, slope=0.45, noise=0.02)
+    for idx in range(220, len(df)):
+        df.loc[idx, "close"] += (idx - 219) * 0.6
+        df.loc[idx, "high"] = df.loc[idx, "close"] + 0.4
+        df.loc[idx, "low"] = df.loc[idx, "close"] - 0.4
+        df.loc[idx, "volume"] = 180.0
+
+    fast = BreakoutATR(timeframe="1m", volume_factor=0.0)
+    slow = BreakoutATR(timeframe="15m", volume_factor=0.0)
+
+    fast_signals = _count_signals(fast, df, "1m", "FAST")
+    slow_signals = _count_signals(slow, df, "15m", "SLOW")
+
+    assert fast_signals > 0
+    assert slow_signals >= 0
+    assert fast_signals >= slow_signals
+
+
+def test_breakout_atr_regime_threshold_filters_choppy_runs():
+    trending = _make_ohlcv(260, slope=0.55, noise=0.01)
+    for idx in range(220, len(trending)):
+        trending.loc[idx, "close"] += (idx - 219) * 0.5
+        trending.loc[idx, "high"] = trending.loc[idx, "close"] + 0.4
+        trending.loc[idx, "low"] = trending.loc[idx, "close"] - 0.4
+        trending.loc[idx, "volume"] = 180.0
+
+    choppy = _make_ohlcv(260, slope=0.0, noise=0.35)
+    for idx in range(220, len(choppy)):
+        choppy.loc[idx, "close"] += (-1) ** idx * 0.15
+        choppy.loc[idx, "high"] = choppy.loc[idx, "close"] + 0.4
+        choppy.loc[idx, "low"] = choppy.loc[idx, "close"] - 0.4
+        choppy.loc[idx, "volume"] = 180.0
+
+    strat_trend = BreakoutATR(timeframe="3m", volume_factor=0.0)
+    strat_choppy = BreakoutATR(timeframe="3m", volume_factor=0.0)
+
+    trend_signals = _count_signals(strat_trend, trending, "3m", "TREND")
+    choppy_signals = _count_signals(strat_choppy, choppy, "3m", "CHOP")
+
+    assert trend_signals > 0
+    assert choppy_signals <= trend_signals
+    assert choppy_signals == 0
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])

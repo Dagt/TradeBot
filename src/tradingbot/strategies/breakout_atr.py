@@ -111,6 +111,8 @@ class BreakoutATR(Strategy):
         offset_frac: float = 0.02,
         *,
         config_path: str | None = None,
+        min_regime: float = 0.2,
+        max_regime: float = 0.75,
         **kwargs,
     ):
         params = {**load_params(config_path), **kwargs}
@@ -121,6 +123,16 @@ class BreakoutATR(Strategy):
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
         self.volume_factor = max(0.0, float(params.get("volume_factor", 1.0)))
+        self.min_regime = float(params.get("min_regime", min_regime))
+        self.max_regime = float(params.get("max_regime", max_regime))
+        if not math.isfinite(self.min_regime):
+            self.min_regime = min_regime
+        if not math.isfinite(self.max_regime):
+            self.max_regime = max_regime
+        if self.max_regime < self.min_regime:
+            self.min_regime, self.max_regime = self.max_regime, self.min_regime
+        self.min_regime = self._clamp(self.min_regime, 0.05, 2.0)
+        self.max_regime = self._clamp(self.max_regime, self.min_regime + 1e-6, 3.0)
         tf = str(params.get("timeframe", "3m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
@@ -181,6 +193,33 @@ class BreakoutATR(Strategy):
         ratio = max(tf_mult, 1.0)
         scaled = 4.0 * ratio
         return int(round(self._clamp(scaled, 6.0, 80.0)))
+
+    def _regime_threshold(
+        self, tf_mult: float, atr_bps: float, price_std: float, last_close: float
+    ) -> float:
+        base = 0.28 + 0.05 * math.log1p(max(tf_mult, 1.0))
+        vol_factor = 1.0
+        if atr_bps < 5.0:
+            vol_factor *= 1.45
+        elif atr_bps < 10.0:
+            vol_factor *= 1.2
+        elif atr_bps > 40.0:
+            vol_factor *= 0.65
+        elif atr_bps > 25.0:
+            vol_factor *= 0.8
+
+        price_std_bps = 0.0
+        if last_close:
+            price_std_bps = abs(price_std) / abs(last_close) * 10000.0
+        dispersion_ratio = price_std_bps / max(atr_bps, 1e-6)
+        if dispersion_ratio > 1.4:
+            vol_factor *= min(1.8, 1.0 + 0.4 * (dispersion_ratio - 1.0))
+        elif dispersion_ratio < 0.8:
+            reduction = 0.9 - 0.25 * (0.8 - dispersion_ratio)
+            vol_factor *= max(0.6, reduction)
+
+        threshold = base * vol_factor
+        return self._clamp(threshold, self.min_regime, self.max_regime)
 
     def _vol_quantile_for(
         self, tf_mult: float, market_type: str | None = None
@@ -253,7 +292,9 @@ class BreakoutATR(Strategy):
         self.last_regime = regime
 
         regime_abs = abs(regime)
-        regime_threshold = 0.3
+        regime_threshold = self._regime_threshold(
+            tf_mult, atr_bps, price_std, last_close
+        )
         if base_cooldown > 0:
             cooldown_factor = 1.2 if regime_abs < 1.0 else 0.7
             self.cooldown_bars = max(1, int(round(base_cooldown * cooldown_factor)))
@@ -377,6 +418,7 @@ class BreakoutATR(Strategy):
                 "step_mult": 0.75,
                 "chase": True,
                 "regime": regime,
+                "regime_threshold": regime_threshold,
                 "post_only": True,
             }
         )
