@@ -40,6 +40,8 @@ PARAM_INFO = {
     "volume_factor": "Multiplicador de volumen mínimo requerido",
     "cooldown_bars": "Barras a esperar tras una pérdida",
     "strength_target": "Intensidad necesaria para usar el 100% del capital",
+    "slow_tf_vol_boost": "Ajuste progresivo del percentil al usar marcos más lentos",
+    "fast_tf_vol_cap": "Límite superior del percentil efectivo en marcos rápidos",
 }
 
 
@@ -116,6 +118,8 @@ class BreakoutATR(Strategy):
         offset_frac: float = 0.02,
         *,
         config_path: str | None = None,
+        slow_tf_vol_boost: float = 0.15,
+        fast_tf_vol_cap: float | None = None,
         **kwargs,
     ):
         params = {**load_params(config_path), **kwargs}
@@ -125,6 +129,13 @@ class BreakoutATR(Strategy):
         # Valores base parametrizables para 1m.
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
+        self.slow_tf_vol_boost = max(
+            0.0, float(params.get("slow_tf_vol_boost", slow_tf_vol_boost))
+        )
+        fast_cap_param = params.get("fast_tf_vol_cap", fast_tf_vol_cap)
+        self.fast_tf_vol_cap = (
+            None if fast_cap_param is None else float(fast_cap_param)
+        )
         self.min_regime = max(0.05, float(params.get("min_regime", 0.2)))
         self.max_regime = max(self.min_regime, float(params.get("max_regime", 0.6)))
         self.volume_factor = max(0.0, float(params.get("volume_factor", 1.0)))
@@ -275,13 +286,13 @@ class BreakoutATR(Strategy):
         base = max(self.base_vol_quantile, 0.01)
         ratio = max(tf_mult, 0.5)
         if ratio <= 1.0:
-            factor = 1.5
-        elif ratio <= 3.0:
-            factor = 1.25
-        elif ratio <= 6.0:
-            factor = 1.0
+            factor = 1.0 + (1.0 - ratio) * 0.25
+            if self.fast_tf_vol_cap is not None:
+                factor = min(factor, max(0.01, float(self.fast_tf_vol_cap)))
         else:
-            factor = max(0.25, 5.0 / ratio)
+            growth = math.sqrt(ratio) - 1.0
+            boost = max(self.slow_tf_vol_boost, 0.0)
+            factor = 1.0 + boost * growth
         quantile = base * factor
         if market_type:
             mt = market_type.lower()
