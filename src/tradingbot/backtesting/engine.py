@@ -1010,10 +1010,7 @@ class EventDrivenBacktestEngine:
                             limit_touched = low_val <= limit_price + tol
                         else:
                             limit_touched = market_price <= limit_price + tol
-                        if not order.post_only and not self.use_l2:
-                            price = limit_price
-                        else:
-                            price = min(market_price, limit_price)
+                        price = min(market_price, limit_price)
                     else:
                         high_arr = arrs.get("high")
                         high_val = None
@@ -1026,10 +1023,7 @@ class EventDrivenBacktestEngine:
                             limit_touched = high_val >= limit_price - tol
                         else:
                             limit_touched = market_price >= limit_price - tol
-                        if not order.post_only and not self.use_l2:
-                            price = limit_price
-                        else:
-                            price = max(market_price, limit_price)
+                        price = max(market_price, limit_price)
                     if not limit_touched:
                         expiry_price = float(price)
                         expiry_res = {
@@ -1215,7 +1209,14 @@ class EventDrivenBacktestEngine:
                 cash += delta_cash
                 svc.account.update_cash(delta_cash)
                 prev_qty = svc.account.current_exposure(order.symbol)[0]
-                svc.on_fill(order.symbol, order.side, fill_qty, price)
+                svc.on_fill(
+                    order.symbol,
+                    order.side,
+                    fill_qty,
+                    price,
+                    fee=fee_cost,
+                    slippage=slippage_pnl,
+                )
                 sync_cash()
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
@@ -1390,7 +1391,14 @@ class EventDrivenBacktestEngine:
                     cash += delta_cash
                     svc.account.update_cash(delta_cash)
                     prev_qty = svc.account.current_exposure(symbol)[0]
-                    svc.on_fill(symbol, side, exit_qty, exit_price)
+                    svc.on_fill(
+                        symbol,
+                        side,
+                        exit_qty,
+                        exit_price,
+                        fee=fee_cost,
+                        slippage=slippage_pnl,
+                    )
                     sync_cash()
                     new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                     realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
@@ -1874,7 +1882,14 @@ class EventDrivenBacktestEngine:
                     delta_cash = -(trade_value + fee_cost)
                 cash += delta_cash
                 svc.account.update_cash(delta_cash)
-                svc.on_fill(symbol, side, qty, last_price)
+                svc.on_fill(
+                    symbol,
+                    side,
+                    qty,
+                    last_price,
+                    fee=fee_cost,
+                    slippage=slippage_pnl,
+                )
                 new_rpnl = getattr(svc.pos, "realized_pnl", 0.0)
                 realized_pnl = new_rpnl - prev_rpnl - fee_cost - slippage_pnl
                 realized_pnl_total += realized_pnl

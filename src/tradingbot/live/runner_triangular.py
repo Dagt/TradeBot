@@ -275,8 +275,23 @@ async def run_triangular_binance(cfg: TriConfig, risk: RiskService | None = None
                         continue
 
                     fills += 3
-                    for side, sym, qty_leg, _r in legs:
-                        risk.on_fill(sym, side, qty_leg, venue="binance")
+                    for side, sym, qty_leg, resp in legs:
+                        fee_val = resp.get("fee") if isinstance(resp, dict) else None
+                        if fee_val is None and isinstance(resp, dict):
+                            fee_val = resp.get("fee_cost")
+                        price_val = None
+                        if isinstance(resp, dict):
+                            price_val = resp.get("price") or resp.get("avg_price")
+                        if price_val is None:
+                            price_val = last.get("spot")
+                        risk.on_fill(
+                            sym,
+                            side,
+                            qty_leg,
+                            price=price_val,
+                            fee=fee_val,
+                            venue="binance",
+                        )
                     if engine is not None:
                         for side, symbol, qty, r in legs:
                             try:

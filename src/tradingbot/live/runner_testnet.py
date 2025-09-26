@@ -906,8 +906,36 @@ async def _run_symbol(
                 "METRICS %s",
                 json.dumps({"exposure": cur_qty, "locked": locked}),
             )
+        exec_price = resp.get("price") or resp.get("avg_price")
+        if exec_price is None:
+            exec_price = price
+        try:
+            exec_price_f = float(exec_price) if exec_price is not None else None
+        except (TypeError, ValueError):
+            exec_price_f = None
+        fee_val = resp.get("fee")
+        if fee_val is None:
+            fee_val = resp.get("fee_cost")
+        slippage_cash = resp.get("slippage")
+        if slippage_cash is None:
+            slippage_cash = resp.get("slippage_cost")
+        if slippage_cash is None and exec_price_f is not None and price is not None:
+            try:
+                base_price_f = float(price)
+                if side.lower() == "buy":
+                    slippage_cash = (exec_price_f - base_price_f) * filled_qty
+                else:
+                    slippage_cash = (base_price_f - exec_price_f) * filled_qty
+            except (TypeError, ValueError):
+                slippage_cash = None
         risk.on_fill(
-            symbol, side, filled_qty, venue=venue if not dry_run else "paper"
+            symbol,
+            side,
+            filled_qty,
+            price=exec_price_f,
+            fee=fee_val,
+            slippage=slippage_cash,
+            venue=venue if not dry_run else "paper",
         )
         realized_raw = resp.get("realized_pnl", getattr(broker.state, "realized_pnl", prev_rpnl))
         try:

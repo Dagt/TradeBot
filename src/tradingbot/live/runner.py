@@ -271,7 +271,41 @@ async def run_live_binance(
                 filled_qty = float(resp.get("filled_qty", 0.0))
                 pending_qty = float(resp.get("pending_qty", 0.0))
                 risk.account.update_open_order(symbol, close_side, pending_qty)
-                risk.on_fill(symbol, close_side, filled_qty, venue="binance")
+                exec_price = resp.get("price") or resp.get("avg_price")
+                if exec_price is None:
+                    exec_price = price
+                try:
+                    exec_price_f = float(exec_price) if exec_price is not None else None
+                except (TypeError, ValueError):
+                    exec_price_f = None
+                fee_val = resp.get("fee")
+                if fee_val is None:
+                    fee_val = resp.get("fee_cost")
+                slippage_cash = resp.get("slippage")
+                if slippage_cash is None:
+                    slippage_cash = resp.get("slippage_cost")
+                if (
+                    slippage_cash is None
+                    and exec_price_f is not None
+                    and price is not None
+                ):
+                    try:
+                        base_price_f = float(price)
+                        if close_side == "buy":
+                            slippage_cash = (exec_price_f - base_price_f) * filled_qty
+                        else:
+                            slippage_cash = (base_price_f - exec_price_f) * filled_qty
+                    except (TypeError, ValueError):
+                        slippage_cash = None
+                risk.on_fill(
+                    symbol,
+                    close_side,
+                    filled_qty,
+                    price=exec_price_f,
+                    fee=fee_val,
+                    slippage=slippage_cash,
+                    venue="binance",
+                )
                 if pending_qty > 0:
                     risk.account.update_open_order(symbol, close_side, -pending_qty)
                 delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl
@@ -302,7 +336,43 @@ async def run_live_binance(
                     filled_qty = float(resp.get("filled_qty", 0.0))
                     pending_qty = float(resp.get("pending_qty", 0.0))
                     risk.account.update_open_order(symbol, side, pending_qty)
-                    risk.on_fill(symbol, side, filled_qty, venue="binance")
+                    exec_price = resp.get("price") or resp.get("avg_price")
+                    if exec_price is None:
+                        exec_price = price
+                    try:
+                        exec_price_f = (
+                            float(exec_price) if exec_price is not None else None
+                        )
+                    except (TypeError, ValueError):
+                        exec_price_f = None
+                    fee_val = resp.get("fee")
+                    if fee_val is None:
+                        fee_val = resp.get("fee_cost")
+                    slippage_cash = resp.get("slippage")
+                    if slippage_cash is None:
+                        slippage_cash = resp.get("slippage_cost")
+                    if (
+                        slippage_cash is None
+                        and exec_price_f is not None
+                        and price is not None
+                    ):
+                        try:
+                            base_price_f = float(price)
+                            if side == "buy":
+                                slippage_cash = (exec_price_f - base_price_f) * filled_qty
+                            else:
+                                slippage_cash = (base_price_f - exec_price_f) * filled_qty
+                        except (TypeError, ValueError):
+                            slippage_cash = None
+                    risk.on_fill(
+                        symbol,
+                        side,
+                        filled_qty,
+                        price=exec_price_f,
+                        fee=fee_val,
+                        slippage=slippage_cash,
+                        venue="binance",
+                    )
                     if pending_qty > 0:
                         risk.account.update_open_order(symbol, side, -pending_qty)
                     delta_rpnl = resp.get("realized_pnl", broker.state.realized_pnl) - prev_rpnl

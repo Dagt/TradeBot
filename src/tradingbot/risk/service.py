@@ -259,7 +259,16 @@ class RiskService:
     def _reset_price_trackers(self) -> None:
         self._entry_price = None
 
-    def add_fill(self, side: str, qty: float, price: float | None = None) -> None:
+    def add_fill(
+        self,
+        side: str,
+        qty: float,
+        price: float | None = None,
+        *,
+        symbol: str | None = None,
+        fee: float | None = None,
+        slippage: float | None = None,
+    ) -> None:
         signed = float(qty) if side == "buy" else -float(qty)
         prev = self._pos.qty
         if prev * signed < 0 and price is not None and self._entry_price is not None:
@@ -286,6 +295,20 @@ class RiskService:
                 self._entry_price = (
                     self._entry_price * abs_prev + float(price) * abs_new
                 ) / (abs_prev + abs_new)
+        if symbol is not None:
+            trade = self.trades.setdefault(symbol, {})
+            if fee is not None:
+                try:
+                    fee_val = float(fee)
+                except (TypeError, ValueError):
+                    fee_val = 0.0
+                trade["fees_paid"] = float(trade.get("fees_paid", 0.0)) + fee_val
+            if slippage is not None:
+                try:
+                    slip_val = float(slippage)
+                except (TypeError, ValueError):
+                    slip_val = 0.0
+                trade["slippage_paid"] = float(trade.get("slippage_paid", 0.0)) + slip_val
 
     def check_limits(self, price: float) -> bool:
         if not self.enabled:
@@ -329,8 +352,12 @@ class RiskService:
                 self._signal_targets.pop(symbol, None)
                 return
             side = "buy" if qty > 0 else "sell"
-            is_new_trade = symbol not in self.trades
-            trade = self.trades.get(symbol, {})
+            trade = self.trades.get(symbol)
+            if not isinstance(trade, dict):
+                trade = {}
+            is_new_trade = "stage" not in trade
+            trade.setdefault("fees_paid", 0.0)
+            trade.setdefault("slippage_paid", 0.0)
             trade.update({"side": side, "qty": abs(qty)})
             if atr is not None:
                 trade["atr"] = float(atr)
@@ -521,7 +548,25 @@ class RiskService:
             except (TypeError, ValueError):
                 price_val = None
         if price_val is not None and not trail_done:
-            self.update_trailing(trade, price_val)
+            def _to_float(value: float | int | str | None, default: float = 0.0) -> float:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return default
+
+            if isinstance(trade, dict):
+                fees_paid = _to_float(trade.get("fees_paid"))
+                slip_paid = _to_float(
+                    trade.get("slippage_paid", trade.get("slippage"))
+                )
+            else:
+                fees_paid = _to_float(getattr(trade, "fees_paid", None))
+                slip_attr = getattr(trade, "slippage_paid", None)
+                if slip_attr is None:
+                    slip_attr = getattr(trade, "slippage", None)
+                slip_paid = _to_float(slip_attr)
+            fees_slip = fees_paid + slip_paid
+            self.update_trailing(trade, price_val, fees_slip=fees_slip)
             if isinstance(trade, dict):
                 trade["_trail_done"] = True
             else:
@@ -865,12 +910,21 @@ class RiskService:
         side: str,
         qty: float,
         price: float | None = None,
+        fee: float | None = None,
+        slippage: float | None = None,
         venue: str | None = None,
         atr: float | None = None,
     ) -> None:
         """Update internal position books after a fill."""
         with self._lock:
-            self.add_fill(side, qty, price=price)
+            self.add_fill(
+                side,
+                qty,
+                price=price,
+                symbol=symbol,
+                fee=fee,
+                slippage=slippage,
+            )
             self.guard.update_position_on_order(symbol, side, qty, venue=venue)
             if venue != "paper":
                 self.account.update_open_order(symbol, side, -abs(qty))
@@ -886,6 +940,22 @@ class RiskService:
                 self._signal_targets.pop(symbol, None)
                 return
             trade = self.trades.get(symbol, {})
+            if fee is not None:
+                try:
+                    fee_val = float(fee)
+                except (TypeError, ValueError):
+                    fee_val = 0.0
+                trade["fees_paid"] = float(trade.get("fees_paid", 0.0)) + fee_val
+            else:
+                trade.setdefault("fees_paid", 0.0)
+            if slippage is not None:
+                try:
+                    slip_val = float(slippage)
+                except (TypeError, ValueError):
+                    slip_val = 0.0
+                trade["slippage_paid"] = float(trade.get("slippage_paid", 0.0)) + slip_val
+            else:
+                trade.setdefault("slippage_paid", 0.0)
             trade.update(
                 {
                     "side": "buy" if cur_qty > 0 else "sell",

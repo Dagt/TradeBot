@@ -133,8 +133,32 @@ async def run_cross_exchange(cfg: CrossArbConfig, risk: RiskService | None = Non
         await broker.place_limit(cfg.symbol, spot_side, spot_price, size, tif="IOC")
         broker.update_last_price(cfg.symbol, last["perp"])
         await broker.place_limit(cfg.symbol, perp_side, perp_price, size, tif="IOC")
-        risk.on_fill(cfg.symbol, spot_side, size, venue=getattr(cfg.spot, "name", "spot"))
-        risk.on_fill(cfg.symbol, perp_side, size, venue=getattr(cfg.perp, "name", "perp"))
+        spot_fee_bps = getattr(cfg.spot, "taker_fee_bps", 0.0)
+        perp_fee_bps = getattr(cfg.perp, "taker_fee_bps", 0.0)
+        try:
+            fee_spot = size * spot_price * (float(spot_fee_bps) / 10000.0)
+        except (TypeError, ValueError):
+            fee_spot = 0.0
+        try:
+            fee_perp = size * perp_price * (float(perp_fee_bps) / 10000.0)
+        except (TypeError, ValueError):
+            fee_perp = 0.0
+        risk.on_fill(
+            cfg.symbol,
+            spot_side,
+            size,
+            price=spot_price,
+            fee=fee_spot,
+            venue=getattr(cfg.spot, "name", "spot"),
+        )
+        risk.on_fill(
+            cfg.symbol,
+            perp_side,
+            size,
+            price=perp_price,
+            fee=fee_perp,
+            venue=getattr(cfg.perp, "name", "perp"),
+        )
         log.info(
             "CROSS edge=%.4f%% spot=%.2f perp=%.2f qty=%.6f",
             edge * 100,

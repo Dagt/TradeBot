@@ -187,6 +187,41 @@ def test_manage_position_partial_take_profit_resets_on_scale_in():
     assert trade["_ptp_done"] is True
 
 
+def test_trailing_stage_waits_for_net_profit_after_fees():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    rs = RiskService(
+        guard,
+        account=Account(float("inf")),
+        risk_pct=0.02,
+        risk_per_trade=1.0,
+        profit_lock_usd=1.0,
+    )
+    trade = {
+        "side": "buy",
+        "entry_price": 100.0,
+        "current_price": 102.0,
+        "atr": 0.0,
+        "stop": 100.0,
+        "strength": 1.0,
+        "qty": 1.0,
+        "stage": 2,
+        "bars_held": 0,
+        "_trail_done": False,
+        "fees_paid": 2.0,
+        "slippage_paid": 0.0,
+    }
+
+    rs.manage_position(trade)
+    assert trade["stage"] == 2
+    assert trade["stop"] == pytest.approx(100.0)
+
+    trade["_trail_done"] = False
+    trade["current_price"] = 103.0
+    rs.manage_position(trade)
+    assert trade["stage"] >= 3
+    assert trade["stop"] == pytest.approx(103.0)
+
+
 @pytest.mark.parametrize("qty", [1.0, -1.0])
 def test_update_position_uses_risk_pct_for_stop(qty):
     """Initial stop should be placed at ``risk_pct`` distance from entry."""

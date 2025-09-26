@@ -33,6 +33,9 @@ class DummyStrategy:
         side = "buy" if self.i % 2 == 0 else "sell"
         return SimpleNamespace(side=side, strength=1.0)
 
+    def on_order_expiry(self, order, event):
+        return None
+
 
 def _make_csv(tmp_path):
     rng = pd.date_range("2021-01-01", periods=50, freq="T")
