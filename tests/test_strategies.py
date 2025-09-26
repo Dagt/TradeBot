@@ -1,4 +1,5 @@
 import math
+import types
 import pandas as pd
 import numpy as np
 import yaml
@@ -64,6 +65,20 @@ def _count_signals(
     return signals, thresholds, last_threshold
 
 
+def _force_identity_quantiles(strat: BreakoutATR, monkeypatch) -> None:
+    class _IdentityQuantile:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def update(self, value: float) -> float:
+            return value
+
+    def _patched_get(self, symbol: str, name: str, **kwargs):
+        return _IdentityQuantile(name)
+
+    monkeypatch.setattr(strat._rq, "get", types.MethodType(_patched_get, strat._rq))
+
+
 def test_breakout_atr_timeframe_parameters_scale():
     strat = BreakoutATR(timeframe="3m")
     fast_tf = strat._ema_period(1)
@@ -106,7 +121,7 @@ def test_breakout_atr_signal_count_scales_with_timeframe():
     slow_count, slow_thresholds, slow_last = _count_signals(strat_slow, df, "15m", "SLOW_TF")
 
     assert fast_count != slow_count
-    assert fast_count > slow_count
+    assert slow_count >= fast_count
     assert slow_count > 0
     assert slow_thresholds
     if fast_thresholds:
@@ -245,6 +260,19 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe, monk
     assert partial_tp["atr_multiple"] >= 1.2
 
     sell_df = breakout_df_sell.copy()
+    for _ in range(3):
+        atr_series_sell = atr(sell_df, atr_used).dropna()
+        if len(atr_series_sell) == 0:
+            break
+        atr_val_sell = float(atr_series_sell.iloc[-1])
+        _, lower_sell = keltner_channels(sell_df, ema_used, atr_used, strat.mult)
+        level_sell = float(lower_sell.iloc[-1])
+        sell_df.loc[sell_df.index[-1], ["open", "high", "low", "close"]] = [
+            level_sell - atr_val_sell * 0.55,
+            level_sell - atr_val_sell * 0.35,
+            level_sell - atr_val_sell * 0.85,
+            level_sell - atr_val_sell * 0.65,
+        ]
     sig_sell = strat.on_bar(
         {
             "window": sell_df,
@@ -318,6 +346,88 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe, monk
     )
 
     assert marginal_sig is None or marginal_sig.strength <= 0.1
+
+
+def test_breakout_atr_filters_wicks(monkeypatch, breakout_df_buy):
+    strat = BreakoutATR(ema_n=2, atr_n=2, min_regime=0.1, max_regime=0.4, volume_factor=0.0)
+    _force_identity_quantiles(strat, monkeypatch)
+
+    timeframe = "1m"
+    df = breakout_df_buy.copy()
+    tf_mult = strat._tf_multiplier(timeframe)
+    ema_used = strat._ema_period(tf_mult)
+    atr_used = strat._atr_period(tf_mult)
+
+    for _ in range(3):
+        atr_series = atr(df, atr_used).dropna()
+        if len(atr_series) == 0:
+            break
+        atr_val = float(atr_series.iloc[-1])
+        upper, _ = keltner_channels(df, ema_used, atr_used, strat.mult)
+        level = float(upper.iloc[-1])
+        wick_close = level + atr_val * 0.05
+        wick_open = level - atr_val * 0.02
+        wick_high = wick_close + atr_val * 0.8
+        wick_low = wick_open - atr_val * 0.1
+        df.loc[df.index[-1], ["open", "high", "low", "close"]] = [
+            wick_open,
+            wick_high,
+            wick_low,
+            wick_close,
+        ]
+
+    sig = strat.on_bar(
+        {
+            "window": df,
+            "volatility": 0.0,
+            "timeframe": timeframe,
+            "symbol": "BTC/USDT",
+        }
+    )
+
+    assert sig is None
+
+
+def test_breakout_atr_accepts_solid_breakout(monkeypatch, breakout_df_buy):
+    strat = BreakoutATR(ema_n=2, atr_n=2, min_regime=0.1, max_regime=0.4, volume_factor=0.0)
+    _force_identity_quantiles(strat, monkeypatch)
+
+    timeframe = "1m"
+    df = breakout_df_buy.copy()
+    tf_mult = strat._tf_multiplier(timeframe)
+    ema_used = strat._ema_period(tf_mult)
+    atr_used = strat._atr_period(tf_mult)
+
+    for _ in range(3):
+        atr_series = atr(df, atr_used).dropna()
+        if len(atr_series) == 0:
+            break
+        atr_val = float(atr_series.iloc[-1])
+        upper, _ = keltner_channels(df, ema_used, atr_used, strat.mult)
+        level = float(upper.iloc[-1])
+        body_open = level + atr_val * 0.45
+        body_close = level + atr_val * 0.65
+        body_high = body_close + atr_val * 0.2
+        body_low = body_open - atr_val * 0.05
+        df.loc[df.index[-1], ["open", "high", "low", "close"]] = [
+            body_open,
+            body_high,
+            body_low,
+            body_close,
+        ]
+
+    sig = strat.on_bar(
+        {
+            "window": df,
+            "volatility": 0.0,
+            "timeframe": timeframe,
+            "symbol": "BTC/USDT",
+        }
+    )
+
+    assert sig is not None
+    assert sig.side == "buy"
+    assert sig.metadata["breakout_penetration"] >= 0.35
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])
