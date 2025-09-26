@@ -320,26 +320,33 @@ class BreakoutATR(Strategy):
         strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        offset = atr_val * self._offset_fraction(tf_mult)
+        target_offset = atr_val * self._offset_fraction(tf_mult)
         abs_price = max(abs(last_close), 1e-9)
         max_offset = abs_price * 0.006
         min_offset = abs_price * 0.0005
-        offset = max(min_offset, min(offset, max_offset))
-        direction = 1 if side == "buy" else -1
-        ref_price = max(last_close, level) if side == "buy" else min(last_close, level)
-        base_price = ref_price
-        limit_price = base_price + direction * offset
+        target_offset = max(min_offset, min(target_offset, max_offset))
+        base_price = level
+        limit_price = base_price
         sig.limit_price = limit_price
+        initial_offset = min_offset
+        step_increment = max(min_offset, (target_offset - initial_offset) * 0.5)
+        if not math.isfinite(step_increment) or step_increment <= 0:
+            step_increment = min_offset
+        limit_cap = target_offset
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(offset),
+                "limit_offset": abs(limit_cap),
+                "initial_offset": abs(initial_offset),
+                "offset_step": abs(step_increment),
                 "max_offset": abs(max_offset),
                 "step_mult": 0.75,
                 "chase": True,
                 "regime": regime,
+                "post_only": True,
             }
         )
+        sig.post_only = True
 
         symbol = bar.get("symbol")
         if symbol:
