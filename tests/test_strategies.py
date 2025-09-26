@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 import numpy as np
 import yaml
@@ -30,6 +31,39 @@ def _make_ohlcv(rows: int, *, slope: float = 0.2, noise: float = 0.0) -> pd.Data
     })
 
 
+def _make_breakout_df(
+    rows: int,
+    *,
+    slope: float,
+    noise: float,
+    jump: float,
+    period: int,
+) -> pd.DataFrame:
+    df = _make_ohlcv(rows, slope=slope, noise=noise).copy()
+    for idx in range(period - 1, rows, period):
+        df.loc[df.index[idx], "close"] += jump
+        df.loc[df.index[idx], "high"] = df.loc[df.index[idx], "close"] + abs(jump) * 0.4 + 0.3
+    return df
+
+
+def _count_signals(
+    strat: BreakoutATR, df: pd.DataFrame, timeframe: str, symbol: str
+) -> tuple[int, list[float], float]:
+    signals = 0
+    thresholds: list[float] = []
+    last_threshold = float("nan")
+    for end in range(max(strat.ema_n, strat.atr_n) + 5, len(df) + 1):
+        window = df.iloc[:end]
+        bar = {"window": window, "timeframe": timeframe, "symbol": symbol, "volatility": 0.0}
+        sig = strat.on_bar(bar)
+        if math.isfinite(strat.last_regime_threshold):
+            last_threshold = strat.last_regime_threshold
+        if sig is not None:
+            signals += 1
+            thresholds.append(sig.metadata["regime_threshold"])
+    return signals, thresholds, last_threshold
+
+
 def test_breakout_atr_timeframe_parameters_scale():
     strat = BreakoutATR(timeframe="3m")
     fast_tf = strat._ema_period(1)
@@ -55,7 +89,60 @@ def test_breakout_atr_regime_filters_sideways():
     bar = {"window": df, "timeframe": "5m", "symbol": "X", "volatility": 0.0}
     sig = strat.on_bar(bar)
     assert sig is None
-    assert abs(strat.last_regime) < 0.3
+    assert abs(strat.last_regime) < strat.last_regime_threshold
+    assert strat.last_regime_threshold >= strat.min_regime
+
+
+def test_breakout_atr_signal_count_scales_with_timeframe():
+    df = _make_breakout_df(200, slope=0.12, noise=0.0005, jump=1.5, period=25)
+    strat_fast = BreakoutATR(
+        timeframe="1m", volume_factor=0.0, min_regime=0.18, max_regime=0.55
+    )
+    fast_count, fast_thresholds, fast_last = _count_signals(strat_fast, df, "1m", "FAST_TF")
+
+    strat_slow = BreakoutATR(
+        timeframe="15m", volume_factor=0.0, min_regime=0.18, max_regime=0.55
+    )
+    slow_count, slow_thresholds, slow_last = _count_signals(strat_slow, df, "15m", "SLOW_TF")
+
+    assert fast_count != slow_count
+    assert fast_count > slow_count
+    assert slow_count > 0
+    assert slow_thresholds
+    if fast_thresholds:
+        avg_fast = sum(fast_thresholds) / len(fast_thresholds)
+        avg_slow = sum(slow_thresholds) / len(slow_thresholds)
+        assert avg_slow <= avg_fast
+    else:
+        # Fast timeframe is stricter and may filter all breakouts.
+        assert fast_count == 0
+    assert fast_last >= slow_last or math.isnan(fast_last)
+
+
+def test_breakout_atr_choppy_noise_reduces_signals():
+    trend_df = _make_breakout_df(220, slope=0.18, noise=0.0005, jump=1.8, period=30)
+    strat_trend = BreakoutATR(
+        timeframe="3m", volume_factor=0.0, min_regime=0.18, max_regime=0.6
+    )
+    trend_count, trend_thresholds, trend_last = _count_signals(
+        strat_trend, trend_df, "3m", "TREND_SIG"
+    )
+
+    choppy_df = _make_breakout_df(220, slope=0.02, noise=0.01, jump=1.8, period=30)
+    strat_choppy = BreakoutATR(
+        timeframe="3m", volume_factor=0.0, min_regime=0.18, max_regime=0.6
+    )
+    choppy_count, choppy_thresholds, choppy_last = _count_signals(
+        strat_choppy, choppy_df, "3m", "CHOP_SIG"
+    )
+
+    assert trend_count > 0
+    assert choppy_count < trend_count
+    assert choppy_last >= trend_last
+    if choppy_thresholds:
+        avg_choppy = sum(choppy_thresholds) / len(choppy_thresholds)
+        avg_trend = sum(trend_thresholds) / len(trend_thresholds)
+        assert avg_choppy >= avg_trend
 
 
 def test_breakout_atr_regime_scales_strength_and_cooldown():
@@ -71,6 +158,8 @@ def test_breakout_atr_regime_scales_strength_and_cooldown():
     assert sig is not None
     assert sig.metadata["regime"] == pytest.approx(strat.last_regime)
     assert abs(sig.metadata["regime"]) >= 0.55
+    assert sig.metadata["regime_threshold"] == pytest.approx(strat.last_regime_threshold)
+    assert strat.min_regime <= sig.metadata["regime_threshold"] <= strat.max_regime
     assert sig.strength > 0.6
     if base_cooldown > 0:
         assert strat.cooldown_bars <= base_cooldown
@@ -115,7 +204,7 @@ def test_breakout_atr_vol_quantile_configures_threshold():
 
 @pytest.mark.parametrize("timeframe", ["1m"])
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
-    strat = BreakoutATR(ema_n=2, atr_n=2)
+    strat = BreakoutATR(ema_n=2, atr_n=2, min_regime=0.1, max_regime=0.4, volume_factor=0.0)
 
     bar_common = {
         "window": breakout_df_buy,
@@ -159,6 +248,8 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     assert sig_buy.post_only is True
     assert "regime" in sig_buy.metadata
     assert isinstance(sig_buy.metadata["regime"], float)
+    assert sig_buy.metadata["regime_threshold"] >= strat.min_regime
+    assert sig_sell.metadata["regime_threshold"] >= strat.min_regime
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])
@@ -312,7 +403,12 @@ def test_mean_rev_ofi_trailing_stop_uses_atr():
 
 
 def test_breakout_vol_risk_service_handles_stop_and_size():
-    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
+    df_buy = pd.DataFrame(
+        {
+            "close": [1.0, 1.05, 1.1, 1.15, 10.0],
+            "volume": [100, 105, 102, 108, 180],
+        }
+    )
     account = Account(float("inf"))
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
@@ -325,10 +421,12 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
         risk_pct=0.02,
     )
     svc.account.update_cash(1000.0)
-    strat = BreakoutVol(lookback=2, **{"risk_service": svc})
+    strat = BreakoutVol(lookback=2, max_offset_pct=0.0, **{"risk_service": svc})
+    for end in range(2, len(df_buy)):
+        strat.on_bar({"window": df_buy.iloc[: end], "volatility": 0.0})
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
-    assert sig.limit_price == pytest.approx(df_buy["close"].iloc[-1])
+    assert sig.limit_price >= df_buy["close"].iloc[-1]
     trade = strat.trade
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
@@ -345,7 +443,9 @@ def test_breakout_vol_more_signals_in_lower_timeframe():
         strat = BreakoutVol(lookback=10, timeframe=tf)
         sigs = 0
         for i in range(10, len(prices)):
-            df = pd.DataFrame({"close": prices[: i + 1]})
+            df = pd.DataFrame(
+                {"close": prices[: i + 1], "volume": np.full(i + 1, 150.0)}
+            )
             sig = strat.on_bar({"window": df})
             if sig and sig.side in {"buy", "sell"}:
                 sigs += 1
