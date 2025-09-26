@@ -309,12 +309,58 @@ class BreakoutATR(Strategy):
 
         return float(self._clamp(threshold, self.min_regime, self.max_regime))
 
-    def _max_hold_bars(self, tf_mult: float) -> int:
+    def _max_hold_bars(
+        self, tf_mult: float, *, strength: float = 0.0, regime_abs: float = 0.0
+    ) -> int:
         ratio = max(tf_mult, 1.0)
         base_hold = 4.0 * ratio * 0.4
         trend_hold = 8.0 * math.sqrt(ratio)
         scaled = max(trend_hold, base_hold)
-        return int(round(self._clamp(scaled, 10.0, 120.0)))
+
+        strength_boost = 1.0 + 0.4 * max(0.0, strength - 0.5)
+
+        trend_extension = 1.0
+        if regime_abs > 1.5:
+            extra = regime_abs - 1.5
+            fast_bias = 1.0 if ratio <= 6.0 else 0.6
+            trend_extension += min(0.6, extra * 0.35 * fast_bias)
+
+        scaled *= strength_boost * trend_extension
+        upper = 160.0 if ratio <= 6.0 else 140.0
+        return int(round(self._clamp(scaled, 10.0, upper)))
+
+    def _partial_take_profit_config(
+        self, tf_mult: float, strength: float, regime_abs: float
+    ) -> dict[str, float | str]:
+        fast_tf = tf_mult <= 6.0
+        strength = self._clamp(strength, 0.0, 1.5)
+        high_strength = strength >= 0.75
+        low_strength = strength <= 0.4
+
+        base_multiple = 1.3 + regime_abs * 0.12
+        atr_multiple = base_multiple
+        qty_pct: float
+
+        if fast_tf and high_strength:
+            atr_multiple = max(2.0, base_multiple + 0.5 + strength * 0.4)
+            qty_pct = max(0.1, 0.18 - max(0.0, strength - 0.75) * 0.12)
+        elif low_strength:
+            atr_multiple = max(1.15, base_multiple * 0.9)
+            if strength <= 0.25:
+                qty_pct = 0.0
+            else:
+                qty_pct = min(0.15, 0.1 + (strength - 0.25) * 0.2)
+        else:
+            atr_multiple = base_multiple + 0.35 * strength
+            qty_pct = 0.2 + max(0.0, strength - 0.5) * 0.1
+
+        if not fast_tf:
+            atr_multiple = max(atr_multiple, 1.4 + regime_abs * 0.1)
+
+        atr_multiple = float(self._clamp(atr_multiple, 1.2, 3.0))
+        qty_pct = float(self._clamp(qty_pct, 0.0, 0.6))
+
+        return {"qty_pct": qty_pct, "atr_multiple": atr_multiple, "mode": "scale_out"}
 
     def _vol_quantile_for(
         self, tf_mult: float, market_type: str | None = None
@@ -361,7 +407,6 @@ class BreakoutATR(Strategy):
         ema_n = self._ema_period(tf_mult)
         atr_n = self._atr_period(tf_mult)
         stop_mult = self._stop_multiplier(tf_mult)
-        max_hold = self._max_hold_bars(tf_mult)
 
         if len(df) < max(ema_n, atr_n) + 2:
             return None
@@ -579,6 +624,8 @@ class BreakoutATR(Strategy):
         if strength == 0.0:
             return None
         bar["regime_threshold"] = regime_threshold
+        max_hold = self._max_hold_bars(tf_mult, strength=strength, regime_abs=regime_abs)
+
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
         sig.metadata["regime_threshold"] = regime_threshold
@@ -628,6 +675,7 @@ class BreakoutATR(Strategy):
         limit_price = base_price
         sig.limit_price = limit_price
         limit_cap = target_offset
+        partial_tp = self._partial_take_profit_config(tf_mult, strength, regime_abs)
         sig.metadata.update(
             {
                 "base_price": base_price,
@@ -638,11 +686,8 @@ class BreakoutATR(Strategy):
                 "step_mult": 0.75,
                 "chase": True,
                 "regime": regime,
-                "partial_take_profit": {
-                    "qty_pct": float(self._clamp(0.25 + strength_adj * 0.2, 0.2, 0.6)),
-                    "atr_multiple": float(self._clamp(1.2 + strength_adj * 0.35 + regime_abs * 0.15, 1.2, 2.5)),
-                    "mode": "scale_out",
-                },
+                "partial_take_profit": partial_tp,
+                "max_hold_bars": max_hold,
                 "post_only": True,
             }
         )
