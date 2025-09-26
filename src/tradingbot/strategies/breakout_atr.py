@@ -452,6 +452,49 @@ class BreakoutATR(Strategy):
         if side is None:
             return None
 
+        channel_window = min(len(df), max(3, int(round(max(ema_n, atr_n) * 0.25))))
+        if channel_window <= 0:
+            return None
+        upper_slice = upper.iloc[-channel_window:]
+        lower_slice = lower.iloc[-channel_window:]
+        recent_highs = df["high"].iloc[-channel_window:]
+        recent_lows = df["low"].iloc[-channel_window:]
+        channel_high_offset = float((recent_highs - upper_slice).max())
+        channel_low_offset = float((recent_lows - lower_slice).min())
+
+        level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
+        atr_denom = atr_val if atr_val else 1e-9
+        if side == "buy":
+            penetration = max(0.0, (last_close - level) / atr_denom)
+            extreme_penetration = max(0.0, channel_high_offset / atr_denom)
+        else:
+            penetration = max(0.0, (level - last_close) / atr_denom)
+            extreme_penetration = max(0.0, -channel_low_offset / atr_denom)
+
+        if tf_mult <= 2:
+            penetration_threshold = 0.4
+        elif tf_mult <= 6:
+            penetration_threshold = 0.3
+        else:
+            penetration_threshold = 0.2
+        if atr_bps >= 80.0:
+            penetration_threshold *= 1.1
+        elif atr_bps <= 20.0:
+            penetration_threshold *= 0.85
+        penetration_threshold = self._clamp(penetration_threshold, 0.15, 0.65)
+
+        current_open = float(df["open"].iloc[-1])
+        prev_close = float(df["close"].iloc[-2]) if len(df) >= 2 else current_open
+        if side == "buy":
+            body_beyond = current_open > level and last_close > level
+            two_closes_beyond = last_close > level and prev_close > level
+        else:
+            body_beyond = current_open < level and last_close < level
+            two_closes_beyond = last_close < level and prev_close < level
+
+        if penetration < penetration_threshold or not (body_beyond or two_closes_beyond):
+            return None
+
         # Filtro de volumen
         if "volume" in df:
             vol_series = df["volume"]
@@ -475,6 +518,8 @@ class BreakoutATR(Strategy):
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
         sig.metadata["regime_threshold"] = regime_threshold
+        sig.metadata["breakout_penetration"] = float(penetration)
+        sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
