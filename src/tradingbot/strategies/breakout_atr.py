@@ -42,6 +42,7 @@ PARAM_INFO = {
     "strength_target": "Intensidad necesaria para usar el 100% del capital",
     "slow_tf_vol_boost": "Ajuste progresivo del percentil al usar marcos más lentos",
     "fast_tf_vol_cap": "Límite superior del percentil efectivo en marcos rápidos",
+    "min_strength_fraction": "Fuerza mínima normalizada para habilitar una operación",
 }
 
 
@@ -142,10 +143,24 @@ class BreakoutATR(Strategy):
         tf = str(params.get("timeframe", "3m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
+        self.tf_minutes = tf_minutes
+        min_strength_param = params.get("min_strength_fraction")
+        if min_strength_param is not None:
+            self.min_strength_fraction = max(0.0, float(min_strength_param))
+        else:
+            self.min_strength_fraction = self._default_min_strength(tf_minutes)
         cooldown_param = params.get("cooldown_bars")
         if cooldown_param is None:
-            cooldown_param = 3.0
-        self._cooldown_minutes = float(cooldown_param)
+            if tf_minutes <= 5.0:
+                self._cooldown_minutes = 12.0
+            elif tf_minutes <= 30.0:
+                self._cooldown_minutes = 9.0
+            elif tf_minutes <= 120.0:
+                self._cooldown_minutes = 6.0
+            else:
+                self._cooldown_minutes = 3.0
+        else:
+            self._cooldown_minutes = max(0.0, float(cooldown_param))
         self.cooldown_bars = self._cooldown_for(tf_minutes)
         self._cooldown = 0
         self._last_rpnl = 0.0
@@ -161,6 +176,15 @@ class BreakoutATR(Strategy):
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
         return timeframe_to_minutes(tf)
+
+    def _default_min_strength(self, tf_minutes: float) -> float:
+        if tf_minutes <= 5.0:
+            return 0.25
+        if tf_minutes <= 30.0:
+            return 0.18
+        if tf_minutes <= 120.0:
+            return 0.14
+        return 0.1
 
     def _cooldown_for(self, tf_minutes: float) -> int:
         if self._cooldown_minutes <= 0:
@@ -220,8 +244,8 @@ class BreakoutATR(Strategy):
 
     def _stop_multiplier(self, tf_mult: float) -> float:
         ratio = max(tf_mult, 1.0)
-        scaled = 1.3 + 0.45 * math.log1p(ratio)
-        return float(self._clamp(scaled, 1.3, 2.8))
+        scaled = 1.5 + 0.55 * math.log1p(ratio)
+        return float(self._clamp(scaled, 1.5, 3.2))
 
     def _regime_threshold(
         self,
@@ -287,8 +311,10 @@ class BreakoutATR(Strategy):
 
     def _max_hold_bars(self, tf_mult: float) -> int:
         ratio = max(tf_mult, 1.0)
-        scaled = 4.0 * ratio
-        return int(round(self._clamp(scaled, 6.0, 80.0)))
+        base_hold = 4.0 * ratio * 0.4
+        trend_hold = 8.0 * math.sqrt(ratio)
+        scaled = max(trend_hold, base_hold)
+        return int(round(self._clamp(scaled, 10.0, 120.0)))
 
     def _vol_quantile_for(
         self, tf_mult: float, market_type: str | None = None
@@ -296,14 +322,16 @@ class BreakoutATR(Strategy):
         base = max(self.base_vol_quantile, 0.01)
         ratio = max(tf_mult, 0.5)
         if ratio <= 1.0:
-            factor = 1.0 + (1.0 - ratio) * 0.25
-            if self.fast_tf_vol_cap is not None:
-                factor = min(factor, max(0.01, float(self.fast_tf_vol_cap)))
+            factor = 1.45
         else:
-            growth = math.sqrt(ratio) - 1.0
+            fast_component = 1.0 + min(0.6, 0.45 / ratio)
+            growth = max(0.0, math.sqrt(ratio) - 1.0)
             boost = max(self.slow_tf_vol_boost, 0.0)
-            factor = 1.0 + boost * growth
+            slow_component = 1.0 + boost * growth
+            factor = fast_component * slow_component
         quantile = base * factor
+        if self.fast_tf_vol_cap is not None and ratio <= 5.0:
+            quantile = min(quantile, max(0.03, float(self.fast_tf_vol_cap)))
         if market_type:
             mt = market_type.lower()
             if "spot" in mt:
@@ -382,6 +410,16 @@ class BreakoutATR(Strategy):
             self.cooldown_bars = 0
 
         if regime_abs < regime_threshold:
+            return None
+
+        trend_gate = 1.0
+        if tf_mult <= 5.0:
+            trend_gate = 1.25
+        elif tf_mult <= 15.0:
+            trend_gate = 1.15
+        elif tf_mult <= 60.0:
+            trend_gate = 1.05
+        if regime_abs < regime_threshold * trend_gate:
             return None
 
         vol_q = self._vol_quantile_for(tf_mult, bar.get("market_type"))
@@ -485,11 +523,11 @@ class BreakoutATR(Strategy):
             extreme_penetration = max(0.0, -channel_low_offset / atr_denom)
 
         if tf_mult <= 2:
-            penetration_threshold = 0.4
+            penetration_threshold = 0.55
         elif tf_mult <= 6:
-            penetration_threshold = 0.3
+            penetration_threshold = 0.4
         else:
-            penetration_threshold = 0.2
+            penetration_threshold = 0.25
         if atr_bps >= 80.0:
             penetration_threshold *= 1.1
         elif atr_bps <= 20.0:
@@ -507,6 +545,8 @@ class BreakoutATR(Strategy):
 
         if penetration < penetration_threshold or not (body_beyond or two_closes_beyond):
             return None
+        if tf_mult <= 6 and not two_closes_beyond:
+            return None
 
         # Filtro de volumen
         if "volume" in df:
@@ -523,6 +563,10 @@ class BreakoutATR(Strategy):
                 delta = ratio - 1.0
                 transformed = math.log1p(delta * 10.0) * delta
                 raw_strength = min(3.0, max(0.0, transformed))
+            if tf_mult <= 6.0 and ratio < 1.1:
+                return None
+            if tf_mult <= 30.0 and ratio < 1.05:
+                return None
         alignment_ratio = 1.0
         if regime_threshold > 0:
             if side == "buy":
