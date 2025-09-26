@@ -463,11 +463,19 @@ class RiskService:
 
     def manage_position(self, trade: dict | object, signal: dict | None = None) -> str:
         price = None
+        side = None
+        partial_tp = None
+        ptp_done = False
+        current_strength = None
         if isinstance(trade, dict):
             price = trade.get("current_price")
             trail_done = trade.get("_trail_done")
             trade["bars_held"] = int(trade.get("bars_held", 0)) + 1
             max_hold = trade.get("max_hold")
+            partial_tp = trade.get("partial_take_profit")
+            ptp_done = bool(trade.get("_ptp_done"))
+            side = trade.get("side")
+            current_strength = trade.get("strength")
             if (
                 max_hold is not None
                 and int(trade["bars_held"]) >= int(max_hold)
@@ -475,11 +483,11 @@ class RiskService:
             ):
                 entry = trade.get("entry_price")
                 atr = trade.get("atr")
-                side = trade.get("side")
-                if entry is not None and atr is not None and side is not None:
+                side_hold = trade.get("side")
+                if entry is not None and atr is not None and side_hold is not None:
                     move = (
                         float(price) - float(entry)
-                        if side.lower() == "buy"
+                        if str(side_hold).lower() == "buy"
                         else float(entry) - float(price)
                     )
                     if move < 0.5 * float(atr):
@@ -490,24 +498,130 @@ class RiskService:
             bars = int(getattr(trade, "bars_held", 0)) + 1
             setattr(trade, "bars_held", bars)
             max_hold = getattr(trade, "max_hold", None)
+            partial_tp = getattr(trade, "partial_take_profit", None)
+            ptp_done = bool(getattr(trade, "_ptp_done", False))
+            side = getattr(trade, "side", None)
+            current_strength = getattr(trade, "strength", None)
             if max_hold is not None and bars >= int(max_hold) and price is not None:
                 entry = getattr(trade, "entry_price", None)
                 atr = getattr(trade, "atr", None)
-                side = getattr(trade, "side", None)
-                if entry is not None and atr is not None and side is not None:
+                side_hold = getattr(trade, "side", None)
+                if entry is not None and atr is not None and side_hold is not None:
                     move = (
                         float(price) - float(entry)
-                        if str(side).lower() == "buy"
+                        if str(side_hold).lower() == "buy"
                         else float(entry) - float(price)
                     )
                     if move < 0.5 * float(atr):
                         return "close"
-        if price is not None and not trail_done:
-            self.update_trailing(trade, float(price))
+        price_val = None
+        if price is not None:
+            try:
+                price_val = float(price)
+            except (TypeError, ValueError):
+                price_val = None
+        if price_val is not None and not trail_done:
+            self.update_trailing(trade, price_val)
             if isinstance(trade, dict):
                 trade["_trail_done"] = True
             else:
                 setattr(trade, "_trail_done", True)
+
+        try:
+            cur_strength_val = float(current_strength)
+        except (TypeError, ValueError):
+            cur_strength_val = 1.0
+
+        partial_allowed = True
+        exit_requested = False
+        if signal:
+            sig_side = signal.get("side")
+            if sig_side and side and str(sig_side).lower() not in {str(side).lower()}:
+                exit_requested = True
+            if signal.get("exit"):
+                exit_requested = True
+            sig_strength = signal.get("strength")
+            if (
+                not exit_requested
+                and sig_strength is not None
+                and sig_side
+                and side
+                and str(sig_side).lower() == str(side).lower()
+            ):
+                try:
+                    sig_strength_val = float(sig_strength)
+                except (TypeError, ValueError):
+                    sig_strength_val = None
+                if sig_strength_val is not None:
+                    tol = 1e-12
+                    if sig_strength_val > cur_strength_val + tol:
+                        if isinstance(trade, dict):
+                            trade["_ptp_done"] = False
+                        else:
+                            setattr(trade, "_ptp_done", False)
+                        ptp_done = False
+                        partial_allowed = False
+                    elif sig_strength_val < cur_strength_val - tol:
+                        partial_allowed = False
+                    elif math.isfinite(sig_strength_val) and math.isfinite(cur_strength_val):
+                        cur_strength_val = float(sig_strength_val)
+        if exit_requested:
+            partial_allowed = False
+
+        if (
+            partial_allowed
+            and not ptp_done
+            and partial_tp
+            and price_val is not None
+            and side
+        ):
+            if isinstance(trade, dict):
+                entry = trade.get("entry_price")
+                atr = trade.get("atr")
+            else:
+                entry = getattr(trade, "entry_price", None)
+                atr = getattr(trade, "atr", None)
+            atr_mult = None
+            qty_pct = None
+            if isinstance(partial_tp, dict):
+                atr_mult = partial_tp.get("atr_multiple")
+                qty_pct = partial_tp.get("qty_pct")
+            try:
+                entry_val = float(entry)
+                atr_val = float(atr)
+                atr_mult_val = float(atr_mult)
+                qty_pct_val = float(qty_pct)
+            except (TypeError, ValueError):
+                entry_val = atr_val = atr_mult_val = qty_pct_val = None
+            if (
+                entry_val is not None
+                and atr_val is not None
+                and atr_mult_val is not None
+                and qty_pct_val is not None
+                and atr_val > 0
+                and atr_mult_val > 0
+                and qty_pct_val > 0
+            ):
+                qty_pct_val = min(max(qty_pct_val, 0.0), 1.0)
+                side_norm = str(side).lower()
+                if side_norm in {"buy", "long"}:
+                    target = entry_val + atr_mult_val * atr_val
+                    reached = price_val >= target
+                else:
+                    target = entry_val - atr_mult_val * atr_val
+                    reached = price_val <= target
+                if reached:
+                    new_strength = cur_strength_val * max(0.0, 1.0 - qty_pct_val)
+                    new_strength = max(0.0, new_strength)
+                    if isinstance(trade, dict):
+                        trade["strength"] = new_strength
+                        trade["_ptp_done"] = True
+                    else:
+                        setattr(trade, "strength", new_strength)
+                        setattr(trade, "_ptp_done", True)
+                    if new_strength <= 0.0:
+                        return "close"
+                    return "scale_out"
         return self.rm.manage_position(trade, signal)
 
     # ------------------------------------------------------------------
