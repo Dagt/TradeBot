@@ -133,6 +133,11 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     expected_buy = float(upper.iloc[-1])
     assert sig_buy.limit_price == pytest.approx(expected_buy)
     assert sig_buy.limit_price <= last_close_buy
+    assert sig_buy.metadata["post_only"] is True
+    partial_tp = sig_buy.metadata.get("partial_take_profit")
+    assert partial_tp is not None
+    assert partial_tp["qty_pct"] > 0
+    assert partial_tp["atr_multiple"] >= 1.2
 
     sell_df = breakout_df_sell.copy()
     sig_sell = strat.on_bar(
@@ -183,6 +188,7 @@ def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timefr
     stop_mult = strat._stop_multiplier(tf_mult)
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"], atr_mult=stop_mult)
     assert trade["stop"] == pytest.approx(expected_stop)
+    assert trade["partial_take_profit"] == sig.metadata.get("partial_take_profit")
 
 
 def test_breakout_atr_vector_signal(breakout_df_buy):
@@ -213,6 +219,7 @@ def test_breakout_atr_limit_reprices_progressively(breakout_df_buy):
     assert initial_offset > 0
     assert offset_step > 0
     assert target_offset >= initial_offset
+    assert sig.metadata["partial_take_profit"]["qty_pct"] <= 0.6
 
     order = Order(symbol, sig.side, "limit", qty=1.0, price=sig.limit_price, post_only=sig.post_only)
     res = {"pending_qty": order.qty, "price": order.price}
