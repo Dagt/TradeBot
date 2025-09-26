@@ -202,6 +202,22 @@ def test_breakout_atr_vol_quantile_configures_threshold():
     assert rq_high.q == pytest.approx(expected_high)
 
 
+@pytest.mark.parametrize(
+    "timeframe, expected_range",
+    [
+        ("1m", (0.19, 0.21)),
+        ("15m", (0.25, 0.4)),
+        ("4h", (0.4, 0.7)),
+    ],
+)
+def test_breakout_atr_vol_quantile_scaling(timeframe, expected_range):
+    strat = BreakoutATR(vol_quantile=0.2)
+    tf_mult = strat._tf_multiplier(timeframe)
+    quantile = strat._vol_quantile_for(tf_mult)
+    lower, upper = expected_range
+    assert lower <= quantile <= upper
+
+
 @pytest.mark.parametrize("timeframe", ["1m"])
 def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     strat = BreakoutATR(ema_n=2, atr_n=2, min_regime=0.1, max_regime=0.4, volume_factor=0.0)
