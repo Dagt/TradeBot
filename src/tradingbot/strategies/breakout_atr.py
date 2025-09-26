@@ -125,6 +125,8 @@ class BreakoutATR(Strategy):
         # Valores base parametrizables para 1m.
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
+        self.min_regime = max(0.05, float(params.get("min_regime", 0.2)))
+        self.max_regime = max(self.min_regime, float(params.get("max_regime", 0.6)))
         self.volume_factor = max(0.0, float(params.get("volume_factor", 1.0)))
         tf = str(params.get("timeframe", "3m"))
         self.timeframe = tf
@@ -140,6 +142,7 @@ class BreakoutATR(Strategy):
         self.mult = 1.0
         self._rq = RollingQuantileCache()
         self.last_regime = float("nan")
+        self.last_regime_threshold = float("nan")
         self.strength_target = max(
             0.1, float(params.get("strength_target", 1.5))
         )
@@ -198,6 +201,68 @@ class BreakoutATR(Strategy):
         ratio = max(tf_mult, 1.0)
         scaled = 1.3 + 0.45 * math.log1p(ratio)
         return float(self._clamp(scaled, 1.3, 2.8))
+
+    def _regime_threshold(
+        self,
+        tf_mult: float,
+        atr_bps: float,
+        price_std: float,
+        last_price: float,
+        atr_val: float,
+        regime_abs: float,
+    ) -> float:
+        """Dynamic regime threshold used to filter noisy environments."""
+
+        base = self.min_regime
+        span = max(self.max_regime - self.min_regime, 1e-6)
+        ratio = max(tf_mult, 1e-9)
+        tf_norm = min(1.0, math.log1p(ratio) / math.log1p(60.0))
+        tf_component = 1.0 - tf_norm
+
+        if math.isfinite(atr_bps):
+            atr_component = 1.0 - self._clamp((atr_bps - 12.0) / 60.0, 0.0, 1.0)
+        else:
+            atr_component = 0.5
+
+        dispersion_bps = float("nan")
+        if (
+            math.isfinite(price_std)
+            and price_std > 0.0
+            and math.isfinite(last_price)
+            and abs(last_price) > 1e-9
+        ):
+            dispersion_bps = price_std / abs(last_price) * 10000.0
+        if not math.isfinite(dispersion_bps):
+            dispersion_bps = atr_bps if math.isfinite(atr_bps) else 0.0
+
+        chop_ratio = float("inf")
+        if math.isfinite(atr_bps) and atr_bps > 1e-9:
+            chop_ratio = dispersion_bps / atr_bps
+
+        if math.isfinite(chop_ratio):
+            dispersion_component = self._clamp((chop_ratio - 0.8) / 1.2, 0.0, 1.0)
+        else:
+            dispersion_component = 0.5
+
+        regime_component = self._clamp(1.0 - regime_abs / 2.0, 0.0, 1.0)
+
+        score = (
+            0.2 * self._clamp(tf_component, 0.0, 1.0)
+            + 0.2 * self._clamp(atr_component, 0.0, 1.0)
+            + 0.35 * dispersion_component
+            + 0.25 * regime_component
+        )
+
+        threshold = base + span * score
+
+        if math.isfinite(atr_val) and math.isfinite(last_price) and abs(last_price) > 1e-9:
+            atr_pct = atr_val / abs(last_price)
+            high_trend = self._clamp((atr_pct - 0.005) / 0.01, 0.0, 1.0)
+            low_vol = self._clamp((0.0015 - atr_pct) / 0.0015, 0.0, 1.0)
+            threshold -= span * 0.15 * high_trend
+            threshold += span * 0.1 * low_vol
+
+        return float(self._clamp(threshold, self.min_regime, self.max_regime))
 
     def _max_hold_bars(self, tf_mult: float) -> int:
         ratio = max(tf_mult, 1.0)
@@ -282,7 +347,10 @@ class BreakoutATR(Strategy):
         self.last_regime = regime
 
         regime_abs = abs(regime)
-        regime_threshold = 0.3
+        regime_threshold = self._regime_threshold(
+            tf_mult, atr_bps, price_std, last_close, atr_val, regime_abs
+        )
+        self.last_regime_threshold = regime_threshold
         if base_cooldown > 0:
             cooldown_factor = 1.2 if regime_abs < 1.0 else 0.7
             self.cooldown_bars = max(1, int(round(base_cooldown * cooldown_factor)))
@@ -382,8 +450,10 @@ class BreakoutATR(Strategy):
             raw_strength = max(0.3, min(3.0, ratio))
         raw_strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         strength = self._normalize_strength(raw_strength)
+        bar["regime_threshold"] = regime_threshold
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
+        sig.metadata["regime_threshold"] = regime_threshold
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
