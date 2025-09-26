@@ -11,6 +11,7 @@ from tradingbot.risk.service import RiskService
 import pytest
 from hypothesis import given, strategies as st, settings
 from tradingbot.data.features import keltner_channels, atr
+from tradingbot.execution.order_types import Order
 
 
 def _make_ohlcv(rows: int, *, slope: float = 0.2, noise: float = 0.0) -> pd.DataFrame:
@@ -124,25 +125,14 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     }
     sig_buy = strat.on_bar(bar_common)
     tf_mult = strat._tf_multiplier(timeframe)
-    offset_frac = strat._offset_fraction(tf_mult)
     ema_used = strat._ema_period(tf_mult)
     atr_used = strat._atr_period(tf_mult)
-    atr_buy = atr(breakout_df_buy, atr_used).dropna().iloc[-1]
     upper, lower = keltner_channels(breakout_df_buy, ema_used, atr_used, strat.mult)
     last_close_buy = breakout_df_buy["close"].iloc[-1]
     assert sig_buy.side == "buy"
-    abs_price_buy = abs(last_close_buy)
-    offset_buy = float(atr_buy) * offset_frac
-    max_offset_buy = abs_price_buy * 0.006
-    min_offset_buy = abs_price_buy * 0.0005
-    offset_buy = max(min_offset_buy, min(offset_buy, max_offset_buy))
-    expected_buy = max(
-        last_close_buy,
-        float(upper.iloc[-1]),
-    )
-    expected_buy += offset_buy
+    expected_buy = float(upper.iloc[-1])
     assert sig_buy.limit_price == pytest.approx(expected_buy)
-    assert sig_buy.limit_price >= last_close_buy
+    assert sig_buy.limit_price <= last_close_buy
 
     sell_df = breakout_df_sell.copy()
     sig_sell = strat.on_bar(
@@ -153,22 +143,15 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
             "symbol": "BTC/USDT",
         }
     )
-    atr_sell = atr(sell_df, atr_used).dropna().iloc[-1]
     upper, lower = keltner_channels(sell_df, ema_used, atr_used, strat.mult)
     last_close_sell = sell_df["close"].iloc[-1]
     assert sig_sell.side == "sell"
-    abs_price_sell = abs(last_close_sell)
-    offset_sell = float(atr_sell) * offset_frac
-    max_offset_sell = abs_price_sell * 0.006
-    min_offset_sell = abs_price_sell * 0.0005
-    offset_sell = max(min_offset_sell, min(offset_sell, max_offset_sell))
-    expected_sell = min(
-        last_close_sell,
-        float(lower.iloc[-1]),
-    )
-    expected_sell -= offset_sell
+    expected_sell = float(lower.iloc[-1])
     assert sig_sell.limit_price == pytest.approx(expected_sell)
-    assert sig_sell.limit_price <= last_close_sell
+    assert sig_sell.limit_price >= last_close_sell
+    assert sig_buy.metadata["post_only"] is True
+    assert sig_sell.metadata["post_only"] is True
+    assert sig_buy.post_only is True
     assert "regime" in sig_buy.metadata
     assert isinstance(sig_buy.metadata["regime"], float)
 
@@ -213,41 +196,40 @@ def test_breakout_atr_vector_signal(breakout_df_buy):
     assert not exits.iloc[-1]
 
 
-@pytest.mark.asyncio
-async def test_breakout_atr_limit_crosses_market_gets_fill(
-    breakout_df_buy, paper_adapter
-):
+def test_breakout_atr_limit_reprices_progressively(breakout_df_buy):
     strat = BreakoutATR(ema_n=2, atr_n=2)
     symbol = "BTC/USDT"
     sig = strat.on_bar(
         {"window": breakout_df_buy, "volatility": 0.0, "timeframe": "1m", "symbol": symbol}
     )
     assert sig and sig.side == "buy"
-
-    tf_mult = strat._tf_multiplier("1m")
-    ema_used = strat._ema_period(tf_mult)
-    atr_used = strat._atr_period(tf_mult)
-    atr_buy = atr(breakout_df_buy, atr_used).dropna().iloc[-1]
-    upper, _ = keltner_channels(breakout_df_buy, ema_used, atr_used, strat.mult)
     last_close = float(breakout_df_buy["close"].iloc[-1])
-    offset = float(atr_buy) * strat._offset_fraction(tf_mult)
-    max_offset = last_close * 0.006
-    min_offset = last_close * 0.0005
-    offset = max(min_offset, min(offset, max_offset))
-    expected_limit = max(last_close, float(upper.iloc[-1])) + offset
-    assert sig.limit_price == pytest.approx(expected_limit)
-    assert sig.limit_price >= last_close
+    assert sig.limit_price <= last_close
+    base_price = sig.metadata["base_price"]
+    assert base_price == pytest.approx(sig.limit_price)
+    initial_offset = sig.metadata["initial_offset"]
+    offset_step = sig.metadata["offset_step"]
+    target_offset = sig.metadata["limit_offset"]
+    assert initial_offset > 0
+    assert offset_step > 0
+    assert target_offset >= initial_offset
 
-    paper_adapter.update_last_price(symbol, last_close)
-    res = await paper_adapter.place_order(
-        symbol,
-        sig.side,
-        "limit",
-        qty=1.0,
-        price=sig.limit_price,
-    )
-    assert res["status"] == "filled"
-    assert res["price"] == pytest.approx(last_close)
+    order = Order(symbol, sig.side, "limit", qty=1.0, price=sig.limit_price, post_only=sig.post_only)
+    res = {"pending_qty": order.qty, "price": order.price}
+
+    offsets: list[float] = []
+    for _ in range(3):
+        action = strat.on_order_expiry(order, res)
+        assert action == "re_quote"
+        offsets.append(abs(order.price - base_price))
+        res["price"] = order.price
+
+    assert offsets[0] == pytest.approx(initial_offset)
+    assert offsets[1] >= offsets[0]
+    assert offsets[2] >= offsets[1]
+    assert offsets[-1] <= target_offset + 1e-9
+    expected_step = max(0.0, min(offset_step, target_offset - offsets[0]))
+    assert offsets[1] - offsets[0] == pytest.approx(expected_step, rel=1e-6, abs=1e-9)
 
 
 def test_order_flow_signals():

@@ -120,7 +120,17 @@ class Strategy(ABC):
             offset = abs(float(offset))
         except (TypeError, ValueError):
             offset = 0.0
-        if offset == 0.0:
+        initial_offset = meta.get("initial_offset")
+        try:
+            initial_offset = abs(float(initial_offset)) if initial_offset is not None else None
+        except (TypeError, ValueError):
+            initial_offset = None
+        step_offset = meta.get("offset_step")
+        try:
+            step_offset = abs(float(step_offset)) if step_offset is not None else None
+        except (TypeError, ValueError):
+            step_offset = None
+        if offset == 0.0 and step_offset is None and initial_offset is None:
             atr_map = getattr(self, "_last_atr", {})
             atr_val = None
             if isinstance(atr_map, dict):
@@ -152,10 +162,27 @@ class Strategy(ABC):
         chase = bool(meta.get("chase", True))
         default_requote = "limit_offset" not in meta or not meta
         if chase:
-            multiplier = 1.0 if default_requote else max(1.0, 1.0 + step_mult * attempts)
-            step = offset * multiplier
-            if max_offset is not None:
-                step = min(step, max_offset)
+            if initial_offset is not None or step_offset is not None:
+                init = initial_offset if initial_offset is not None else offset
+                if init is None:
+                    init = 0.0
+                step_inc = step_offset if step_offset is not None else offset
+                if step_inc is None:
+                    step_inc = 0.0
+                attempt_idx = max(1, attempts)
+                if attempt_idx <= 1:
+                    step = init
+                else:
+                    step = init + (attempt_idx - 1) * step_inc
+                if offset:
+                    step = min(step, offset)
+                if max_offset is not None:
+                    step = min(step, max_offset)
+            else:
+                multiplier = 1.0 if default_requote else max(1.0, 1.0 + step_mult * attempts)
+                step = offset * multiplier
+                if max_offset is not None:
+                    step = min(step, max_offset)
         else:
             decay = meta.get("decay", 0.5)
             try:
@@ -249,8 +276,8 @@ class Strategy(ABC):
         ``limit_price`` and returns the signal unchanged.
         """
 
+        symbol = bar.get("symbol")
         if signal is not None:
-            symbol = bar.get("symbol")
             if symbol:
                 self._track_requote(key=(symbol, signal.side), reset=True)
             if signal.limit_price is None:
