@@ -196,6 +196,16 @@ class BreakoutATR(Strategy):
     def _clamp(value: float, minimum: float, maximum: float) -> float:
         return max(minimum, min(value, maximum))
 
+    @staticmethod
+    def _regime_allows_side(side: str, regime: float, regime_threshold: float) -> bool:
+        if not math.isfinite(regime) or regime_threshold <= 0:
+            return False
+        if side == "buy":
+            return regime >= regime_threshold
+        if side == "sell":
+            return regime <= -regime_threshold
+        return False
+
     def _ema_period(self, tf_mult: float) -> int:
         base = max(self.ema_n, 8)
         ratio = max(tf_mult, 1.0)
@@ -452,6 +462,9 @@ class BreakoutATR(Strategy):
         if side is None:
             return None
 
+        if not self._regime_allows_side(side, regime, regime_threshold):
+            return None
+
         channel_window = min(len(df), max(3, int(round(max(ema_n, atr_n) * 0.25))))
         if channel_window <= 0:
             return None
@@ -510,6 +523,13 @@ class BreakoutATR(Strategy):
                 delta = ratio - 1.0
                 transformed = math.log1p(delta * 10.0) * delta
                 raw_strength = min(3.0, max(0.0, transformed))
+        alignment_ratio = 1.0
+        if regime_threshold > 0:
+            if side == "buy":
+                alignment_ratio = max(0.0, regime / regime_threshold)
+            else:
+                alignment_ratio = max(0.0, -regime / regime_threshold)
+        raw_strength *= alignment_ratio
         raw_strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         strength = self._normalize_strength(raw_strength)
         if strength == 0.0:
@@ -518,6 +538,7 @@ class BreakoutATR(Strategy):
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
         sig.metadata["regime_threshold"] = regime_threshold
+        sig.metadata["regime"] = regime
         sig.metadata["breakout_penetration"] = float(penetration)
         sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
