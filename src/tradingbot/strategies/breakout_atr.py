@@ -1,3 +1,20 @@
+"""ATR breakout strategy with adaptive volatility thresholds.
+
+Parameters
+----------
+vol_quantile:
+    Percentil base del ATR empleado en velas de ``1m``.  El valor real
+    utilizado por la estrategia se ajusta automáticamente en función del
+    ``timeframe`` activo y, si está disponible, del ``market_type`` asociado a
+    la barra.  Esto permite que la misma configuración de ``vol_quantile`` se
+    mantenga coherente cuando se opera en diferentes escalas temporales o
+    mercados.
+offset_frac:
+    Fracción base del ATR empleada para cruzar el mercado con órdenes límite;
+    al igual que en ``vol_quantile`` el valor se reescala internamente según el
+    ``timeframe``.
+"""
+
 import math
 import pandas as pd
 from .base import (
@@ -165,6 +182,28 @@ class BreakoutATR(Strategy):
         scaled = 4.0 * ratio
         return int(round(self._clamp(scaled, 6.0, 80.0)))
 
+    def _vol_quantile_for(
+        self, tf_mult: float, market_type: str | None = None
+    ) -> float:
+        base = max(self.base_vol_quantile, 0.01)
+        ratio = max(tf_mult, 0.5)
+        if ratio <= 1.0:
+            factor = 1.5
+        elif ratio <= 3.0:
+            factor = 1.25
+        elif ratio <= 6.0:
+            factor = 1.0
+        else:
+            factor = max(0.25, 5.0 / ratio)
+        quantile = base * factor
+        if market_type:
+            mt = market_type.lower()
+            if "spot" in mt:
+                quantile *= 1.05
+            elif "perp" in mt or "future" in mt:
+                quantile *= 0.92
+        return self._clamp(quantile, 0.03, 0.9)
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
@@ -224,12 +263,7 @@ class BreakoutATR(Strategy):
         if regime_abs < regime_threshold:
             return None
 
-        if tf_mult <= 1:
-            vol_q = 0.3
-        elif tf_mult <= 3:
-            vol_q = 0.25
-        else:
-            vol_q = max(1.0 / tf_mult, 0.05)
+        vol_q = self._vol_quantile_for(tf_mult, bar.get("market_type"))
 
         dyn_window = max(atr_n, self.atr_n)
         window = min(len(atr_series), dyn_window * 5)
