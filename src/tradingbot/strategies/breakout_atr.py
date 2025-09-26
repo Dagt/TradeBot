@@ -312,6 +312,14 @@ class BreakoutATR(Strategy):
             return 0.0
         return normalized
 
+    def _regime_alignment(self, regime: float, regime_threshold: float, side: str) -> float:
+        if regime_threshold <= 0 or side not in {"buy", "sell"}:
+            return 0.0
+        denom = max(regime_threshold, 1e-9)
+        if side == "buy":
+            return max(0.0, regime / denom)
+        return max(0.0, -regime / denom)
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
@@ -452,6 +460,10 @@ class BreakoutATR(Strategy):
         if side is None:
             return None
 
+        regime_alignment = self._regime_alignment(regime, regime_threshold, side)
+        if regime_alignment <= 0:
+            return None
+
         # Filtro de volumen
         if "volume" in df:
             vol_series = df["volume"]
@@ -467,6 +479,7 @@ class BreakoutATR(Strategy):
                 delta = ratio - 1.0
                 transformed = math.log1p(delta * 10.0) * delta
                 raw_strength = min(3.0, max(0.0, transformed))
+        raw_strength *= regime_alignment
         raw_strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         strength = self._normalize_strength(raw_strength)
         if strength == 0.0:
@@ -475,6 +488,8 @@ class BreakoutATR(Strategy):
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
         sig.metadata["regime_threshold"] = regime_threshold
+        sig.metadata["regime"] = regime
+        sig.metadata["regime_alignment"] = regime_alignment
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
