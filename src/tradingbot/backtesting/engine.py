@@ -993,6 +993,7 @@ class EventDrivenBacktestEngine:
                 else:
                     market_price = float(arrs["close"][i])
                 price = market_price
+                svc = self.risk[(order.strategy, order.symbol)]
                 if order.limit_price is not None:
                     limit_price = float(order.limit_price)
                     limit_touched = True
@@ -1043,9 +1044,24 @@ class EventDrivenBacktestEngine:
                             order.place_price = order.price
                             order.execute_index = i + 1
                             heapq.heappush(order_queue, order)
+                        else:
+                            released = False
+                            complete_order = getattr(svc, "complete_order", None)
+                            if callable(complete_order):
+                                complete_order(
+                                    order.exchange,
+                                    symbol=order.symbol,
+                                    side=order.side,
+                                )
+                                released = True
+                            if not released and hasattr(svc, "account"):
+                                svc.account.update_open_order(
+                                    order.symbol,
+                                    order.side,
+                                    -order.remaining_qty,
+                                )
                         continue
 
-                svc = self.risk[(order.strategy, order.symbol)]
                 constraints = self._strategy_constraints((order.strategy, order.symbol))
                 mode = self.exchange_mode.get(order.exchange, "perp")
 
@@ -1087,7 +1103,6 @@ class EventDrivenBacktestEngine:
                             if eff_avail >= order.remaining_qty
                             else 0.0
                         )
-
                 if order.limit_price is not None:
                     if order.side == "buy":
                         price = min(price, order.limit_price)
