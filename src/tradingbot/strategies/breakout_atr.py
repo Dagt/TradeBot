@@ -117,6 +117,7 @@ class BreakoutATR(Strategy):
         # ``mult`` se calcula dinámicamente en ``on_bar``.
         self.mult = 1.0
         self._rq = RollingQuantileCache()
+        self.last_regime = float("nan")
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
@@ -138,29 +139,44 @@ class BreakoutATR(Strategy):
         scale = max(tf_mult ** 0.5, 1.2)
         return base * min(scale, 3.0)
 
+    @staticmethod
+    def _clamp(value: float, minimum: float, maximum: float) -> float:
+        return max(minimum, min(value, maximum))
+
+    def _ema_period(self, tf_mult: float) -> int:
+        base = max(self.ema_n, 8)
+        ratio = max(tf_mult, 1.0)
+        scaled = base * ratio ** 0.3
+        return int(round(self._clamp(scaled, 10.0, 80.0)))
+
+    def _atr_period(self, tf_mult: float) -> int:
+        base = max(self.atr_n, 6)
+        ratio = max(tf_mult, 1.0)
+        scaled = base * ratio ** 0.28
+        return int(round(self._clamp(scaled, 8.0, 60.0)))
+
+    def _stop_multiplier(self, tf_mult: float) -> float:
+        ratio = max(tf_mult, 1.0)
+        scaled = 1.3 + 0.45 * math.log1p(ratio)
+        return float(self._clamp(scaled, 1.3, 2.8))
+
+    def _max_hold_bars(self, tf_mult: float) -> int:
+        ratio = max(tf_mult, 1.0)
+        scaled = 4.0 * ratio
+        return int(round(self._clamp(scaled, 6.0, 80.0)))
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         tf_val = bar.get("timeframe", self.timeframe)
         tf_mult = self._tf_multiplier(tf_val)
-        self.cooldown_bars = self._cooldown_for(tf_mult)
+        base_cooldown = self._cooldown_for(tf_mult)
+        self.cooldown_bars = base_cooldown
 
-        # Ajusta parámetros según el timeframe
-        if tf_mult <= 3:
-            ema_n = 15
-            atr_n = 10
-            stop_mult = 1.5
-            max_hold = 10
-        elif tf_mult >= 30:
-            ema_n = max(self.ema_n, 30)
-            atr_n = max(self.atr_n, 20)
-            stop_mult = 2.0
-            max_hold = 20
-        else:
-            ema_n = self.ema_n
-            atr_n = self.atr_n
-            stop_mult = 1.5
-            max_hold = 20
+        ema_n = self._ema_period(tf_mult)
+        atr_n = self._atr_period(tf_mult)
+        stop_mult = self._stop_multiplier(tf_mult)
+        max_hold = self._max_hold_bars(tf_mult)
 
         if len(df) < max(ema_n, atr_n) + 2:
             return None
@@ -185,6 +201,29 @@ class BreakoutATR(Strategy):
         bar["atr"] = atr_val
         bar["volatility"] = atr_val
 
+        ema_series = df["close"].ewm(span=ema_n, adjust=False).mean()
+        lookback = max(3, min(len(ema_series) - 1, int(round(ema_n / 2))))
+        if lookback <= 0:
+            return None
+        ema_slope = float(ema_series.iloc[-1] - ema_series.iloc[-lookback])
+        price_std = float(df["close"].rolling(lookback).std().iloc[-1])
+        if not math.isfinite(price_std):
+            price_std = 0.0
+        slope_denom = max(price_std, atr_val * 0.7, 1e-9)
+        regime = ema_slope / slope_denom
+        self.last_regime = regime
+
+        regime_abs = abs(regime)
+        regime_threshold = 0.3
+        if base_cooldown > 0:
+            cooldown_factor = 1.2 if regime_abs < 1.0 else 0.7
+            self.cooldown_bars = max(1, int(round(base_cooldown * cooldown_factor)))
+        else:
+            self.cooldown_bars = 0
+
+        if regime_abs < regime_threshold:
+            return None
+
         if tf_mult <= 1:
             vol_q = 0.3
         elif tf_mult <= 3:
@@ -192,25 +231,27 @@ class BreakoutATR(Strategy):
         else:
             vol_q = max(1.0 / tf_mult, 0.05)
 
-        window = min(len(atr_series), self.atr_n * 5)
+        dyn_window = max(atr_n, self.atr_n)
+        window = min(len(atr_series), dyn_window * 5)
         symbol = bar.get("symbol", "")
         target_vol = atr_val
-        if window >= self.atr_n * 2:
+        atr_bps_quant = float("nan")
+        if window >= dyn_window * 2:
             rq_atr = self._rq.get(
                 symbol,
                 "atr",
-                window=self.atr_n * 5,
+                window=dyn_window * 5,
                 q=vol_q,
-                min_periods=self.atr_n * 2,
+                min_periods=dyn_window * 2,
             )
             atr_quant = float(rq_atr.update(atr_val))
             atr_bps_series = atr_series / df["close"].abs().loc[atr_series.index] * 10000
             rq_bps = self._rq.get(
                 symbol,
                 "atr_bps",
-                window=self.atr_n * 5,
+                window=dyn_window * 5,
                 q=vol_q,
-                min_periods=self.atr_n * 2,
+                min_periods=dyn_window * 2,
             )
             atr_bps_quant = float(rq_bps.update(atr_bps))
             atr_floor = 0.0 if not math.isfinite(atr_quant) else 0.85 * atr_quant
@@ -229,9 +270,9 @@ class BreakoutATR(Strategy):
             rq_mult = self._rq.get(
                 symbol,
                 "atr_mult",
-                window=self.atr_n * 5,
+                window=dyn_window * 5,
                 q=self._KC_MULT_QUANTILE,
-                min_periods=self.atr_n * 2,
+                min_periods=dyn_window * 2,
             )
             mult_quant = float(rq_mult.update(atr_val))
             if not math.isfinite(mult_quant) or not atr_val:
@@ -244,9 +285,9 @@ class BreakoutATR(Strategy):
             rq_target = self._rq.get(
                 symbol,
                 "atr_median",
-                window=self.atr_n * 5,
+                window=dyn_window * 5,
                 q=0.5,
-                min_periods=self.atr_n * 2,
+                min_periods=dyn_window * 2,
             )
             target_val = float(rq_target.update(atr_val))
             if math.isfinite(target_val) and target_val > 0:
@@ -276,6 +317,7 @@ class BreakoutATR(Strategy):
         if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
             ratio = atr_bps / max(atr_bps_quant, 1e-9)
             strength = max(0.3, min(3.0, ratio))
+        strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         offset = atr_val * self._offset_fraction(tf_mult)
@@ -295,6 +337,7 @@ class BreakoutATR(Strategy):
                 "max_offset": abs(max_offset),
                 "step_mult": 0.75,
                 "chase": True,
+                "regime": regime,
             }
         )
 
