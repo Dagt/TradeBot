@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 import numpy as np
 import yaml
@@ -8,6 +9,7 @@ from tradingbot.strategies.breakout_vol import BreakoutVol
 from tradingbot.core import Account, RiskManager as CoreRiskManager
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
+from tradingbot.execution.order_types import Order
 import pytest
 from hypothesis import given, strategies as st, settings
 from tradingbot.data.features import keltner_channels, atr
@@ -39,12 +41,27 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     upper, lower = keltner_channels(breakout_df_buy, ema_used, atr_used, strat.mult)
     last_close_buy = breakout_df_buy["close"].iloc[-1]
     assert sig_buy.side == "buy"
-    expected_buy = max(
-        last_close_buy,
-        float(upper.iloc[-1]) + float(atr_buy) * offset_frac,
+    level_buy = float(upper.iloc[-1])
+    raw_offset_buy = abs(float(atr_buy) * offset_frac)
+    abs_price_buy = abs(last_close_buy)
+    min_step_buy = abs_price_buy * 0.0005
+    book_offset_buy = abs_price_buy * 0.0003
+    expected_buy = level_buy + min(
+        max(last_close_buy - level_buy, 0.0),
+        max(book_offset_buy, 0.0),
     )
     assert sig_buy.limit_price == pytest.approx(expected_buy)
-    assert sig_buy.limit_price >= last_close_buy
+    assert sig_buy.limit_price <= last_close_buy
+    assert getattr(sig_buy, "post_only", False)
+    assert sig_buy.metadata.get("post_only") is True
+    assert sig_buy.metadata.get("initial_offset") == pytest.approx(
+        abs(sig_buy.limit_price - level_buy)
+    )
+    expected_step_buy = max(
+        min_step_buy,
+        min(raw_offset_buy if raw_offset_buy > 0 else min_step_buy, abs_price_buy * 0.006),
+    )
+    assert sig_buy.metadata.get("step_offset") == pytest.approx(expected_step_buy)
 
     sig_sell = strat.on_bar(
         {
@@ -58,12 +75,16 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     upper, lower = keltner_channels(breakout_df_sell, ema_used, atr_used, strat.mult)
     last_close_sell = breakout_df_sell["close"].iloc[-1]
     assert sig_sell.side == "sell"
-    expected_sell = min(
-        last_close_sell,
-        float(lower.iloc[-1]) - float(atr_sell) * offset_frac,
-    )
+    level_sell = float(lower.iloc[-1])
+    abs_price_sell = abs(last_close_sell)
+    min_step_sell = abs_price_sell * 0.0005
+    book_offset_sell = abs_price_sell * 0.0003
+    expected_sell = last_close_sell + max(min_step_sell, max(book_offset_sell, 0.0))
     assert sig_sell.limit_price == pytest.approx(expected_sell)
-    assert sig_sell.limit_price <= last_close_sell
+    assert sig_sell.limit_price >= last_close_sell
+    assert getattr(sig_sell, "post_only", False)
+    assert sig_sell.metadata.get("post_only") is True
+    assert sig_sell.metadata.get("initial_offset") == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])
@@ -137,7 +158,8 @@ async def test_breakout_atr_limit_crosses_market_gets_fill(
     naive_limit = float(upper.iloc[-1]) + float(atr_buy) * strat._offset_fraction(tf_mult)
     last_close = float(breakout_df_buy["close"].iloc[-1])
     assert naive_limit < last_close
-    assert sig.limit_price == pytest.approx(last_close)
+    assert sig.limit_price < last_close
+    assert getattr(sig, "post_only", False)
 
     paper_adapter.update_last_price(symbol, last_close)
     res = await paper_adapter.place_order(
@@ -146,9 +168,57 @@ async def test_breakout_atr_limit_crosses_market_gets_fill(
         "limit",
         qty=1.0,
         price=sig.limit_price,
+        post_only=True,
     )
-    assert res["status"] == "filled"
-    assert res["price"] == pytest.approx(last_close)
+    assert res["status"] == "new"
+    assert res["pending_qty"] == pytest.approx(1.0)
+
+
+def test_breakout_atr_requote_progression(breakout_df_buy, breakout_df_sell):
+    strat = BreakoutATR(ema_n=2, atr_n=2)
+    symbol = "BTC/USDT"
+
+    sig_buy = strat.on_bar(
+        {"window": breakout_df_buy, "volatility": 0.0, "timeframe": "1m", "symbol": symbol}
+    )
+    assert sig_buy and sig_buy.side == "buy"
+    order_buy = Order(symbol, sig_buy.side, "limit", 1.0, price=sig_buy.limit_price)
+    res_buy = {"price": sig_buy.limit_price}
+    strat._track_requote(order_buy)
+    strat._reprice_order(order_buy, res_buy)
+    first_buy = order_buy.price
+    assert first_buy > sig_buy.limit_price
+    strat._track_requote(order_buy)
+    strat._reprice_order(order_buy, res_buy)
+    second_buy = order_buy.price
+    assert second_buy >= first_buy
+    base_buy = sig_buy.metadata.get("base_price", 0.0)
+    max_off_buy = sig_buy.metadata.get("max_offset", float("inf"))
+    if math.isfinite(max_off_buy):
+        assert second_buy - base_buy <= max_off_buy + 1e-9
+        if math.isclose(second_buy, first_buy):
+            assert math.isclose(second_buy - base_buy, max_off_buy, rel_tol=1e-6, abs_tol=1e-9)
+
+    sig_sell = strat.on_bar(
+        {"window": breakout_df_sell, "volatility": 0.0, "timeframe": "1m", "symbol": symbol}
+    )
+    assert sig_sell and sig_sell.side == "sell"
+    order_sell = Order(symbol, sig_sell.side, "limit", 1.0, price=sig_sell.limit_price)
+    res_sell = {"price": sig_sell.limit_price}
+    strat._track_requote(order_sell)
+    strat._reprice_order(order_sell, res_sell)
+    first_sell = order_sell.price
+    assert first_sell < sig_sell.limit_price
+    strat._track_requote(order_sell)
+    strat._reprice_order(order_sell, res_sell)
+    second_sell = order_sell.price
+    assert second_sell <= first_sell
+    base_sell = sig_sell.metadata.get("base_price", 0.0)
+    max_off_sell = sig_sell.metadata.get("max_offset", float("inf"))
+    if math.isfinite(max_off_sell):
+        assert base_sell - second_sell <= max_off_sell + 1e-9
+        if math.isclose(second_sell, first_sell):
+            assert math.isclose(base_sell - second_sell, max_off_sell, rel_tol=1e-6, abs_tol=1e-9)
 
 
 def test_order_flow_signals():
@@ -224,7 +294,8 @@ def test_mean_rev_ofi_trailing_stop_uses_atr():
 
 
 def test_breakout_vol_risk_service_handles_stop_and_size():
-    df_buy = pd.DataFrame({"close": [1, 2, 3, 10]})
+    closes = list(range(1, 10)) + [50]
+    df_buy = pd.DataFrame({"close": closes, "volume": [1.0] * len(closes)})
     account = Account(float("inf"))
     guard = PortfolioGuard(
         GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X")
@@ -238,9 +309,24 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
     )
     svc.account.update_cash(1000.0)
     strat = BreakoutVol(lookback=2, **{"risk_service": svc})
-    sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
+    
+    class DummyUpdater:
+        def __init__(self, factor: float):
+            self.factor = factor
+
+        def update(self, value):
+            return value * self.factor if value is not None else value
+
+    class DummyRQ:
+        def get(self, symbol, key, **kwargs):
+            factor = 0.5 if key in {"std", "vol", "vol_bps"} else 1.0
+            return DummyUpdater(factor)
+
+    strat._rq = DummyRQ()
+    sig = strat.on_bar({"window": df_buy, "volatility": 0.0, "symbol": "BTC/USDT"})
     assert sig and sig.side == "buy"
-    assert sig.limit_price == pytest.approx(df_buy["close"].iloc[-1])
+    last_price = df_buy["close"].iloc[-1]
+    assert sig.limit_price > last_price
     trade = strat.trade
     assert trade is not None
     expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
@@ -257,7 +343,9 @@ def test_breakout_vol_more_signals_in_lower_timeframe():
         strat = BreakoutVol(lookback=10, timeframe=tf)
         sigs = 0
         for i in range(10, len(prices)):
-            df = pd.DataFrame({"close": prices[: i + 1]})
+            df = pd.DataFrame(
+                {"close": prices[: i + 1], "volume": np.ones(i + 1, dtype=float)}
+            )
             sig = strat.on_bar({"window": df})
             if sig and sig.side in {"buy", "sell"}:
                 sigs += 1

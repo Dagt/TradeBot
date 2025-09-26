@@ -278,25 +278,58 @@ class BreakoutATR(Strategy):
             strength = max(0.3, min(3.0, ratio))
         sig = Signal(side, strength)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
-        offset = atr_val * self._offset_fraction(tf_mult)
+        raw_offset = abs(atr_val * self._offset_fraction(tf_mult))
         abs_price = max(abs(last_close), 1e-9)
-        max_offset = abs_price * 0.006
-        min_offset = abs_price * 0.0005
-        offset = max(min_offset, min(offset, max_offset))
-        direction = 1 if side == "buy" else -1
-        ref_price = max(last_close, level) if side == "buy" else min(last_close, level)
-        base_price = ref_price
-        limit_price = base_price + direction * offset
+        hard_cap = abs_price * 0.006
+        min_step = abs_price * 0.0005
+        book_offset = abs_price * 0.0003
+        gap_to_last = max(0.0, last_close - level)
+        chase_cap = min(hard_cap, gap_to_last + raw_offset)
+        step_offset = max(min_step, min(raw_offset if raw_offset > 0 else min_step, hard_cap))
+        tick_size = bar.get("tick_size")
+        try:
+            tick_size = float(tick_size) if tick_size is not None else None
+        except (TypeError, ValueError):
+            tick_size = None
+
+        if side == "buy":
+            initial_offset = min(gap_to_last, max(book_offset, 0.0))
+            base_price = level
+            limit_price = base_price + initial_offset
+        else:
+            inside_buffer = max(min_step, max(book_offset, 0.0))
+            initial_offset = 0.0
+            base_price = last_close + inside_buffer
+            limit_price = base_price
+            chase_cap = min(hard_cap, max(base_price - level, 0.0) + raw_offset)
+        if tick_size and tick_size > 0:
+            if side == "buy":
+                limit_price = math.floor(limit_price / tick_size) * tick_size
+            else:
+                limit_price = math.ceil(limit_price / tick_size) * tick_size
+            base_price = limit_price if side == "sell" else base_price
+        if side == "buy":
+            initial_offset = abs(limit_price - base_price)
+            chase_cap = max(chase_cap, initial_offset)
+        else:
+            initial_offset = abs(base_price - limit_price)
+            chase_cap = min(hard_cap, max(base_price - level, 0.0) + raw_offset)
         sig.limit_price = limit_price
+        setattr(sig, "post_only", True)
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(offset),
-                "max_offset": abs(max_offset),
-                "step_mult": 0.75,
+                "limit_offset": abs(step_offset),
+                "step_offset": abs(step_offset),
+                "initial_offset": abs(initial_offset),
+                "max_offset": abs(chase_cap),
+                "post_only": True,
+                "step_mult": 1.0,
                 "chase": True,
             }
         )
+        if tick_size and tick_size > 0:
+            sig.metadata["tick_size"] = tick_size
 
         symbol = bar.get("symbol")
         if symbol:
