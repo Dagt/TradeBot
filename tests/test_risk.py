@@ -28,6 +28,20 @@ def test_size_scales_with_equity_and_strength():
     assert rs_big.calc_position_size(0.5, price) == pytest.approx(expected_big)
 
 
+def test_full_strength_uses_available_capital():
+    price = 200.0
+    equity = 5_000.0
+    rs = _make_rs(equity)
+
+    balance = rs.account.get_available_balance()
+    qty_full = rs.calc_position_size(1.0, price, clamp=True)
+
+    assert qty_full * price == pytest.approx(balance)
+
+    qty_over = rs.calc_position_size(2.0, price, clamp=True)
+    assert qty_over * price == pytest.approx(balance)
+
+
 def test_stop_loss_risk_pct():
     equity = 10_000.0
     risk_pct = 0.02
@@ -161,7 +175,7 @@ async def test_daily_guard_halts_on_loss():
     broker = PaperAdapter()
     symbol = "BTC/USDT"
     guard = DailyGuard(GuardLimits(daily_max_loss_pct=0.05), venue="paper")
-    broker.state.cash = 100.0
+    broker.state.cash = 200.0
 
     broker.update_last_price(symbol, 100.0)
     guard.on_mark(
