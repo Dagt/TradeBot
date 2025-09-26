@@ -15,6 +15,7 @@ PARAM_INFO = {
     "ema_n": "Periodo de la EMA para la línea central",
     "atr_n": "Periodo del ATR usado en los canales",
     "vol_quantile": "Percentil base para filtrar baja volatilidad (1m)",
+    "vol_quantile_market_adjustments": "Ajustes del cuantíl por tipo de mercado (multiplicadores o dicts con \"mult\"/\"add\")",
     "offset_frac": "Fracción base del ATR usada para cruzar el mercado (1m)",
     "volume_factor": "Multiplicador de volumen mínimo requerido",
     "cooldown_bars": "Barras a esperar tras una pérdida",
@@ -35,6 +36,10 @@ class BreakoutATR(Strategy):
     inmediatas o en la siguiente barra y lo incrementan de forma
     progresiva si la orden expira sin ejecutarse, buscando mejorar la tasa
     de ejecución sin requerir parámetros adicionales.
+
+    El percentil base (``vol_quantile``) puede ajustarse opcionalmente por
+    ``market_type`` mediante ``vol_quantile_market_adjustments`` para afinar
+    la sensibilidad del filtro en diferentes venues.
     """
 
     name = "breakout_atr"
@@ -104,6 +109,10 @@ class BreakoutATR(Strategy):
         self.base_vol_quantile = float(params.get("vol_quantile", vol_quantile))
         self.base_offset_frac = float(params.get("offset_frac", offset_frac))
         self.volume_factor = max(0.0, float(params.get("volume_factor", 1.0)))
+        raw_market_adj = params.get("vol_quantile_market_adjustments", {})
+        self.vol_quantile_market_adjustments = (
+            raw_market_adj if isinstance(raw_market_adj, dict) else {}
+        )
         tf = str(params.get("timeframe", "3m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
@@ -137,6 +146,43 @@ class BreakoutATR(Strategy):
             return base * 0.6
         scale = max(tf_mult ** 0.5, 1.2)
         return base * min(scale, 3.0)
+
+    def _vol_quantile_for(
+        self, tf_mult: float, *, market_type: str | None = None
+    ) -> float:
+        """Return the rolling quantile used to filter low-volatility regimes."""
+
+        base = max(0.01, min(self.base_vol_quantile, 0.95))
+        if tf_mult <= 1:
+            quantile = base * 1.5
+        elif tf_mult <= 3:
+            quantile = base * 1.25
+        else:
+            target = max(1.0 / max(tf_mult, 1e-9), 0.05)
+            quantile = 0.5 * base + 0.5 * target
+        quantile = max(0.01, min(quantile, 0.95))
+
+        if market_type:
+            adjustment = self.vol_quantile_market_adjustments.get(str(market_type))
+            if adjustment is not None:
+                quantile = self._apply_market_type_adjustment(quantile, adjustment)
+
+        return quantile
+
+    @staticmethod
+    def _apply_market_type_adjustment(
+        quantile: float, adjustment: float | dict
+    ) -> float:
+        try:
+            if isinstance(adjustment, dict):
+                mult = float(adjustment.get("mult", 1.0))
+                add = float(adjustment.get("add", 0.0))
+                quantile = quantile * mult + add
+            else:
+                quantile = quantile * float(adjustment)
+        except (TypeError, ValueError):
+            return quantile
+        return max(0.01, min(quantile, 0.95))
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -185,12 +231,8 @@ class BreakoutATR(Strategy):
         bar["atr"] = atr_val
         bar["volatility"] = atr_val
 
-        if tf_mult <= 1:
-            vol_q = 0.3
-        elif tf_mult <= 3:
-            vol_q = 0.25
-        else:
-            vol_q = max(1.0 / tf_mult, 0.05)
+        market_type = bar.get("market_type")
+        vol_q = self._vol_quantile_for(tf_mult, market_type=market_type)
 
         window = min(len(atr_series), self.atr_n * 5)
         symbol = bar.get("symbol", "")

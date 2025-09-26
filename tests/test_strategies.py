@@ -66,6 +66,76 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     assert sig_sell.limit_price <= last_close_sell
 
 
+def _make_trending_ohlcv(rows: int = 200) -> pd.DataFrame:
+    base = 100.0
+    data = {
+        "open": [base + i * 0.1 for i in range(rows)],
+        "high": [base + i * 0.1 + 0.05 for i in range(rows)],
+        "low": [base + i * 0.1 - 0.05 for i in range(rows)],
+        "close": [base + i * 0.1 + 0.02 for i in range(rows)],
+        "volume": [5.0] * rows,
+    }
+    return pd.DataFrame(data)
+
+
+class _DummyQuantile:
+    def __init__(self, calls, key, q, ret):
+        calls.append((key, q))
+        self._ret = ret
+
+    def update(self, _value):
+        return self._ret
+
+
+class _DummyRQ:
+    def __init__(self, ret_map=None):
+        self.calls: list[tuple[str, float]] = []
+        self.ret_map = ret_map or {}
+
+    def get(self, symbol, key, window, q, min_periods):
+        ret = self.ret_map.get(key)
+        if ret is None:
+            ret = 1.0 if key in {"atr_mult", "atr_median"} else 0.1
+        return _DummyQuantile(self.calls, key, q, ret)
+
+
+def test_breakout_atr_vol_quantile_respects_config():
+    df = _make_trending_ohlcv()
+    bar = {"window": df, "timeframe": "1m", "symbol": "X"}
+
+    strat_low = BreakoutATR(ema_n=5, atr_n=5, vol_quantile=0.2)
+    dummy_low = _DummyRQ()
+    strat_low._rq = dummy_low
+    strat_low.on_bar(bar.copy())
+    q_low = next(q for key, q in dummy_low.calls if key == "atr")
+
+    strat_high = BreakoutATR(ema_n=5, atr_n=5, vol_quantile=0.4)
+    dummy_high = _DummyRQ()
+    strat_high._rq = dummy_high
+    strat_high.on_bar(bar.copy())
+    q_high = next(q for key, q in dummy_high.calls if key == "atr")
+
+    tf_mult = strat_high._tf_multiplier("1m")
+    assert q_low == pytest.approx(strat_low._vol_quantile_for(tf_mult))
+    assert q_high == pytest.approx(strat_high._vol_quantile_for(tf_mult))
+    assert q_high > q_low
+
+    strat_adj = BreakoutATR(
+        ema_n=5,
+        atr_n=5,
+        vol_quantile=0.2,
+        vol_quantile_market_adjustments={"perp": {"mult": 0.5, "add": 0.05}},
+    )
+    dummy_adj = _DummyRQ()
+    strat_adj._rq = dummy_adj
+    perp_bar = {**bar, "market_type": "perp"}
+    strat_adj.on_bar(perp_bar)
+    q_adj = next(q for key, q in dummy_adj.calls if key == "atr")
+    expected_adj = strat_adj._vol_quantile_for(tf_mult, market_type="perp")
+    assert q_adj == pytest.approx(expected_adj)
+    assert q_adj != pytest.approx(q_low)
+
+
 @pytest.mark.parametrize("timeframe", ["1m"])
 def test_breakout_atr_risk_service_handles_stop_and_size(breakout_df_buy, timeframe):
     account = Account(float("inf"))
