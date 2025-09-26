@@ -39,6 +39,7 @@ PARAM_INFO = {
     "offset_frac": "Fracción base del ATR usada para cruzar el mercado (1m)",
     "volume_factor": "Multiplicador de volumen mínimo requerido",
     "cooldown_bars": "Barras a esperar tras una pérdida",
+    "strength_target": "Intensidad necesaria para usar el 100% del capital",
 }
 
 
@@ -139,6 +140,9 @@ class BreakoutATR(Strategy):
         self.mult = 1.0
         self._rq = RollingQuantileCache()
         self.last_regime = float("nan")
+        self.strength_target = max(
+            0.1, float(params.get("strength_target", 1.5))
+        )
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
@@ -221,6 +225,13 @@ class BreakoutATR(Strategy):
             elif "perp" in mt or "future" in mt:
                 quantile *= 0.92
         return self._clamp(quantile, 0.03, 0.9)
+
+    def _normalize_strength(self, raw_strength: float) -> float:
+        if not math.isfinite(raw_strength):
+            return 0.0
+        pivot = max(self.strength_target, 1e-6)
+        scaled = max(0.0, raw_strength / pivot)
+        return self._clamp(scaled, 0.0, 1.0)
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -365,12 +376,14 @@ class BreakoutATR(Strategy):
             avg_vol = vol_series.iloc[-20:].mean()
             if vol_series.iloc[-1] <= self.volume_factor * avg_vol:
                 return None
-        strength = 0.6
+        raw_strength = 0.6
         if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
             ratio = atr_bps / max(atr_bps_quant, 1e-9)
-            strength = max(0.3, min(3.0, ratio))
-        strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
+            raw_strength = max(0.3, min(3.0, ratio))
+        raw_strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
+        strength = self._normalize_strength(raw_strength)
         sig = Signal(side, strength)
+        sig.metadata["raw_strength"] = raw_strength
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
@@ -449,7 +462,7 @@ class BreakoutATR(Strategy):
                 last_close,
                 volatility=atr_val,
                 target_volatility=target_vol,
-                clamp=False,
+                clamp=True,
             )
             stop = self.risk_service.initial_stop(
                 last_close, side, atr_val, atr_mult=stop_mult
