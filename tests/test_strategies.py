@@ -203,7 +203,7 @@ def test_breakout_atr_vol_quantile_configures_threshold():
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])
-def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
+def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe, monkeypatch):
     strat = BreakoutATR(ema_n=2, atr_n=2, min_regime=0.1, max_regime=0.4, volume_factor=0.0)
 
     bar_common = {
@@ -250,6 +250,58 @@ def test_breakout_atr_signals(breakout_df_buy, breakout_df_sell, timeframe):
     assert isinstance(sig_buy.metadata["regime"], float)
     assert sig_buy.metadata["regime_threshold"] >= strat.min_regime
     assert sig_sell.metadata["regime_threshold"] >= strat.min_regime
+
+    # Marginal breakout should not produce strong conviction
+    length = 60
+    opens = [10.0 + i * 0.7 for i in range(length)]
+    closes = [o + 0.4 for o in opens]
+    highs = [c + 0.4 for c in closes]
+    lows = [o - 0.4 for o in opens]
+    volume = [1.0] * length
+    closes[-1] = closes[-2] + 0.5
+    highs[-1] = closes[-1] + 0.3
+    marginal_df = pd.DataFrame(
+        {"open": opens, "high": highs, "low": lows, "close": closes, "volume": volume}
+    )
+
+    strat_marginal = BreakoutATR(
+        ema_n=2,
+        atr_n=2,
+        min_regime=0.1,
+        max_regime=0.4,
+        volume_factor=0.0,
+    )
+
+    import types
+
+    class _StaticQuantile:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def update(self, value: float) -> float:
+            if self.name == "atr_bps":
+                return value / 1.02
+            return value
+
+    def _patched_get(self, symbol: str, name: str, **kwargs):
+        return _StaticQuantile(name)
+
+    monkeypatch.setattr(
+        strat_marginal._rq,
+        "get",
+        types.MethodType(_patched_get, strat_marginal._rq),
+    )
+
+    marginal_sig = strat_marginal.on_bar(
+        {
+            "window": marginal_df,
+            "volatility": 0.0,
+            "timeframe": timeframe,
+            "symbol": "BTC/USDT",
+        }
+    )
+
+    assert marginal_sig is None or marginal_sig.strength <= 0.1
 
 
 @pytest.mark.parametrize("timeframe", ["1m"])

@@ -296,7 +296,10 @@ class BreakoutATR(Strategy):
             return 0.0
         pivot = max(self.strength_target, 1e-6)
         scaled = max(0.0, raw_strength / pivot)
-        return self._clamp(scaled, 0.0, 1.0)
+        normalized = self._clamp(scaled, 0.0, 1.0)
+        if normalized < self.min_strength_fraction:
+            return 0.0
+        return normalized
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -447,9 +450,16 @@ class BreakoutATR(Strategy):
         raw_strength = 0.6
         if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
             ratio = atr_bps / max(atr_bps_quant, 1e-9)
-            raw_strength = max(0.3, min(3.0, ratio))
+            if ratio <= 1.0:
+                raw_strength = 0.0
+            else:
+                delta = ratio - 1.0
+                transformed = math.log1p(delta * 10.0) * delta
+                raw_strength = min(3.0, max(0.0, transformed))
         raw_strength *= max(0.6, min(2.0, 0.7 + 0.5 * regime_abs))
         strength = self._normalize_strength(raw_strength)
+        if strength == 0.0:
+            return None
         bar["regime_threshold"] = regime_threshold
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
