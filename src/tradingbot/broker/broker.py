@@ -194,8 +194,22 @@ class Broker:
                 if side and qty > 0:
                     FILL_COUNT.labels(symbol=symbol, side=side).inc()
                     if risk is not None:
+                        fee_val = event.get("fee")
+                        if fee_val is None:
+                            fee_val = event.get("fee_cost")
+                        slip_val = event.get("slippage")
+                        if slip_val is None:
+                            slip_val = event.get("slippage_cost")
                         try:
-                            risk.on_fill(symbol, side, qty, price=price, venue=venue)
+                            risk.on_fill(
+                                symbol,
+                                side,
+                                qty,
+                                price=price,
+                                fee=fee_val,
+                                slippage=slip_val,
+                                venue=venue,
+                            )
                         except Exception:
                             pass
                 cb = cb_exp if status in _FINAL_STATUSES else cb_pf

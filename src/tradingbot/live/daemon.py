@@ -387,11 +387,45 @@ class TradeBotDaemon:
                     return
                 balances[cfg.spot.name] += filled_s if spot_side == "buy" else -filled_s
                 balances[cfg.perp.name] += filled_p if perp_side == "buy" else -filled_p
+                spot_fee = resp_spot.get("fee") if isinstance(resp_spot, dict) else None
+                if spot_fee is None and isinstance(resp_spot, dict):
+                    spot_fee = resp_spot.get("fee_cost")
+                if spot_fee is None:
+                    try:
+                        fee_bps = float(getattr(cfg.spot, "taker_fee_bps", 0.0))
+                        spot_fee = filled_s * price_s * (fee_bps / 10000.0)
+                    except (TypeError, ValueError):
+                        spot_fee = 0.0
+                perp_fee = resp_perp.get("fee") if isinstance(resp_perp, dict) else None
+                if perp_fee is None and isinstance(resp_perp, dict):
+                    perp_fee = resp_perp.get("fee_cost")
+                if perp_fee is None:
+                    try:
+                        fee_bps = float(getattr(cfg.perp, "taker_fee_bps", 0.0))
+                        perp_fee = filled_p * price_p * (fee_bps / 10000.0)
+                    except (TypeError, ValueError):
+                        perp_fee = 0.0
+                spot_price = resp_spot.get("price") if isinstance(resp_spot, dict) else None
+                if spot_price is None:
+                    spot_price = price_s
+                perp_price_exec = resp_perp.get("price") if isinstance(resp_perp, dict) else None
+                if perp_price_exec is None:
+                    perp_price_exec = price_p
                 self.risk.on_fill(
-                    cfg.symbol, spot_side, filled_s, price=resp_spot.get("price"), venue=cfg.spot.name
+                    cfg.symbol,
+                    spot_side,
+                    filled_s,
+                    price=spot_price,
+                    fee=spot_fee,
+                    venue=cfg.spot.name,
                 )
                 self.risk.on_fill(
-                    cfg.symbol, perp_side, filled_p, price=resp_perp.get("price"), venue=cfg.perp.name
+                    cfg.symbol,
+                    perp_side,
+                    filled_p,
+                    price=perp_price_exec,
+                    fee=perp_fee,
+                    venue=cfg.perp.name,
                 )
                 pnl = (resp_perp.get("price", 0.0) - resp_spot.get("price", 0.0)) * min(
                     filled_s, filled_p
@@ -585,8 +619,19 @@ class TradeBotDaemon:
         res = await self.router.execute(order)
         venue = res.get("venue")
         filled = float(res.get("filled_qty", 0.0))
+        fee_val = res.get("fee")
+        if fee_val is None:
+            fee_val = res.get("fee_cost")
+        price_exec = res.get("price") or res.get("avg_price")
+        if price_exec is None:
+            price_exec = price
         self.risk.on_fill(
-            symbol, order.side, filled, price=res.get("price"), venue=venue
+            symbol,
+            order.side,
+            filled,
+            price=price_exec,
+            fee=fee_val,
+            venue=venue,
         )
         await self.bus.publish(
             "fill",
