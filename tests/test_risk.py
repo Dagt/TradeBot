@@ -5,6 +5,7 @@ from tradingbot.core import Account
 from tradingbot.risk.exceptions import StopLossExceeded
 from tradingbot.risk.portfolio_guard import PortfolioGuard, GuardConfig
 from tradingbot.risk.service import RiskService
+from tradingbot.strategies.base import Signal, Strategy
 
 
 def _make_rs(equity: float, risk_pct: float = 0.0) -> RiskService:
@@ -185,6 +186,63 @@ def test_manage_position_partial_take_profit_resets_on_scale_in():
     assert action == "scale_out"
     assert trade["strength"] == pytest.approx(0.9 * (1 - 0.4))
     assert trade["_ptp_done"] is True
+
+
+class _StrategyHarness(Strategy):
+    name = "harness"
+
+    def on_bar(self, bar):  # pragma: no cover - not used directly
+        raise NotImplementedError
+
+
+def test_finalize_signal_scales_out_without_new_signal():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    account = Account(float("inf"), cash=10_000.0)
+    rs = RiskService(guard, account=account, risk_pct=0.02, risk_per_trade=1.0)
+
+    strat = _StrategyHarness()
+    strat.risk_service = rs
+
+    symbol = "BTC"
+    trade = {
+        "side": "buy",
+        "entry_price": 100.0,
+        "current_price": 104.0,
+        "atr": 2.0,
+        "stop": 98.0,
+        "strength": 1.0,
+        "qty": 1.0,
+        "stage": 0,
+        "bars_held": 0,
+        "_trail_done": False,
+        "partial_take_profit": {"qty_pct": 0.4, "atr_multiple": 1.5},
+    }
+    rs.trades[symbol] = trade
+    rs.update_signal_strength(symbol, 1.0)
+
+    last_sig = Signal("buy", strength=1.0, limit_price=99.5)
+    last_sig.metadata = {"base_price": 100.0, "limit_offset": 1.0}
+    strat._last_signal = {symbol: last_sig}
+
+    bar = {"symbol": symbol, "atr": 2.0}
+    synthetic = strat.finalize_signal(bar, 104.0, None)
+
+    assert synthetic is not None
+    assert synthetic.side == "sell"
+    assert synthetic.reduce_only is True
+    assert synthetic.strength == pytest.approx(0.4)
+    assert synthetic.limit_price == pytest.approx(99.5)
+    assert synthetic.metadata.get("base_price") == 100.0
+    assert "_target_strength" not in synthetic.metadata
+    assert trade["strength"] == pytest.approx(0.6)
+    assert rs._signal_targets[symbol] == pytest.approx(0.6)
+
+    allowed, reason, delta = rs.check_order(
+        symbol, synthetic.side, 104.0, strength=synthetic.strength
+    )
+    assert allowed, reason
+    assert delta < 0.0
+    assert abs(delta) > 0.0
 
 
 def test_trailing_stage_waits_for_net_profit_after_fees():
