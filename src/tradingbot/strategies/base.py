@@ -130,6 +130,16 @@ class Strategy(ABC):
             step_offset = abs(float(step_offset)) if step_offset is not None else None
         except (TypeError, ValueError):
             step_offset = None
+        maker_initial = meta.get("maker_initial_offset")
+        try:
+            maker_initial = abs(float(maker_initial)) if maker_initial is not None else None
+        except (TypeError, ValueError):
+            maker_initial = None
+        maker_step = meta.get("maker_offset_step")
+        try:
+            maker_step = abs(float(maker_step)) if maker_step is not None else None
+        except (TypeError, ValueError):
+            maker_step = None
         if offset == 0.0 and step_offset is None and initial_offset is None:
             atr_map = getattr(self, "_last_atr", {})
             atr_val = None
@@ -161,15 +171,51 @@ class Strategy(ABC):
         direction = 1.0 if str(order.side).lower() == "buy" else -1.0
         chase = bool(meta.get("chase", True))
         default_requote = "limit_offset" not in meta or not meta
+        patience_info = meta.get("maker_patience")
+        patience_threshold = 0
+        patience_expiries = 0
+        if isinstance(patience_info, dict):
+            try:
+                patience_threshold = max(0, int(patience_info.get("threshold", 0)))
+            except (TypeError, ValueError):
+                patience_threshold = 0
+            try:
+                patience_expiries = max(0, int(patience_info.get("expiries", 0)))
+            except (TypeError, ValueError):
+                patience_expiries = 0
+        elif patience_info is not None:
+            try:
+                patience_threshold = max(0, int(patience_info))
+            except (TypeError, ValueError):
+                patience_threshold = 0
+        status_str = str(res.get("status", "")).lower()
+        event_str = str(res.get("_event", "")).lower()
+        is_expiry_event = "expir" in status_str or "expir" in event_str or bool(res.get("expired"))
+        if is_expiry_event and patience_threshold > 0:
+            patience_expiries += 1
+            if isinstance(patience_info, dict):
+                patience_info["expiries"] = patience_expiries
+            else:
+                meta["maker_patience"] = {"threshold": patience_threshold, "expiries": patience_expiries}
         if chase:
-            if initial_offset is not None or step_offset is not None:
-                init = initial_offset if initial_offset is not None else offset
+            patience_block = patience_threshold > 0 and patience_expiries <= patience_threshold
+            if patience_block:
+                step = 0.0
+            elif initial_offset is not None or step_offset is not None or maker_initial is not None:
+                init = maker_initial
+                if init is None:
+                    init = initial_offset if initial_offset is not None else offset
                 if init is None:
                     init = 0.0
-                step_inc = step_offset if step_offset is not None else offset
+                step_inc = maker_step
+                if step_inc is None:
+                    step_inc = step_offset if step_offset is not None else offset
                 if step_inc is None:
                     step_inc = 0.0
-                attempt_idx = max(1, attempts)
+                effective_attempts = attempts
+                if patience_threshold > 0:
+                    effective_attempts = max(0, attempts - patience_threshold)
+                attempt_idx = max(1, effective_attempts)
                 if attempt_idx <= 1:
                     step = init
                 else:
@@ -256,6 +302,7 @@ class Strategy(ABC):
         if not self._edge_still_exists(order):
             return None
         self._track_requote(order)
+        res.setdefault("_event", "expiry")
         self._reprice_order(order, res)
         return "re_quote"
 

@@ -485,27 +485,106 @@ def test_breakout_atr_limit_reprices_progressively(breakout_df_buy):
     initial_offset = sig.metadata["initial_offset"]
     offset_step = sig.metadata["offset_step"]
     target_offset = sig.metadata["limit_offset"]
-    assert initial_offset > 0
+    maker_initial = sig.metadata["maker_initial_offset"]
+    maker_step = sig.metadata["maker_offset_step"]
+    patience_info = sig.metadata.get("maker_patience") or {"threshold": 0}
+    patience_threshold = int(patience_info.get("threshold", 0))
+    assert initial_offset == pytest.approx(0.0)
+    assert maker_initial > 0
     assert offset_step > 0
-    assert target_offset >= initial_offset
+    assert maker_step > 0
+    assert target_offset >= maker_initial
     assert sig.metadata["partial_take_profit"]["qty_pct"] <= 0.6
 
     order = Order(symbol, sig.side, "limit", qty=1.0, price=sig.limit_price, post_only=sig.post_only)
-    res = {"pending_qty": order.qty, "price": order.price}
+    res = {"pending_qty": order.qty, "price": order.price, "status": "expired"}
 
     offsets: list[float] = []
-    for _ in range(3):
+    iterations = patience_threshold + 3
+    for _ in range(iterations):
         action = strat.on_order_expiry(order, res)
         assert action == "re_quote"
         offsets.append(abs(order.price - base_price))
         res["price"] = order.price
 
-    assert offsets[0] == pytest.approx(initial_offset)
-    assert offsets[1] >= offsets[0]
-    assert offsets[2] >= offsets[1]
-    assert offsets[-1] <= target_offset + 1e-9
-    expected_step = max(0.0, min(offset_step, target_offset - offsets[0]))
-    assert offsets[1] - offsets[0] == pytest.approx(expected_step, rel=1e-6, abs=1e-9)
+    for idx in range(min(patience_threshold, len(offsets))):
+        assert offsets[idx] == pytest.approx(0.0)
+
+    first_progress_idx = min(patience_threshold, len(offsets) - 1)
+    assert offsets[first_progress_idx] <= target_offset + 1e-9
+    if patience_threshold < len(offsets):
+        assert offsets[first_progress_idx] == pytest.approx(maker_initial, rel=1e-6, abs=1e-9)
+
+    for idx in range(first_progress_idx + 1, len(offsets)):
+        prev = offsets[idx - 1]
+        assert offsets[idx] >= prev
+        assert offsets[idx] <= target_offset + 1e-9
+        expected_step = max(0.0, min(maker_step, target_offset - prev))
+        assert offsets[idx] - prev == pytest.approx(expected_step, rel=1e-6, abs=1e-9)
+
+
+def test_breakout_atr_base_price_uses_quotes(breakout_df_buy):
+    strat = BreakoutATR(ema_n=2, atr_n=2, volume_factor=0.0)
+    last_close_buy = float(breakout_df_buy["close"].iloc[-1])
+    bid = last_close_buy - 0.25
+    ask = last_close_buy + 0.25
+    buy_sig = strat.on_bar(
+        {
+            "window": breakout_df_buy,
+            "volatility": 0.0,
+            "timeframe": "1m",
+            "symbol": "BTC/USDT",
+            "bid": bid,
+            "ask": ask,
+        }
+    )
+    assert buy_sig is not None and buy_sig.side == "buy"
+    assert buy_sig.metadata["base_price"] == pytest.approx(bid)
+    assert buy_sig.limit_price == pytest.approx(bid)
+    assert buy_sig.metadata["maker_patience"]["threshold"] >= 1
+
+    base_price = 120.0
+    sell_closes = [base_price - 0.6 * i for i in range(38)]
+    sell_closes[-2] -= 8.0
+    sell_closes[-1] -= 12.0
+    sell_opens = [sell_closes[0]] + sell_closes[:-1]
+    sell_highs = [max(o, c) + 0.4 for o, c in zip(sell_opens, sell_closes)]
+    sell_lows = [min(o, c) - 0.4 for o, c in zip(sell_opens, sell_closes)]
+    sell_volume = [2.0] * len(sell_closes)
+    sell_df = pd.DataFrame(
+        {
+            "open": sell_opens,
+            "high": sell_highs,
+            "low": sell_lows,
+            "close": sell_closes,
+            "volume": sell_volume,
+        }
+    )
+    tf_mult = strat._tf_multiplier("1m")
+    ema_used = strat._ema_period(tf_mult)
+    atr_used = strat._atr_period(tf_mult)
+    atr_series_sell = atr(sell_df, atr_used).dropna()
+    assert len(atr_series_sell) >= atr_used
+    last_close_sell = float(sell_df["close"].iloc[-1])
+    sell_bid = last_close_sell - 0.3
+    sell_ask = last_close_sell + 0.3
+    sell_sig = strat.on_bar(
+        {
+            "window": sell_df,
+            "volatility": 0.0,
+            "timeframe": "1m",
+            "symbol": "BTC/USDT",
+            "bid": sell_bid,
+            "ask": sell_ask,
+        }
+    )
+    assert sell_sig is not None and sell_sig.side == "sell"
+    assert sell_sig.metadata["base_price"] == pytest.approx(sell_ask)
+    assert sell_sig.limit_price == pytest.approx(sell_ask)
+    patience_threshold = sell_sig.metadata["maker_patience"]["threshold"]
+    assert patience_threshold >= 2
+    assert sell_sig.metadata["step_mult"] <= 0.45
+    assert sell_sig.metadata["limit_offset"] <= sell_sig.metadata["max_offset"]
 
 
 def test_order_flow_signals():

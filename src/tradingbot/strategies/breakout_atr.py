@@ -616,28 +616,63 @@ class BreakoutATR(Strategy):
         max_offset_pct = min(max_offset_pct, 0.015)
         max_offset = abs_price * max_offset_pct
         target_offset = max(min_offset, min(target_offset, max_offset))
-        initial_offset = min(target_offset, max(min_offset, target_offset * 0.35))
-        if not math.isfinite(initial_offset) or initial_offset <= 0:
-            initial_offset = min_offset
+        maker_initial_offset = min(target_offset, max(min_offset, target_offset * 0.35))
+        if not math.isfinite(maker_initial_offset) or maker_initial_offset <= 0:
+            maker_initial_offset = min_offset
         step_ratio = 0.3 + min(0.35, strength_adj * 0.25) + min(0.2, max(0.0, regime_abs - 0.5) * 0.12)
         step_ratio *= min(1.4, 0.9 + 0.25 * liquidity_factor)
-        step_increment = max(min_offset, min(target_offset - initial_offset, target_offset * step_ratio))
+        step_increment = max(
+            min_offset, min(target_offset - maker_initial_offset, target_offset * step_ratio)
+        )
         if not math.isfinite(step_increment) or step_increment <= 0:
             step_increment = min_offset
         base_price = level
+        if side == "buy":
+            bid_val = bar.get("bid")
+            try:
+                bid_price = float(bid_val) if bid_val is not None else None
+            except (TypeError, ValueError):
+                bid_price = None
+            if bid_price is not None and math.isfinite(bid_price):
+                base_price = bid_price
+        elif side == "sell":
+            ask_val = bar.get("ask")
+            try:
+                ask_price = float(ask_val) if ask_val is not None else None
+            except (TypeError, ValueError):
+                ask_price = None
+            if ask_price is not None and math.isfinite(ask_price):
+                base_price = ask_price
         limit_price = base_price
         sig.limit_price = limit_price
         limit_cap = target_offset
+        patience_base = 1
+        cautious_env = tf_mult <= 6.0 or regime_abs < 1.5
+        if tf_mult <= 3.0 or regime_abs < 1.0:
+            patience_base = 3
+        elif cautious_env:
+            patience_base = 2
+        if cautious_env:
+            limit_cap = min(limit_cap, max(min_offset, target_offset * 0.65))
+            step_increment = min(step_increment, max(min_offset, limit_cap * 0.4))
+            maker_initial_offset = min(maker_initial_offset, limit_cap)
+            step_mult = 0.45
+        else:
+            step_mult = 0.65
+        target_offset = limit_cap
         sig.metadata.update(
             {
                 "base_price": base_price,
                 "limit_offset": abs(limit_cap),
-                "initial_offset": abs(initial_offset),
+                "initial_offset": 0.0,
+                "maker_initial_offset": abs(maker_initial_offset),
                 "offset_step": abs(step_increment),
+                "maker_offset_step": abs(step_increment),
                 "max_offset": abs(max_offset),
-                "step_mult": 0.75,
+                "step_mult": step_mult,
                 "chase": True,
                 "regime": regime,
+                "maker_patience": {"threshold": patience_base, "expiries": 0},
                 "partial_take_profit": {
                     "qty_pct": float(self._clamp(0.25 + strength_adj * 0.2, 0.2, 0.6)),
                     "atr_multiple": float(self._clamp(1.2 + strength_adj * 0.35 + regime_abs * 0.15, 1.2, 2.5)),
