@@ -6,6 +6,66 @@ from tradingbot.strategies.base import Signal
 from tradingbot.strategies.breakout_atr import BreakoutATR
 
 
+def _choppy_guard_window() -> pd.DataFrame:
+    base = 200.0
+    closes = [0.05] * 26 + [-0.2, -0.2, -0.2, 1.6, 2.4]
+    highs = [c + 0.2 for c in closes]
+    lows = [-0.5] * len(closes)
+    for idx in (26, 27, 28):
+        highs[idx] = 1.6
+        lows[idx] = -0.8
+    highs[-2] = closes[-2] + 0.2
+    highs[-1] = closes[-1] + 0.3
+    lows[-2] = -0.4
+    lows[-1] = -0.4
+    return pd.DataFrame(
+        {
+            "open": base,
+            "close": [base + c for c in closes],
+            "high": [base + h for h in highs],
+            "low": [base + l for l in lows],
+            "volume": 15.0,
+        }
+    )
+
+
+def _choppy_reset_window() -> pd.DataFrame:
+    base = 200.0
+    closes = [0.05] * 24 + [0.35, 0.75, 1.3, 1.9, 2.45, 3.1]
+    highs: list[float] = []
+    lows: list[float] = []
+    last_index = len(closes) - 1
+    for idx, close in enumerate(closes):
+        if idx < 24:
+            highs.append(close + 0.18)
+            lows.append(-0.5)
+        elif idx < last_index:
+            highs.append(close + 0.05)
+            lows.append(-0.4)
+        else:
+            highs.append(close + 0.25)
+            lows.append(-0.4)
+    return pd.DataFrame(
+        {
+            "open": base,
+            "close": [base + c for c in closes],
+            "high": [base + h for h in highs],
+            "low": [base + l for l in lows],
+            "volume": 15.0,
+        }
+    )
+
+
+@pytest.fixture
+def breakout_wick_window() -> pd.DataFrame:
+    return _choppy_guard_window()
+
+
+@pytest.fixture
+def breakout_reset_window() -> pd.DataFrame:
+    return _choppy_reset_window()
+
+
 def _downtrend_with_bull_breakout(length: int = 60) -> pd.DataFrame:
     base = 200.0
     trend = -1.2
@@ -148,3 +208,63 @@ def test_breakout_atr_maker_patience_applies_to_sell_orders():
     strat._reprice_order(order, res)
     # Step increments remain capped by the limit offset
     assert order.price == pytest.approx(base_price - 2.0)
+
+
+def test_breakout_atr_skips_breakout_after_nearby_extremes(
+    breakout_wick_window: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_allows_side",
+        staticmethod(lambda side, regime, threshold: True),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_threshold",
+        lambda self, *args, **kwargs: 0.0,
+    )
+    strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
+    strat.min_regime = 0.0
+    strat.max_regime = 0.0
+    bar = {
+        "window": breakout_wick_window,
+        "timeframe": "3m",
+        "symbol": "TEST/USDT",
+    }
+
+    signal = strat.on_bar(bar)
+
+    assert signal is None
+    assert strat.last_prior_extreme_penetration >= strat.last_extreme_penetration_cap
+
+
+def test_breakout_atr_accepts_breakout_after_consolidation(
+    breakout_reset_window: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_allows_side",
+        staticmethod(lambda side, regime, threshold: True),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_threshold",
+        lambda self, *args, **kwargs: 0.0,
+    )
+    strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
+    strat.min_regime = 0.0
+    strat.max_regime = 0.0
+    bar = {
+        "window": breakout_reset_window,
+        "timeframe": "3m",
+        "symbol": "TEST/USDT",
+    }
+
+    signal = strat.on_bar(bar)
+
+    assert signal is not None
+    assert signal.side == "buy"
+    assert (
+        signal.metadata["breakout_prior_extreme_penetration"]
+        < signal.metadata["breakout_extreme_cap"]
+    )

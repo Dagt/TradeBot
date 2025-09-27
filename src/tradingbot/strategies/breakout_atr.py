@@ -169,6 +169,8 @@ class BreakoutATR(Strategy):
         self._rq = RollingQuantileCache()
         self.last_regime = float("nan")
         self.last_regime_threshold = float("nan")
+        self.last_extreme_penetration_cap = float("nan")
+        self.last_prior_extreme_penetration = float("nan")
         self.strength_target = max(
             0.1, float(params.get("strength_target", 1.5))
         )
@@ -246,6 +248,33 @@ class BreakoutATR(Strategy):
         ratio = max(tf_mult, 1.0)
         scaled = 1.5 + 0.55 * math.log1p(ratio)
         return float(self._clamp(scaled, 1.5, 3.2))
+
+    def _extreme_penetration_cap(
+        self, tf_mult: float, atr_bps: float, regime_abs: float
+    ) -> float:
+        base_cap = 0.5
+        if tf_mult <= 2.0:
+            base_cap *= 0.75
+        elif tf_mult <= 6.0:
+            base_cap *= 0.9
+        elif tf_mult <= 20.0:
+            base_cap *= 1.05
+        else:
+            base_cap *= 1.2
+
+        if math.isfinite(atr_bps):
+            if atr_bps >= 80.0:
+                base_cap *= 1.15
+            elif atr_bps <= 25.0:
+                base_cap *= 0.9
+
+        if math.isfinite(regime_abs):
+            if regime_abs >= 1.6:
+                base_cap *= 1.1
+            elif regime_abs <= 0.8:
+                base_cap *= 0.9
+
+        return float(self._clamp(base_cap, 0.25, 0.85))
 
     def _regime_threshold(
         self,
@@ -567,6 +596,23 @@ class BreakoutATR(Strategy):
             penetration = max(0.0, (level - last_close) / atr_denom)
             extreme_penetration = max(0.0, -channel_low_offset / atr_denom)
 
+        prior_extreme_penetration = 0.0
+        if channel_window > 1:
+            if side == "buy":
+                prior_slice = (recent_highs.iloc[:-1] - upper_slice.iloc[:-1]).dropna()
+            else:
+                prior_slice = (lower_slice.iloc[:-1] - recent_lows.iloc[:-1]).dropna()
+            if not prior_slice.empty:
+                prior_offset = float(prior_slice.max())
+                if math.isfinite(prior_offset):
+                    prior_extreme_penetration = max(0.0, prior_offset / atr_denom)
+
+        extreme_penetration_cap = self._extreme_penetration_cap(tf_mult, atr_bps, regime_abs)
+        self.last_extreme_penetration_cap = extreme_penetration_cap
+        self.last_prior_extreme_penetration = prior_extreme_penetration
+        if prior_extreme_penetration >= extreme_penetration_cap:
+            return None
+
         if tf_mult <= 2:
             penetration_threshold = 0.55
         elif tf_mult <= 6:
@@ -632,6 +678,10 @@ class BreakoutATR(Strategy):
         sig.metadata["regime"] = regime
         sig.metadata["breakout_penetration"] = float(penetration)
         sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
+        sig.metadata["breakout_prior_extreme_penetration"] = float(
+            prior_extreme_penetration
+        )
+        sig.metadata["breakout_extreme_cap"] = float(extreme_penetration_cap)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
