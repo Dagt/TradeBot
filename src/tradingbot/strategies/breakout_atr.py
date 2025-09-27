@@ -663,32 +663,58 @@ class BreakoutATR(Strategy):
         max_offset_pct = min(max_offset_pct, 0.015)
         max_offset = abs_price * max_offset_pct
         target_offset = max(min_offset, min(target_offset, max_offset))
-        initial_offset = min(target_offset, max(min_offset, target_offset * 0.35))
-        if not math.isfinite(initial_offset) or initial_offset <= 0:
-            initial_offset = min_offset
+        limit_cap = target_offset
+        step_mult_val = 0.75
+        fast_tf = tf_mult <= 6.0
+        if fast_tf or regime_abs < 1.5:
+            hard_cap = max(min_offset * 3.0, abs_price * 0.0015)
+            limit_cap = max(min_offset, min(limit_cap, hard_cap))
+            step_mult_val = 0.45
+        first_offset = min(limit_cap, max(min_offset, limit_cap * 0.35))
+        if not math.isfinite(first_offset) or first_offset <= 0:
+            first_offset = min_offset
         step_ratio = 0.3 + min(0.35, strength_adj * 0.25) + min(0.2, max(0.0, regime_abs - 0.5) * 0.12)
         step_ratio *= min(1.4, 0.9 + 0.25 * liquidity_factor)
-        step_increment = max(min_offset, min(target_offset - initial_offset, target_offset * step_ratio))
+        remaining = max(0.0, limit_cap - first_offset)
+        step_increment = max(min_offset, min(remaining if remaining > 0 else limit_cap, limit_cap * step_ratio))
         if not math.isfinite(step_increment) or step_increment <= 0:
             step_increment = min_offset
         base_price = level
+        best_bid = best_ask = None
+        if "bid" in bar:
+            try:
+                best_bid = float(bar["bid"])
+            except (TypeError, ValueError):
+                best_bid = None
+        if "ask" in bar:
+            try:
+                best_ask = float(bar["ask"])
+            except (TypeError, ValueError):
+                best_ask = None
+        if side == "buy" and best_bid is not None:
+            base_price = best_bid
+        elif side == "sell" and best_ask is not None:
+            base_price = best_ask
         limit_price = base_price
         sig.limit_price = limit_price
-        limit_cap = target_offset
+        limit_cap = max(min_offset, limit_cap)
+        maker_patience = 2 if (fast_tf or regime_abs < 1.5) else 1
         partial_tp = self._partial_take_profit_config(tf_mult, strength, regime_abs)
         sig.metadata.update(
             {
                 "base_price": base_price,
                 "limit_offset": abs(limit_cap),
-                "initial_offset": abs(initial_offset),
+                "initial_offset": 0.0,
                 "offset_step": abs(step_increment),
                 "max_offset": abs(max_offset),
-                "step_mult": 0.75,
+                "step_mult": step_mult_val,
                 "chase": True,
                 "regime": regime,
                 "partial_take_profit": partial_tp,
                 "max_hold_bars": max_hold,
                 "post_only": True,
+                "maker_initial_offset": abs(first_offset),
+                "maker_patience": maker_patience,
             }
         )
         sig.post_only = True

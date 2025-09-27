@@ -1,5 +1,8 @@
 import pandas as pd
+import pytest
 
+from tradingbot.execution.order_types import Order
+from tradingbot.strategies.base import Signal
 from tradingbot.strategies.breakout_atr import BreakoutATR
 
 
@@ -65,3 +68,83 @@ def test_breakout_atr_partial_take_profit_adapts_to_timeframe_and_strength():
     assert fast_low["qty_pct"] >= 0.0
     assert slow_high["atr_multiple"] > fast_low["atr_multiple"]
     assert slow_high["qty_pct"] >= fast_low["qty_pct"]
+
+
+def test_breakout_atr_maker_patience_preserves_initial_quote():
+    strat = BreakoutATR()
+    symbol = "BTC/USDT"
+    sig = Signal("buy", 1.0)
+    base_price = 100.0
+    sig.limit_price = base_price
+    sig.metadata.update(
+        {
+            "base_price": base_price,
+            "limit_offset": 3.0,
+            "initial_offset": 0.0,
+            "offset_step": 1.0,
+            "maker_initial_offset": 1.0,
+            "maker_patience": 2,
+            "chase": True,
+        }
+    )
+    strat._last_signal = {symbol: sig}
+    order = Order(symbol=symbol, side="buy", type_="limit", qty=1.0, price=base_price)
+    res = {"price": base_price}
+
+    strat._requote_attempts = {(symbol, "buy"): 1}
+    strat._reprice_order(order, res)
+    assert order.price == pytest.approx(base_price)
+
+    strat._requote_attempts[(symbol, "buy")] = 2
+    strat._reprice_order(order, res)
+    assert order.price == pytest.approx(base_price)
+
+    strat._requote_attempts[(symbol, "buy")] = 3
+    strat._reprice_order(order, res)
+    assert order.price == pytest.approx(base_price + 1.0)
+
+    strat._requote_attempts[(symbol, "buy")] = 4
+    strat._reprice_order(order, res)
+    assert order.price == pytest.approx(base_price + 2.0)
+
+    strat._requote_attempts[(symbol, "buy")] = 6
+    strat._reprice_order(order, res)
+    # limit_offset caps the progression even when attempts keep increasing
+    assert order.price == pytest.approx(base_price + 3.0)
+
+
+def test_breakout_atr_maker_patience_applies_to_sell_orders():
+    strat = BreakoutATR()
+    symbol = "ETH/USDT"
+    sig = Signal("sell", 1.0)
+    base_price = 50.0
+    sig.limit_price = base_price
+    sig.metadata.update(
+        {
+            "base_price": base_price,
+            "limit_offset": 2.0,
+            "initial_offset": 0.0,
+            "offset_step": 0.5,
+            "maker_initial_offset": 0.8,
+            "maker_patience": 1,
+            "chase": True,
+        }
+    )
+    strat._last_signal = {symbol: sig}
+    order = Order(symbol=symbol, side="sell", type_="limit", qty=1.0, price=base_price)
+    res = {"price": base_price}
+
+    strat._requote_attempts = {(symbol, "sell"): 1}
+    strat._reprice_order(order, res)
+    # First attempt keeps the order at the maker ask
+    assert order.price == pytest.approx(base_price)
+
+    strat._requote_attempts[(symbol, "sell")] = 2
+    strat._reprice_order(order, res)
+    # First offset activates after patience lapses
+    assert order.price == pytest.approx(base_price - 0.8)
+
+    strat._requote_attempts[(symbol, "sell")] = 5
+    strat._reprice_order(order, res)
+    # Step increments remain capped by the limit offset
+    assert order.price == pytest.approx(base_price - 2.0)
