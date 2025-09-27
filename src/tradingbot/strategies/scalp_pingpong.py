@@ -172,22 +172,73 @@ class ScalpPingPong(Strategy):
             strength = max(0.3, min(2.5, abs(z) / z_sell))
         else:
             return None
-        size = max(0.3, min(3.0, strength * vol_size))
-        if size <= 0:
+        raw_size = max(0.3, min(3.0, strength * vol_size))
+        if raw_size <= 0:
             return self.finalize_signal(bar, price, None)
-        sig = Signal(side, size)
+        normalized = min(1.0, max(self.min_strength_fraction, raw_size / self.max_signal_strength))
+        sig = Signal(side, normalized)
+        base_price = price
+        best_bid = bar.get("bid")
+        best_ask = bar.get("ask")
+        try:
+            if side == "buy" and best_bid is not None:
+                base_price = float(best_bid)
+            elif side == "sell" and best_ask is not None:
+                base_price = float(best_ask)
+        except (TypeError, ValueError):
+            base_price = price
         offset = max(price_vol * 0.5, abs_price * 0.0005)
-        direction = 1 if side == "buy" else -1
-        sig.limit_price = price + direction * offset
+        direction = -1 if side == "buy" else 1
+        sig.limit_price = base_price + direction * offset
+        max_offset = abs(price_vol * 1.5)
+        partial_tp = {
+            "qty_pct": 0.2,
+            "atr_multiple": 1.35,
+            "mode": "scale_out",
+        }
+        max_hold = 12
+        sig.post_only = True
         sig.metadata.update(
             {
-                "base_price": price,
+                "base_price": base_price,
                 "limit_offset": abs(offset),
-                "max_offset": abs(price_vol * 1.5),
+                "offset_step": abs(offset) * 0.6,
+                "max_offset": max_offset if max_offset > 0 else abs(offset) * 3,
                 "step_mult": 0.4,
                 "chase": False,
                 "decay": 0.6,
                 "min_offset": abs_price * 0.0002,
+                "post_only": True,
+                "maker_initial_offset": abs(offset),
+                "maker_patience": 1,
+                "partial_take_profit": partial_tp,
+                "max_hold_bars": max_hold,
             }
         )
+
+        if self.risk_service is not None:
+            qty = self.risk_service.calc_position_size(
+                sig.strength,
+                price,
+                volatility=bar.get("volatility"),
+                target_volatility=bar.get("target_volatility"),
+                clamp=True,
+            )
+            atr_val = bar.get("atr")
+            if atr_val is None:
+                atr_val = price_vol
+            stop = self.risk_service.initial_stop(price, side, atr_val)
+            self.trade = {
+                "side": side,
+                "entry_price": price,
+                "qty": qty,
+                "stop": stop,
+                "atr": atr_val,
+                "target_volatility": bar.get("target_volatility"),
+                "bars_held": 0,
+                "max_hold": max_hold,
+                "strength": sig.strength,
+                "partial_take_profit": partial_tp,
+            }
+
         return self.finalize_signal(bar, price, sig)
