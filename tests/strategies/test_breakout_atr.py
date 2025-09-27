@@ -1,9 +1,12 @@
+import math
 import pandas as pd
 import pytest
 
+from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.execution.order_types import Order
 from tradingbot.strategies.base import Signal
 from tradingbot.strategies.breakout_atr import BreakoutATR
+import tradingbot.strategies.breakout_atr as breakout_mod
 
 
 def _choppy_guard_window() -> pd.DataFrame:
@@ -221,7 +224,7 @@ def test_breakout_atr_skips_breakout_after_nearby_extremes(
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: 0.0,
+        lambda self, *args, **kwargs: (0.0, 0.0),
     )
     strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
     strat.min_regime = 0.0
@@ -249,7 +252,7 @@ def test_breakout_atr_accepts_breakout_after_consolidation(
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: 0.0,
+        lambda self, *args, **kwargs: (0.0, 0.0),
     )
     strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
     strat.min_regime = 0.0
@@ -268,3 +271,205 @@ def test_breakout_atr_accepts_breakout_after_consolidation(
         signal.metadata["breakout_prior_extreme_penetration"]
         < signal.metadata["breakout_extreme_cap"]
     )
+
+
+def _synthetic_breakout_window(two_closes: bool) -> pd.DataFrame:
+    base_opens = [100.0 + 0.15 * i for i in range(10)]
+    base_closes = [open_ + 0.08 for open_ in base_opens]
+    base_highs = [close + 0.12 for close in base_closes]
+    base_lows = [open_ - 0.12 for open_ in base_opens]
+
+    if two_closes:
+        prev_open = 101.6
+        prev_close = 101.95
+        final_open = 102.0
+        final_close = 102.9
+        final_low = min(final_open, final_close) - 0.25
+        final_high = final_close + 0.2
+        prev_high = prev_close + 0.15
+        prev_low = prev_open - 0.2
+    else:
+        prev_open = 101.2
+        prev_close = 101.3
+        final_open = 101.4
+        final_close = 102.5
+        final_low = min(final_open, final_close) - 0.35
+        final_high = final_close + 0.2
+        prev_high = prev_close + 0.15
+        prev_low = prev_open - 0.2
+
+    opens = base_opens + [prev_open, final_open]
+    closes = base_closes + [prev_close, final_close]
+    highs = base_highs + [prev_high, final_high]
+    lows = base_lows + [prev_low, final_low]
+    volume = [5] * len(opens)
+
+    return pd.DataFrame(
+        {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volume,
+        }
+    )
+
+
+def _synthetic_backtest_window() -> pd.DataFrame:
+    rows: list[dict[str, float]] = []
+    total = 40
+    confirmed_indices = {32, 36}
+    for idx in range(total):
+        base_upper = 100.0 + 0.05 * idx
+        volume = 12.0
+        if idx in confirmed_indices:
+            open_ = base_upper + 0.1
+            close = base_upper + 0.9
+            volume = 18.0
+        elif idx + 1 in confirmed_indices:
+            open_ = base_upper - 0.05
+            close = base_upper + 0.3
+        else:
+            open_ = base_upper - 0.4
+            close = base_upper - 0.2
+        high = max(open_, close) + 0.15
+        low = min(open_, close) - 0.15
+        rows.append(
+            {
+                "timestamp": float(idx),
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize("two_closes", [False, True])
+def test_breakout_atr_emits_signals_for_marginal_and_confirmed_breakouts(
+    monkeypatch: pytest.MonkeyPatch, two_closes: bool
+) -> None:
+    def fake_atr(df: pd.DataFrame, period: int) -> pd.Series:
+        base = 0.6
+        step = 0.015
+        values = [base + step * i for i in range(len(df))]
+        return pd.Series(values, index=df.index)
+
+    upper_values = [
+        100.3,
+        100.45,
+        100.6,
+        100.75,
+        100.9,
+        101.05,
+        101.2,
+        101.35,
+        101.5,
+        101.6,
+        101.2,
+        101.7,
+    ]
+
+    def fake_kc(
+        df: pd.DataFrame, ema_n: int, atr_n: int, mult: float
+    ) -> tuple[pd.Series, pd.Series]:
+        upper = pd.Series(upper_values[: len(df)], index=df.index)
+        lower = upper - 1.4
+        return upper, lower
+
+    monkeypatch.setattr(breakout_mod, "atr", fake_atr)
+    monkeypatch.setattr(breakout_mod, "keltner_channels", fake_kc)
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_allows_side",
+        staticmethod(lambda side, regime, threshold: True),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_threshold",
+        lambda self, *args, **kwargs: (0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_extreme_penetration_cap",
+        lambda self, *args, **kwargs: 999.0,
+    )
+
+    strat = BreakoutATR(ema_n=3, atr_n=3, volume_factor=0.0)
+    df = _synthetic_breakout_window(two_closes)
+    bar = {"window": df, "timeframe": "1m", "symbol": "FAST/USDT"}
+
+    signal = strat.on_bar(bar)
+
+    assert signal is not None
+    assert signal.metadata["breakout_penetration"] >= signal.metadata["breakout_penetration_threshold"]
+    if two_closes:
+        assert signal.metadata["breakout_two_closes_beyond"] is True
+        assert signal.metadata["breakout_single_body"] is False
+    else:
+        assert signal.metadata["breakout_single_body"] is True
+        assert signal.metadata["breakout_two_closes_beyond"] is False
+
+
+def test_breakout_atr_backtest_counts_fills_for_marginal_and_confirmed_breakouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_atr(df: pd.DataFrame, period: int) -> pd.Series:
+        base = 0.5
+        step = 0.01
+        values = [base + step * i for i in range(len(df))]
+        return pd.Series(values, index=df.index)
+
+    def fake_kc(
+        df: pd.DataFrame, ema_n: int, atr_n: int, mult: float
+    ) -> tuple[pd.Series, pd.Series]:
+        upper = pd.Series([100.0 + 0.05 * i for i in range(len(df))], index=df.index)
+        lower = upper - 1.4
+        return upper, lower
+
+    monkeypatch.setattr(breakout_mod, "atr", fake_atr)
+    monkeypatch.setattr(breakout_mod, "keltner_channels", fake_kc)
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_allows_side",
+        staticmethod(lambda side, regime, threshold: True),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_regime_threshold",
+        lambda self, *args, **kwargs: (0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_extreme_penetration_cap",
+        lambda self, *args, **kwargs: 999.0,
+    )
+
+    class DummyRQ:
+        def update(self, value):
+            if value is None or not math.isfinite(value):
+                return value
+            return value * 0.9
+
+    monkeypatch.setattr(
+        breakout_mod.RollingQuantileCache,
+        "get",
+        lambda self, symbol, name, *, window, q, min_periods=None: DummyRQ(),
+    )
+
+    data = _synthetic_backtest_window()
+    warmup = 36
+    engine = EventDrivenBacktestEngine(
+        {"FAST/USDT": data},
+        [("breakout_atr", "FAST/USDT")],
+        timeframes={"FAST/USDT": "3m"},
+        window=warmup,
+        verbose_fills=True,
+        risk_pct=0.02,
+    )
+    result = engine.run()
+
+    assert result["fill_count"] >= 2
+    assert len(result["fills"]) >= 2

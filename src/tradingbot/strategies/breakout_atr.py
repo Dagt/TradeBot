@@ -169,6 +169,7 @@ class BreakoutATR(Strategy):
         self._rq = RollingQuantileCache()
         self.last_regime = float("nan")
         self.last_regime_threshold = float("nan")
+        self.last_trend_gate = float("nan")
         self.last_extreme_penetration_cap = float("nan")
         self.last_prior_extreme_penetration = float("nan")
         self.strength_target = max(
@@ -284,8 +285,17 @@ class BreakoutATR(Strategy):
         last_price: float,
         atr_val: float,
         regime_abs: float,
-    ) -> float:
-        """Dynamic regime threshold used to filter noisy environments."""
+        symbol: str,
+    ) -> tuple[float, float]:
+        """Dynamic regime threshold used to filter noisy environments.
+
+        Returns
+        -------
+        tuple of float
+            ``(threshold, trend_gate)`` where ``threshold`` is the minimum
+            absolute regime required to enable trades and ``trend_gate`` is a
+            tighter percentile gate employed to favour strong trends.
+        """
 
         base = self.min_regime
         span = max(self.max_regime - self.min_regime, 1e-6)
@@ -327,16 +337,66 @@ class BreakoutATR(Strategy):
             + 0.25 * regime_component
         )
 
-        threshold = base + span * score
+        heuristic = base + span * score
 
         if math.isfinite(atr_val) and math.isfinite(last_price) and abs(last_price) > 1e-9:
             atr_pct = atr_val / abs(last_price)
             high_trend = self._clamp((atr_pct - 0.005) / 0.01, 0.0, 1.0)
             low_vol = self._clamp((0.0015 - atr_pct) / 0.0015, 0.0, 1.0)
-            threshold -= span * 0.15 * high_trend
-            threshold += span * 0.1 * low_vol
+            heuristic -= span * 0.15 * high_trend
+            heuristic += span * 0.1 * low_vol
 
-        return float(self._clamp(threshold, self.min_regime, self.max_regime))
+        heuristic = float(self._clamp(heuristic, self.min_regime, self.max_regime))
+
+        symbol_key = symbol if symbol else "__global__"
+        tf_bucket = int(round(max(tf_mult, 1.0) * 10.0))
+        rq_symbol = f"{symbol_key}|tf{tf_bucket}"
+        window_bars = int(
+            round(
+                self._clamp(
+                    120.0 / max(tf_mult, 1e-6),
+                    20.0,
+                    320.0,
+                )
+            )
+        )
+        min_periods = max(6, int(window_bars * 0.15))
+
+        rq_primary = self._rq.get(
+            rq_symbol,
+            "regime_abs_q55",
+            window=window_bars,
+            q=0.55,
+            min_periods=min_periods,
+        )
+        rq_trend = self._rq.get(
+            rq_symbol,
+            "regime_abs_q80",
+            window=window_bars,
+            q=0.8,
+            min_periods=min_periods,
+        )
+
+        primary_quant = float(rq_primary.update(regime_abs))
+        trend_quant = float(rq_trend.update(regime_abs))
+
+        if math.isfinite(primary_quant):
+            threshold = 0.7 * primary_quant + 0.3 * heuristic
+        else:
+            threshold = heuristic
+
+        threshold = float(self._clamp(threshold, self.min_regime, self.max_regime))
+
+        if math.isfinite(trend_quant):
+            trend_gate = max(threshold, trend_quant)
+        elif math.isfinite(primary_quant):
+            trend_gate = max(threshold, primary_quant * 1.05)
+        else:
+            trend_gate = threshold + 0.15 * (self.max_regime - threshold)
+
+        trend_gate = float(self._clamp(trend_gate, threshold, self.max_regime))
+
+        return threshold, trend_gate
 
     def _max_hold_bars(
         self, tf_mult: float, *, strength: float = 0.0, regime_abs: float = 0.0
@@ -473,10 +533,19 @@ class BreakoutATR(Strategy):
         self.last_regime = regime
 
         regime_abs = abs(regime)
-        regime_threshold = self._regime_threshold(
-            tf_mult, atr_bps, price_std, last_close, atr_val, regime_abs
+        symbol = str(bar.get("symbol", ""))
+
+        regime_threshold, trend_gate = self._regime_threshold(
+            tf_mult,
+            atr_bps,
+            price_std,
+            last_close,
+            atr_val,
+            regime_abs,
+            symbol,
         )
         self.last_regime_threshold = regime_threshold
+        self.last_trend_gate = trend_gate
         if base_cooldown > 0:
             cooldown_factor = 1.2 if regime_abs < 1.0 else 0.7
             self.cooldown_bars = max(1, int(round(base_cooldown * cooldown_factor)))
@@ -486,21 +555,13 @@ class BreakoutATR(Strategy):
         if regime_abs < regime_threshold:
             return None
 
-        trend_gate = 1.0
-        if tf_mult <= 5.0:
-            trend_gate = 1.25
-        elif tf_mult <= 15.0:
-            trend_gate = 1.15
-        elif tf_mult <= 60.0:
-            trend_gate = 1.05
-        if regime_abs < regime_threshold * trend_gate:
+        if regime_abs < trend_gate:
             return None
 
         vol_q = self._vol_quantile_for(tf_mult, bar.get("market_type"))
 
         dyn_window = max(atr_n, self.atr_n)
         window = min(len(atr_series), dyn_window * 5)
-        symbol = bar.get("symbol", "")
         target_vol = atr_val
         atr_bps_quant = float("nan")
         if window >= dyn_window * 2:
@@ -613,19 +674,38 @@ class BreakoutATR(Strategy):
         if prior_extreme_penetration >= extreme_penetration_cap:
             return None
 
-        if tf_mult <= 2:
-            penetration_threshold = 0.55
-        elif tf_mult <= 6:
-            penetration_threshold = 0.4
-        else:
-            penetration_threshold = 0.25
+        fast_weight = self._clamp((6.0 - tf_mult) / 6.0, 0.0, 1.0)
+        ultra_fast = self._clamp((2.0 - tf_mult) / 2.0, 0.0, 1.0)
+        penetration_threshold = 0.25 + 0.22 * fast_weight + 0.15 * ultra_fast
         if atr_bps >= 80.0:
             penetration_threshold *= 1.1
         elif atr_bps <= 20.0:
             penetration_threshold *= 0.85
-        penetration_threshold = self._clamp(penetration_threshold, 0.15, 0.65)
-
         current_open = float(df["open"].iloc[-1])
+        last_body_close = float(df["close"].iloc[-1])
+        body_size = abs(last_body_close - current_open)
+        atr_denom = atr_val if atr_val else 1e-9
+        body_ratio = body_size / atr_denom if atr_denom else 0.0
+        wide_body_floor = 0.8 + 0.12 * self._clamp((3.0 - tf_mult) / 3.0, 0.0, 1.0)
+        wide_body_floor = self._clamp(wide_body_floor, 0.72, 1.05)
+        if side == "buy":
+            gap_ratio = max(0.0, (level - current_open) / atr_denom)
+        else:
+            gap_ratio = max(0.0, (current_open - level) / atr_denom)
+        allow_single_body = False
+        if tf_mult <= 6.0 and last_close > level and body_ratio >= wide_body_floor:
+            allow_single_body = True
+            if gap_ratio > 0.65:
+                allow_single_body = False
+            else:
+                if tf_mult <= 3.0:
+                    penetration_threshold *= 0.72
+                else:
+                    penetration_threshold *= 0.82
+                if body_ratio >= wide_body_floor + 0.35:
+                    penetration_threshold *= 0.9
+        penetration_threshold = self._clamp(penetration_threshold, 0.12, 0.65)
+
         prev_close = float(df["close"].iloc[-2]) if len(df) >= 2 else current_open
         if side == "buy":
             body_beyond = current_open > level and last_close > level
@@ -634,9 +714,11 @@ class BreakoutATR(Strategy):
             body_beyond = current_open < level and last_close < level
             two_closes_beyond = last_close < level and prev_close < level
 
-        if penetration < penetration_threshold or not (body_beyond or two_closes_beyond):
+        if penetration < penetration_threshold or not (
+            body_beyond or two_closes_beyond or allow_single_body
+        ):
             return None
-        if tf_mult <= 6 and not two_closes_beyond:
+        if not two_closes_beyond and not allow_single_body:
             return None
 
         # Filtro de volumen
@@ -646,6 +728,7 @@ class BreakoutATR(Strategy):
             if vol_series.iloc[-1] <= self.volume_factor * avg_vol:
                 return None
         raw_strength = 0.6
+        ratio_floor = 1.0
         if math.isfinite(atr_bps_quant) and atr_bps_quant > 0:
             ratio = atr_bps / max(atr_bps_quant, 1e-9)
             if ratio <= 1.0:
@@ -654,9 +737,10 @@ class BreakoutATR(Strategy):
                 delta = ratio - 1.0
                 transformed = math.log1p(delta * 10.0) * delta
                 raw_strength = min(3.0, max(0.0, transformed))
-            if tf_mult <= 6.0 and ratio < 1.1:
-                return None
-            if tf_mult <= 30.0 and ratio < 1.05:
+            fast_weight = self._clamp((6.0 - tf_mult) / 6.0, 0.0, 1.0)
+            mid_weight = self._clamp((30.0 - tf_mult) / 30.0, 0.0, 1.0)
+            ratio_floor = 1.0 + max(0.12 * fast_weight, 0.05 * mid_weight)
+            if ratio < ratio_floor:
                 return None
         alignment_ratio = 1.0
         if regime_threshold > 0:
@@ -670,11 +754,14 @@ class BreakoutATR(Strategy):
         if strength == 0.0:
             return None
         bar["regime_threshold"] = regime_threshold
+        bar["regime_trend_gate"] = trend_gate
         max_hold = self._max_hold_bars(tf_mult, strength=strength, regime_abs=regime_abs)
 
+        single_body_triggered = allow_single_body and not two_closes_beyond
         sig = Signal(side, strength)
         sig.metadata["raw_strength"] = raw_strength
         sig.metadata["regime_threshold"] = regime_threshold
+        sig.metadata["regime_trend_gate"] = trend_gate
         sig.metadata["regime"] = regime
         sig.metadata["breakout_penetration"] = float(penetration)
         sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
@@ -682,6 +769,12 @@ class BreakoutATR(Strategy):
             prior_extreme_penetration
         )
         sig.metadata["breakout_extreme_cap"] = float(extreme_penetration_cap)
+        sig.metadata["breakout_penetration_threshold"] = float(penetration_threshold)
+        sig.metadata["breakout_body_ratio"] = float(body_ratio)
+        sig.metadata["breakout_wide_body_floor"] = float(wide_body_floor)
+        sig.metadata["breakout_single_body"] = bool(single_body_triggered)
+        sig.metadata["breakout_two_closes_beyond"] = bool(two_closes_beyond)
+        sig.metadata["breakout_ratio_floor"] = float(ratio_floor)
         level = float(upper.iloc[-1]) if side == "buy" else float(lower.iloc[-1])
         abs_price = max(abs(last_close), 1e-9)
         offset_frac = self._offset_fraction(tf_mult, regime, atr_bps, strength)
