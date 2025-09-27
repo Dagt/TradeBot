@@ -1,5 +1,8 @@
 import math
+from typing import Iterable
+
 import pandas as pd
+
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..utils.rolling_quantile import RollingQuantileCache
 from ..filters.liquidity import LiquidityFilterManager
@@ -12,6 +15,75 @@ PARAM_INFO = {
 
 
 liquidity = LiquidityFilterManager()
+
+
+def _safe_first_float(container: dict, keys: Iterable[str]) -> float | None:
+    """Return the first finite float found in ``container`` for ``keys``.
+
+    The helper inspects both the bar payload and any nested ``"book"`` entry
+    to capture best bid/ask prices regardless of the upstream data source.
+    """
+
+    book = container.get("book") if isinstance(container, dict) else None
+    if not isinstance(book, dict):
+        book = None
+    for key in keys:
+        for scope in (container, book):
+            if not isinstance(scope, dict):
+                continue
+            value = scope.get(key)
+            if value is None:
+                continue
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(parsed):
+                return parsed
+    return None
+
+
+def _quantiles_for(tf_minutes: float, market_type: str | None) -> tuple[float, float]:
+    """Return (volatility_quantile, multiplier_quantile) pair.
+
+    The thresholds adapt to the timeframe in minutes and apply a small bias
+    depending on the market microstructure.  Derivatives markets generally
+    exhibit higher volatility, so the helper lowers the volatility quantile and
+    raises the multiplier quantile to keep signals selective.  Unknown market
+    types default to a mild adjustment compared to spot instruments.
+    """
+
+    minutes = max(1.0, float(tf_minutes))
+    if minutes <= 2.0:
+        base_vol = 0.30
+        base_mult = 0.70
+    elif minutes <= 5.0:
+        base_vol = 0.25
+        base_mult = 0.75
+    elif minutes <= 30.0:
+        base_vol = 0.22
+        base_mult = 0.78
+    elif minutes <= 60.0:
+        base_vol = 0.20
+        base_mult = 0.82
+    else:
+        base_vol = 0.18
+        base_mult = 0.85
+
+    market = (market_type or "spot").strip().lower()
+    if market in {"perp", "perps", "perpetual", "futures", "swap", "derivatives"}:
+        vol_adj = -0.02
+        mult_adj = 0.02
+    elif market in {"spot"}:
+        vol_adj = 0.0
+        mult_adj = 0.0
+    else:
+        vol_adj = -0.01
+        mult_adj = 0.01
+
+    vol_q = max(0.05, min(0.95, base_vol + vol_adj))
+    mult_q = max(0.1, min(0.95, base_mult + mult_adj))
+    return vol_q, mult_q
 
 
 class BreakoutVol(Strategy):
@@ -30,18 +102,13 @@ class BreakoutVol(Strategy):
     # Percentiles dependientes del timeframe para mínimos de volatilidad y
     # dimensionar el multiplicador.  Valores más bajos en timeframes cortos
     # permiten generar más señales sin relajar el control de riesgo.
-    _VOL_QUANTILES = {"1m": 0.3, "3m": 0.25, "5m": 0.2}
-    _MULT_QUANTILES = {"1m": 0.7, "5m": 0.8}
-    _DEFAULT_VOL_Q = 0.2
-    _DEFAULT_MULT_Q = 0.8
-
     def __init__(self, **kwargs):
         self.risk_service = kwargs.get("risk_service")
         tf = str(kwargs.get("timeframe", "3m"))
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
-        self._vol_quantile = self._VOL_QUANTILES.get(tf, self._DEFAULT_VOL_Q)
-        self._mult_quantile = self._MULT_QUANTILES.get(tf, self._DEFAULT_MULT_Q)
+        self.market_type = kwargs.get("market_type")
+        self._vol_quantile, self._mult_quantile = _quantiles_for(tf_minutes, self.market_type)
         self.volatility_factor = float(kwargs.get("volatility_factor", 0.02))
         self.max_offset_pct = max(0.0, float(kwargs.get("max_offset_pct", 0.015)))
         self._lookback_minutes = float(kwargs.get("lookback", 10))
@@ -167,7 +234,8 @@ class BreakoutVol(Strategy):
         bar["volatility"] = abs_last * vol
         bar["target_volatility"] = max(target_vol, 0.0)
 
-        size = max(0.2, min(3.0, vol_bps * self.volatility_factor))
+        size_raw = max(0.0, vol_bps * self.volatility_factor)
+        size = min(1.0, size_raw)
 
         vol_ma = df["volume"].rolling(vol_ma_n).mean().iloc[-1]
         self.vol_ma_n = vol_ma_n
@@ -184,6 +252,11 @@ class BreakoutVol(Strategy):
         if side is None:
             return self.finalize_signal(bar, last, None)
         sig = Signal(side, size)
+        best_bid = _safe_first_float(bar, ("best_bid", "bid", "bid_price", "bid_px"))
+        best_ask = _safe_first_float(bar, ("best_ask", "ask", "ask_price", "ask_px"))
+        spread = None
+        if best_bid is not None and best_ask is not None and best_ask > best_bid:
+            spread = best_ask - best_bid
         buffer_factor = 0.5
         atr_bps = (atr_val / abs_last) * 10000.0 if atr_val > 0 else 0.0
         offset_basis_bps = max(vol_bps, atr_bps)
@@ -195,24 +268,66 @@ class BreakoutVol(Strategy):
         if max_offset_pct > 0.0:
             offset_bps = min(offset_bps, max_offset_pct * 10000.0)
         offset = abs_last * (offset_bps / 10000.0)
-        limit_offset_pct = offset_bps / 10000.0
-        bar["limit_offset"] = offset
-        bar["limit_offset_bps"] = offset_bps
-        bar["limit_offset_pct"] = limit_offset_pct
+        if offset <= 0.0:
+            offset = abs_last * 0.0001
         bar_context = bar.setdefault("context", {})
-        bar_context["limit_offset"] = offset
-        bar_context["limit_offset_bps"] = offset_bps
+        base_anchor = upper if sig.side == "buy" else lower
+        anchor_source = "channel"
+        if sig.side == "buy" and best_ask is not None:
+            anchored = min(base_anchor, best_ask)
+            if anchored == best_ask:
+                anchor_source = "book"
+            base_anchor = anchored
+        elif sig.side == "sell" and best_bid is not None:
+            anchored = max(base_anchor, best_bid)
+            if anchored == best_bid:
+                anchor_source = "book"
+            base_anchor = anchored
+
+        if sig.side == "buy":
+            limit_price = base_anchor - offset
+            if best_ask is not None:
+                limit_price = min(limit_price, math.nextafter(best_ask, float("-inf")))
+            limit_price = max(0.0, limit_price)
+        else:
+            limit_price = base_anchor + offset
+            if best_bid is not None:
+                limit_price = max(limit_price, math.nextafter(best_bid, float("inf")))
+            limit_price = max(0.0, limit_price)
+
+        limit_offset = abs(base_anchor - limit_price)
+        limit_offset_pct = limit_offset / abs_last if abs_last > 0 else 0.0
+        limit_offset_bps = limit_offset_pct * 10000.0
+        bar["limit_offset"] = limit_offset
+        bar["limit_offset_bps"] = limit_offset_bps
+        bar["limit_offset_pct"] = limit_offset_pct
+        bar_context["limit_offset"] = limit_offset
+        bar_context["limit_offset_bps"] = limit_offset_bps
         bar_context["limit_offset_pct"] = limit_offset_pct
-        direction = 1 if sig.side == "buy" else -1
-        base_price = last
-        sig.limit_price = base_price + direction * offset
+        base_price = base_anchor
+        sig.limit_price = limit_price
+        sig.post_only = True
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(offset),
-                "max_offset": abs(abs_last * max_offset_pct) if max_offset_pct else abs(offset) * 3,
+                "limit_offset": limit_offset,
+                "max_offset": (
+                    min(
+                        abs(abs_last * max_offset_pct)
+                        if max_offset_pct > 0.0
+                        else limit_offset * 3,
+                        spread,
+                    )
+                    if spread is not None and spread > 0.0
+                    else (
+                        abs(abs_last * max_offset_pct)
+                        if max_offset_pct > 0.0
+                        else limit_offset * 3
+                    )
+                ),
                 "step_mult": 0.5,
                 "chase": True,
+                "anchor_source": anchor_source,
             }
         )
         if self.risk_service is not None:
@@ -221,7 +336,7 @@ class BreakoutVol(Strategy):
                 last,
                 volatility=abs_last * vol,
                 target_volatility=bar.get("target_volatility"),
-                clamp=False,
+                clamp=True,
             )
             stop = self.risk_service.initial_stop(last, side, vol)
             self.trade = {

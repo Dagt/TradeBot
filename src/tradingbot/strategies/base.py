@@ -31,6 +31,7 @@ class Signal:
     strength: float = 1.0  # fraction of the base equity allocation
     reduce_only: bool = False
     limit_price: float | None = None
+    post_only: bool | None = None
     signal_ts: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
