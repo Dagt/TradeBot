@@ -410,8 +410,7 @@ class EventDrivenBacktestEngine:
         step_size: float = 0.0,
         min_notional: float = 0.0,
     ) -> None:
-        if fee_bps is None:
-            fee_bps = 10.0
+        strategies = list(strategies)
 
         self.data = data
         if isinstance(timeframes, str):
@@ -426,7 +425,6 @@ class EventDrivenBacktestEngine:
         self.window = int(window)
         self._slippage_supplied = slippage is not None
         self.slippage = slippage
-        self.fee_bps = float(fee_bps)
         self.slippage_bps = float(slippage_bps)
         if self.slippage is None:
             self.slippage = SlippageModel(
@@ -483,8 +481,62 @@ class EventDrivenBacktestEngine:
         self.exchange_step_size: Dict[str, float] = {}
         self.exchange_min_notional: Dict[str, float] = {}
         exchange_configs = exchange_configs or {}
-        default_maker_bps = self.fee_bps
-        default_taker_bps = self.fee_bps
+
+        def _strategy_exchange(info: Tuple[str, str] | Tuple[str, str, str]) -> str:
+            return "default" if len(info) == 2 else str(info[2])
+
+        def _fallback_fee(exchange: str) -> tuple[float, float]:
+            cfg = exchange_configs.get(exchange, {})
+            market_type = cfg.get("market_type") if isinstance(cfg, Mapping) else None
+            if market_type is None and exchange:
+                if exchange.endswith("_spot"):
+                    market_type = "spot"
+                elif exchange.endswith("_futures") or exchange.endswith("_perp"):
+                    market_type = "perp"
+            if market_type == "spot":
+                return 1.0, 8.0
+            # Perpetuals and other markets often quote around 2/5 bps
+            return 2.0, 5.0
+
+        if fee_bps is not None:
+            default_maker_bps = float(fee_bps)
+            default_taker_bps = float(fee_bps)
+        else:
+            default_maker_bps: float | None = None
+            default_taker_bps: float | None = None
+            default_exchange: str | None = None
+            for strat_info in strategies:
+                exchange = _strategy_exchange(strat_info)
+                cfg = exchange_configs.get(exchange)
+                if not cfg:
+                    continue
+                maker_cfg = cfg.get("maker_fee_bps")
+                taker_cfg = cfg.get("taker_fee_bps")
+                if maker_cfg is not None and default_maker_bps is None:
+                    default_maker_bps = float(maker_cfg)
+                if taker_cfg is not None and default_taker_bps is None:
+                    default_taker_bps = float(taker_cfg)
+                if maker_cfg is not None or taker_cfg is not None:
+                    default_exchange = exchange
+                if default_maker_bps is not None and default_taker_bps is not None:
+                    break
+            if default_exchange is None:
+                if strategies:
+                    default_exchange = _strategy_exchange(strategies[0])
+                elif exchange_configs:
+                    default_exchange = next(iter(exchange_configs))
+                else:
+                    default_exchange = "default"
+            fallback_maker_bps, fallback_taker_bps = _fallback_fee(default_exchange)
+            if default_maker_bps is None:
+                default_maker_bps = fallback_maker_bps
+            if default_taker_bps is None:
+                default_taker_bps = fallback_taker_bps
+            if default_taker_bps is None:
+                default_taker_bps = default_maker_bps
+
+        self.fee_bps = float(default_taker_bps)
+
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
             maker_bps = float(cfg.get("maker_fee_bps", default_maker_bps))
