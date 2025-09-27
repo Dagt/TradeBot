@@ -14,6 +14,64 @@ liquidity = LiquidityFilterManager()
 # candle size (e.g. running 10-minute EMAs on 15-minute bars).
 MIN_BARS = 5
 
+
+def _normalized_strength(raw: float, *, center: float = 1.0) -> float:
+    """Map an arbitrary positive ``raw`` value to ``[0, 1]``.
+
+    The mapping first applies ``log1p`` to compress large magnitudes and then
+    feeds the result through a logistic function centred around ``center``. The
+    function is tolerant to non-finite inputs and guarantees the returned value
+    lies in the unit interval.
+    """
+
+    if not math.isfinite(raw) or raw <= 0:
+        return 0.0
+    scaled = math.log1p(raw)
+    adjusted = scaled - center
+    try:
+        val = 1.0 / (1.0 + math.exp(-adjusted))
+    except OverflowError:
+        val = 1.0 if adjusted > 0 else 0.0
+    return max(0.0, min(1.0, val))
+
+
+def _best_quote(bar: dict, side: str) -> float | None:
+    """Return the best bid/ask from ``bar`` when available."""
+
+    keys = (
+        ("bid", "best_bid", "bid_px", "bid_price")
+        if side == "buy"
+        else ("ask", "best_ask", "ask_px", "ask_price")
+    )
+    for key in keys:
+        if key not in bar:
+            continue
+        try:
+            value = float(bar[key])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _pivot_price(df: pd.DataFrame, side: str, lookback: int = 5) -> float | None:
+    """Derive an internal support (buy) or resistance (sell) level."""
+
+    if side == "buy":
+        series = df["low"] if "low" in df else df["close"]
+        window = series.iloc[-lookback:]
+        value = window.min()
+    else:
+        series = df["high"] if "high" in df else df["close"]
+        window = series.iloc[-lookback:]
+        value = window.max()
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "min_volume": "Volumen mínimo requerido",
@@ -216,20 +274,56 @@ class Momentum(Strategy):
         momentum = abs(roc_val)
         slope_mag = abs(slope)
         raw_strength = (gap * 200.0) + (momentum * 50.0) + (slope_mag * 500.0)
-        strength = max(0.3, min(3.0, raw_strength))
+        strength = _normalized_strength(raw_strength, center=1.0)
+        if strength <= 0.0:
+            return None
         sig = Signal(side, strength)
-        offset = max(atr_val * 0.5, price * 0.001)
-        direction = 1 if side == "buy" else -1
-        sig.limit_price = price + direction * offset
+
+        anchor_price = _best_quote(bar, side)
+        if anchor_price is None:
+            anchor_price = _pivot_price(df, side, lookback=6)
+        if anchor_price is None or anchor_price <= 0:
+            anchor_price = price
+
+        limit_span = max(price * 0.001, atr_val * 0.5)
+        limit_span = max(limit_span, abs(price - anchor_price))
+        limit_span = max(limit_span, price * 0.0005)
+        if not math.isfinite(limit_span) or limit_span <= 0:
+            limit_span = max(abs(price) * 0.0005, 1e-6)
+
+        if side == "buy":
+            base_price = max(0.0, anchor_price - limit_span)
+        else:
+            base_price = anchor_price + limit_span
+
+        initial_offset = max(limit_span * 0.4, price * 0.0003, atr_val * 0.25)
+        initial_offset = min(initial_offset, limit_span)
+        step_offset = max(limit_span * 0.25, price * 0.0002)
+        step_offset = min(step_offset, limit_span)
+        maker_initial = max(price * 0.0002, min(initial_offset * 0.5, limit_span))
+
+        direction = 1.0 if side == "buy" else -1.0
+        limit_price = base_price + direction * initial_offset
+        if side == "buy":
+            limit_price = min(limit_price, anchor_price)
+        else:
+            limit_price = max(limit_price, anchor_price)
+        sig.limit_price = max(0.0, limit_price)
         sig.metadata.update(
             {
-                "base_price": price,
-                "limit_offset": abs(offset),
-                "max_offset": abs(price * 0.006),
-                "step_mult": 0.6,
+                "base_price": base_price,
+                "limit_offset": abs(limit_span),
+                "initial_offset": abs(initial_offset),
+                "offset_step": abs(step_offset),
+                "max_offset": abs(limit_span),
+                "maker_initial_offset": abs(maker_initial),
+                "maker_patience": 1,
+                "step_mult": 0.5,
                 "chase": True,
+                "post_only": True,
             }
         )
+        sig.post_only = True
 
         if self.risk_service is not None:
             stop_mult = 1.5 if tf_min <= 5 else 2.0
@@ -238,7 +332,7 @@ class Momentum(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=False,
+                clamp=True,
             )
             stop = self.risk_service.initial_stop(
                 price, side, atr_val, atr_mult=stop_mult

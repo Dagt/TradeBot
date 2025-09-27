@@ -5,6 +5,7 @@ import pytest
 
 import tradingbot.strategies.trend_following as trend_following
 from tradingbot.core import Account, RiskManager as CoreRiskManager
+from tradingbot.execution.order_types import Order
 from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.risk.service import RiskService
 from tradingbot.strategies.trend_following import TrendFollowing
@@ -38,8 +39,21 @@ def test_trend_following_risk_service_handles_stop_and_size():
     )
     svc.account.update_cash(1000.0)
     strat = TrendFollowing(rsi_n=2, **{"risk_service": svc})
-    sig = strat.on_bar({"window": df, "atr": 1.0, "volatility": 0.0})
+    price = df["close"].iloc[-1]
+    best_bid = price - 0.05
+    best_ask = price + 0.05
+    bar = {
+        "window": df,
+        "atr": 1.0,
+        "volatility": 0.0,
+        "symbol": "X",
+        "bid": best_bid,
+        "ask": best_ask,
+    }
+    sig = strat.on_bar(bar)
     assert sig and sig.side == "buy"
+    assert sig.post_only is True
+    assert 0.0 < sig.strength <= 1.0
     price = df["close"].iloc[-1]
     prev_close = df["close"].iloc[-2]
     tf_minutes = TrendFollowing._tf_minutes(strat.timeframe, strat.timeframe)
@@ -51,14 +65,23 @@ def test_trend_following_risk_service_handles_stop_and_size():
     min_offset = price_abs * 0.001
     vol_offset = price_abs * abs(vol_bps) / 10000.0 if vol_bps else 0.0
     entry_vol = max(min_offset, vol_offset)
-    expected_limit = max(price + entry_vol, prev_close + entry_vol)
-    assert sig.limit_price == pytest.approx(expected_limit)
+    meta = sig.metadata
+    anchor = meta["base_price"] + meta["limit_offset"]
+    assert math.isclose(anchor, best_bid, rel_tol=1e-9, abs_tol=1e-9)
+    assert sig.limit_price <= anchor + 1e-9
     trade = strat.trade
     assert trade is not None
-    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
+    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"], clamp=True)
     assert trade["qty"] == pytest.approx(expected_qty)
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"])
     assert trade["stop"] == pytest.approx(expected_stop)
+
+    order = Order("X", sig.side, "limit", 1.0, price=sig.limit_price, post_only=sig.post_only)
+    res = {"price": best_bid, "pending_qty": order.qty}
+    for _ in range(3):
+        action = strat.on_order_expiry(order, res)
+        assert action == "re_quote"
+        assert order.price <= anchor + 1e-9
 
 
 @pytest.mark.parametrize("timeframe", ["1m", "15m"])
@@ -128,12 +151,18 @@ def test_trend_following_respects_explicit_min_volatility():
 class DummyRiskService:
     def __init__(self, multiplier: float = 10.0):
         self.multiplier = multiplier
-        self.calls: list[tuple[float, float]] = []
+        self.calls: list[dict[str, float | bool | None]] = []
         self.min_order_qty = 0.0
         self.min_notional = 0.0
 
     def calc_position_size(self, strength, price, **kwargs):
-        self.calls.append((strength, price))
+        self.calls.append(
+            {
+                "strength": float(strength),
+                "price": float(price),
+                "clamp": kwargs.get("clamp"),
+            }
+        )
         return float(strength) * self.multiplier
 
     @staticmethod
@@ -185,7 +214,8 @@ def test_trend_following_strength_scales_with_rsi_distance_buy(monkeypatch):
         bar = {"window": df, "atr": 1.0, "volatility": 0.0}
         sig = strat.on_bar(bar)
         assert sig and sig.side == "buy"
-        assert all(pytest.approx(sig.strength) == call[0] for call in risk.calls)
+        assert all(pytest.approx(sig.strength) == call["strength"] for call in risk.calls)
+        assert risk.calls and risk.calls[0]["clamp"] is True
         assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
         return sig.strength, strat.trade["qty"]
 
@@ -227,7 +257,8 @@ def test_trend_following_strength_scales_with_rsi_distance_sell(monkeypatch):
         bar = {"window": df, "atr": 1.0, "volatility": 0.0}
         sig = strat.on_bar(bar)
         assert sig and sig.side == "sell"
-        assert all(pytest.approx(sig.strength) == call[0] for call in risk.calls)
+        assert all(pytest.approx(sig.strength) == call["strength"] for call in risk.calls)
+        assert risk.calls and risk.calls[0]["clamp"] is True
         assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
         return sig.strength, strat.trade["qty"]
 

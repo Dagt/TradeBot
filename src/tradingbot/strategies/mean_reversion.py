@@ -7,6 +7,50 @@ from ..filters.liquidity import LiquidityFilterManager
 
 liquidity = LiquidityFilterManager()
 
+
+def _normalized_strength(raw: float, *, center: float = 0.8) -> float:
+    if not math.isfinite(raw) or raw <= 0:
+        return 0.0
+    scaled = math.log1p(raw)
+    adjusted = scaled - center
+    try:
+        val = 1.0 / (1.0 + math.exp(-adjusted))
+    except OverflowError:
+        val = 1.0 if adjusted > 0 else 0.0
+    return max(0.0, min(1.0, val))
+
+
+def _best_quote(bar: dict, side: str) -> float | None:
+    keys = (
+        ("bid", "best_bid", "bid_px", "bid_price")
+        if side == "buy"
+        else ("ask", "best_ask", "ask_px", "ask_price")
+    )
+    for key in keys:
+        if key not in bar:
+            continue
+        try:
+            value = float(bar[key])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _pivot_price(df: pd.DataFrame, side: str, lookback: int = 5) -> float | None:
+    if side == "buy":
+        series = df["low"] if "low" in df else df["close"]
+        value = series.iloc[-lookback:].min()
+    else:
+        series = df["high"] if "high" in df else df["close"]
+        value = series.iloc[-lookback:].max()
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "trend_ma": "Ventana para la media móvil de tendencia",
@@ -171,19 +215,22 @@ class MeanReversion(Strategy):
         prev_rsi = rsi_series.iloc[-2]
         prev_price = float(price_series.iloc[-2])
 
+        raw_strength = 0.0
         if last_rsi > upper:
             if self.timeframe in {"5m", "15m"} and not (
                 prev_rsi > last_rsi and price < prev_price
             ):
                 return self.finalize_signal(bar, price, None)
-            strength = max(0.3, min(2.5, (last_rsi - upper) / max(1.0, 100 - upper) * 3.0))
+            deviation = (last_rsi - upper) / max(1.0, 100 - upper)
+            raw_strength = max(0.0, deviation * 3.0)
             side = "sell"
         elif last_rsi < lower:
             if self.timeframe in {"5m", "15m"} and not (
                 prev_rsi < last_rsi and price > prev_price
             ):
                 return self.finalize_signal(bar, price, None)
-            strength = max(0.3, min(2.5, (lower - last_rsi) / max(1.0, lower) * 3.0))
+            deviation = (lower - last_rsi) / max(1.0, lower)
+            raw_strength = max(0.0, deviation * 3.0)
             side = "buy"
         else:
             return self.finalize_signal(bar, price, None)
@@ -191,29 +238,64 @@ class MeanReversion(Strategy):
         if side == "sell" and trend_dir == 1 and self.only_buy_dip:
             return self.finalize_signal(bar, price, None)
 
+        strength = _normalized_strength(raw_strength, center=0.8)
+        if strength <= 0.0:
+            return self.finalize_signal(bar, price, None)
+
         sig = Signal(side, strength)
-        offset = max(atr_val * 0.5, price * 0.001)
-        direction = -1 if side == "sell" else 1
-        base_price = price
-        sig.limit_price = base_price + direction * offset
+
+        anchor_price = _best_quote(bar, side)
+        if anchor_price is None:
+            anchor_price = _pivot_price(df, side, lookback=6)
+        if anchor_price is None or anchor_price <= 0:
+            anchor_price = price
+
+        limit_span = max(price * 0.001, atr_val * 0.6)
+        limit_span = max(limit_span, abs(price - anchor_price))
+        limit_span = max(limit_span, price * 0.0005)
+        if not math.isfinite(limit_span) or limit_span <= 0:
+            limit_span = max(abs(price) * 0.0005, 1e-6)
+
+        if side == "buy":
+            base_price = max(0.0, anchor_price - limit_span)
+        else:
+            base_price = anchor_price + limit_span
+
+        initial_offset = max(limit_span * 0.45, atr_val * 0.4, price * 0.0003)
+        initial_offset = min(initial_offset, limit_span)
+        step_offset = max(limit_span * 0.3, price * 0.0002)
+        step_offset = min(step_offset, limit_span)
+        maker_initial = max(price * 0.0002, min(initial_offset * 0.5, limit_span))
+
+        direction = -1.0 if side == "sell" else 1.0
+        limit_price = base_price + direction * initial_offset
+        if side == "buy":
+            limit_price = min(limit_price, anchor_price)
+        else:
+            limit_price = max(limit_price, anchor_price)
+        sig.limit_price = max(0.0, limit_price)
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(offset),
-                "max_offset": abs(price * 0.005),
-                "step_mult": 0.4,
-                "chase": False,
-                "decay": 0.7,
-                "min_offset": price * 0.0005,
+                "limit_offset": abs(limit_span),
+                "initial_offset": abs(initial_offset),
+                "offset_step": abs(step_offset),
+                "max_offset": abs(limit_span),
+                "step_mult": 0.45,
+                "chase": True,
+                "maker_initial_offset": abs(maker_initial),
+                "maker_patience": 1,
+                "post_only": True,
             }
         )
+        sig.post_only = True
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 strength,
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=False,
+                clamp=True,
             )
             stop = self.risk_service.initial_stop(price, side, atr_val)
             if (

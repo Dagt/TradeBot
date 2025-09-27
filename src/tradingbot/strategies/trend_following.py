@@ -1,5 +1,4 @@
 import math
-import math
 import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi, calc_ofi
@@ -15,6 +14,52 @@ PARAM_INFO = {
 
 
 liquidity = LiquidityFilterManager()
+
+
+def _normalized_strength(raw: float, *, center: float = 0.75) -> float:
+    """Compress ``raw`` magnitude into the ``[0, 1]`` interval."""
+
+    if not math.isfinite(raw) or raw <= 0:
+        return 0.0
+    scaled = math.log1p(raw)
+    adjusted = scaled - center
+    try:
+        val = 1.0 / (1.0 + math.exp(-adjusted))
+    except OverflowError:
+        val = 1.0 if adjusted > 0 else 0.0
+    return max(0.0, min(1.0, val))
+
+
+def _best_quote(bar: dict, side: str) -> float | None:
+    keys = (
+        ("bid", "best_bid", "bid_px", "bid_price")
+        if side == "buy"
+        else ("ask", "best_ask", "ask_px", "ask_price")
+    )
+    for key in keys:
+        if key not in bar:
+            continue
+        try:
+            value = float(bar[key])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _pivot_price(df: pd.DataFrame, side: str, lookback: int = 6) -> float | None:
+    if side == "buy":
+        series = df["low"] if "low" in df else df["close"]
+        value = series.iloc[-lookback:].min()
+    else:
+        series = df["high"] if "high" in df else df["close"]
+        value = series.iloc[-lookback:].max()
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) else None
 
 
 class TrendFollowing(Strategy):
@@ -135,22 +180,56 @@ class TrendFollowing(Strategy):
                 last_volume = 0.0
         volume_ref = max(abs(last_volume), 1e-9)
         intensity = 1.0 + min(abs(ofi_val) / volume_ref, 2.0)
-        strength = max(0.3, min(3.0, base_strength * ofi_factor * intensity))
+        raw_strength = base_strength * ofi_factor * intensity
+        strength = _normalized_strength(raw_strength, center=0.75)
+        if strength <= 0.0:
+            return None
         sig = Signal(side, strength)
-        raw_offset = entry_volatility if entry_volatility > 0 else price_abs * 0.001
-        direction_int = 1 if side == "buy" else -1
-        base_price = price
-        limit_price = base_price + direction_int * raw_offset
+
+        anchor_price = _best_quote(bar, side)
+        if anchor_price is None:
+            anchor_price = _pivot_price(df, side, lookback=max(6, lookback_bars))
+        if anchor_price is None or anchor_price <= 0:
+            anchor_price = price
+
+        limit_span = max(entry_volatility, price_abs * 0.001)
+        limit_span = max(limit_span, abs(price - anchor_price))
+        limit_span = max(limit_span, price_abs * 0.0005)
+        if not math.isfinite(limit_span) or limit_span <= 0:
+            limit_span = max(price_abs * 0.0005, 1e-6)
+
+        if side == "buy":
+            base_price = max(0.0, anchor_price - limit_span)
+        else:
+            base_price = anchor_price + limit_span
+
+        initial_offset = max(limit_span * 0.4, entry_volatility * 0.6, price_abs * 0.0003)
+        initial_offset = min(initial_offset, limit_span)
+        step_offset = max(limit_span * 0.25, entry_volatility * 0.4, price_abs * 0.0002)
+        step_offset = min(step_offset, limit_span)
+        maker_initial = max(price_abs * 0.0002, min(initial_offset * 0.5, limit_span))
+
+        limit_price = base_price + direction * initial_offset
+        if side == "buy":
+            limit_price = min(limit_price, anchor_price)
+        else:
+            limit_price = max(limit_price, anchor_price)
         sig.limit_price = max(0.0, limit_price)
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(raw_offset),
-                "max_offset": abs(price_abs * 0.008),
-                "step_mult": 0.6,
+                "limit_offset": abs(limit_span),
+                "initial_offset": abs(initial_offset),
+                "offset_step": abs(step_offset),
+                "max_offset": abs(limit_span),
+                "step_mult": 0.55,
                 "chase": True,
+                "maker_initial_offset": abs(maker_initial),
+                "maker_patience": 1,
+                "post_only": True,
             }
         )
+        sig.post_only = True
 
         if symbol:
             if not hasattr(self, "_last_atr"):
@@ -180,7 +259,7 @@ class TrendFollowing(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=False,
+                clamp=True,
             )
             atr_val = None
             for candidate in (bar.get("atr"), bar.get("volatility")):
