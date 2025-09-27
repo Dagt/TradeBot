@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -401,17 +402,122 @@ class Strategy(ABC):
                 close = Signal(side, 1.0)
                 close.limit_price = price
                 return close
-            if decision in {"scale_in", "scale_out"} and signal is not None:
-                return signal
+            if decision in {"scale_in", "scale_out"}:
+                if signal is not None:
+                    return signal
+                if symbol is None:
+                    return None
+
+                def _to_float(value: Any) -> float | None:
+                    try:
+                        val = float(value)
+                    except (TypeError, ValueError):
+                        return None
+                    if not math.isfinite(val):
+                        return None
+                    return val
+
+                target_strength = None
+                if isinstance(trade, dict):
+                    target_strength = trade.get("strength")
+                else:
+                    target_strength = getattr(trade, "strength", None)
+                target_strength_val = _to_float(target_strength)
+
+                prev_strength_val = None
+                targets_map = getattr(rs, "_signal_targets", None)
+                if isinstance(targets_map, dict):
+                    prev_strength_val = _to_float(targets_map.get(symbol))
+
+                last_sig = getattr(self, "_last_signal", {}).get(symbol)
+                if prev_strength_val is None and last_sig is not None:
+                    if isinstance(last_sig, dict):
+                        prev_strength_val = _to_float(last_sig.get("strength"))
+                    else:
+                        prev_strength_val = _to_float(getattr(last_sig, "strength", None))
+
+                if target_strength_val is None:
+                    return None
+                if prev_strength_val is None:
+                    prev_strength_val = 0.0 if decision == "scale_in" else target_strength_val
+
+                diff_strength = target_strength_val - prev_strength_val
+                tol = 1e-12
+                if decision == "scale_out":
+                    if diff_strength >= -tol:
+                        return None
+                    order_strength = abs(diff_strength)
+                else:  # scale_in
+                    if diff_strength <= tol:
+                        return None
+                    order_strength = abs(diff_strength)
+
+                trade_side = trade.get("side") if isinstance(trade, dict) else getattr(trade, "side", None)
+                trade_side_norm = str(trade_side).lower() if trade_side is not None else None
+                if trade_side_norm in {"buy", "long"}:
+                    order_side = "buy" if decision == "scale_in" else "sell"
+                elif trade_side_norm in {"sell", "short"}:
+                    order_side = "sell" if decision == "scale_in" else "buy"
+                else:
+                    order_side = None
+                if order_side is None or order_strength <= tol:
+                    return None
+
+                last_limit = None
+                last_metadata: dict[str, Any] = {}
+                if last_sig is not None:
+                    if isinstance(last_sig, dict):
+                        last_limit = last_sig.get("limit_price")
+                        meta_val = last_sig.get("metadata")
+                    else:
+                        last_limit = getattr(last_sig, "limit_price", None)
+                        meta_val = getattr(last_sig, "metadata", None)
+                    if isinstance(meta_val, dict):
+                        try:
+                            last_metadata = deepcopy(meta_val)
+                        except Exception:
+                            last_metadata = dict(meta_val)
+
+                synthetic = Signal(order_side, order_strength, reduce_only=(decision == "scale_out"))
+                synthetic.limit_price = last_limit if last_limit is not None else price
+                if last_metadata:
+                    synthetic.metadata.update(last_metadata)
+                synthetic.metadata["_target_strength"] = target_strength_val
+                if symbol:
+                    self._track_requote(key=(symbol, synthetic.side), reset=True)
+                signal = synthetic
             if decision == "hold" and signal is not None:
                 return signal
-            return None
+            if signal is None:
+                return None
         if signal is not None:
+            target_override = None
+            meta_source: dict[str, Any] | None = None
+            if isinstance(signal, dict):
+                meta_candidate = signal.get("metadata")
+                if isinstance(meta_candidate, dict):
+                    meta_source = meta_candidate
+            else:
+                meta_candidate = getattr(signal, "metadata", None)
+                if isinstance(meta_candidate, dict):
+                    meta_source = meta_candidate
+            if meta_source is not None:
+                override_val = meta_source.pop("_target_strength", None)
+                try:
+                    if override_val is not None:
+                        target_override = float(override_val)
+                        if not math.isfinite(target_override):
+                            target_override = None
+                except (TypeError, ValueError):
+                    target_override = None
             if symbol:
-                strength_val = (
-                    signal["strength"] if isinstance(signal, dict) else signal.strength
-                )
-                rs.update_signal_strength(symbol, strength_val)
+                if target_override is not None:
+                    rs.update_signal_strength(symbol, target_override)
+                else:
+                    strength_val = (
+                        signal["strength"] if isinstance(signal, dict) else signal.strength
+                    )
+                    rs.update_signal_strength(symbol, strength_val)
             qty = rs.calc_position_size(
                 signal["strength"] if isinstance(signal, dict) else signal.strength,
                 price,
