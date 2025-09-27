@@ -486,17 +486,27 @@ class EventDrivenBacktestEngine:
             return "default" if len(info) == 2 else str(info[2])
 
         def _fallback_fee(exchange: str) -> tuple[float, float]:
-            cfg = exchange_configs.get(exchange, {})
-            market_type = cfg.get("market_type") if isinstance(cfg, Mapping) else None
+            cfg = exchange_configs.get(exchange)
+            if not exchange_configs:
+                return 1.0, 8.0
+
+            market_type = None
+            if isinstance(cfg, Mapping):
+                market_type = cfg.get("market_type")
+
             if market_type is None and exchange:
                 if exchange.endswith("_spot"):
                     market_type = "spot"
                 elif exchange.endswith("_futures") or exchange.endswith("_perp"):
                     market_type = "perp"
+
             if market_type == "spot":
                 return 1.0, 8.0
-            # Perpetuals and other markets often quote around 2/5 bps
-            return 2.0, 5.0
+
+            if market_type == "perp":
+                return 2.0, 5.0
+
+            return 1.0, 8.0
 
         if fee_bps is not None:
             default_maker_bps = float(fee_bps)
@@ -535,13 +545,18 @@ class EventDrivenBacktestEngine:
             if default_taker_bps is None:
                 default_taker_bps = default_maker_bps
 
+        self.default_maker_bps = float(default_maker_bps)
+        self.default_taker_bps = float(default_taker_bps)
         self.fee_bps = float(default_taker_bps)
 
         for exch, cfg in exchange_configs.items():
             self.exchange_latency[exch] = int(cfg.get("latency", latency))
-            maker_bps = float(cfg.get("maker_fee_bps", default_maker_bps))
+            maker_bps = float(cfg.get("maker_fee_bps", self.default_maker_bps))
             taker_bps = float(
-                cfg.get("taker_fee_bps", cfg.get("maker_fee_bps", default_taker_bps))
+                cfg.get(
+                    "taker_fee_bps",
+                    cfg.get("maker_fee_bps", self.default_taker_bps),
+                )
             )
             self.exchange_fees[exch] = FeeModel(maker_bps, taker_bps)
             self.exchange_depth[exch] = float(cfg.get("depth", float("inf")))
@@ -576,7 +591,7 @@ class EventDrivenBacktestEngine:
                 self.exchange_mode[exchange] = (
                     "spot" if exchange.endswith("_spot") else "perp"
                 )
-        self.default_fee = FeeModel(default_maker_bps, default_taker_bps)
+        self.default_fee = FeeModel(self.default_maker_bps, self.default_taker_bps)
         self.default_depth = float("inf")
 
         self.strategies: Dict[Tuple[str, str], object] = {}

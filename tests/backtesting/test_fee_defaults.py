@@ -60,6 +60,8 @@ def test_post_only_fill_uses_maker_fee(monkeypatch):
 
     assert engine.default_fee.maker_fee == pytest.approx(0.0001)
     assert engine.default_fee.taker_fee == pytest.approx(0.0008)
+    assert engine.default_maker_bps == pytest.approx(1.0)
+    assert engine.default_taker_bps == pytest.approx(8.0)
 
     order_fills = [fill for fill in result["fills"] if fill[1] == "order"]
     assert len(order_fills) == 1
@@ -83,3 +85,22 @@ def test_post_only_fill_uses_maker_fee(monkeypatch):
     maker_rate = engine.exchange_fees["okx_spot"].maker_fee
     expected_fee = price * qty * maker_rate
     assert fee_cost == pytest.approx(expected_fee)
+
+
+def test_default_fee_falls_back_to_realistic_rates_when_missing_config(monkeypatch):
+    strategy_name = "post_only_fee_missing_config"
+    limit_price = 99.0
+    _register_post_only_strategy(monkeypatch, strategy_name, limit_price)
+
+    engine = EventDrivenBacktestEngine(
+        {"SYM": _base_frame()},
+        [(strategy_name, "SYM", "unconfigured_spot")],
+        latency=1,
+        window=1,
+        verbose_fills=True,
+        fee_bps=None,
+        exchange_configs={},
+    )
+
+    assert engine.default_maker_bps == pytest.approx(1.0)
+    assert engine.default_taker_bps == pytest.approx(8.0)
