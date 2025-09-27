@@ -1,6 +1,7 @@
 import math
 
 import pandas as pd
+import pytest
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine
 from tradingbot.strategies import STRATEGIES
@@ -45,6 +46,19 @@ def test_breakout_vol_lookback_scales():
 
     assert strat_fast.lookback == 10
     assert strat_slow.lookback == 2
+
+
+def test_breakout_vol_quantiles_adapt_with_market_type():
+    strat_3m_spot = BreakoutVol(timeframe="3m", market_type="spot")
+    strat_15m_perp = BreakoutVol(timeframe="15m", market_type="perp")
+    strat_1h_unknown = BreakoutVol(timeframe="1h", market_type="exotic")
+
+    assert strat_3m_spot._vol_quantile == pytest.approx(0.25)
+    assert strat_3m_spot._mult_quantile == pytest.approx(0.75)
+    assert strat_15m_perp._vol_quantile == pytest.approx(0.20)
+    assert strat_15m_perp._mult_quantile == pytest.approx(0.80)
+    assert strat_1h_unknown._vol_quantile == pytest.approx(0.19)
+    assert strat_1h_unknown._mult_quantile == pytest.approx(0.83)
 
 
 def test_momentum_cooldown_scales():

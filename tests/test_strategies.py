@@ -604,10 +604,16 @@ def test_breakout_vol_risk_service_handles_stop_and_size():
         strat.on_bar({"window": df_buy.iloc[: end], "volatility": 0.0})
     sig = strat.on_bar({"window": df_buy, "volatility": 0.0})
     assert sig and sig.side == "buy"
-    assert sig.limit_price >= df_buy["close"].iloc[-1]
+    assert sig.limit_price <= df_buy["close"].iloc[-1]
+    assert sig.post_only is True
+    assert 0.0 <= sig.strength <= 1.0
     trade = strat.trade
     assert trade is not None
-    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"])
+    expected_qty = svc.calc_position_size(
+        sig.strength,
+        trade["entry_price"],
+        clamp=True,
+    )
     assert trade["qty"] == pytest.approx(expected_qty)
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade.get("atr"))
     assert trade["stop"] == pytest.approx(expected_stop)
