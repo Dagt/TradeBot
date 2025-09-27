@@ -125,11 +125,23 @@ class Strategy(ABC):
             initial_offset = abs(float(initial_offset)) if initial_offset is not None else None
         except (TypeError, ValueError):
             initial_offset = None
+        patience = meta.get("maker_patience")
+        try:
+            patience = int(patience) if patience is not None else None
+        except (TypeError, ValueError):
+            patience = None
+        if patience is not None and patience < 0:
+            patience = 0
         step_offset = meta.get("offset_step")
         try:
             step_offset = abs(float(step_offset)) if step_offset is not None else None
         except (TypeError, ValueError):
             step_offset = None
+        maker_initial = meta.get("maker_initial_offset")
+        try:
+            maker_initial = abs(float(maker_initial)) if maker_initial is not None else None
+        except (TypeError, ValueError):
+            maker_initial = None
         if offset == 0.0 and step_offset is None and initial_offset is None:
             atr_map = getattr(self, "_last_atr", {})
             atr_val = None
@@ -170,10 +182,25 @@ class Strategy(ABC):
                 if step_inc is None:
                     step_inc = 0.0
                 attempt_idx = max(1, attempts)
-                if attempt_idx <= 1:
-                    step = init
+                if patience is not None:
+                    patience_idx = max(0, patience)
+                    if attempt_idx <= patience_idx:
+                        step = init
+                    else:
+                        progress = attempt_idx - patience_idx
+                        first_step = maker_initial
+                        if first_step is None:
+                            first_step = init
+                        if first_step is None:
+                            first_step = 0.0
+                        step = first_step
+                        if progress > 1:
+                            step += (progress - 1) * step_inc
                 else:
-                    step = init + (attempt_idx - 1) * step_inc
+                    if attempt_idx <= 1:
+                        step = init
+                    else:
+                        step = init + (attempt_idx - 1) * step_inc
                 if offset:
                     step = min(step, offset)
                 if max_offset is not None:
