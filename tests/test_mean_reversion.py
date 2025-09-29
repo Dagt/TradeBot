@@ -3,8 +3,12 @@ import math
 import pandas as pd
 from tradingbot.execution.order_types import Order
 from tradingbot.strategies import mean_reversion as mr
-from tradingbot.strategies.base import timeframe_to_minutes
-from tradingbot.strategies.mean_reversion import MeanReversion, generate_signals
+from tradingbot.strategies.base import Signal, timeframe_to_minutes
+from tradingbot.strategies.mean_reversion import (
+    MeanReversion,
+    _normalized_strength,
+    generate_signals,
+)
 
 def test_mean_reversion_on_bar_signals():
     df_down = pd.DataFrame({"close": list(range(20, 0, -1))})
@@ -310,3 +314,86 @@ def test_mean_reversion_backtest_vol_floor_reduces_fees(monkeypatch):
     assert baseline_low_signals > 0
     assert filtered_low_signals == 0
     assert filtered_fee < baseline_fee
+
+
+def test_mean_reversion_relaxed_confirmation_backtest(monkeypatch):
+    prices: list[float] = []
+    rsi_values: list[float] = []
+    base = 100.0
+    for _ in range(4):
+        p0 = base + 0.6
+        p1 = base + 1.1
+        p2 = base + 1.6
+        p3 = p2 * (1 + 0.0012)
+        p4 = p3 - 0.9
+        p5 = p4 - 0.5
+        p6 = p5 - 0.3
+        prices.extend([p0, p1, p2, p3, p4, p5, p6])
+        rsi_values.extend([55.0, 62.0, 68.5, 73.0, 69.5, 61.0, 45.0])
+        base = p6 + 1.0
+
+    df = pd.DataFrame({"close": prices})
+
+    def fake_rsi(data: pd.DataFrame, n: int):  # noqa: ANN001
+        return pd.Series(rsi_values[: len(data)], index=data.index)
+
+    monkeypatch.setattr(mr, "rsi", fake_rsi)
+    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60.0, 40.0))
+
+    strat = MeanReversion(timeframe="15m", rsi_n=5, min_volatility=0.0)
+    closes = df["close"].to_numpy()
+
+    fee_per_trade = 0.0004
+    signals: list[tuple[int, Signal]] = []
+    pnl_total = 0.0
+    fee_total = 0.0
+
+    for idx in range(len(df)):
+        window = df.iloc[: idx + 1]
+        sig = strat.on_bar({"window": window, "timeframe": "15m"})
+        if sig is None:
+            continue
+        signals.append((idx, sig))
+        strength = float(sig.strength)
+        fee_total += abs(strength) * fee_per_trade
+        exit_idx = min(idx + 2, len(df) - 1)
+        entry_price = closes[idx]
+        exit_price = closes[exit_idx]
+        direction = 1.0 if sig.side == "buy" else -1.0
+        pnl_total += direction * (exit_price - entry_price) / entry_price * strength
+
+    assert signals, "Expected at least one fill under relaxed confirmation"
+
+    upper = 60.0
+    strict_indices: list[int] = []
+    strict_fee = 0.0
+    strict_pnl = 0.0
+    for idx in range(1, len(df)):
+        if idx < strat.rsi_n:
+            continue
+        last_rsi = rsi_values[idx]
+        prev_rsi = rsi_values[idx - 1]
+        if last_rsi <= upper:
+            continue
+        if prev_rsi > last_rsi and closes[idx] < closes[idx - 1]:
+            strict_indices.append(idx)
+            deviation = (last_rsi - upper) / max(1.0, 100.0 - upper)
+            raw = max(0.0, deviation * 3.0)
+            strength = _normalized_strength(raw)
+            strict_fee += strength * fee_per_trade
+            exit_idx = min(idx + 2, len(df) - 1)
+            entry_price = closes[idx]
+            exit_price = closes[exit_idx]
+            strict_pnl += (-1.0) * (exit_price - entry_price) / entry_price * strength
+
+    signalled_indices = {idx for idx, _ in signals}
+    assert set(strict_indices) <= signalled_indices
+
+    additional_indices = [idx for idx in signalled_indices if idx not in strict_indices]
+    assert additional_indices, "Relaxed confirmation should add extra fills"
+
+    assert pnl_total >= strict_pnl - 1e-6
+    assert pnl_total > 0
+    assert strict_indices, "Baseline strict confirmation should exist"
+    assert strict_fee > 0
+    assert fee_total <= strict_fee * 2.5
