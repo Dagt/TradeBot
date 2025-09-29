@@ -322,22 +322,59 @@ class MeanReversion(Strategy):
         if anchor_price is None or anchor_price <= 0:
             anchor_price = price
 
-        limit_span = max(price * 0.001, atr_val * 0.6)
-        limit_span = max(limit_span, abs(price - anchor_price))
-        limit_span = max(limit_span, price * 0.0005)
+        try:
+            tick_size = float(bar.get("tick_size", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            tick_size = 0.0
+        if not math.isfinite(tick_size) or tick_size <= 0:
+            tick_size = 0.0
+
+        abs_price = max(abs(price), 1e-9)
+        atr_abs = abs(float(atr_val)) if math.isfinite(atr_val) else 0.0
+        anchor_gap = abs(float(anchor_price) - price)
+
+        base_span = max(
+            abs_price * 0.0004,
+            atr_abs * 0.65 if atr_abs > 0 else 0.0,
+            tick_size * 4 if tick_size else 0.0,
+        )
+        limit_span = max(base_span, anchor_gap)
         if not math.isfinite(limit_span) or limit_span <= 0:
-            limit_span = max(abs(price) * 0.0005, 1e-6)
+            limit_span = max(abs_price * 0.0004, tick_size * 2 if tick_size else 1e-6)
 
         if side == "buy":
             base_price = max(0.0, anchor_price - limit_span)
         else:
             base_price = anchor_price + limit_span
 
-        initial_offset = max(limit_span * 0.45, atr_val * 0.4, price * 0.0003)
-        initial_offset = min(initial_offset, limit_span)
-        step_offset = max(limit_span * 0.3, price * 0.0002)
-        step_offset = min(step_offset, limit_span)
-        maker_initial = max(price * 0.0002, min(initial_offset * 0.5, limit_span))
+        target_distance = max(
+            abs_price * 0.00012,
+            atr_abs * 0.2 if atr_abs > 0 else 0.0,
+            tick_size if tick_size else 0.0,
+        )
+        if anchor_gap > 0:
+            target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
+        target_distance = min(target_distance, limit_span)
+
+        initial_offset = max(0.0, limit_span - target_distance)
+
+        step_distance = max(
+            target_distance * 0.5,
+            atr_abs * 0.12 if atr_abs > 0 else 0.0,
+            abs_price * 0.00008,
+        )
+        if tick_size:
+            step_distance = max(step_distance, tick_size)
+        step_distance = min(step_distance, limit_span)
+        step_offset = step_distance
+
+        maker_distance = max(
+            target_distance - step_distance,
+            tick_size if tick_size else target_distance * 0.5,
+        )
+        maker_distance = min(max(maker_distance, 0.0), limit_span)
+        maker_initial = max(initial_offset, limit_span - maker_distance)
+        max_offset = limit_span if limit_span > 0 else initial_offset
 
         direction = -1.0 if side == "sell" else 1.0
         limit_price = base_price + direction * initial_offset
@@ -346,20 +383,21 @@ class MeanReversion(Strategy):
         else:
             limit_price = max(limit_price, anchor_price)
         sig.limit_price = max(0.0, limit_price)
-        sig.metadata.update(
-            {
-                "base_price": base_price,
-                "limit_offset": abs(limit_span),
-                "initial_offset": abs(initial_offset),
-                "offset_step": abs(step_offset),
-                "max_offset": abs(limit_span),
-                "step_mult": 0.45,
-                "chase": True,
-                "maker_initial_offset": abs(maker_initial),
-                "maker_patience": 1,
-                "post_only": True,
-            }
-        )
+        meta = {
+            "base_price": base_price,
+            "limit_offset": abs(limit_span),
+            "initial_offset": abs(initial_offset),
+            "offset_step": abs(step_offset),
+            "max_offset": abs(max_offset),
+            "step_mult": 0.3,
+            "chase": True,
+            "maker_initial_offset": abs(maker_initial),
+            "maker_patience": 1,
+            "post_only": True,
+        }
+        if tick_size:
+            meta["tick_size"] = tick_size
+        sig.metadata.update(meta)
         sig.post_only = True
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
