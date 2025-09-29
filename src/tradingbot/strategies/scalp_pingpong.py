@@ -76,6 +76,7 @@ class ScalpPingPong(Strategy):
     """Mean-reversion scalping strategy using z-score of returns."""
 
     name = "scalp_pingpong"
+    max_signal_strength = 6.0
 
     def __init__(
         self,
@@ -168,10 +169,10 @@ class ScalpPingPong(Strategy):
 
         if z <= -z_buy:
             side = "buy"
-            strength = max(0.3, min(2.5, abs(z) / z_buy))
+            strength = max(0.05, min(2.5, abs(z) / z_buy))
         elif z >= z_sell:
             side = "sell"
-            strength = max(0.3, min(2.5, abs(z) / z_sell))
+            strength = max(0.05, min(2.5, abs(z) / z_sell))
         else:
             return None
         raw_size = max(0.0, min(3.0, strength * vol_size))
@@ -180,7 +181,8 @@ class ScalpPingPong(Strategy):
         if self.max_signal_strength <= 0:
             return self.finalize_signal(bar, price, None)
         normalized = raw_size / self.max_signal_strength
-        if normalized < self.min_strength_fraction:
+        effective_min = self.min_strength_fraction * 0.5
+        if normalized < effective_min:
             return self.finalize_signal(bar, price, None)
         normalized = min(1.0, normalized)
         sig = Signal(side, normalized)
