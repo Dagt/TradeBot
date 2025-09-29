@@ -10,16 +10,29 @@ from ..utils.rolling_quantile import RollingQuantileCache
 liquidity = LiquidityFilterManager()
 
 
-def _normalized_strength(raw: float, *, center: float = 0.8) -> float:
+def _normalized_strength(raw: float, *, center: float = 0.68) -> float:
+    """Map the raw strength into ``[0, 1]`` with a smooth non-linear scale."""
+
     if not math.isfinite(raw) or raw <= 0:
         return 0.0
-    scaled = math.log1p(raw)
-    adjusted = scaled - center
+
+    stretch = 1.25
+    slope = 1.65
+
+    scaled = math.log1p(raw * stretch)
+    adjusted = (scaled - center) * slope
+
     try:
-        val = 1.0 / (1.0 + math.exp(-adjusted))
+        logistic = 1.0 / (1.0 + math.exp(-adjusted))
     except OverflowError:
-        val = 1.0 if adjusted > 0 else 0.0
-    return max(0.0, min(1.0, val))
+        logistic = 1.0 if adjusted > 0 else 0.0
+
+    baseline = 1.0 / (1.0 + math.exp(center * slope))
+    if logistic <= baseline:
+        return 0.0
+
+    normalised = (logistic - baseline) / (1.0 - baseline)
+    return max(0.0, min(1.0, normalised))
 
 
 def _best_quote(bar: dict, side: str) -> float | None:
@@ -170,6 +183,71 @@ class MeanReversion(Strategy):
             return min(offset, self.trend_rsi_shift_max)
         return offset
 
+    def _confirm_reversal(
+        self,
+        price_series: pd.Series,
+        rsi_series: pd.Series,
+        side: str,
+    ) -> bool:
+        """Relaxed reversal confirmation for 5m/15m bars.
+
+        Historically the strategy required the immediately previous tick to
+        point in the opposite direction before acting on an RSI excursion.  On
+        medium intraday bars (5m/15m) that filter was too strict and often
+        missed fills even when short term momentum had already stalled.
+
+        We now confirm the reversal whenever a short moving average or a small
+        tolerance band indicates exhaustion, giving a slightly wider window for
+        execution while still blocking momentum trades.
+        """
+
+        if self.timeframe not in {"5m", "15m"}:
+            return True
+        if side not in {"buy", "sell"}:
+            return True
+        if len(price_series) < 2 or len(rsi_series) < 2:
+            return False
+
+        last_price = float(price_series.iloc[-1])
+        prev_price = float(price_series.iloc[-2])
+        last_rsi = float(rsi_series.iloc[-1])
+        prev_rsi = float(rsi_series.iloc[-2])
+
+        price_tol = 0.001 if self.timeframe == "5m" else 0.0015
+        rsi_tol = 0.7 if self.timeframe == "5m" else 0.9
+
+        ma_window = 3 if self.timeframe == "5m" else 4
+        price_ma = price_series.rolling(ma_window, min_periods=1).mean()
+        rsi_ma = rsi_series.rolling(ma_window, min_periods=1).mean()
+
+        price_ma_curr = float(price_ma.iloc[-1])
+        price_ma_prev = float(price_ma.iloc[-2]) if len(price_ma) >= 2 else prev_price
+        rsi_ma_curr = float(rsi_ma.iloc[-1])
+        rsi_ma_prev = float(rsi_ma.iloc[-2]) if len(rsi_ma) >= 2 else prev_rsi
+
+        price_change = 0.0
+        if prev_price:
+            price_change = (last_price - prev_price) / prev_price
+
+        price_ma_slope = price_ma_curr - price_ma_prev
+        rsi_ma_slope = rsi_ma_curr - rsi_ma_prev
+
+        if side == "sell":
+            return (
+                price_change <= price_tol
+                or price_ma_slope <= last_price * price_tol
+                or last_rsi <= prev_rsi + rsi_tol
+                or rsi_ma_slope <= rsi_tol
+            )
+
+        # side == "buy"
+        return (
+            price_change >= -price_tol
+            or price_ma_slope >= -last_price * price_tol
+            or last_rsi >= prev_rsi - rsi_tol
+            or rsi_ma_slope >= -rsi_tol
+        )
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
@@ -284,22 +362,15 @@ class MeanReversion(Strategy):
         elif trend_dir == -1:
             lower -= trend_offset
 
-        prev_rsi = rsi_series.iloc[-2]
-        prev_price = float(price_series.iloc[-2])
-
         raw_strength = 0.0
         if last_rsi > upper:
-            if self.timeframe in {"5m", "15m"} and not (
-                prev_rsi > last_rsi and price < prev_price
-            ):
+            if not self._confirm_reversal(price_series, rsi_series, "sell"):
                 return self.finalize_signal(bar, price, None)
             deviation = (last_rsi - upper) / max(1.0, 100 - upper)
             raw_strength = max(0.0, deviation * 3.0)
             side = "sell"
         elif last_rsi < lower:
-            if self.timeframe in {"5m", "15m"} and not (
-                prev_rsi < last_rsi and price > prev_price
-            ):
+            if not self._confirm_reversal(price_series, rsi_series, "buy"):
                 return self.finalize_signal(bar, price, None)
             deviation = (lower - last_rsi) / max(1.0, lower)
             raw_strength = max(0.0, deviation * 3.0)
@@ -310,7 +381,7 @@ class MeanReversion(Strategy):
         if side == "sell" and trend_dir == 1 and self.only_buy_dip:
             return self.finalize_signal(bar, price, None)
 
-        strength = _normalized_strength(raw_strength, center=0.8)
+        strength = _normalized_strength(raw_strength)
         if strength <= 0.0:
             return self.finalize_signal(bar, price, None)
 
