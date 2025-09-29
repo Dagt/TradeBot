@@ -1,9 +1,11 @@
-import pandas as pd
 import math
+
+import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi
 from ..filters.liquidity import LiquidityFilterManager
+from ..utils.rolling_quantile import RollingQuantileCache
 
 liquidity = LiquidityFilterManager()
 
@@ -90,7 +92,14 @@ class MeanReversion(Strategy):
         if tf in {"30m", "1h"}:
             self.trend_threshold *= 1.5
 
-        self.min_volatility = kwargs.get("min_volatility", 0.0)
+        min_vol_param = kwargs.get("min_volatility")
+        if min_vol_param is None:
+            self.min_volatility: float | None = None
+        else:
+            try:
+                self.min_volatility = float(min_vol_param)
+            except (TypeError, ValueError):
+                self.min_volatility = None
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
         default_time_stop_bars = 0.0
         min_time_stop_bars = 1
@@ -113,6 +122,34 @@ class MeanReversion(Strategy):
         self._time_stop_minutes = self._time_stop_target_bars * tf_minutes if self._time_stop_target_bars else 0
         self.time_stop = 0
         self._open_bars: dict[str, int] = {}
+        vol_floor_window_param = kwargs.get("vol_floor_window")
+        if vol_floor_window_param is None:
+            vol_floor_window = max(self.rsi_n, 20)
+        else:
+            vol_floor_window = int(vol_floor_window_param)
+        self._vol_floor_window = vol_floor_window
+        quantile_param = kwargs.get("vol_floor_quantile", 0.2)
+        try:
+            quantile = float(quantile_param)
+        except (TypeError, ValueError):
+            quantile = 0.2
+        self._vol_floor_quantile = min(max(quantile, 0.0), 1.0)
+        min_periods_param = kwargs.get("vol_floor_min_periods")
+        if min_periods_param is None:
+            if self._vol_floor_window > 0:
+                default_min_periods = max(1, min(self._vol_floor_window, self.rsi_n))
+            else:
+                default_min_periods = 0
+        else:
+            default_min_periods = int(min_periods_param)
+        if self._vol_floor_window > 0:
+            self._vol_floor_min_periods = max(
+                1, min(default_min_periods, self._vol_floor_window)
+            )
+        else:
+            self._vol_floor_min_periods = 0
+        self._rq = RollingQuantileCache()
+        self._vol_floor_last: dict[tuple[str, str], float] = {}
         self.risk_service = kwargs.get("risk_service")
 
     def auto_threshold(self, rsi_series: pd.Series) -> tuple[float, float]:
@@ -166,8 +203,50 @@ class MeanReversion(Strategy):
             else pd.Series(dtype=float)
         )
         vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
-        if vol * 10000 < self.min_volatility:
-            return None
+        vol_bps = vol * 10000.0
+        bar["volatility_bps"] = vol_bps if math.isfinite(vol_bps) else None
+        scaled_floor: float | None = None
+        floor_candidates: list[float] = []
+        if self.min_volatility is not None and self.min_volatility > 0:
+            floor_candidates.append(float(self.min_volatility))
+        symbol = str(bar.get("symbol") or "")
+        tf_label = str(bar_timeframe)
+        if self._vol_floor_window > 0 and symbol:
+            rq = self._rq.get(
+                symbol,
+                f"volatility_floor:{tf_label}",
+                window=max(1, self._vol_floor_window),
+                q=self._vol_floor_quantile,
+                min_periods=self._vol_floor_min_periods or None,
+            )
+            dynamic_candidate: float | None = None
+            if math.isfinite(vol_bps):
+                dynamic_value = float(rq.update(vol_bps))
+                if math.isfinite(dynamic_value) and dynamic_value > 0:
+                    dynamic_candidate = dynamic_value
+            if dynamic_candidate is not None:
+                floor_candidates.append(dynamic_candidate)
+                self._vol_floor_last[(symbol, tf_label)] = dynamic_candidate
+            else:
+                prev = self._vol_floor_last.get((symbol, tf_label))
+                if prev is not None and prev > 0:
+                    floor_candidates.append(prev)
+        floor_bps = max(floor_candidates) if floor_candidates else None
+        if floor_bps is not None and floor_bps > 0:
+            scale_factor = 1.0
+            base_minutes = self._base_timeframe_minutes
+            if base_minutes > 0 and tf_minutes > 0:
+                scale_factor = math.sqrt(tf_minutes / base_minutes)
+            scaled_floor = floor_bps * scale_factor
+            bar["volatility_floor_bps"] = scaled_floor
+        else:
+            bar["volatility_floor_bps"] = None
+        if (
+            scaled_floor is not None
+            and math.isfinite(vol_bps)
+            and vol_bps < scaled_floor
+        ):
+            return self.finalize_signal(bar, price, None)
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
         bar["volatility"] = price_vol
