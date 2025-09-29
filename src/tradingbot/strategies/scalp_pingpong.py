@@ -85,10 +85,12 @@ class ScalpPingPong(Strategy):
         **kwargs,
     ):
         params = {**load_params(config_path), **kwargs}
-        params.pop("risk_service", None)
-        tf = str(params.pop("timeframe", kwargs.get("timeframe", "1m")))
+        risk_service = params.pop("risk_service", None)
+        min_strength_param = params.pop("min_strength_fraction", None)
+        super().__init__(min_strength_fraction=min_strength_param)
+        tf = str(params.pop("timeframe", "1m"))
         self.cfg = cfg or ScalpPingPongConfig(**params)
-        self.risk_service = kwargs.get("risk_service")
+        self.risk_service = risk_service
         self.timeframe = tf
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
@@ -172,10 +174,15 @@ class ScalpPingPong(Strategy):
             strength = max(0.3, min(2.5, abs(z) / z_sell))
         else:
             return None
-        raw_size = max(0.3, min(3.0, strength * vol_size))
+        raw_size = max(0.0, min(3.0, strength * vol_size))
         if raw_size <= 0:
             return self.finalize_signal(bar, price, None)
-        normalized = min(1.0, max(self.min_strength_fraction, raw_size / self.max_signal_strength))
+        if self.max_signal_strength <= 0:
+            return self.finalize_signal(bar, price, None)
+        normalized = raw_size / self.max_signal_strength
+        if normalized < self.min_strength_fraction:
+            return self.finalize_signal(bar, price, None)
+        normalized = min(1.0, normalized)
         sig = Signal(side, normalized)
         base_price = price
         best_bid = bar.get("bid")

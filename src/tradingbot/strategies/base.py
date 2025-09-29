@@ -72,7 +72,21 @@ class Strategy(ABC):
     name: str
     max_signal_strength: float = 3.0
     min_signal_strength: float = 0.3
-    min_strength_fraction: float = 0.1
+    min_strength_fraction: float = 0.0
+
+    def __init__(self, *, min_strength_fraction: float | None = None) -> None:
+        """Initialise common strategy parameters."""
+
+        if min_strength_fraction is None:
+            return
+
+        try:
+            value = float(min_strength_fraction)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(value):
+            return
+        self.min_strength_fraction = float(min(max(0.0, value), 1.0))
 
     @abstractmethod
     def on_bar(self, bar: dict[str, Any]) -> Signal | None:
