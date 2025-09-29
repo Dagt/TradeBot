@@ -120,31 +120,43 @@ def _configure_limit(
     if tick_size:
         limit_span = max(limit_span, tick_size)
 
-    if side == "buy":
-        base_price = max(0.0, anchor_price - limit_span)
-    else:
-        base_price = anchor_price + limit_span
-
-    initial_offset = max(
-        limit_span * 0.65,
-        atr_abs * 0.35 if atr_abs > 0 else 0.0,
-        tick_size * 1.5 if tick_size else 0.0,
-        abs_price * 0.0002,
+    tight_candidates: list[float] = []
+    if atr_abs > 0:
+        tight_candidates.append(atr_abs * 0.1)
+    if tick_size > 0:
+        tight_candidates.append(tick_size)
+    tight_candidates.extend(
+        value
+        for value in (
+            limit_span * 0.1,
+            abs_price * 0.0001,
+        )
+        if value > 0
     )
-    initial_offset = min(initial_offset, limit_span)
+    tight_span = min((val for val in tight_candidates if val > 0), default=limit_span)
+    if tick_size > 0 and tight_span < tick_size:
+        tight_span = tick_size
+    tight_span = min(tight_span, limit_span)
+    if tight_span <= 0:
+        tight_span = limit_span if limit_span > 0 else abs_price * 0.00025
+
+    if side == "buy":
+        base_price = max(0.0, anchor_price - tight_span)
+    else:
+        base_price = anchor_price + tight_span
+
+    initial_offset = tight_span
 
     step_offset = max(
-        limit_span * 0.25,
-        atr_abs * 0.2 if atr_abs > 0 else 0.0,
+        atr_abs * 0.05 if atr_abs > 0 else 0.0,
         tick_size if tick_size else 0.0,
-        abs_price * 0.0001,
+        abs_price * 0.00005,
     )
-    step_offset = min(step_offset, limit_span)
+    step_offset = min(step_offset, initial_offset)
+    if step_offset <= 0:
+        step_offset = initial_offset
 
-    maker_initial = max(
-        initial_offset,
-        min(limit_span, max(limit_span * 0.75, atr_abs * 0.4 if atr_abs > 0 else 0.0)),
-    )
+    maker_initial = min(limit_span, initial_offset + step_offset)
 
     direction = 1.0 if side == "buy" else -1.0
     limit_price = base_price + direction * initial_offset
@@ -160,8 +172,8 @@ def _configure_limit(
         "offset_step": step_offset,
         "max_offset": limit_span,
         "maker_initial_offset": maker_initial,
-        "maker_patience": 2,
-        "step_mult": 0.5,
+        "maker_patience": 3,
+        "step_mult": 0.35,
         "chase": True,
         "post_only": True,
         "anchor_price": anchor_price,
