@@ -84,6 +84,7 @@ class TrendFollowing(Strategy):
             self.min_volatility = 0.0
         self.risk_service = kwargs.get("risk_service")
         self.timeframe = str(kwargs.get("timeframe", "1m"))
+        self._base_tf_minutes = self._tf_minutes(self.timeframe)
         self._rq = RollingQuantileCache()
 
     # ------------------------------------------------------------------
@@ -116,27 +117,32 @@ class TrendFollowing(Strategy):
         df: pd.DataFrame = bar["window"]
         tf = bar.get("timeframe", self.timeframe)
         tf_minutes = self._tf_minutes(tf, self.timeframe)
-        lookback_bars = max(1, math.ceil(self.vol_lookback / tf_minutes))
+        min_bars = 3 if self.vol_lookback >= tf_minutes else 2
+        lookback_bars = max(min_bars, math.ceil(self.vol_lookback / tf_minutes))
         if len(df) < max(self.rsi_n, lookback_bars) + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
         price = float(prices.iloc[-1])
-        prev_close = float(prices.iloc[-2])
         returns = prices.pct_change().dropna()
-        vol_series = returns.rolling(lookback_bars).std().dropna()
+        vol_series = returns.rolling(lookback_bars, min_periods=2).std().dropna()
         vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
+        base_tf_minutes = max(1, self._base_tf_minutes)
+        if vol_bps and tf_minutes != base_tf_minutes:
+            scale = math.sqrt(tf_minutes / base_tf_minutes)
+            vol_bps *= scale
         price_abs = price if price > 0 else 1.0
         min_offset = price_abs * 0.0005
         vol_offset = price_abs * abs(vol_bps) / 10000.0 if vol_bps else 0.0
         entry_volatility = max(min_offset, vol_offset)
-        window = min(len(vol_series), lookback_bars * 5)
         symbol = bar.get("symbol", "")
-        if window >= lookback_bars:
+        available = len(vol_series)
+        if available >= lookback_bars:
+            window = max(lookback_bars, min(available, lookback_bars * 5))
             rq_vol = self._rq.get(
                 symbol,
                 "vol_bps",
-                window=lookback_bars * 5,
+                window=window,
                 q=0.2,
                 min_periods=lookback_bars,
             )
