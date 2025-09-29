@@ -43,6 +43,7 @@ PARAM_INFO = {
     "slow_tf_vol_boost": "Ajuste progresivo del percentil al usar marcos más lentos",
     "fast_tf_vol_cap": "Límite superior del percentil efectivo en marcos rápidos",
     "min_strength_fraction": "Fuerza mínima normalizada para habilitar una operación",
+    "quantile_relax_minutes": "Minutos sin señales antes de relajar filtros cuantiles",
 }
 
 
@@ -175,6 +176,11 @@ class BreakoutATR(Strategy):
         self.strength_target = max(
             0.1, float(params.get("strength_target", 1.5))
         )
+        self._bars_since_signal = 0
+        relax_minutes = float(params.get("quantile_relax_minutes", 180.0))
+        self._quantile_relax_minutes = max(30.0, relax_minutes)
+        self.last_regime_heuristic = float("nan")
+        self.last_relax_active = False
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
@@ -222,6 +228,12 @@ class BreakoutATR(Strategy):
     @staticmethod
     def _clamp(value: float, minimum: float, maximum: float) -> float:
         return max(minimum, min(value, maximum))
+
+    def _relaxation_bars(self, tf_mult: float) -> int:
+        minutes = max(self._quantile_relax_minutes, 1.0)
+        ratio = max(tf_mult, 1e-6)
+        bars = int(math.ceil(minutes / ratio))
+        return max(4, bars)
 
     @staticmethod
     def _regime_allows_side(side: str, regime: float, regime_threshold: float) -> bool:
@@ -277,6 +289,8 @@ class BreakoutATR(Strategy):
 
         return float(self._clamp(base_cap, 0.25, 0.85))
 
+
+
     def _regime_threshold(
         self,
         tf_mult: float,
@@ -286,16 +300,8 @@ class BreakoutATR(Strategy):
         atr_val: float,
         regime_abs: float,
         symbol: str,
-    ) -> tuple[float, float]:
-        """Dynamic regime threshold used to filter noisy environments.
-
-        Returns
-        -------
-        tuple of float
-            ``(threshold, trend_gate)`` where ``threshold`` is the minimum
-            absolute regime required to enable trades and ``trend_gate`` is a
-            tighter percentile gate employed to favour strong trends.
-        """
+    ) -> tuple[float, float, float]:
+        """Dynamic regime threshold used to filter noisy environments."""
 
         base = self.min_regime
         span = max(self.max_regime - self.min_regime, 1e-6)
@@ -346,7 +352,17 @@ class BreakoutATR(Strategy):
             heuristic -= span * 0.15 * high_trend
             heuristic += span * 0.1 * low_vol
 
-        heuristic = float(self._clamp(heuristic, self.min_regime, self.max_regime))
+        dynamic_min = base
+        if ratio >= 12.0:
+            slow_relief = self._clamp((ratio - 12.0) / 48.0, 0.0, 0.18)
+            if ratio >= 30.0:
+                slow_relief = max(
+                    slow_relief,
+                    self._clamp(math.log1p(ratio / 30.0) * 0.35, 0.0, 0.35),
+                )
+            dynamic_min *= 1.0 - slow_relief
+
+        heuristic = float(self._clamp(heuristic, base, self.max_regime))
 
         symbol_key = symbol if symbol else "__global__"
         tf_bucket = int(round(max(tf_mult, 1.0) * 10.0))
@@ -380,15 +396,43 @@ class BreakoutATR(Strategy):
         primary_quant = float(rq_primary.update(regime_abs))
         trend_quant = float(rq_trend.update(regime_abs))
 
+        quantile_weight = 0.7
+        quantile_relief = 0.0
+        if ratio >= 30.0:
+            quantile_relief += self._clamp(math.log1p(ratio / 30.0) * 0.4, 0.0, 0.45)
+
         if math.isfinite(primary_quant):
-            threshold = 0.7 * primary_quant + 0.3 * heuristic
+            if primary_quant > heuristic:
+                gap_ratio = self._clamp(
+                    (primary_quant - heuristic) / max(heuristic, 1e-6), 0.0, 2.0
+                )
+                quantile_relief += min(0.4, gap_ratio * 0.25)
+                dynamic_min *= 1.0 - min(0.25, 0.18 * gap_ratio)
+            quantile_weight *= max(0.2, 1.0 - quantile_relief)
+            quantile_weight = self._clamp(quantile_weight, 0.25, 0.7)
+            heuristic_weight = 1.0 - quantile_weight
+            threshold = quantile_weight * primary_quant + heuristic_weight * heuristic
         else:
             threshold = heuristic
 
-        threshold = float(self._clamp(threshold, self.min_regime, self.max_regime))
+        dynamic_min = max(0.05, dynamic_min)
+        heuristic = max(dynamic_min, heuristic)
+
+        threshold = float(self._clamp(threshold, dynamic_min, self.max_regime))
 
         if math.isfinite(trend_quant):
-            trend_gate = max(threshold, trend_quant)
+            base_gate = max(threshold, trend_quant)
+            gate_relief = 0.0
+            if ratio >= 30.0:
+                gate_relief += self._clamp(math.log1p(ratio / 30.0) * 0.5, 0.0, 0.5)
+            if base_gate > heuristic:
+                gate_gap = self._clamp(
+                    (base_gate - heuristic) / max(heuristic, 1e-6), 0.0, 2.0
+                )
+                gate_relief += min(0.45, gate_gap * 0.25)
+            damp = self._clamp(1.0 - gate_relief, 0.3, 1.0)
+            trend_gate = threshold + (base_gate - threshold) * damp
+            trend_gate = max(trend_gate, threshold)
         elif math.isfinite(primary_quant):
             trend_gate = max(threshold, primary_quant * 1.05)
         else:
@@ -396,7 +440,7 @@ class BreakoutATR(Strategy):
 
         trend_gate = float(self._clamp(trend_gate, threshold, self.max_regime))
 
-        return threshold, trend_gate
+        return threshold, trend_gate, heuristic
 
     def _max_hold_bars(
         self, tf_mult: float, *, strength: float = 0.0, regime_abs: float = 0.0
@@ -498,6 +542,7 @@ class BreakoutATR(Strategy):
         stop_mult = self._stop_multiplier(tf_mult)
 
         if len(df) < max(ema_n, atr_n) + 2:
+            self.last_relax_active = False
             return None
 
         if self.risk_service is not None:
@@ -507,10 +552,20 @@ class BreakoutATR(Strategy):
             self._last_rpnl = rpnl
         if self._cooldown > 0:
             self._cooldown -= 1
+            self.last_relax_active = False
             return None
+
+        self._bars_since_signal = min(self._bars_since_signal + 1, 100000)
+        relax_bars = self._relaxation_bars(tf_mult)
+        relax_active = self._bars_since_signal >= relax_bars
+        bars_since_signal = self._bars_since_signal
+        bar["bars_since_signal"] = bars_since_signal
+        bar["regime_relax_bars"] = relax_bars
+        bar["regime_relax_active"] = relax_active
 
         atr_series = atr(df, atr_n).dropna()
         if len(atr_series) < atr_n:
+            self.last_relax_active = relax_active
             return None
 
         last_close = float(df["close"].iloc[-1])
@@ -535,7 +590,7 @@ class BreakoutATR(Strategy):
         regime_abs = abs(regime)
         symbol = str(bar.get("symbol", ""))
 
-        regime_threshold, trend_gate = self._regime_threshold(
+        regime_threshold, trend_gate, regime_heuristic = self._regime_threshold(
             tf_mult,
             atr_bps,
             price_std,
@@ -544,8 +599,20 @@ class BreakoutATR(Strategy):
             regime_abs,
             symbol,
         )
+        if relax_active:
+            relaxed_threshold = min(regime_threshold, regime_heuristic)
+            trend_floor = max(relaxed_threshold, regime_heuristic * 0.92)
+            relaxed_trend_gate = max(
+                relaxed_threshold,
+                min(trend_gate, max(regime_heuristic * 1.05, trend_floor)),
+            )
+            regime_threshold = relaxed_threshold
+            trend_gate = relaxed_trend_gate
+        self.last_regime_heuristic = regime_heuristic
         self.last_regime_threshold = regime_threshold
         self.last_trend_gate = trend_gate
+        self.last_relax_active = relax_active
+        bar["regime_heuristic"] = regime_heuristic
         if base_cooldown > 0:
             cooldown_factor = 1.2 if regime_abs < 1.0 else 0.7
             self.cooldown_bars = max(1, int(round(base_cooldown * cooldown_factor)))
@@ -763,6 +830,10 @@ class BreakoutATR(Strategy):
         sig.metadata["regime_threshold"] = regime_threshold
         sig.metadata["regime_trend_gate"] = trend_gate
         sig.metadata["regime"] = regime
+        sig.metadata["regime_heuristic"] = regime_heuristic
+        sig.metadata["regime_relax_active"] = relax_active
+        sig.metadata["regime_relax_bars"] = relax_bars
+        sig.metadata["bars_since_signal"] = bars_since_signal
         sig.metadata["breakout_penetration"] = float(penetration)
         sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
         sig.metadata["breakout_prior_extreme_penetration"] = float(
@@ -895,4 +966,5 @@ class BreakoutATR(Strategy):
                 "partial_take_profit": sig.metadata.get("partial_take_profit"),
             }
 
+        self._bars_since_signal = 0
         return self.finalize_signal(bar, last_close, sig)

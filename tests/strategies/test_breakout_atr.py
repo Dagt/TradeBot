@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -224,7 +225,7 @@ def test_breakout_atr_skips_breakout_after_nearby_extremes(
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: (0.0, 0.0),
+        lambda self, *args, **kwargs: (0.0, 0.0, 0.0),
     )
     strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
     strat.min_regime = 0.0
@@ -252,7 +253,7 @@ def test_breakout_atr_accepts_breakout_after_consolidation(
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: (0.0, 0.0),
+        lambda self, *args, **kwargs: (0.0, 0.0, 0.0),
     )
     strat = BreakoutATR(ema_n=10, atr_n=10, volume_factor=0.0)
     strat.min_regime = 0.0
@@ -347,6 +348,78 @@ def _synthetic_backtest_window() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _thirty_minute_backtest_window() -> pd.DataFrame:
+    rows: list[dict[str, float]] = []
+    ts_index = pd.date_range("2022-01-01", periods=80, freq="30min")
+    base = 100.0
+    for idx, ts in enumerate(ts_index):
+        if idx < 60:
+            drift = 0.02 * idx
+            swing = 0.04 if idx % 4 != 0 else -0.03
+            open_ = base + drift
+            close = open_ + swing
+            high = max(open_, close) + 0.15
+            low = min(open_, close) - 0.15
+            volume = 12.0
+        else:
+            impulse = 0.6 * (idx - 59)
+            open_ = base + 0.02 * idx + impulse
+            close = open_ + 1.2
+            high = close + 0.3
+            low = open_ - 0.4
+            volume = 24.0
+        rows.append(
+            {
+                "timestamp": int(ts.timestamp()),
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_regime_threshold_relaxes_on_slow_timeframes(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyRQ:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def update(self, value: float) -> float:
+            return self.value
+
+    class DummyCache:
+        def __init__(self, primary: float, trend: float) -> None:
+            self.primary = primary
+            self.trend = trend
+
+        def get(self, symbol: str, name: str, *, window: int, q: float, min_periods=None):
+            val = self.trend if "q80" in name else self.primary
+            return DummyRQ(val)
+
+    strat_fast = BreakoutATR(timeframe="3m")
+    strat_slow = BreakoutATR(timeframe="30m")
+    strat_fast._rq = DummyCache(0.55, 0.7)
+    strat_slow._rq = DummyCache(0.55, 0.7)
+
+    args = dict(
+        atr_bps=28.0,
+        price_std=0.8,
+        last_price=100.0,
+        atr_val=0.9,
+        regime_abs=0.5,
+        symbol="TEST/USDT",
+    )
+
+    fast_threshold, fast_gate, fast_heur = strat_fast._regime_threshold(3.0, **args)
+    slow_threshold, slow_gate, slow_heur = strat_slow._regime_threshold(30.0, **args)
+
+    assert slow_threshold <= fast_threshold
+    assert slow_gate <= fast_gate
+    assert slow_heur <= fast_heur
+
+
 @pytest.mark.parametrize("two_closes", [False, True])
 def test_breakout_atr_emits_signals_for_marginal_and_confirmed_breakouts(
     monkeypatch: pytest.MonkeyPatch, two_closes: bool
@@ -389,7 +462,7 @@ def test_breakout_atr_emits_signals_for_marginal_and_confirmed_breakouts(
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: (0.0, 0.0),
+        lambda self, *args, **kwargs: (0.0, 0.0, 0.0),
     )
     monkeypatch.setattr(
         BreakoutATR,
@@ -439,7 +512,7 @@ def test_breakout_atr_backtest_counts_fills_for_marginal_and_confirmed_breakouts
     monkeypatch.setattr(
         BreakoutATR,
         "_regime_threshold",
-        lambda self, *args, **kwargs: (0.0, 0.0),
+        lambda self, *args, **kwargs: (0.0, 0.0, 0.0),
     )
     monkeypatch.setattr(
         BreakoutATR,
@@ -473,3 +546,82 @@ def test_breakout_atr_backtest_counts_fills_for_marginal_and_confirmed_breakouts
 
     assert result["fill_count"] >= 2
     assert len(result["fills"]) >= 2
+
+
+def test_breakout_atr_backtest_30m_relaxed_quantiles_generate_fill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyRQ:
+        def __init__(self, factor: float, offset: float = 0.0) -> None:
+            self.factor = factor
+            self.offset = offset
+
+        def update(self, value: float) -> float:
+            if value is None or not math.isfinite(value):
+                return value
+            return value * self.factor + self.offset
+
+    class DummyCache:
+        def get(self, symbol, name, *, window, q, min_periods=None):
+            if "regime_abs" in name:
+                factor = 1.25 if name.endswith("q55") else 1.35
+                offset = 0.05
+            else:
+                factor = 1.0
+                offset = 0.0
+            return DummyRQ(factor, offset)
+
+    monkeypatch.setattr(
+        breakout_mod.RollingQuantileCache,
+        "get",
+        lambda self, *args, **kwargs: DummyCache().get(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_extreme_penetration_cap",
+        lambda self, *args, **kwargs: 999.0,
+    )
+    monkeypatch.setattr(
+        BreakoutATR,
+        "_vol_quantile_for",
+        lambda self, tf_mult, market_type=None: 0.2,
+    )
+    original_finalize = BreakoutATR.finalize_signal
+
+    def forced_finalize(self, bar: dict, last_close: float, sig: Signal) -> Signal:
+        sig.post_only = False
+        sig.limit_price = last_close
+        return original_finalize(self, bar, last_close, sig)
+
+    monkeypatch.setattr(BreakoutATR, "finalize_signal", forced_finalize)
+
+    def fake_atr(df: pd.DataFrame, period: int) -> pd.Series:
+        values = np.linspace(0.6, 1.2, len(df))
+        return pd.Series(values, index=df.index)
+
+    def fake_kc(
+        df: pd.DataFrame, ema_n: int, atr_n: int, mult: float
+    ) -> tuple[pd.Series, pd.Series]:
+        base = df["close"].rolling(ema_n, min_periods=1).mean()
+        growth = np.linspace(0.25, 0.55, len(df))
+        upper = base + growth
+        lower = base - growth
+        return upper, lower
+
+    monkeypatch.setattr(breakout_mod, "atr", fake_atr)
+    monkeypatch.setattr(breakout_mod, "keltner_channels", fake_kc)
+
+    data = _thirty_minute_backtest_window()
+    symbol = "SLOW/USDT"
+    engine = EventDrivenBacktestEngine(
+        {symbol: data},
+        [("breakout_atr", symbol)],
+        timeframes={symbol: "30m"},
+        window=70,
+        verbose_fills=True,
+        risk_pct=0.02,
+    )
+    result = engine.run()
+
+    assert result["fill_count"] >= 1
+    assert any(fill[2] == "buy" for fill in result["fills"])
