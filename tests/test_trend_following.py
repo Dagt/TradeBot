@@ -11,6 +11,11 @@ from tradingbot.risk.service import RiskService
 from tradingbot.strategies.trend_following import TrendFollowing
 
 
+def _expected_lookback(strat: TrendFollowing, tf_minutes: int) -> int:
+    min_bars = 3 if strat.vol_lookback >= tf_minutes else 2
+    return max(min_bars, math.ceil(strat.vol_lookback / tf_minutes))
+
+
 def test_trend_following_trailing_stop_uses_atr():
     account = Account(float("inf"), cash=1000.0)
     rm = CoreRiskManager(account)
@@ -57,7 +62,7 @@ def test_trend_following_risk_service_handles_stop_and_size():
     price = df["close"].iloc[-1]
     prev_close = df["close"].iloc[-2]
     tf_minutes = TrendFollowing._tf_minutes(strat.timeframe, strat.timeframe)
-    lookback_bars = max(1, math.ceil(strat.vol_lookback / tf_minutes))
+    lookback_bars = _expected_lookback(strat, tf_minutes)
     ret = df["close"].pct_change().dropna()
     vol_series = ret.rolling(lookback_bars).std().dropna()
     vol_bps = float(vol_series.iloc[-1]) * 10000 if len(vol_series) else 0.0
@@ -148,6 +153,84 @@ def test_trend_following_respects_explicit_min_volatility():
     assert sig_auto and sig_auto.side == "buy"
 
 
+def test_trend_following_positive_vol_bps_with_short_minute_window(monkeypatch):
+    timeframe = "15m"
+    strat = TrendFollowing(timeframe=timeframe, vol_lookback=5, rsi_n=6, min_volatility=0.0)
+    tracker = TrackingRQ()
+    strat._rq = tracker
+    captured: list[float] = []
+
+    original_auto = TrendFollowing.auto_threshold
+
+    def _capture(self, symbol, last_rsi, vol_bps):
+        captured.append(vol_bps)
+        return original_auto(self, symbol, last_rsi, vol_bps)
+
+    monkeypatch.setattr(TrendFollowing, "auto_threshold", _capture)
+
+    freq = "15min"
+    prices = [100.0 + 0.05 * i for i in range(40)]
+    df = pd.DataFrame({"close": prices}, index=pd.date_range("2024-01-01", periods=len(prices), freq=freq))
+    bar = {"window": df, "timeframe": timeframe, "symbol": "SYM", "volatility": 0.0}
+
+    strat.on_bar(bar)
+
+    assert captured, "auto_threshold did not capture any volatility"
+    assert captured[-1] > 0
+
+    tf_minutes = TrendFollowing._tf_minutes(timeframe, strat.timeframe)
+    lookback = _expected_lookback(strat, tf_minutes)
+    tracker_key = ("SYM", "vol_bps")
+    assert tracker_key in tracker.trackers
+    tracker_state = tracker.trackers[tracker_key]
+    assert tracker_state.min_periods == lookback
+    assert tracker_state.window >= lookback
+    assert tracker_state.values, "volatility quantile tracker did not receive values"
+    assert tracker_state.values[-1] == pytest.approx(captured[-1])
+
+
+def test_trend_following_rsi_threshold_tracks_volatility_regimes(monkeypatch):
+    timeframe = "15m"
+    strat = TrendFollowing(timeframe=timeframe, vol_lookback=5, rsi_n=6, min_volatility=0.0)
+    tracker = TrackingRQ()
+    strat._rq = tracker
+
+    thresholds: list[tuple[float, float]] = []
+    original_auto = TrendFollowing.auto_threshold
+
+    def _capture(self, symbol, last_rsi, vol_bps):
+        thresh = original_auto(self, symbol, last_rsi, vol_bps)
+        thresholds.append((vol_bps, thresh))
+        return thresh
+
+    monkeypatch.setattr(TrendFollowing, "auto_threshold", _capture)
+
+    freq = "15min"
+    base_price = 100.0
+    low_vol = [base_price + 0.05 * i for i in range(50)]
+    high_vol = []
+    price = base_price
+    for i in range(50):
+        price += 1.5 if i % 2 == 0 else -1.2
+        high_vol.append(price)
+
+    df_low = pd.DataFrame({"close": low_vol}, index=pd.date_range("2024-01-01", periods=len(low_vol), freq=freq))
+    df_high = pd.DataFrame({"close": high_vol}, index=pd.date_range("2024-03-01", periods=len(high_vol), freq=freq))
+
+    bar_low = {"window": df_low, "timeframe": timeframe, "symbol": "SYM", "volatility": 0.0}
+    bar_high = {"window": df_high, "timeframe": timeframe, "symbol": "SYM", "volatility": 0.0}
+
+    strat.on_bar(bar_low)
+    strat.on_bar(bar_high)
+
+    assert len(thresholds) >= 2
+    low_vol_bps, low_threshold = thresholds[0]
+    high_vol_bps, high_threshold = thresholds[-1]
+
+    assert low_vol_bps > 0
+    assert high_vol_bps > low_vol_bps
+    assert high_threshold > low_threshold
+
 class DummyRiskService:
     def __init__(self, multiplier: float = 10.0):
         self.multiplier = multiplier
@@ -181,6 +264,57 @@ def _constant_ofi(length: int, value: float) -> pd.Series:
     data = [0.0] * (max(length, 1) - 1)
     data.append(value)
     return pd.Series(data)
+
+
+class TrackingRQ:
+    class Tracker:
+        def __init__(self, window: int, q: float, min_periods: int | None) -> None:
+            self.window = int(window)
+            self.q = float(q)
+            self.min_periods = int(min_periods) if min_periods is not None else self.window
+            self.values: list[float] = []
+
+        def update(self, value: float) -> float:
+            self.values.append(float(value))
+            if len(self.values) > self.window:
+                self.values = self.values[-self.window :]
+            if len(self.values) < self.min_periods:
+                return math.nan
+            ordered = sorted(self.values[-self.window :])
+            if not ordered:
+                return math.nan
+            k = (len(ordered) - 1) * self.q
+            low = int(math.floor(k))
+            high = min(len(ordered) - 1, low + 1)
+            frac = k - low
+            if high == low:
+                return ordered[low]
+            return ordered[low] * (1 - frac) + ordered[high] * frac
+
+    def __init__(self) -> None:
+        self.trackers: dict[tuple[str, str], TrackingRQ.Tracker] = {}
+
+    def get(
+        self,
+        symbol: str,
+        name: str,
+        *,
+        window: int,
+        q: float,
+        min_periods: int | None = None,
+    ) -> "TrackingRQ.Tracker":
+        key = (symbol, name)
+        tracker = self.trackers.get(key)
+        if (
+            tracker is None
+            or tracker.window != int(window)
+            or tracker.q != float(q)
+            or tracker.min_periods
+            != (int(min_periods) if min_periods is not None else int(window))
+        ):
+            tracker = TrackingRQ.Tracker(window, q, min_periods)
+            self.trackers[key] = tracker
+        return tracker
 
 
 def test_trend_following_strength_scales_with_rsi_distance_buy(monkeypatch):
