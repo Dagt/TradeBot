@@ -1,9 +1,11 @@
-import pandas as pd
 import math
+
+import pandas as pd
 
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi
 from ..filters.liquidity import LiquidityFilterManager
+from ..utils.rolling_quantile import RollingQuantileCache
 
 liquidity = LiquidityFilterManager()
 
@@ -96,7 +98,19 @@ class MeanReversion(Strategy):
         shift_cap = float(kwargs.get("trend_rsi_shift_max", 18.0))
         self.trend_rsi_shift_max = max(base_shift, shift_cap) if shift_cap > 0 else base_shift
 
-        self.min_volatility = kwargs.get("min_volatility", 0.0)
+        self.min_volatility = max(0.0, float(kwargs.get("min_volatility", 0.0)))
+        self.vol_floor_quantile = float(kwargs.get("vol_floor_quantile", 0.25))
+        if self.vol_floor_quantile < 0:
+            self.vol_floor_quantile = 0.0
+        default_floor_window = max(40, self.rsi_n * 2)
+        self._vol_floor_window = max(
+            5,
+            int(kwargs.get("vol_floor_window", default_floor_window)),
+        )
+        self._vol_floor_min_periods = max(
+            3,
+            int(kwargs.get("vol_floor_min_periods", max(5, self.rsi_n))),
+        )
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
         default_time_stop_bars = 0.0
         min_time_stop_bars = 1
@@ -120,6 +134,22 @@ class MeanReversion(Strategy):
         self.time_stop = 0
         self._open_bars: dict[str, int] = {}
         self.risk_service = kwargs.get("risk_service")
+        self._rq = RollingQuantileCache()
+
+    def _vol_floor_windows(self, tf_minutes: float) -> tuple[int, int]:
+        base_minutes = self._base_timeframe_minutes or tf_minutes
+        if tf_minutes <= 0 or base_minutes <= 0:
+            window = max(5, self._vol_floor_window)
+            min_periods = max(1, min(window, self._vol_floor_min_periods))
+            return window, min_periods
+
+        ratio = tf_minutes / base_minutes
+        ratio = max(ratio, 1e-9)
+        scaled_window = int(math.ceil(self._vol_floor_window / ratio))
+        window = max(5, scaled_window)
+        scaled_min = int(math.ceil(self._vol_floor_min_periods / ratio))
+        min_periods = max(1, min(window, max(1, scaled_min)))
+        return window, min_periods
 
     def auto_threshold(self, rsi_series: pd.Series) -> tuple[float, float]:
         """Derive upper and lower RSI bounds from recent variability."""
@@ -183,7 +213,31 @@ class MeanReversion(Strategy):
         )
         vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
         vol_bps = vol * 10000 if math.isfinite(vol) and vol > 0 else 0.0
-        if vol_bps < self.min_volatility:
+
+        vol_floor_bps = self.min_volatility
+        symbol = str(bar.get("symbol", "") or "")
+        if (
+            symbol
+            and self.vol_floor_quantile > 0
+            and math.isfinite(vol_bps)
+        ):
+            window, min_periods = self._vol_floor_windows(tf_minutes)
+            rq = self._rq.get(
+                symbol,
+                "volatility_floor",
+                window=window,
+                q=self.vol_floor_quantile,
+                min_periods=min_periods,
+            )
+            floor_candidate = float(rq.update(float(vol_bps)))
+            if math.isfinite(floor_candidate) and floor_candidate > 0:
+                vol_floor_bps = max(vol_floor_bps, floor_candidate)
+
+        scaled_floor = vol_floor_bps
+        base_minutes = self._base_timeframe_minutes or tf_minutes
+        if vol_floor_bps > 0 and tf_minutes > 0 and base_minutes > 0:
+            scaled_floor = vol_floor_bps * math.sqrt(tf_minutes / base_minutes)
+        if scaled_floor > 0 and vol_bps < scaled_floor:
             return None
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0

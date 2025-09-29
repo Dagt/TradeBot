@@ -222,3 +222,91 @@ def test_mean_reversion_multi_timeframe_time_stop(monkeypatch):
     assert exit_sig.side == "sell"
     assert strat.time_stop == expected_bars
     assert strat._open_bars[symbol] == expected_bars
+
+
+def test_low_volatility_windows_block_signals(monkeypatch):
+    monkeypatch.setattr(mr, "rsi", _const_rsi(20))
+    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+
+    prices = []
+    price = 100.0
+    for idx in range(60):
+        price += 2.0 if idx % 2 == 0 else -2.0
+        prices.append(price)
+    for _ in range(20):
+        price += 0.02
+        prices.append(price)
+
+    windows = [pd.DataFrame({"close": prices[: idx + 1]}) for idx in range(len(prices))]
+
+    strat_filtered = MeanReversion(timeframe="1m", min_volatility=0.0)
+    strat_baseline = MeanReversion(
+        timeframe="1m",
+        min_volatility=0.0,
+        vol_floor_quantile=0.0,
+    )
+
+    filtered = [
+        strat_filtered.on_bar({"window": window, "symbol": "LOW"})
+        for window in windows
+    ]
+    baseline = [
+        strat_baseline.on_bar({"window": window, "symbol": "LOW"})
+        for window in windows
+    ]
+
+    assert any(sig is not None for sig in filtered[:-15])
+    assert all(sig is None for sig in filtered[-5:])
+    assert any(sig is not None for sig in baseline[-5:])
+
+
+def test_mean_reversion_backtest_vol_floor_reduces_fees(monkeypatch):
+    monkeypatch.setattr(mr, "rsi", _const_rsi(20))
+    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+
+    prices = []
+    segments = []
+    price = 100.0
+    for idx in range(160):
+        price += 1.6 if idx % 2 == 0 else -1.4
+        prices.append(price)
+        segments.append("high")
+    flat_price = price
+    for _ in range(20):
+        price = flat_price
+        prices.append(price)
+        segments.append("low")
+
+    strat_baseline = MeanReversion(
+        timeframe="3m",
+        min_volatility=0.0,
+        vol_floor_quantile=0.0,
+    )
+    strat_filtered = MeanReversion(
+        timeframe="3m",
+        min_volatility=0.0,
+    )
+
+    baseline_fee = 0.0
+    filtered_fee = 0.0
+    baseline_low_signals = 0
+    filtered_low_signals = 0
+    fee_per_trade = 0.0005
+
+    for idx in range(len(prices)):
+        window = pd.DataFrame({"close": prices[: idx + 1]})
+        bar = {"window": window, "symbol": "SIM", "timeframe": "3m"}
+        sig_base = strat_baseline.on_bar(bar)
+        sig_filt = strat_filtered.on_bar(bar)
+        if sig_base is not None:
+            baseline_fee += abs(sig_base.strength) * fee_per_trade
+            if segments[idx] == "low":
+                baseline_low_signals += 1
+        if sig_filt is not None:
+            filtered_fee += abs(sig_filt.strength) * fee_per_trade
+            if segments[idx] == "low":
+                filtered_low_signals += 1
+
+    assert baseline_low_signals > 0
+    assert filtered_low_signals == 0
+    assert filtered_fee < baseline_fee
