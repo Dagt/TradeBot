@@ -86,19 +86,22 @@ def _quantiles_for(tf_minutes: float, market_type: str | None) -> tuple[float, f
     return vol_q, mult_q
 
 
-def _timeframe_scale(tf_minutes: float) -> float:
-    """Return volatility scaling factor for the given timeframe."""
+def _power_timeframe_scale(
+    tf_minutes: float,
+    exponent: float,
+    min_scale: float,
+    fast_floor: float,
+    fast_threshold: float,
+) -> float:
+    """Return a smooth volatility scale that decays with the timeframe."""
 
     minutes = max(float(tf_minutes), 1.0)
-    if minutes <= 2.0:
-        return 1.0
-    if minutes <= 3.0:
-        return 0.78
-    if minutes <= 5.0:
-        return 0.85
-    if minutes <= 15.0:
-        return 0.95
-    return 1.0
+    exponent = max(0.1, float(exponent))
+    base = minutes ** (-exponent)
+    scale = max(min_scale, min(1.0, base))
+    if minutes <= fast_threshold:
+        scale = max(scale, fast_floor)
+    return scale
 
 
 class BreakoutVol(Strategy):
@@ -128,6 +131,18 @@ class BreakoutVol(Strategy):
         self.volatility_factor = self._base_volatility_factor
         self._base_min_size_raw = max(0.0, float(kwargs.get("min_size_raw", 0.0)))
         self.min_size_raw = self._base_min_size_raw
+        self._tf_decay_exponent = float(kwargs.get("tf_decay_exponent", 0.6))
+        self._tf_scale_min = max(0.0, float(kwargs.get("tf_scale_min", 0.1)))
+        fast_floor_default = float(kwargs.get("fast_tf_floor", 0.35))
+        self._fast_tf_floor = max(self._tf_scale_min, min(1.0, fast_floor_default))
+        self._fast_tf_threshold = max(1.0, float(kwargs.get("fast_tf_threshold", 5.0)))
+        min_size_floor = float(kwargs.get("min_size_floor", self._base_min_size_raw))
+        self._min_size_floor = max(0.0, min_size_floor)
+        fast_size_default = max(self._min_size_floor, max(self._base_min_size_raw, 0.02))
+        self._fast_min_size_floor = max(
+            self._min_size_floor,
+            float(kwargs.get("fast_min_size_floor", fast_size_default)),
+        )
         self.max_offset_pct = max(0.0, float(kwargs.get("max_offset_pct", 0.015)))
         self._lookback_minutes = float(kwargs.get("lookback", 10))
         self.base_lookback = self._lookback_minutes
@@ -146,6 +161,22 @@ class BreakoutVol(Strategy):
         self.min_volatility = 0.0
         self._rq = RollingQuantileCache()
 
+    def _scaled_timeframe_factor(self, tf_minutes: float) -> float:
+        return _power_timeframe_scale(
+            tf_minutes,
+            exponent=self._tf_decay_exponent,
+            min_scale=self._tf_scale_min,
+            fast_floor=self._fast_tf_floor,
+            fast_threshold=self._fast_tf_threshold,
+        )
+
+    def _scaled_min_size(self, tf_minutes: float, scale: float) -> float:
+        base = self._base_min_size_raw * scale
+        floor = self._min_size_floor
+        if tf_minutes <= self._fast_tf_threshold:
+            floor = max(floor, self._fast_min_size_floor)
+        return max(floor, base)
+
     def _cooldown_for(self, tf_minutes: float) -> int:
         if self._cooldown_minutes <= 0:
             return 0
@@ -156,9 +187,9 @@ class BreakoutVol(Strategy):
         df: pd.DataFrame = bar["window"]
         tf_val = bar.get("timeframe", self.timeframe)
         tf_minutes = timeframe_to_minutes(tf_val)
-        tf_scale = _timeframe_scale(tf_minutes)
+        tf_scale = self._scaled_timeframe_factor(tf_minutes)
         self.volatility_factor = self._base_volatility_factor * tf_scale
-        self.min_size_raw = self._base_min_size_raw * tf_scale
+        self.min_size_raw = self._scaled_min_size(tf_minutes, tf_scale)
         lookback = max(2, int(math.ceil(self._lookback_minutes / tf_minutes)))
         vol_ma_n = max(1, int(math.ceil(self._volume_ma_minutes / tf_minutes)))
         self.cooldown_bars = self._cooldown_for(tf_minutes)
@@ -260,8 +291,8 @@ class BreakoutVol(Strategy):
             return self.finalize_signal(bar, last, None)
 
         size_raw = max(0.0, vol_bps * self.volatility_factor)
-        if self.min_size_raw > 0.0:
-            size_raw = max(self.min_size_raw, size_raw)
+        if self.min_size_raw > 0.0 and size_raw < self.min_size_raw:
+            return self.finalize_signal(bar, last, None)
         size = min(1.0, size_raw)
 
         vol_ma = df["volume"].rolling(vol_ma_n).mean().iloc[-1]
