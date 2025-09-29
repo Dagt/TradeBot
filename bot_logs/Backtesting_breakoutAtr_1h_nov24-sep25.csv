@@ -1,1 +1,3 @@
 timestamp,reason,side,price,qty,strategy,symbol,exchange,fee_cost,slippage_pnl,realized_pnl,realized_pnl_total,equity_after
+5972,order,buy,2563.85,1.82432072,breakout_atr,ETHUSDT,okx_spot,3.7418277423776005,0.0,-3.7418277423776005,-3.7418277423776005,9996.258172257621
+6333,order,sell,3644.79,1.82432072,breakout_atr,ETHUSDT,okx_spot,5.31941273363904,0.0,1966.6618263431612,1962.9199986007836,11962.919998600782
