@@ -86,6 +86,21 @@ def _quantiles_for(tf_minutes: float, market_type: str | None) -> tuple[float, f
     return vol_q, mult_q
 
 
+def _timeframe_scale(tf_minutes: float) -> float:
+    """Return volatility scaling factor for the given timeframe."""
+
+    minutes = max(float(tf_minutes), 1.0)
+    if minutes <= 2.0:
+        return 1.0
+    if minutes <= 3.0:
+        return 0.78
+    if minutes <= 5.0:
+        return 0.85
+    if minutes <= 15.0:
+        return 0.95
+    return 1.0
+
+
 class BreakoutVol(Strategy):
     """Ruptura por volatilidad con umbrales autocalibrados.
 
@@ -109,7 +124,10 @@ class BreakoutVol(Strategy):
         tf_minutes = timeframe_to_minutes(tf)
         self.market_type = kwargs.get("market_type")
         self._vol_quantile, self._mult_quantile = _quantiles_for(tf_minutes, self.market_type)
-        self.volatility_factor = float(kwargs.get("volatility_factor", 0.02))
+        self._base_volatility_factor = float(kwargs.get("volatility_factor", 0.02))
+        self.volatility_factor = self._base_volatility_factor
+        self._base_min_size_raw = max(0.0, float(kwargs.get("min_size_raw", 0.0)))
+        self.min_size_raw = self._base_min_size_raw
         self.max_offset_pct = max(0.0, float(kwargs.get("max_offset_pct", 0.015)))
         self._lookback_minutes = float(kwargs.get("lookback", 10))
         self.base_lookback = self._lookback_minutes
@@ -138,6 +156,9 @@ class BreakoutVol(Strategy):
         df: pd.DataFrame = bar["window"]
         tf_val = bar.get("timeframe", self.timeframe)
         tf_minutes = timeframe_to_minutes(tf_val)
+        tf_scale = _timeframe_scale(tf_minutes)
+        self.volatility_factor = self._base_volatility_factor * tf_scale
+        self.min_size_raw = self._base_min_size_raw * tf_scale
         lookback = max(2, int(math.ceil(self._lookback_minutes / tf_minutes)))
         vol_ma_n = max(1, int(math.ceil(self._volume_ma_minutes / tf_minutes)))
         self.cooldown_bars = self._cooldown_for(tf_minutes)
@@ -234,7 +255,13 @@ class BreakoutVol(Strategy):
         bar["volatility"] = abs_last * vol
         bar["target_volatility"] = max(target_vol, 0.0)
 
+        effective_min_vol = self.min_volatility
+        if effective_min_vol > 0.0 and vol_bps <= effective_min_vol:
+            return self.finalize_signal(bar, last, None)
+
         size_raw = max(0.0, vol_bps * self.volatility_factor)
+        if self.min_size_raw > 0.0:
+            size_raw = max(self.min_size_raw, size_raw)
         size = min(1.0, size_raw)
 
         vol_ma = df["volume"].rolling(vol_ma_n).mean().iloc[-1]
