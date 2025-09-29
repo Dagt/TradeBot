@@ -192,24 +192,24 @@ class TrendFollowing(Strategy):
         if anchor_price is None or anchor_price <= 0:
             anchor_price = price
 
-        limit_span = max(entry_volatility, price_abs * 0.001)
-        limit_span = max(limit_span, abs(price - anchor_price))
-        limit_span = max(limit_span, price_abs * 0.0005)
-        if not math.isfinite(limit_span) or limit_span <= 0:
-            limit_span = max(price_abs * 0.0005, 1e-6)
+        atr_unit = max(entry_volatility, price_abs * 0.0004)
+        half_span = max(atr_unit * 1.05, abs(price - anchor_price) * 0.5, price_abs * 0.0003)
+        if not math.isfinite(half_span) or half_span <= 0:
+            half_span = max(price_abs * 0.0003, 1e-6)
 
         if side == "buy":
-            base_price = max(0.0, anchor_price - limit_span)
+            base_price = max(0.0, anchor_price - half_span)
         else:
-            base_price = anchor_price + limit_span
+            base_price = anchor_price + half_span
 
-        initial_offset = max(limit_span * 0.4, entry_volatility * 0.6, price_abs * 0.0003)
-        initial_offset = min(initial_offset, limit_span)
-        step_offset = max(limit_span * 0.25, entry_volatility * 0.4, price_abs * 0.0002)
-        step_offset = min(step_offset, limit_span)
-        maker_initial = max(price_abs * 0.0002, min(initial_offset * 0.5, limit_span))
+        initial_offset = max(half_span * 0.9, atr_unit * 0.95, price_abs * 0.00025)
+        initial_offset = min(initial_offset, half_span)
+        step_offset = max(half_span * 0.35, atr_unit * 0.55, price_abs * 0.00015)
+        step_offset = min(step_offset, half_span)
+        maker_initial = max(price_abs * 0.00012, min(half_span * 0.25, initial_offset * 0.5))
 
-        limit_price = base_price + direction * initial_offset
+        price_dir = -1.0 if side == "buy" else 1.0
+        limit_price = anchor_price + price_dir * max(half_span - initial_offset, 0.0)
         if side == "buy":
             limit_price = min(limit_price, anchor_price)
         else:
@@ -218,14 +218,14 @@ class TrendFollowing(Strategy):
         sig.metadata.update(
             {
                 "base_price": base_price,
-                "limit_offset": abs(limit_span),
+                "limit_offset": abs(half_span),
                 "initial_offset": abs(initial_offset),
                 "offset_step": abs(step_offset),
-                "max_offset": abs(limit_span),
-                "step_mult": 0.55,
+                "max_offset": abs(half_span),
+                "step_mult": 0.4,
                 "chase": True,
                 "maker_initial_offset": abs(maker_initial),
-                "maker_patience": 1,
+                "maker_patience": 2,
                 "post_only": True,
             }
         )
