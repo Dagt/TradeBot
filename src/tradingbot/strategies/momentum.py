@@ -72,6 +72,105 @@ def _pivot_price(df: pd.DataFrame, side: str, lookback: int = 5) -> float | None
         return None
     return result if math.isfinite(result) else None
 
+
+def _configure_limit(
+    side: str,
+    price: float,
+    anchor_price: float,
+    atr_val: float,
+    bar: dict,
+) -> tuple[float, dict[str, float]]:
+    """Return limit metadata anchored around the best quote.
+
+    Parameters
+    ----------
+    side:
+        Order side, ``"buy"`` or ``"sell"``.
+    price:
+        Latest traded price.
+    anchor_price:
+        Reference price derived from the best bid/ask or an internal pivot.
+    atr_val:
+        Latest Average True Range value.
+    bar:
+        Bar payload passed to :meth:`Momentum.on_bar` containing optional
+        ``tick_size`` information.
+    """
+
+    try:
+        tick_size = float(bar.get("tick_size", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        tick_size = 0.0
+    if not math.isfinite(tick_size) or tick_size <= 0:
+        tick_size = 0.0
+
+    atr_abs = abs(float(atr_val)) if math.isfinite(atr_val) else 0.0
+    abs_price = max(abs(float(price)), 1e-9)
+    anchor_gap = abs(float(anchor_price) - price)
+
+    base_unit = max(abs_price * 0.00025, tick_size * 2 if tick_size else 0.0)
+    atr_unit = atr_abs * 0.5 if atr_abs > 0 else 0.0
+    limit_span = max(base_unit, atr_unit)
+    if anchor_gap > 0:
+        limit_span = max(limit_span, anchor_gap * 0.5)
+    if atr_abs > 0:
+        limit_span = min(limit_span, atr_abs)
+    if not math.isfinite(limit_span) or limit_span <= 0:
+        limit_span = base_unit if base_unit > 0 else max(abs_price * 0.00025, 1e-6)
+    if tick_size:
+        limit_span = max(limit_span, tick_size)
+
+    if side == "buy":
+        base_price = max(0.0, anchor_price - limit_span)
+    else:
+        base_price = anchor_price + limit_span
+
+    initial_offset = max(
+        limit_span * 0.65,
+        atr_abs * 0.35 if atr_abs > 0 else 0.0,
+        tick_size * 1.5 if tick_size else 0.0,
+        abs_price * 0.0002,
+    )
+    initial_offset = min(initial_offset, limit_span)
+
+    step_offset = max(
+        limit_span * 0.25,
+        atr_abs * 0.2 if atr_abs > 0 else 0.0,
+        tick_size if tick_size else 0.0,
+        abs_price * 0.0001,
+    )
+    step_offset = min(step_offset, limit_span)
+
+    maker_initial = max(
+        initial_offset,
+        min(limit_span, max(limit_span * 0.75, atr_abs * 0.4 if atr_abs > 0 else 0.0)),
+    )
+
+    direction = 1.0 if side == "buy" else -1.0
+    limit_price = base_price + direction * initial_offset
+    if side == "buy":
+        limit_price = min(limit_price, anchor_price)
+    else:
+        limit_price = max(limit_price, anchor_price)
+
+    meta: dict[str, float | bool] = {
+        "base_price": base_price,
+        "limit_offset": limit_span,
+        "initial_offset": initial_offset,
+        "offset_step": step_offset,
+        "max_offset": limit_span,
+        "maker_initial_offset": maker_initial,
+        "maker_patience": 2,
+        "step_mult": 0.5,
+        "chase": True,
+        "post_only": True,
+        "anchor_price": anchor_price,
+    }
+    if tick_size:
+        meta["tick_size"] = tick_size
+
+    return limit_price, meta
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "min_volume": "Volumen mínimo requerido",
@@ -285,44 +384,9 @@ class Momentum(Strategy):
         if anchor_price is None or anchor_price <= 0:
             anchor_price = price
 
-        limit_span = max(price * 0.001, atr_val * 0.5)
-        limit_span = max(limit_span, abs(price - anchor_price))
-        limit_span = max(limit_span, price * 0.0005)
-        if not math.isfinite(limit_span) or limit_span <= 0:
-            limit_span = max(abs(price) * 0.0005, 1e-6)
-
-        if side == "buy":
-            base_price = max(0.0, anchor_price - limit_span)
-        else:
-            base_price = anchor_price + limit_span
-
-        initial_offset = max(limit_span * 0.4, price * 0.0003, atr_val * 0.25)
-        initial_offset = min(initial_offset, limit_span)
-        step_offset = max(limit_span * 0.25, price * 0.0002)
-        step_offset = min(step_offset, limit_span)
-        maker_initial = max(price * 0.0002, min(initial_offset * 0.5, limit_span))
-
-        direction = 1.0 if side == "buy" else -1.0
-        limit_price = base_price + direction * initial_offset
-        if side == "buy":
-            limit_price = min(limit_price, anchor_price)
-        else:
-            limit_price = max(limit_price, anchor_price)
+        limit_price, meta = _configure_limit(side, price, anchor_price, atr_val, bar)
         sig.limit_price = max(0.0, limit_price)
-        sig.metadata.update(
-            {
-                "base_price": base_price,
-                "limit_offset": abs(limit_span),
-                "initial_offset": abs(initial_offset),
-                "offset_step": abs(step_offset),
-                "max_offset": abs(limit_span),
-                "maker_initial_offset": abs(maker_initial),
-                "maker_patience": 1,
-                "step_mult": 0.5,
-                "chase": True,
-                "post_only": True,
-            }
-        )
+        sig.metadata.update(meta)
         sig.post_only = True
 
         if self.risk_service is not None:
