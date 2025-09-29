@@ -208,14 +208,20 @@ class TrendFollowing(Strategy):
         else:
             base_price = anchor_price + half_span
 
-        initial_offset = max(half_span * 0.9, atr_unit * 0.95, price_abs * 0.00025)
+        initial_offset = max(half_span * 0.5, atr_unit * 0.7, price_abs * 0.00015)
         initial_offset = min(initial_offset, half_span)
-        step_offset = max(half_span * 0.35, atr_unit * 0.55, price_abs * 0.00015)
+        step_offset = max(half_span * 0.2, atr_unit * 0.35, price_abs * 0.0001)
         step_offset = min(step_offset, half_span)
-        maker_initial = max(price_abs * 0.00012, min(half_span * 0.25, initial_offset * 0.5))
+        maker_initial = max(
+            price_abs * 0.00005, min(half_span * 0.12, initial_offset * 0.35)
+        )
 
         price_dir = -1.0 if side == "buy" else 1.0
-        limit_price = anchor_price + price_dir * max(half_span - initial_offset, 0.0)
+        quote_offset = max(
+            price_abs * 0.00005,
+            min(half_span * 0.18, atr_unit * 0.4),
+        )
+        limit_price = anchor_price + price_dir * quote_offset
         if side == "buy":
             limit_price = min(limit_price, anchor_price)
         else:
@@ -231,7 +237,7 @@ class TrendFollowing(Strategy):
                 "step_mult": 0.4,
                 "chase": True,
                 "maker_initial_offset": abs(maker_initial),
-                "maker_patience": 2,
+                "maker_patience": 1,
                 "post_only": True,
             }
         )
