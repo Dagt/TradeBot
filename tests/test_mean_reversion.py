@@ -125,6 +125,49 @@ def test_trend_detection_5m(monkeypatch):
     assert sig is None
 
 
+def _strong_trend_df() -> pd.DataFrame:
+    prices = []
+    price = 100.0
+    for idx in range(80):
+        price *= 1.035 + (0.02 if idx % 2 == 0 else -0.01)
+        prices.append(price)
+    return pd.DataFrame({"close": prices})
+
+
+def _slow_market_df() -> pd.DataFrame:
+    prices = [100.0 + math.sin(i / 5.0) * 0.2 for i in range(80)]
+    return pd.DataFrame({"close": prices})
+
+
+def test_trend_filter_blocks_countertrend_sells(monkeypatch):
+    df = _strong_trend_df()
+    monkeypatch.setattr(mr, "rsi", _const_rsi(70))
+    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    strat = MeanReversion(
+        timeframe="1m",
+        trend_ma_bps=40.0,
+        trend_rsi_shift=6.0,
+        min_volatility=0,
+    )
+    sig = strat.on_bar({"window": df})
+    assert sig is None
+
+
+def test_trend_filter_preserves_slow_rebounds(monkeypatch):
+    df = _slow_market_df()
+    monkeypatch.setattr(mr, "rsi", _const_rsi(70))
+    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    strat = MeanReversion(
+        timeframe="1m",
+        trend_ma_bps=40.0,
+        trend_rsi_shift=6.0,
+        min_volatility=0,
+    )
+    sig = strat.on_bar({"window": df})
+    assert sig is not None
+    assert sig.side == "sell"
+
+
 class DummyRiskService:
     def __init__(self, side: str = "buy") -> None:
         self._trade = {"side": side}

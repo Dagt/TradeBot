@@ -55,7 +55,9 @@ PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
-    "trend_threshold": "Umbral para considerar la tendencia fuerte",
+    "trend_ma_bps": "Desviación mínima frente a la MA (en puntos básicos)",
+    "trend_rsi_shift": "Desplazamiento base del RSI para filtrar tendencias",
+    "trend_rsi_shift_max": "Límite máximo del desplazamiento dinámico del RSI",
     "min_volatility": "Volatilidad mínima reciente en bps",
 }
 
@@ -65,7 +67,10 @@ class MeanReversion(Strategy):
 
     Generates ``buy`` or ``sell`` signals when the RSI deviates from
     dynamically determined thresholds. Signal strength scales with the
-    distance from the threshold.
+    distance from the threshold. The regime filter now distinguishes between
+    price extensions over the trend moving average (``trend_ma_bps`` expressed
+    in basis points) and RSI displacement (``trend_rsi_shift``) that expands
+    with recent volatility up to ``trend_rsi_shift_max``.
     """
 
     name = "mean_reversion"
@@ -85,10 +90,11 @@ class MeanReversion(Strategy):
         trend_rsi_min = kwargs.get("trend_rsi_n", 50)
         self.trend_rsi_n = max(1, int(trend_rsi_min / tf_minutes))
 
-        thresh = kwargs.get("trend_threshold", 10.0)
-        self.trend_threshold = float(thresh) / tf_minutes
-        if tf in {"30m", "1h"}:
-            self.trend_threshold *= 1.5
+        self.trend_ma_bps = max(0.0, float(kwargs.get("trend_ma_bps", 180.0)))
+        base_shift = max(0.0, float(kwargs.get("trend_rsi_shift", 5.0)))
+        self.trend_rsi_shift = base_shift
+        shift_cap = float(kwargs.get("trend_rsi_shift_max", 18.0))
+        self.trend_rsi_shift_max = max(base_shift, shift_cap) if shift_cap > 0 else base_shift
 
         self.min_volatility = kwargs.get("min_volatility", 0.0)
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
@@ -123,6 +129,16 @@ class MeanReversion(Strategy):
         upper = 50 + dev
         lower = 50 - dev
         return upper, lower
+
+    def _trend_rsi_offset(self, recent_vol_bps: float) -> float:
+        base = self.trend_rsi_shift
+        if base <= 0:
+            return 0.0
+        vol_component = math.log1p(max(recent_vol_bps, 0.0) / 50.0)
+        offset = base * (1.0 + vol_component)
+        if self.trend_rsi_shift_max > 0:
+            return min(offset, self.trend_rsi_shift_max)
+        return offset
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -166,7 +182,8 @@ class MeanReversion(Strategy):
             else pd.Series(dtype=float)
         )
         vol = float(vol_series.iloc[-1]) if len(vol_series) else 0.0
-        if vol * 10000 < self.min_volatility:
+        vol_bps = vol * 10000 if math.isfinite(vol) and vol > 0 else 0.0
+        if vol_bps < self.min_volatility:
             return None
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
@@ -191,26 +208,27 @@ class MeanReversion(Strategy):
             atr_val = float(atr_series.iloc[-1]) if len(atr_series) else 0.0
 
         trend_dir = 0
+        trend_offset = self._trend_rsi_offset(vol_bps)
         if len(df) >= self.trend_ma:
             ma = price_series.rolling(self.trend_ma).mean().iloc[-1]
             if not pd.isna(ma) and ma != 0:
-                diff_pct = (price - ma) / ma * 100
-                if diff_pct > self.trend_threshold:
+                diff_bps = (price - ma) / ma * 10000
+                if diff_bps > self.trend_ma_bps:
                     trend_dir = 1
-                elif diff_pct < -self.trend_threshold:
+                elif diff_bps < -self.trend_ma_bps:
                     trend_dir = -1
         elif len(df) >= self.trend_rsi_n:
             trsi = rsi(df, self.trend_rsi_n).iloc[-1]
-            if trsi > 50 + self.trend_threshold:
+            if trsi > 50 + trend_offset:
                 trend_dir = 1
-            elif trsi < 50 - self.trend_threshold:
+            elif trsi < 50 - trend_offset:
                 trend_dir = -1
 
         upper, lower = self.auto_threshold(rsi_series)
         if trend_dir == 1:
-            upper += self.trend_threshold
+            upper += trend_offset
         elif trend_dir == -1:
-            lower -= self.trend_threshold
+            lower -= trend_offset
 
         prev_rsi = rsi_series.iloc[-2]
         prev_price = float(price_series.iloc[-2])
