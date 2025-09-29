@@ -181,6 +181,12 @@ class BreakoutATR(Strategy):
         self._quantile_relax_minutes = max(30.0, relax_minutes)
         self.last_regime_heuristic = float("nan")
         self.last_relax_active = False
+        self._bars_since_fill: dict[str, int] = {}
+        self._last_exposure: dict[str, float] = {}
+        self.last_bars_since_fill = 0
+        self.last_fill_stale = False
+        self.last_heuristic_timeout_active = False
+        self.last_heuristic_timeout_bars = 0
 
     @staticmethod
     def _tf_multiplier(tf: str | None) -> float:
@@ -234,6 +240,60 @@ class BreakoutATR(Strategy):
         ratio = max(tf_mult, 1e-6)
         bars = int(math.ceil(minutes / ratio))
         return max(4, bars)
+
+    def _heuristic_timeout_bars(self, tf_mult: float, relax_bars: int) -> int:
+        timeout_minutes = max(
+            self._quantile_relax_minutes * 1.5,
+            self._quantile_relax_minutes + 60.0,
+        )
+        ratio = max(tf_mult, 1e-6)
+        timeout_bars = int(math.ceil(timeout_minutes / ratio))
+        return max(relax_bars + 2, timeout_bars)
+
+    def _fill_stale_bars(self, tf_mult: float) -> int:
+        ratio = max(tf_mult, 1e-6)
+        if ratio <= 6.0:
+            base_minutes = 90.0
+        elif ratio >= 30.0:
+            base_minutes = 180.0
+        else:
+            base_minutes = 120.0
+        bars = int(math.ceil(base_minutes / ratio))
+        return max(4, bars)
+
+    def _update_fill_counters(
+        self, symbol: str, tf_mult: float
+    ) -> tuple[int, bool]:
+        if not symbol:
+            return 0, False
+        count = self._bars_since_fill.get(symbol, 0) + 1
+        exposure = None
+        if self.risk_service is not None:
+            account = getattr(self.risk_service, "account", None)
+            getter = (
+                getattr(account, "current_exposure", None)
+                if account is not None
+                else None
+            )
+            if callable(getter):
+                try:
+                    exposure_val, _ = getter(symbol)
+                except Exception:
+                    exposure_val = None
+                if exposure_val is not None:
+                    exposure = float(exposure_val)
+        if exposure is not None:
+            prev_exposure = self._last_exposure.get(symbol)
+            if prev_exposure is None:
+                self._last_exposure[symbol] = exposure
+            else:
+                if abs(exposure - prev_exposure) > 1e-9:
+                    count = 0
+                self._last_exposure[symbol] = exposure
+        count = int(min(count, 100000))
+        self._bars_since_fill[symbol] = count
+        stale = count >= self._fill_stale_bars(tf_mult)
+        return count, stale
 
     @staticmethod
     def _regime_allows_side(side: str, regime: float, regime_threshold: float) -> bool:
@@ -303,9 +363,14 @@ class BreakoutATR(Strategy):
     ) -> tuple[float, float, float]:
         """Dynamic regime threshold used to filter noisy environments."""
 
-        base = self.min_regime
-        span = max(self.max_regime - self.min_regime, 1e-6)
+        base_min = self.min_regime
         ratio = max(tf_mult, 1e-9)
+        if ratio >= 30.0:
+            slow_floor = self._clamp(base_min * 0.55, 0.05, 0.1)
+            base = min(base_min, slow_floor)
+        else:
+            base = base_min
+        span = max(self.max_regime - base, 1e-6)
         tf_norm = min(1.0, math.log1p(ratio) / math.log1p(60.0))
         tf_component = 1.0 - tf_norm
 
@@ -415,6 +480,9 @@ class BreakoutATR(Strategy):
         else:
             threshold = heuristic
 
+        if ratio >= 30.0:
+            relaxed_floor = self._clamp(base_min * 0.5, 0.05, 0.1)
+            dynamic_min = max(relaxed_floor, dynamic_min)
         dynamic_min = max(0.05, dynamic_min)
         heuristic = max(dynamic_min, heuristic)
 
@@ -557,11 +625,17 @@ class BreakoutATR(Strategy):
 
         self._bars_since_signal = min(self._bars_since_signal + 1, 100000)
         relax_bars = self._relaxation_bars(tf_mult)
+        heuristic_timeout_bars = self._heuristic_timeout_bars(tf_mult, relax_bars)
         relax_active = self._bars_since_signal >= relax_bars
+        heuristic_timeout_active = self._bars_since_signal >= heuristic_timeout_bars
         bars_since_signal = self._bars_since_signal
         bar["bars_since_signal"] = bars_since_signal
         bar["regime_relax_bars"] = relax_bars
         bar["regime_relax_active"] = relax_active
+        bar["regime_heuristic_timeout_bars"] = heuristic_timeout_bars
+        bar["regime_heuristic_timeout_active"] = heuristic_timeout_active
+        self.last_heuristic_timeout_active = heuristic_timeout_active
+        self.last_heuristic_timeout_bars = heuristic_timeout_bars
 
         atr_series = atr(df, atr_n).dropna()
         if len(atr_series) < atr_n:
@@ -589,6 +663,17 @@ class BreakoutATR(Strategy):
 
         regime_abs = abs(regime)
         symbol = str(bar.get("symbol", ""))
+        fill_stale_limit = self._fill_stale_bars(tf_mult)
+        if self.risk_service is not None:
+            bars_since_fill, fill_stale = self._update_fill_counters(symbol, tf_mult)
+        else:
+            bars_since_fill = bars_since_signal if symbol else 0
+            fill_stale = bars_since_fill >= fill_stale_limit and symbol != ""
+        bar["bars_since_fill"] = bars_since_fill
+        bar["regime_fill_stale_bars"] = fill_stale_limit
+        bar["regime_fill_stale_active"] = fill_stale
+        self.last_bars_since_fill = bars_since_fill
+        self.last_fill_stale = fill_stale
 
         regime_threshold, trend_gate, regime_heuristic = self._regime_threshold(
             tf_mult,
@@ -608,6 +693,12 @@ class BreakoutATR(Strategy):
             )
             regime_threshold = relaxed_threshold
             trend_gate = relaxed_trend_gate
+        if heuristic_timeout_active:
+            regime_threshold = regime_heuristic
+            trend_gate = max(regime_threshold, min(trend_gate, regime_heuristic * 1.05))
+        elif fill_stale:
+            capped_gate = min(trend_gate, max(regime_heuristic * 1.1, regime_threshold))
+            trend_gate = max(regime_threshold, capped_gate)
         self.last_regime_heuristic = regime_heuristic
         self.last_regime_threshold = regime_threshold
         self.last_trend_gate = trend_gate
@@ -833,6 +924,11 @@ class BreakoutATR(Strategy):
         sig.metadata["regime_heuristic"] = regime_heuristic
         sig.metadata["regime_relax_active"] = relax_active
         sig.metadata["regime_relax_bars"] = relax_bars
+        sig.metadata["regime_heuristic_timeout_active"] = heuristic_timeout_active
+        sig.metadata["regime_heuristic_timeout_bars"] = heuristic_timeout_bars
+        sig.metadata["bars_since_fill"] = bars_since_fill
+        sig.metadata["regime_fill_stale_active"] = fill_stale
+        sig.metadata["regime_fill_stale_bars"] = fill_stale_limit
         sig.metadata["bars_since_signal"] = bars_since_signal
         sig.metadata["breakout_penetration"] = float(penetration)
         sig.metadata["breakout_extreme_penetration"] = float(extreme_penetration)
