@@ -41,6 +41,7 @@ class SlippageConfig:
     volume_impact: float = 0.1
     spread_mult: float = 1.0
     ofi_impact: float = 0.0
+    max_bar_participation: float | None = None
 
 
 @dataclass
