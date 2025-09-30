@@ -37,8 +37,11 @@ app = typer.Typer(add_completion=False, help="Utilities for running TradingBot")
 
 # Register subcommands
 app.add_typer(data.app)
+app.add_typer(data.app, name="data")
 app.add_typer(backtesting.app)
+app.add_typer(backtesting.app, name="backtesting")
 app.add_typer(live.app)
+app.add_typer(live.app, name="live")
 app.add_typer(secrets.app, name="secrets")
 
 
