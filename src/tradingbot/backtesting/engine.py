@@ -184,6 +184,12 @@ class SlippageModel:
     base_spread: float, default ``0.0``
         Fallback spread (absolute price difference) used when bid/ask columns
         are absent, ``NaN`` or when ``source`` is ``"fixed_spread"``.
+    ohlc_spread_factor: float, default ``1.0``
+        Multiplier applied to the bar range (``high - low``) when synthesising a
+        spread because bid/ask data is missing.
+    spread_bps: float, default ``0.0``
+        Additional synthetic spread expressed in basis points of the closing
+        price, used when bid/ask data is unavailable.
     """
 
     def __init__(
@@ -194,6 +200,8 @@ class SlippageModel:
         source: str = "bba",
         base_spread: float = 0.0,
         pct: float = 0.0001,
+        ohlc_spread_factor: float = 1.0,
+        spread_bps: float = 0.0,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
@@ -204,7 +212,10 @@ class SlippageModel:
         self.source = source
         self.base_spread = float(base_spread)
         self.pct = float(pct)
+        self.ohlc_spread_factor = max(0.0, float(ohlc_spread_factor))
+        self.synthetic_spread_bps = max(0.0, float(spread_bps))
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
+        spread: float | None = None
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
             ask = bar.get("ask") or bar.get("ask_px") or bar.get("ask_price")
@@ -212,14 +223,34 @@ class SlippageModel:
                 bid = float(bid)
                 ask = float(ask)
                 if not (math.isnan(bid) or math.isnan(ask)):
-                    spread = ask - bid
-                else:
-                    spread = self.base_spread
-            else:
-                spread = self.base_spread
-        else:
-            spread = self.base_spread
-        return spread * self.spread_mult
+                    spread = max(0.0, ask - bid)
+        if spread is None or math.isnan(spread) or spread <= 0.0:
+            candidates = [max(0.0, self.base_spread)]
+            if self.ohlc_spread_factor > 0.0:
+                high = bar.get("high")
+                low = bar.get("low")
+                try:
+                    high_val = float(high) if high is not None else math.nan
+                    low_val = float(low) if low is not None else math.nan
+                except (TypeError, ValueError):
+                    high_val = math.nan
+                    low_val = math.nan
+                if not (math.isnan(high_val) or math.isnan(low_val)):
+                    candidates.append(
+                        max(0.0, high_val - low_val) * self.ohlc_spread_factor
+                    )
+            if self.synthetic_spread_bps > 0.0:
+                close = bar.get("close")
+                try:
+                    close_val = float(close) if close is not None else math.nan
+                except (TypeError, ValueError):
+                    close_val = math.nan
+                if not math.isnan(close_val):
+                    candidates.append(
+                        abs(close_val) * (self.synthetic_spread_bps / 10000.0)
+                    )
+            spread = max(candidates)
+        return float(spread) * self.spread_mult
 
     def _ofi_from_bar(self, bar: Mapping[str, float] | pd.Series) -> float:
         if "order_flow_imbalance" in bar:
