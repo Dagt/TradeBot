@@ -108,3 +108,35 @@ def test_healthy_volume_fill_matches_original_behaviour(monkeypatch):
     )
     expected_slippage = (fill_price - order_summary["place_price"]) * fill_qty
     assert result["slippage"] == pytest.approx(expected_slippage)
+
+
+def test_participation_cap_limits_fill_and_requeues(monkeypatch):
+    slippage = SlippageModel(
+        volume_impact=0.0,
+        pct=0.0,
+        max_bar_participation=0.2,
+        min_bar_liquidity=1.0,
+    )
+    bar = {"volume": 1000.0, "close": 100.0}
+    queue_pos = 0.0
+    remaining = 1000.0
+    fills = []
+    max_cap = bar["volume"] * slippage.max_bar_participation
+
+    for _ in range(10):
+        price, executed, queue_pos = slippage.fill(
+            "buy", remaining, bar["close"], bar, queue_pos, partial=True
+        )
+        if executed <= 0.0:
+            break
+        fills.append(executed)
+        assert executed <= max_cap + 1e-9
+        assert queue_pos == pytest.approx(max(0.0, remaining - executed))
+        remaining -= executed
+        if remaining <= 0.0:
+            break
+
+    assert remaining == pytest.approx(0.0)
+    assert len(fills) >= 2
+    assert all(fill == pytest.approx(max_cap) for fill in fills[:-1])
+    assert fills[-1] <= max_cap
