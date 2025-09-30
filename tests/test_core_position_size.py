@@ -125,6 +125,32 @@ def test_calc_position_size_adjusts_with_atr():
     assert low_atr > base
 
 
+def test_spot_position_size_never_exceeds_balance_with_target_volatility():
+    account = Account(float("inf"), cash=1000.0, market_type="spot")
+    rm = CoreRiskManager(account, risk_per_trade=1.5, risk_pct=0.02)
+    price = 100.0
+    size = rm.calc_position_size(
+        1.0,
+        price,
+        volatility=0.5,
+        target_volatility=1.5,
+    )
+    assert size * price <= account.get_available_balance() + 1e-6
+
+
+def test_futures_position_size_still_allows_leverage_with_target_volatility():
+    account = Account(float("inf"), cash=1000.0, market_type="futures")
+    rm = CoreRiskManager(account, risk_per_trade=1.5, risk_pct=0.02)
+    price = 100.0
+    size = rm.calc_position_size(
+        1.0,
+        price,
+        volatility=0.5,
+        target_volatility=1.5,
+    )
+    assert size * price > account.get_available_balance()
+
+
 def test_effective_risk_pct_varies_with_std():
     """Effective risk pct should shrink/grow with volatility changes."""
     account = Account(float("inf"), cash=1000.0)

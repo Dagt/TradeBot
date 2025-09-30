@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict
+import logging
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,7 +41,20 @@ class Account:
     # ------------------------------------------------------------------
     def update_cash(self, delta: float) -> None:
         """Adjust available cash by ``delta``."""
-        self.cash += float(delta)
+
+        amount = float(delta)
+        new_cash = float(self.cash) + amount
+        if (
+            isinstance(self.market_type, str)
+            and self.market_type.lower() == "spot"
+            and amount < 0.0
+            and new_cash < -1e-9
+        ):
+            log.warning(
+                "Spot account debit rejected: delta=%s would leave cash %.2f", amount, new_cash
+            )
+            raise ValueError("spot cash debit would result in negative balance")
+        self.cash = new_cash
 
     def update_position(self, symbol: str, delta_qty: float, price: float | None = None) -> None:
         """Update net position for ``symbol`` and optionally its last price."""
