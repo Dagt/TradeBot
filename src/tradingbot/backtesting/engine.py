@@ -184,6 +184,14 @@ class SlippageModel:
     base_spread: float, default ``0.0``
         Fallback spread (absolute price difference) used when bid/ask columns
         are absent, ``NaN`` or when ``source`` is ``"fixed_spread"``.
+    ohlc_spread_factor: float, optional
+        Multiplier applied to the OHLC range (``high - low``) when no bid/ask
+        data is available. The synthetic spread is ``(high - low) * factor`` and
+        is compared against ``base_spread``.
+    ohlc_spread_bps: float, optional
+        Additional synthetic spread expressed in basis points of the close
+        price when bid/ask data is missing. The synthetic spread is
+        ``close * ohlc_spread_bps / 10000``.
     max_bar_participation: float, optional
         Maximum fraction of the bar volume allowed to execute in a single fill.
         ``None`` disables the cap.
@@ -198,6 +206,8 @@ class SlippageModel:
         base_spread: float = 0.0,
         pct: float = 0.0001,
         max_bar_participation: float | None = None,
+        ohlc_spread_factor: float | None = None,
+        ohlc_spread_bps: float | None = None,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
@@ -208,6 +218,16 @@ class SlippageModel:
         self.source = source
         self.base_spread = float(base_spread)
         self.pct = float(pct)
+        if ohlc_spread_factor is None:
+            self.ohlc_spread_factor: float | None = None
+        else:
+            factor = float(ohlc_spread_factor)
+            self.ohlc_spread_factor = max(0.0, factor)
+        if ohlc_spread_bps is None:
+            self.ohlc_spread_bps: float | None = None
+        else:
+            bps = float(ohlc_spread_bps)
+            self.ohlc_spread_bps = max(0.0, bps)
         if max_bar_participation is None:
             self.max_bar_participation: float | None = None
         else:
@@ -217,21 +237,49 @@ class SlippageModel:
             else:
                 self.max_bar_participation = min(max_bar_participation, 1.0)
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
+        def _safe_float(value: Any) -> float | None:
+            if value is None:
+                return None
+            try:
+                val = float(value)
+            except (TypeError, ValueError):
+                return None
+            if math.isnan(val) or math.isinf(val):
+                return None
+            return val
+
+        spread: float | None = None
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
             ask = bar.get("ask") or bar.get("ask_px") or bar.get("ask_price")
-            if bid is not None and ask is not None:
-                bid = float(bid)
-                ask = float(ask)
-                if not (math.isnan(bid) or math.isnan(ask)):
-                    spread = ask - bid
-                else:
-                    spread = self.base_spread
+            bid_val = _safe_float(bid)
+            ask_val = _safe_float(ask)
+            if bid_val is not None and ask_val is not None:
+                spread = max(0.0, ask_val - bid_val)
+        if spread is None or spread <= 0.0:
+            if self.source == "fixed_spread":
+                spread = self.base_spread
             else:
                 spread = self.base_spread
-        else:
-            spread = self.base_spread
-        return spread * self.spread_mult
+                synthetic = 0.0
+                factor = self.ohlc_spread_factor
+                if factor:
+                    high_val = _safe_float(bar.get("high"))
+                    low_val = _safe_float(bar.get("low"))
+                    if high_val is not None and low_val is not None:
+                        synthetic = max(
+                            synthetic, max(0.0, high_val - low_val) * factor
+                        )
+                spread_bps = self.ohlc_spread_bps
+                if spread_bps:
+                    close_val = _safe_float(bar.get("close") or bar.get("price"))
+                    if close_val is not None:
+                        synthetic = max(
+                            synthetic, abs(close_val) * (spread_bps / 10000.0)
+                        )
+                if synthetic > 0.0:
+                    spread = max(spread, synthetic)
+        return max(0.0, spread) * self.spread_mult
 
     def _ofi_from_bar(self, bar: Mapping[str, float] | pd.Series) -> float:
         if "order_flow_imbalance" in bar:
