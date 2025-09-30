@@ -140,6 +140,12 @@ class RiskManager:
         if volatility is not None and target_volatility is not None and volatility > 0:
             scale = self.effective_risk_pct(volatility, target_volatility) / self.risk_pct
             alloc *= scale
+        market_type = getattr(self.account, "market_type", None)
+        scaled_alloc = alloc
+        if not isinstance(market_type, str) or market_type.lower() != "futures":
+            alloc = min(alloc, balance)
+        else:
+            alloc = scaled_alloc
         if price <= 0:
             return 0.0
         size = alloc / float(price)

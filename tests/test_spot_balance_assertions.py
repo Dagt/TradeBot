@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 from tradingbot.backtesting.engine import EventDrivenBacktestEngine, FeeModel
 from tradingbot.risk.service import RiskService
+from tradingbot.risk.portfolio_guard import GuardConfig, PortfolioGuard
 from tradingbot.strategies import STRATEGIES
+from tradingbot.core import Account
 
 
 class BuyOnceStrategy:
@@ -54,10 +56,10 @@ class SneakyFeeModel(FeeModel):
 class CheatingRiskService(RiskService):
     """Risk service that deducts double the sold quantity."""
 
-    def on_fill(self, symbol, side, qty, price=None, venue=None):  # type: ignore[override]
+    def on_fill(self, symbol, side, qty, price=None, venue=None, **kwargs):  # type: ignore[override]
         if side == "sell":
             qty *= 2
-        super().on_fill(symbol, side, qty, price, venue)
+        super().on_fill(symbol, side, qty, price=price, venue=venue, **kwargs)
 
 
 def _make_data():
@@ -89,7 +91,7 @@ def test_buy_order_exceeding_cash_triggers_assert(monkeypatch):
         risk_pct=100.0,
     )
     engine.exchange_fees["default"] = SneakyFeeModel()
-    with pytest.raises(AssertionError, match="cash became negative"):
+    with pytest.raises(ValueError, match="negative balance"):
         engine.run()
 
 
@@ -122,4 +124,33 @@ def test_sell_order_exceeding_position_triggers_assert(monkeypatch):
     engine.risk[("sell_once", "SYM")] = cheat
     with pytest.raises(AssertionError, match="position went negative"):
         engine.run()
+
+
+def test_spot_account_rejects_manual_cash_debit():
+    account = Account(float("inf"), cash=100.0, market_type="spot")
+    with pytest.raises(ValueError, match="negative balance"):
+        account.update_cash(-101.0)
+
+
+def test_spot_risk_service_clamps_target_volatility_size():
+    guard = PortfolioGuard(GuardConfig(venue="test"))
+    account = Account(float("inf"), cash=100.0, market_type="spot")
+    svc = RiskService(
+        guard,
+        account=account,
+        risk_per_trade=1.5,
+        atr_mult=2.0,
+        risk_pct=0.02,
+    )
+    price = 10.0
+    allowed, reason, delta = svc.check_order(
+        "SYM",
+        "buy",
+        price,
+        strength=1.0,
+        volatility=0.5,
+        target_volatility=1.5,
+    )
+    assert allowed is True
+    assert delta * price <= account.get_available_balance() + 1e-6
 
