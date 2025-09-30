@@ -81,7 +81,7 @@ def test_scalp_pingpong_emits_limit_price():
     partial = sig.metadata.get("partial_take_profit")
     assert isinstance(partial, dict)
     assert partial["mode"] == "scale_out"
-    assert sig.metadata.get("max_hold_bars") == 12
+    assert sig.metadata.get("max_hold_bars") == 16
 
 
 @pytest.mark.parametrize(
@@ -225,12 +225,12 @@ def test_scalp_pingpong_signal_uses_risk_service(monkeypatch):
     sig = strat.on_bar(bar)
 
     assert sig is not None
-    assert calc_calls and calc_calls[0]["clamp"] is True
+    assert calc_calls and calc_calls[0]["clamp"] is False
     assert stop_calls and stop_calls[0][2] == 0.5
     trade = strat.trade
     assert trade is not None
     assert trade["partial_take_profit"]["mode"] == "scale_out"
-    assert trade["max_hold"] == 12
+    assert trade["max_hold"] == 16
     assert trade["strength"] == pytest.approx(sig.strength)
 
 

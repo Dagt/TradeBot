@@ -192,6 +192,8 @@ class BreakoutVol(Strategy):
         self.min_size_raw = self._scaled_min_size(tf_minutes, tf_scale)
         lookback = max(2, int(math.ceil(self._lookback_minutes / tf_minutes)))
         vol_ma_n = max(1, int(math.ceil(self._volume_ma_minutes / tf_minutes)))
+        self.lookback = lookback
+        self.vol_ma_n = vol_ma_n
         self.cooldown_bars = self._cooldown_for(tf_minutes)
         if len(df) < lookback + 1:
             return None
@@ -365,36 +367,50 @@ class BreakoutVol(Strategy):
         base_price = base_anchor
         sig.limit_price = limit_price
         sig.post_only = True
+        maker_patience = 2 if tf_minutes <= 5.0 else 1
+        initial_offset = min(limit_offset, max(limit_offset * 0.6, abs_last * 0.0003))
+        step_offset = min(limit_offset, max(limit_offset * 0.25, abs_last * 0.00015))
+        maker_initial_offset = min(limit_offset, max(limit_offset * 0.5, abs_last * 0.0002))
+        if spread is not None and spread > 0.0:
+            max_offset_value = min(
+                abs(abs_last * max_offset_pct) if max_offset_pct > 0.0 else limit_offset * 3,
+                spread,
+            )
+        else:
+            max_offset_value = (
+                abs(abs_last * max_offset_pct) if max_offset_pct > 0.0 else limit_offset * 3
+            )
+        max_offset_value = max(limit_offset, max_offset_value)
+        partial_tp = {
+            "qty_pct": min(0.6, max(0.25, size * 0.45)),
+            "atr_multiple": max(1.1, 0.85 + size * 0.6),
+            "mode": "scale_out",
+        }
+        max_hold_bars = max(6, int(round(18 / max(tf_minutes, 1.0))))
         sig.metadata.update(
             {
                 "base_price": base_price,
                 "limit_offset": limit_offset,
-                "max_offset": (
-                    min(
-                        abs(abs_last * max_offset_pct)
-                        if max_offset_pct > 0.0
-                        else limit_offset * 3,
-                        spread,
-                    )
-                    if spread is not None and spread > 0.0
-                    else (
-                        abs(abs_last * max_offset_pct)
-                        if max_offset_pct > 0.0
-                        else limit_offset * 3
-                    )
-                ),
+                "initial_offset": initial_offset,
+                "offset_step": step_offset,
+                "max_offset": max_offset_value,
+                "maker_initial_offset": maker_initial_offset,
+                "maker_patience": maker_patience,
                 "step_mult": 0.5,
                 "chase": True,
                 "anchor_source": anchor_source,
+                "partial_take_profit": partial_tp,
+                "max_hold_bars": max_hold_bars,
             }
         )
+        sig.post_only = True
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 size,
                 last,
                 volatility=abs_last * vol,
                 target_volatility=bar.get("target_volatility"),
-                clamp=True,
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(last, side, vol)
             self.trade = {
@@ -406,7 +422,10 @@ class BreakoutVol(Strategy):
                 "target_volatility": bar.get("target_volatility"),
                 "atr_price": atr_val,
                 "strength": size,
+                "partial_take_profit": partial_tp,
+                "max_hold": max_hold_bars,
             }
+
 
         symbol = bar.get("symbol", "")
         if self.timeframe in {"15m", "30m"} and self.risk_service is not None and symbol:

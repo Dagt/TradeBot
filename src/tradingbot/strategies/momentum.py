@@ -167,10 +167,10 @@ def _configure_limit(
 
     meta: dict[str, float | bool] = {
         "base_price": base_price,
-        "limit_offset": limit_span,
+        "limit_offset": initial_offset,
         "initial_offset": initial_offset,
         "offset_step": step_offset,
-        "max_offset": limit_span,
+        "max_offset": initial_offset,
         "maker_initial_offset": maker_initial,
         "maker_patience": 3,
         "step_mult": 0.35,
@@ -398,7 +398,17 @@ class Momentum(Strategy):
 
         limit_price, meta = _configure_limit(side, price, anchor_price, atr_val, bar)
         sig.limit_price = max(0.0, limit_price)
+        maker_patience = 2 if tf_min <= 5 else 1
         sig.metadata.update(meta)
+        sig.metadata['maker_patience'] = maker_patience
+        partial_tp = {
+            "qty_pct": min(0.55, max(0.2, strength * 0.5)),
+            "atr_multiple": max(1.2, 0.9 + strength * 0.6),
+            "mode": "scale_out",
+        }
+        max_hold = max(8, int(round(24 / max(tf_min, 1.0))))
+        sig.metadata['partial_take_profit'] = partial_tp
+        sig.metadata['max_hold_bars'] = max_hold
         sig.post_only = True
 
         if self.risk_service is not None:
@@ -408,17 +418,11 @@ class Momentum(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=True,
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(
                 price, side, atr_val, atr_mult=stop_mult
             )
-            if tf_min <= 3:
-                max_hold = 20
-            elif tf_min <= 5:
-                max_hold = 10
-            else:
-                max_hold = 20
             self.trade = {
                 "side": side,
                 "entry_price": price,
@@ -429,7 +433,9 @@ class Momentum(Strategy):
                 "bars_held": 0,
                 "max_hold": max_hold,
                 "strength": strength,
+                "partial_take_profit": partial_tp,
             }
+
 
         return self.finalize_signal(bar, price, sig)
 

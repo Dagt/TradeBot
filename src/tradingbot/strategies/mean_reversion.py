@@ -469,6 +469,30 @@ class MeanReversion(Strategy):
         if tick_size:
             meta["tick_size"] = tick_size
         sig.metadata.update(meta)
+        sig.metadata.update(
+            {
+                "base_price": base_price,
+                "limit_offset": abs(limit_span),
+                "initial_offset": abs(initial_offset),
+                "offset_step": abs(step_offset),
+                "max_offset": abs(limit_span),
+                "step_mult": 0.45,
+                "chase": True,
+                "maker_initial_offset": abs(maker_initial),
+                "maker_patience": 1,
+                "post_only": True,
+            }
+        )
+        maker_patience = 2 if tf_minutes <= 5.0 else 1
+        sig.metadata['maker_patience'] = maker_patience
+        partial_tp = {
+            "qty_pct": min(0.6, max(0.22, strength * 0.5)),
+            "atr_multiple": max(1.2, 0.85 + strength * 0.4),
+            "mode": "scale_out",
+        }
+        max_hold = max(8, int(round(24 / max(tf_minutes, 1.0))))
+        sig.metadata['partial_take_profit'] = partial_tp
+        sig.metadata['max_hold_bars'] = max_hold
         sig.post_only = True
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
@@ -476,7 +500,7 @@ class MeanReversion(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=True,
+                clamp=False,
             )
             stop = self.risk_service.initial_stop(price, side, atr_val)
             if (
@@ -493,6 +517,8 @@ class MeanReversion(Strategy):
                 "atr": atr_val,
                 "target_volatility": bar.get("target_volatility"),
                 "strength": strength,
+                "partial_take_profit": partial_tp,
+                "max_hold": max_hold,
             }
 
         return self.finalize_signal(bar, price, sig)
@@ -518,3 +544,5 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df["slippage"] = df["position"].abs() * slippage
 
     return df[["signal", "position", "fee", "slippage"]]
+
+

@@ -1,10 +1,11 @@
 import pandas as pd
 import pytest
 
+from tradingbot.strategies import momentum as momentum_module
 from tradingbot.strategies.momentum import Momentum
 
 
-def test_momentum_signal_1m():
+def test_momentum_signal_1m(monkeypatch):
     df = pd.DataFrame(
         {
             "open": [1, 1, 1, 2, 1, 2],
@@ -14,6 +15,7 @@ def test_momentum_signal_1m():
             "volume": [1] * 6,
         }
     )
+    monkeypatch.setattr(momentum_module, "MIN_BARS", 2)
     strat = Momentum(
         fast_ema=2,
         slow_ema=4,

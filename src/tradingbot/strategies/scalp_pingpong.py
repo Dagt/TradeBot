@@ -285,12 +285,13 @@ class ScalpPingPong(Strategy):
         direction = -1 if side == "buy" else 1
         sig.limit_price = base_price + direction * offset
         max_offset = abs(price_vol * 1.5)
+        maker_patience = 2 if tf_minutes <= 2.0 else 1
         partial_tp = {
-            "qty_pct": 0.2,
-            "atr_multiple": 1.35,
+            "qty_pct": min(0.5, max(0.2, sig.strength * 0.5)),
+            "atr_multiple": max(1.15, 0.9 + sig.strength * 0.5),
             "mode": "scale_out",
         }
-        max_hold = 12
+        max_hold = max(6, int(round(16 / max(tf_minutes, 1.0))))
         sig.post_only = True
         sig.metadata.update(
             {
@@ -304,7 +305,7 @@ class ScalpPingPong(Strategy):
                 "min_offset": abs_price * 0.0002,
                 "post_only": True,
                 "maker_initial_offset": abs(offset),
-                "maker_patience": 1,
+                "maker_patience": maker_patience,
                 "partial_take_profit": partial_tp,
                 "max_hold_bars": max_hold,
             }
@@ -316,7 +317,7 @@ class ScalpPingPong(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=True,
+                clamp=False,
             )
             atr_val = bar.get("atr")
             if atr_val is None:

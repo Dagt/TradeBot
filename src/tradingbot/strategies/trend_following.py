@@ -119,7 +119,7 @@ class TrendFollowing(Strategy):
         tf_minutes = self._tf_minutes(tf, self.timeframe)
         min_bars = 3 if self.vol_lookback >= tf_minutes else 2
         lookback_bars = max(min_bars, math.ceil(self.vol_lookback / tf_minutes))
-        if len(df) < max(self.rsi_n, lookback_bars) + 1:
+        if len(df) < max(self.rsi_n, lookback_bars):
             return None
         price_col = "close" if "close" in df.columns else "price"
         prices = df[price_col]
@@ -138,7 +138,7 @@ class TrendFollowing(Strategy):
         symbol = bar.get("symbol", "")
         available = len(vol_series)
         if available >= lookback_bars:
-            window = max(lookback_bars, min(available, lookback_bars * 5))
+            window = lookback_bars * 5
             rq_vol = self._rq.get(
                 symbol,
                 "vol_bps",
@@ -241,6 +241,16 @@ class TrendFollowing(Strategy):
                 "post_only": True,
             }
         )
+        maker_patience = 2 if tf_minutes <= 5 else 1
+        sig.metadata["maker_patience"] = maker_patience
+        partial_tp = {
+            "qty_pct": min(0.55, max(0.2, strength * 0.45)),
+            "atr_multiple": max(1.3, 1.0 + strength * 0.5),
+            "mode": "scale_out",
+        }
+        max_hold = max(10, int(round(28 / max(tf_minutes, 1.0))))
+        sig.metadata["partial_take_profit"] = partial_tp
+        sig.metadata["max_hold_bars"] = max_hold
         sig.post_only = True
 
         if symbol:
@@ -271,7 +281,7 @@ class TrendFollowing(Strategy):
                 price,
                 volatility=bar.get("volatility"),
                 target_volatility=bar.get("target_volatility"),
-                clamp=True,
+                clamp=False,
             )
             atr_val = None
             for candidate in (bar.get("atr"), bar.get("volatility")):
@@ -296,5 +306,7 @@ class TrendFollowing(Strategy):
                 "atr": atr_val,
                 "target_volatility": bar.get("target_volatility"),
                 "strength": strength,
+                "partial_take_profit": partial_tp,
+                "max_hold": max_hold,
             }
         return self.finalize_signal(bar, price, sig)

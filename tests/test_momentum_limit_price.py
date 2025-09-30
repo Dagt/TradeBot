@@ -89,7 +89,7 @@ def test_momentum_sets_maker_limit_and_clamps_size(monkeypatch):
     assert sig is not None and sig.side == "buy"
     assert sig.post_only is True
     assert 0.0 < sig.strength <= 1.0
-    assert risk.calls and risk.calls[0].get("clamp") is True
+    assert risk.calls and risk.calls[0].get("clamp") is False
 
     meta = sig.metadata
     anchor = meta["anchor_price"]

@@ -32,7 +32,7 @@ def test_trend_following_trailing_stop_uses_atr():
 
 
 def test_trend_following_risk_service_handles_stop_and_size():
-    df = pd.DataFrame({"close": [1, 2, 3]})
+    df = pd.DataFrame({"close": [1, 2, 3, 4, 5, 6]})
     account = Account(float("inf"))
     guard = PortfolioGuard(GuardConfig(total_cap_pct=1.0, per_symbol_cap_pct=1.0, venue="X"))
     svc = RiskService(
@@ -76,7 +76,7 @@ def test_trend_following_risk_service_handles_stop_and_size():
     assert sig.limit_price <= anchor + 1e-9
     trade = strat.trade
     assert trade is not None
-    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"], clamp=True)
+    expected_qty = svc.calc_position_size(sig.strength, trade["entry_price"], clamp=False)
     assert trade["qty"] == pytest.approx(expected_qty)
     expected_stop = svc.initial_stop(trade["entry_price"], "buy", trade["atr"])
     assert trade["stop"] == pytest.approx(expected_stop)
@@ -349,7 +349,7 @@ def test_trend_following_strength_scales_with_rsi_distance_buy(monkeypatch):
         sig = strat.on_bar(bar)
         assert sig and sig.side == "buy"
         assert all(pytest.approx(sig.strength) == call["strength"] for call in risk.calls)
-        assert risk.calls and risk.calls[0]["clamp"] is True
+        assert risk.calls and risk.calls[0]["clamp"] is False
         assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
         return sig.strength, strat.trade["qty"]
 
@@ -392,7 +392,7 @@ def test_trend_following_strength_scales_with_rsi_distance_sell(monkeypatch):
         sig = strat.on_bar(bar)
         assert sig and sig.side == "sell"
         assert all(pytest.approx(sig.strength) == call["strength"] for call in risk.calls)
-        assert risk.calls and risk.calls[0]["clamp"] is True
+        assert risk.calls and risk.calls[0]["clamp"] is False
         assert strat.trade["qty"] == pytest.approx(sig.strength * risk.multiplier)
         return sig.strength, strat.trade["qty"]
 

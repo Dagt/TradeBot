@@ -257,6 +257,68 @@ class Strategy(ABC):
         return bool(last and last.side == order.side and last.strength > 0.0)
 
     # ------------------------------------------------------------------
+
+    def _enforce_long_only(
+        self,
+        bar: dict[str, Any] | None,
+        signal: Signal | dict[str, Any] | None,
+        price: float | None = None,
+    ) -> Signal | dict[str, Any] | None:
+        """Ensure we never open net short exposure when venue is long-only."""
+
+        if signal is None:
+            return None
+        if isinstance(signal, dict):
+            side = str(signal.get('side', '') or '').lower()
+            meta = signal.setdefault('metadata', {})
+        else:
+            side = str(getattr(signal, 'side', '') or '').lower()
+            meta = getattr(signal, 'metadata', None)
+            if not isinstance(meta, dict):
+                meta_dict: dict[str, Any] = {}
+                setattr(signal, 'metadata', meta_dict)
+                meta = meta_dict
+        if side != 'sell':
+            return signal
+
+        rs = getattr(self, 'risk_service', None)
+        if rs is None or getattr(rs, 'allow_short', True):
+            return signal
+
+        symbol = None
+        if isinstance(bar, dict):
+            symbol = bar.get('symbol')
+
+        trade = None
+        if symbol and hasattr(rs, 'get_trade'):
+            try:
+                trade = rs.get_trade(symbol)
+            except Exception:
+                trade = None
+        qty = 0.0
+        trade_side = ''
+        if isinstance(trade, dict):
+            try:
+                qty = float(trade.get('qty', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            trade_side = str(trade.get('side', '') or '').lower()
+        elif trade is not None:
+            try:
+                qty = float(getattr(trade, 'qty', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            trade_side = str(getattr(trade, 'side', '') or '').lower()
+        if qty <= 0.0 or trade_side not in {'buy', 'long'}:
+            return None
+
+        if isinstance(signal, dict):
+            signal['reduce_only'] = True
+        else:
+            signal.reduce_only = True
+        meta.setdefault('reduce_only', True)
+        return signal
+
     def on_partial_fill(self, order: Order, res: dict[str, Any]):
         """Handle partial fills.
 
@@ -325,6 +387,20 @@ class Strategy(ABC):
                 self._track_requote(key=(symbol, signal.side), reset=True)
             if signal.limit_price is None:
                 signal.limit_price = price
+            if signal.post_only is None and signal.limit_price is not None:
+                signal.post_only = True
+            meta = signal.metadata if isinstance(signal.metadata, dict) else None
+            if meta is None:
+                meta = {}
+                signal.metadata = meta
+            meta.setdefault('base_price', signal.limit_price if signal.limit_price is not None else price)
+            meta.setdefault('initial_offset', 0.0)
+            meta.setdefault('offset_step', 0.0)
+            meta.setdefault('max_offset', 0.0)
+            meta.setdefault('maker_initial_offset', meta.get('initial_offset', 0.0))
+            meta.setdefault('maker_patience', 1)
+            meta.setdefault('post_only', bool(signal.post_only))
+            meta.setdefault('reduce_only', bool(signal.reduce_only))
         rs = getattr(self, "risk_service", None)
         if rs is None:
             return signal
@@ -545,6 +621,10 @@ class Strategy(ABC):
                 getattr(rs, "min_notional", 0.0) and notional < rs.min_notional
             ):
                 log.info("orden submínima qty=%.8f notional=%.8f", qty, notional)
+                return None
+        if signal is not None:
+            signal = self._enforce_long_only(bar, signal, price)
+            if signal is None:
                 return None
         return signal
 
