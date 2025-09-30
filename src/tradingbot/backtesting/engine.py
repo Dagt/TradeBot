@@ -184,6 +184,9 @@ class SlippageModel:
     base_spread: float, default ``0.0``
         Fallback spread (absolute price difference) used when bid/ask columns
         are absent, ``NaN`` or when ``source`` is ``"fixed_spread"``.
+    max_bar_participation: float, optional
+        Maximum fraction of the bar volume allowed to execute in a single fill.
+        ``None`` disables the cap.
     """
 
     def __init__(
@@ -194,6 +197,7 @@ class SlippageModel:
         source: str = "bba",
         base_spread: float = 0.0,
         pct: float = 0.0001,
+        max_bar_participation: float | None = None,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
@@ -204,6 +208,14 @@ class SlippageModel:
         self.source = source
         self.base_spread = float(base_spread)
         self.pct = float(pct)
+        if max_bar_participation is None:
+            self.max_bar_participation: float | None = None
+        else:
+            max_bar_participation = float(max_bar_participation)
+            if max_bar_participation < 0.0:
+                self.max_bar_participation = None
+            else:
+                self.max_bar_participation = min(max_bar_participation, 1.0)
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
@@ -318,6 +330,17 @@ class SlippageModel:
             if vol <= liquidity_floor:
                 return float(price), 0.0, queue_pos_val
             exec_qty = qty
+        max_participation = self.max_bar_participation
+        if max_participation is not None and vol > 0.0:
+            max_exec = max(0.0, vol * max_participation)
+            if max_exec <= liquidity_floor:
+                return float(price), 0.0, queue_pos_val
+            if exec_qty > max_exec:
+                if not partial:
+                    return float(price), 0.0, queue_pos_val
+                exec_qty = max_exec
+        if exec_qty <= 0.0:
+            return float(price), 0.0, queue_pos_val
         side_is_buy = side == "buy"
         passive = bool(has_depth)
         if not has_depth:
@@ -411,6 +434,7 @@ class EventDrivenBacktestEngine:
         min_notional: float = 0.0,
     ) -> None:
         strategies = list(strategies)
+        exchange_configs = exchange_configs or {}
 
         self.data = data
         if isinstance(timeframes, str):
@@ -423,15 +447,147 @@ class EventDrivenBacktestEngine:
                 self.timeframes.setdefault(sym, "1m")
         self.latency = int(latency)
         self.window = int(window)
+        
+        def _strategy_exchange(info: Tuple[str, str] | Tuple[str, str, str]) -> str:
+            return "default" if len(info) == 2 else str(info[2])
+
+        def _infer_market_type(exchange: str) -> str:
+            cfg = exchange_configs.get(exchange, {}) or {}
+            market_type = cfg.get("market_type") if isinstance(cfg, Mapping) else None
+            if isinstance(market_type, str):
+                mt = market_type.lower()
+                if mt in {"spot", "perp", "futures"}:
+                    return "spot" if mt == "spot" else "perp"
+            if exchange.endswith("_spot"):
+                return "spot"
+            if exchange.endswith("_futures") or exchange.endswith("_perp"):
+                return "perp"
+            return "spot"
+
+        def _first_price_value(symbol: str | None = None) -> float:
+            frames: list[pd.DataFrame] = []
+            if symbol and symbol in self.data:
+                frames.append(self.data[symbol])
+            for sym, df_sym in self.data.items():
+                if sym == symbol:
+                    continue
+                frames.append(df_sym)
+            for df_sym in frames:
+                if not isinstance(df_sym, pd.DataFrame):
+                    continue
+                for col in (
+                    "mid",
+                    "close",
+                    "Close",
+                    "price",
+                    "last",
+                    "open",
+                    "Open",
+                    "high",
+                    "low",
+                ):
+                    if col in df_sym:
+                        series = pd.to_numeric(df_sym[col], errors="coerce")
+                        try:
+                            first_valid = series.dropna()
+                        except AttributeError:
+                            continue
+                        if not first_valid.empty:
+                            val = float(first_valid.iloc[0])
+                            if math.isfinite(val) and val > 0.0:
+                                return val
+            return 1.0
+
+        def _derive_slippage_defaults(
+            exchange: str, symbol: str | None
+        ) -> tuple[float, float, float]:
+            cfg = exchange_configs.get(exchange, {}) or {}
+            market_type = _infer_market_type(exchange)
+            price_scale = _first_price_value(symbol)
+            if not math.isfinite(price_scale) or price_scale <= 0.0:
+                price_scale = 1.0
+            base_spread = cfg.get("slippage_base_spread") if isinstance(cfg, Mapping) else None
+            if base_spread is not None:
+                try:
+                    base_spread = float(base_spread)
+                except (TypeError, ValueError):
+                    base_spread = None
+            base_spread_bps = None
+            if isinstance(cfg, Mapping):
+                base_spread_bps = cfg.get("slippage_base_spread_bps")
+                if base_spread_bps is None:
+                    base_spread_bps = cfg.get("base_spread_bps")
+            if base_spread_bps is not None:
+                try:
+                    base_spread_bps = float(base_spread_bps)
+                except (TypeError, ValueError):
+                    base_spread_bps = None
+            if base_spread is None:
+                if base_spread_bps is None:
+                    base_spread_bps = 1.5 if market_type == "spot" else 2.5
+                base_spread = price_scale * (base_spread_bps / 10000.0)
+            base_spread = float(base_spread)
+            if base_spread <= 0.0:
+                base_spread = max(price_scale * 1e-6, 1e-9)
+            volume_impact_cfg = None
+            if isinstance(cfg, Mapping):
+                volume_impact_cfg = cfg.get("slippage_volume_impact", cfg.get("volume_impact"))
+            if volume_impact_cfg is None:
+                volume_impact = 0.1 if market_type == "spot" else 0.2
+            else:
+                try:
+                    volume_impact = float(volume_impact_cfg)
+                except (TypeError, ValueError):
+                    volume_impact = 0.0
+            volume_impact = max(0.0, volume_impact)
+            max_part_cfg = None
+            if isinstance(cfg, Mapping):
+                max_part_cfg = cfg.get(
+                    "slippage_max_bar_participation",
+                    cfg.get("max_bar_participation"),
+                )
+            if max_part_cfg is None:
+                max_bar_part = 0.1 if market_type == "spot" else 0.2
+            else:
+                try:
+                    max_bar_part = float(max_part_cfg)
+                except (TypeError, ValueError):
+                    max_bar_part = 0.0
+            if max_bar_part > 1.0:
+                max_bar_part = 1.0
+            max_bar_part = max(0.0, max_bar_part)
+            return float(base_spread), float(volume_impact), float(max_bar_part)
+
+        default_exchange: str | None = None
+        default_symbol: str | None = None
+        if strategies:
+            first_info = strategies[0]
+            default_symbol = str(first_info[1])
+            default_exchange = _strategy_exchange(first_info)
+        if not default_exchange:
+            default_exchange = next(iter(exchange_configs), "default")
+        if default_symbol is None:
+            if strategies:
+                default_symbol = str(strategies[0][1])
+            elif self.data:
+                default_symbol = next(iter(self.data))
         self._slippage_supplied = slippage is not None
         self.slippage = slippage
         self.slippage_bps = float(slippage_bps)
         if self.slippage is None:
+            base_spread, volume_impact, max_bar_part = _derive_slippage_defaults(
+                default_exchange, default_symbol
+            )
             self.slippage = SlippageModel(
-                volume_impact=0.0, pct=self.slippage_bps / 10000.0
+                volume_impact=volume_impact,
+                base_spread=base_spread,
+                pct=self.slippage_bps / 10000.0,
+                max_bar_participation=max_bar_part,
             )
         else:
             self.slippage.pct = self.slippage_bps / 10000.0
+            if not hasattr(self.slippage, "max_bar_participation"):
+                setattr(self.slippage, "max_bar_participation", None)
         self.use_l2 = bool(use_l2)
         self.partial_fills = bool(partial_fills)
         self.cancel_unfilled = bool(cancel_unfilled)
@@ -480,10 +636,6 @@ class EventDrivenBacktestEngine:
         self.exchange_min_qty: Dict[str, float] = {}
         self.exchange_step_size: Dict[str, float] = {}
         self.exchange_min_notional: Dict[str, float] = {}
-        exchange_configs = exchange_configs or {}
-
-        def _strategy_exchange(info: Tuple[str, str] | Tuple[str, str, str]) -> str:
-            return "default" if len(info) == 2 else str(info[2])
 
         def _fallback_fee(exchange: str) -> tuple[float, float]:
             cfg = exchange_configs.get(exchange)

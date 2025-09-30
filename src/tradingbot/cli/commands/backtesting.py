@@ -14,6 +14,28 @@ from tradingbot.analysis.backtest_report import generate_report
 app = typer.Typer(help="Backtesting utilities")
 
 
+def _inject_slippage_defaults(
+    exchange_cfg: dict,
+    exchange: str,
+    base_spread_bps: float | None,
+    volume_impact: float | None,
+    max_bar_participation: float | None,
+) -> None:
+    if (
+        base_spread_bps is None
+        and volume_impact is None
+        and max_bar_participation is None
+    ):
+        return
+    cfg = exchange_cfg.setdefault(exchange, {})
+    if base_spread_bps is not None:
+        cfg["slippage_base_spread_bps"] = float(base_spread_bps)
+    if volume_impact is not None:
+        cfg["slippage_volume_impact"] = float(volume_impact)
+    if max_bar_participation is not None:
+        cfg["slippage_max_bar_participation"] = float(max_bar_participation)
+
+
 @app.command("cfg-validate")
 def cfg_validate(path: str) -> None:
     """Validate a YAML configuration file."""
@@ -59,6 +81,24 @@ def backtest(
     ),
     fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
     slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
+    slippage_base_spread_bps: float | None = typer.Option(
+        None,
+        "--slippage-base-spread-bps",
+        min=0.0,
+        help="Spread base por defecto en bps cuando solo hay OHLCV",
+    ),
+    slippage_volume_impact: float | None = typer.Option(
+        None,
+        "--slippage-volume-impact",
+        help="Impacto de volumen por defecto para el modelo de slippage",
+    ),
+    slippage_max_bar_participation: float | None = typer.Option(
+        None,
+        "--slippage-max-bar-participation",
+        min=0.0,
+        max=1.0,
+        help="Participación máxima por barra cuando se infiere el slippage",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -76,6 +116,15 @@ def backtest(
     data_path = Path(data)
     df = pd.read_csv(data_path)
     exchange_cfg = {}
+    _inject_slippage_defaults(
+        exchange_cfg,
+        "default",
+        slippage_base_spread_bps,
+        slippage_volume_impact,
+        slippage_max_bar_participation,
+    )
+    if "default" in exchange_cfg:
+        exchange_cfg["default"].setdefault("market_type", "spot")
     bt_cfg = {}
     min_fill_qty = float(getattr(bt_cfg, "min_fill_qty", MIN_FILL_QTY))
     slippage = None
@@ -119,6 +168,24 @@ def backtest_cfg(
     ),
     fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
     slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
+    slippage_base_spread_bps: float | None = typer.Option(
+        None,
+        "--slippage-base-spread-bps",
+        min=0.0,
+        help="Spread base por defecto en bps cuando solo hay OHLCV",
+    ),
+    slippage_volume_impact: float | None = typer.Option(
+        None,
+        "--slippage-volume-impact",
+        help="Impacto de volumen por defecto para el modelo de slippage",
+    ),
+    slippage_max_bar_participation: float | None = typer.Option(
+        None,
+        "--slippage-max-bar-participation",
+        min=0.0,
+        max=1.0,
+        help="Participación máxima por barra cuando se infiere el slippage",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -159,6 +226,15 @@ def backtest_cfg(
         exchange_cfg = OmegaConf.to_container(
             getattr(cfg, "exchange_configs", {}), resolve=True
         )
+        _inject_slippage_defaults(
+            exchange_cfg,
+            "default",
+            slippage_base_spread_bps,
+            slippage_volume_impact,
+            slippage_max_bar_participation,
+        )
+        if "default" in exchange_cfg:
+            exchange_cfg["default"].setdefault("market_type", "spot")
         bt_cfg = cfg.backtest
         min_fill_qty = float(getattr(bt_cfg, "min_fill_qty", MIN_FILL_QTY))
         slip_cfg = getattr(bt_cfg, "slippage", None)
@@ -229,6 +305,24 @@ def backtest_db(
     ),
     fee_bps: float = typer.Option(5.0, "--fee-bps", help="Comisión en bps"),
     slippage_bps: float = typer.Option(1.0, "--slippage-bps", help="Slippage en bps"),
+    slippage_base_spread_bps: float | None = typer.Option(
+        None,
+        "--slippage-base-spread-bps",
+        min=0.0,
+        help="Spread base por defecto en bps cuando solo hay OHLCV",
+    ),
+    slippage_volume_impact: float | None = typer.Option(
+        None,
+        "--slippage-volume-impact",
+        help="Impacto de volumen por defecto para el modelo de slippage",
+    ),
+    slippage_max_bar_participation: float | None = typer.Option(
+        None,
+        "--slippage-max-bar-participation",
+        min=0.0,
+        max=1.0,
+        help="Participación máxima por barra cuando se infiere el slippage",
+    ),
     verbose_fills: bool = typer.Option(
         False, "--verbose-fills", help="Log each fill during backtests"
     ),
@@ -292,7 +386,15 @@ def backtest_db(
         if not venue_cfg:
             typer.echo(f"missing config for {venue}")
             raise typer.Exit()
+        venue_cfg = dict(venue_cfg)
         exchange_cfg = {venue: venue_cfg}
+        _inject_slippage_defaults(
+            exchange_cfg,
+            venue,
+            slippage_base_spread_bps,
+            slippage_volume_impact,
+            slippage_max_bar_participation,
+        )
         eng = EventDrivenBacktestEngine(
             {symbol: df},
             [(strategy, symbol, venue)],
