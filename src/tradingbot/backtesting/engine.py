@@ -184,6 +184,12 @@ class SlippageModel:
     base_spread: float, default ``0.0``
         Fallback spread (absolute price difference) used when bid/ask columns
         are absent, ``NaN`` or when ``source`` is ``"fixed_spread"``.
+    max_bar_participation: float, default ``1.0``
+        Maximum fraction of the bar volume that can be executed when the
+        dataset only has OHLCV information (no depth).
+    min_bar_liquidity: float, default ``0.0``
+        Minimum effective liquidity required to attempt a fill when only
+        OHLCV data is available.
     """
 
     def __init__(
@@ -194,6 +200,8 @@ class SlippageModel:
         source: str = "bba",
         base_spread: float = 0.0,
         pct: float = 0.0001,
+        max_bar_participation: float = 1.0,
+        min_bar_liquidity: float = 0.0,
     ) -> None:
         self.volume_impact = float(volume_impact)
         self.spread_mult = float(spread_mult)
@@ -204,6 +212,12 @@ class SlippageModel:
         self.source = source
         self.base_spread = float(base_spread)
         self.pct = float(pct)
+        self.max_bar_participation = float(max_bar_participation)
+        if self.max_bar_participation < 0:
+            raise ValueError("max_bar_participation must be non-negative")
+        self.min_bar_liquidity = float(min_bar_liquidity)
+        if self.min_bar_liquidity < 0:
+            raise ValueError("min_bar_liquidity must be non-negative")
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
@@ -315,12 +329,19 @@ class SlippageModel:
             if not partial and exec_qty < qty:
                 return float(price), 0.0, queue_pos_val
         else:
-            if vol <= liquidity_floor:
+            cap = max(0.0, vol * self.max_bar_participation)
+            bar_liquidity = max(cap - queue_pos_val, 0.0)
+            if bar_liquidity < max(self.min_bar_liquidity, liquidity_floor):
                 return float(price), 0.0, queue_pos_val
-            exec_qty = qty
+            exec_qty = min(qty, bar_liquidity)
+            if not partial and exec_qty < qty:
+                return float(price), 0.0, queue_pos_val
         side_is_buy = side == "buy"
         passive = bool(has_depth)
         if not has_depth:
+            if exec_qty <= 0.0:
+                new_queue = max(queue_pos_val + exec_qty - cap, 0.0)
+                return float(price), 0.0, new_queue
             adj_price = _slippage_core(
                 side_is_buy,
                 exec_qty,
@@ -333,7 +354,8 @@ class SlippageModel:
                 self.pct,
                 apply_half_spread=True,
             )
-            return float(adj_price), float(exec_qty), queue_pos_val
+            new_queue = max(queue_pos_val + exec_qty - cap, 0.0)
+            return float(adj_price), float(exec_qty), float(new_queue)
         adj_price, fill_qty, new_queue = _fill_core(
             side_is_buy,
             exec_qty,
