@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -22,9 +22,13 @@ PARAM_INFO = {
     "z_threshold": "Z-score absoluto para abrir operación",
     "volatility_factor": "Factor de tamaño según volatilidad",
     "min_volatility": "Volatilidad mínima reciente en bps",
+    "min_volatility_quantile": "Cuantil usado para estimar el piso de volatilidad",
+    "min_volatility_window_mult": "Multiplicador de ventana para estimar la volatilidad mínima",
+    "min_volatility_fallbacks": "Piso mínimo de volatilidad por timeframe (en bps)",
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
+    "trend_penalty_pct": "Penalización porcentual al z-score cuando la tendencia va en contra",
 }
 
 
@@ -44,7 +48,18 @@ class ScalpPingPongConfig:
         y un factor de ``0.02`` el aporte de tamaño será ``1.0`` (saturado
         al límite superior).  Valor por defecto ``0.02``.
     min_volatility : float, optional
-        Volatilidad mínima reciente en bps requerida para operar, por defecto ``0``.
+        Volatilidad mínima reciente en bps requerida para operar. Si es ``0`` se
+        estima dinámicamente a partir de cuantiles recientes y un piso por
+        timeframe.
+    min_volatility_quantile : float, optional
+        Cuantil de la volatilidad histórica (desviación estándar de retornos) a
+        utilizar como piso, por defecto ``0.25``.
+    min_volatility_window_mult : float, optional
+        Multiplicador de la ventana base para estimar el cuantil de
+        volatilidad mínima, por defecto ``4.0``.
+    min_volatility_fallbacks : dict, optional
+        Mapa ``{minutos: bps}`` con el piso mínimo de volatilidad por
+        timeframe, por defecto ``{1: 0.1, 5: 0.3, 15: 0.5, 30: 0.7, 60: 0.9}``.
     trend_ma : int, optional
         Window for the moving average used to gauge trend, by default ``50``.
     trend_rsi_n : int, optional
@@ -53,15 +68,24 @@ class ScalpPingPongConfig:
     trend_threshold : float, optional
         Threshold (% over MA or RSI points) to treat the trend as strong,
         by default ``10.0``.
+    trend_penalty_pct : float, optional
+        Incremento porcentual requerido sobre el ``z_threshold`` cuando la
+        tendencia va en contra, por defecto ``75.0``.
     """
 
     lookback: int = 15
     z_threshold: float = 0.2
     volatility_factor: float = 0.02
     min_volatility: float = 0.0
+    min_volatility_quantile: float = 0.25
+    min_volatility_window_mult: float = 4.0
+    min_volatility_fallbacks: dict[float, float] = field(
+        default_factory=lambda: {1.0: 0.1, 5.0: 0.3, 15.0: 0.5, 30.0: 0.7, 60.0: 0.9}
+    )
     trend_ma: int = 50
     trend_rsi_n: int = 50
     trend_threshold: float = 10.0
+    trend_penalty_pct: float = 75.0
 
 
 liquidity = LiquidityFilterManager()
@@ -93,6 +117,7 @@ class ScalpPingPong(Strategy):
         self.cfg = cfg or ScalpPingPongConfig(**params)
         self.risk_service = risk_service
         self.timeframe = tf
+        self._last_vol_floor_bps = 0.0
 
     def _calc_zscore(self, closes: pd.Series, lookback: int) -> float:
         lookback = max(MIN_BARS, int(lookback))
@@ -108,6 +133,54 @@ class ScalpPingPong(Strategy):
         if pd.isna(z) or not math.isfinite(float(z)):
             return 0.0
         return float(z)
+
+    def _fallback_vol_floor(self, tf_minutes: float) -> float:
+        mapping = getattr(self.cfg, "min_volatility_fallbacks", {}) or {}
+        if not mapping:
+            return 0.1
+        try:
+            items = sorted((float(k), float(v)) for k, v in mapping.items())
+        except (TypeError, ValueError):
+            return 0.1
+        floor = items[0][1]
+        for minute_mark, value in items:
+            floor = value
+            if tf_minutes <= minute_mark:
+                return floor
+        return floor
+
+    def _dynamic_vol_floor(
+        self,
+        returns: pd.Series,
+        lookback: int,
+        tf_minutes: float,
+    ) -> float:
+        quantile = float(getattr(self.cfg, "min_volatility_quantile", 0.25))
+        quantile = min(max(quantile, 0.0), 1.0)
+        window_mult = max(float(getattr(self.cfg, "min_volatility_window_mult", 4.0)), 1.0)
+        base_window = max(MIN_BARS, int(lookback))
+        vol_series = returns.rolling(base_window).std().dropna()
+        dynamic = 0.0
+        latest_bps = 0.0
+        if not vol_series.empty:
+            latest_bps = float(vol_series.iloc[-1]) * 10000.0
+        if not vol_series.empty:
+            hist_window = int(max(base_window, int(math.ceil(base_window * window_mult))))
+            hist_window = min(len(vol_series), hist_window)
+            recent = vol_series.iloc[-hist_window:]
+            quant = float(recent.quantile(quantile))
+            if math.isfinite(quant) and quant > 0:
+                dynamic = quant * 10000.0
+        if not math.isfinite(dynamic) or dynamic <= 0:
+            dynamic = 0.0
+        if latest_bps > 0:
+            if dynamic <= 0:
+                dynamic = latest_bps
+            else:
+                dynamic = min(dynamic, latest_bps)
+        if not math.isfinite(dynamic) or dynamic <= 0:
+            return 0.0
+        return dynamic
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
@@ -134,12 +207,25 @@ class ScalpPingPong(Strategy):
                 else 0.0
             )
             vol_bps = vol * 10000
-        if vol_bps < self.cfg.min_volatility:
+        tf_floor = float(getattr(self.cfg, "min_volatility", 0.0))
+        fallback_floor = self._fallback_vol_floor(tf_minutes)
+        if tf_floor <= 0:
+            vol_floor = self._dynamic_vol_floor(returns, lookback, tf_minutes)
+        else:
+            vol_floor = tf_floor
+        vol_floor = max(vol_floor, fallback_floor)
+        if vol_bps > 0 and bar.get("atr") is not None:
+            cap_floor = vol_bps
+            if vol_floor > cap_floor:
+                vol_floor = max(fallback_floor, cap_floor)
+        self._last_vol_floor_bps = vol_floor
+        bar["vol_floor_bps"] = vol_floor
+        if vol_bps < vol_floor:
             return None
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * (vol_bps / 10000.0)
         bar["volatility"] = price_vol
-        target_bps = max(vol_bps, self.cfg.min_volatility)
+        target_bps = max(vol_bps, vol_floor)
         bar["target_volatility"] = abs_price * (target_bps / 10000.0)
         vol_size = vol_bps * self.cfg.volatility_factor
         vol_size = max(0.2, min(3.0, vol_size))
@@ -160,12 +246,11 @@ class ScalpPingPong(Strategy):
             elif trsi < 50 - self.cfg.trend_threshold:
                 trend_dir = -1
 
-        z_buy = self.cfg.z_threshold + (
-            self.cfg.trend_threshold / 100 if trend_dir == -1 else 0
-        )
-        z_sell = self.cfg.z_threshold + (
-            self.cfg.trend_threshold / 100 if trend_dir == 1 else 0
-        )
+        penalty_mult = 1.0 + max(0.0, float(self.cfg.trend_penalty_pct)) / 100.0
+        z_buy = float(self.cfg.z_threshold) * (penalty_mult if trend_dir == -1 else 1.0)
+        z_sell = float(self.cfg.z_threshold) * (penalty_mult if trend_dir == 1 else 1.0)
+        z_buy = max(z_buy, 1e-9)
+        z_sell = max(z_sell, 1e-9)
 
         if z <= -z_buy:
             side = "buy"
