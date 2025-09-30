@@ -195,6 +195,10 @@ class SlippageModel:
     max_bar_participation: float, optional
         Maximum fraction of the bar volume allowed to execute in a single fill.
         ``None`` disables the cap.
+    min_bar_liquidity: float, optional
+        Minimum liquidity threshold (in units) that must be available on a bar
+        when only OHLCV data is present.  Bars offering less than this amount
+        will not execute the order.
     """
 
     def __init__(
@@ -206,6 +210,7 @@ class SlippageModel:
         base_spread: float = 0.0,
         pct: float = 0.0001,
         max_bar_participation: float | None = None,
+        min_bar_liquidity: float | None = None,
         ohlc_spread_factor: float | None = None,
         ohlc_spread_bps: float | None = None,
     ) -> None:
@@ -236,6 +241,10 @@ class SlippageModel:
                 self.max_bar_participation = None
             else:
                 self.max_bar_participation = min(max_bar_participation, 1.0)
+        if min_bar_liquidity is None:
+            self.min_bar_liquidity = 0.0
+        else:
+            self.min_bar_liquidity = max(0.0, float(min_bar_liquidity))
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
         def _safe_float(value: Any) -> float | None:
             if value is None:
@@ -375,18 +384,25 @@ class SlippageModel:
             if not partial and exec_qty < qty:
                 return float(price), 0.0, queue_pos_val
         else:
-            if vol <= liquidity_floor:
-                return float(price), 0.0, queue_pos_val
-            exec_qty = qty
-        max_participation = self.max_bar_participation
-        if max_participation is not None and vol > 0.0:
-            max_exec = max(0.0, vol * max_participation)
-            if max_exec <= liquidity_floor:
-                return float(price), 0.0, queue_pos_val
-            if exec_qty > max_exec:
-                if not partial:
+            max_participation = self.max_bar_participation
+            if max_participation is None:
+                if vol <= liquidity_floor:
                     return float(price), 0.0, queue_pos_val
-                exec_qty = max_exec
+                exec_qty = qty
+                queue_pos_val = 0.0
+            else:
+                participation = max(0.0, float(max_participation))
+                bar_capacity = max(0.0, vol * participation)
+                bar_liquidity = max(bar_capacity - max(queue_pos_val, 0.0), 0.0)
+                min_liquidity = getattr(self, "min_bar_liquidity", 0.0) or 0.0
+                if bar_liquidity < max(liquidity_floor, min_liquidity):
+                    return float(price), 0.0, queue_pos_val
+                exec_qty = min(qty, bar_liquidity)
+                if not partial and exec_qty < qty:
+                    return float(price), 0.0, queue_pos_val
+                if exec_qty <= 0.0:
+                    return float(price), 0.0, queue_pos_val
+                queue_pos_val = min(bar_capacity, queue_pos_val + exec_qty)
         if exec_qty <= 0.0:
             return float(price), 0.0, queue_pos_val
         side_is_buy = side == "buy"
