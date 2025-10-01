@@ -263,7 +263,22 @@ async function loadStrategyParams(name){
       if(type.includes('int')||type.includes('float')||type.includes('number')){
         input.type='number'; input.step='0.0001';
       }else{ input.type='text'; }
-      if(p.default!==undefined && p.default!==null) input.value=p.default;
+      if(p.default!==undefined && p.default!==null){
+        if(typeof p.default==='object'){
+          try{
+            input.value=JSON.stringify(p.default);
+            input.dataset.format='json';
+          }catch(e){
+            input.value=String(p.default);
+          }
+        }else{
+          input.value=p.default;
+        }
+      }
+      if(type.includes('dict')||type.includes('list')||type.includes('object')){
+        if(!input.dataset.format) input.dataset.format='json';
+        if(!input.placeholder) input.placeholder=type.includes('list') ? '[1,2]' : '{"key":1}';
+      }
       div.appendChild(label); div.appendChild(input);
       container.appendChild(div);
     });
@@ -438,10 +453,35 @@ async function runBacktest(){
   const paramEls=document.querySelectorAll('#bt-strategy-params input');
   paramEls.forEach(el=>{
     if(!el.value) return;
+    let v=el.value.trim();
+    if(!v) return;
     const t=(el.dataset.type||'').toLowerCase();
-    let v=el.value;
-    if(t.includes('int')) v=parseInt(v,10);
-    else if(t.includes('float')||t.includes('number')) v=parseFloat(v);
+    if(el.dataset.format==='json'){
+      if(v==='[object Object]') return;
+      let normalized=v;
+      try{
+        normalized=JSON.stringify(JSON.parse(v));
+      }catch(err){
+        try{
+          normalized=JSON.stringify(JSON.parse(v.replace(/'/g,'"')));
+        }catch(err2){
+          console.warn('Invalid JSON parameter for', el.dataset.name, v);
+          return;
+        }
+      }
+      const escaped=normalized.replace(/'/g,"\'");
+      cmd+=` --param ${el.dataset.name}='${escaped}'`;
+      return;
+    }
+    if(t.includes('int')){
+      const parsed=parseInt(v,10);
+      if(Number.isNaN(parsed)) return;
+      v=parsed;
+    }else if(t.includes('float')||t.includes('number')){
+      const parsed=parseFloat(v);
+      if(Number.isNaN(parsed)) return;
+      v=parsed;
+    }
     cmd+=` --param ${el.dataset.name}=${v}`;
   });
   const exportCsv=document.getElementById('bt-fills-csv').checked;

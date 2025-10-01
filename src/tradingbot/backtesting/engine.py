@@ -37,6 +37,18 @@ LIQUIDITY_FLOOR_RATIO = 1e-6
 PRICE_TOLERANCE = 1e-9
 
 
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(val) or math.isinf(val):
+        return None
+    return val
+
+
 @njit(cache=True)
 def _fee_calc(cash: float, rate: float) -> float:
     return abs(cash) * rate
@@ -246,17 +258,6 @@ class SlippageModel:
         else:
             self.min_bar_liquidity = max(0.0, float(min_bar_liquidity))
     def _compute_spread(self, bar: Mapping[str, float] | pd.Series) -> float:
-        def _safe_float(value: Any) -> float | None:
-            if value is None:
-                return None
-            try:
-                val = float(value)
-            except (TypeError, ValueError):
-                return None
-            if math.isnan(val) or math.isinf(val):
-                return None
-            return val
-
         spread: float | None = None
         if self.source == "bba":
             bid = bar.get("bid") or bar.get("bid_px") or bar.get("bid_price")
@@ -303,6 +304,19 @@ class SlippageModel:
                 ).iloc[-1]
             )
         return 0.0
+
+    def _clamp_price(self, price: float, bar: Mapping[str, float] | pd.Series) -> float:
+        high_val = _safe_float(bar.get("high"))
+        low_val = _safe_float(bar.get("low"))
+        if high_val is None and low_val is None:
+            return price
+        if high_val is not None and low_val is not None and high_val < low_val:
+            low_val, high_val = min(low_val, high_val), max(low_val, high_val)
+        if high_val is not None:
+            price = min(price, high_val)
+        if low_val is not None:
+            price = max(price, low_val)
+        return price
 
     def adjust(
         self,
@@ -408,19 +422,22 @@ class SlippageModel:
         side_is_buy = side == "buy"
         passive = bool(has_depth)
         if not has_depth:
-            adj_price = _slippage_core(
-                side_is_buy,
-                exec_qty,
-                price,
-                spread,
-                vol,
-                ofi_val,
-                self.volume_impact,
-                self.ofi_impact,
-                self.pct,
-                apply_half_spread=True,
+            adj_price = float(
+                _slippage_core(
+                    side_is_buy,
+                    exec_qty,
+                    price,
+                    spread,
+                    vol,
+                    ofi_val,
+                    self.volume_impact,
+                    self.ofi_impact,
+                    self.pct,
+                    apply_half_spread=True,
+                )
             )
-            return float(adj_price), float(exec_qty), queue_pos_val
+            adj_price = self._clamp_price(adj_price, bar)
+            return adj_price, float(exec_qty), float(queue_pos_val)
         adj_price, fill_qty, new_queue = _fill_core(
             side_is_buy,
             exec_qty,
@@ -436,7 +453,8 @@ class SlippageModel:
             partial,
             passive,
         )
-        return float(adj_price), float(fill_qty), float(new_queue)
+        adj_price = self._clamp_price(float(adj_price), bar)
+        return adj_price, float(fill_qty), float(new_queue)
 
 
 class FeeModel:
@@ -2196,10 +2214,13 @@ class EventDrivenBacktestEngine:
                         for (strat_s, sym_s), svc_s in self.risk.items()
                     )
                     equity_after = cash + mtm_after
+                    reason = "liquidation"
+                    if self.exchange_mode.get(exchange, "perp") == "spot":
+                        reason = "close"
                     fills.append(
                         (
                             timestamp,
-                            "liquidation",
+                            reason,
                             side,
                             last_price,
                             qty,
