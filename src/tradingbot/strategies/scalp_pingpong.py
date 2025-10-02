@@ -43,10 +43,13 @@ class ScalpPingPongConfig:
     z_threshold : float, optional
         Absolute z-score value required to open a trade, by default ``0.2``.
     volatility_factor : float, optional
-        Fraction of the recent volatility (expressed in basis points) used
-        to size positions.  For example, con una volatilidad de ``50`` bps
-        y un factor de ``0.02`` el aporte de tamaño será ``1.0`` (saturado
-        al límite superior).  Valor por defecto ``0.02``.
+        Factor base usado para escalar el tamaño en función de la
+        volatilidad reciente (expresada en puntos básicos).  El valor se
+        adapta automáticamente al timeframe mediante la relación
+        ``base * sqrt(tf_minutes / 5)`` limitada a un rango prudente, lo
+        que resulta en factores efectivos ~``0.015`` en 3 m, ``0.02`` en
+        5 m, ``0.05`` en 30 m, ``0.07`` en 1 h y ``0.10`` en 4 h.  Valor
+        base por defecto ``0.02``.
     min_volatility : float, optional
         Volatilidad mínima reciente en bps requerida para operar. Si es ``0`` se
         estima dinámicamente a partir de cuantiles recientes y un piso por
@@ -94,6 +97,36 @@ liquidity = LiquidityFilterManager()
 # that momentum and mean-reversion indicators never collapse to just a handful
 # of observations.
 MIN_BARS = 5
+
+
+def _scaled_volatility_factor(tf_minutes: float, base_factor: float) -> float:
+    """Scale the base volatility factor according to the bar timeframe."""
+
+    minutes = max(float(tf_minutes), 1.0)
+    base = max(float(base_factor), 0.0)
+    scaled = base * math.sqrt(minutes / 5.0)
+    return min(max(scaled, 0.01), 0.10)
+
+
+def _vol_size_bounds(tf_minutes: float) -> tuple[float, float]:
+    """Return timeframe-aware clamps for the volatility sized strength."""
+
+    minutes = max(float(tf_minutes), 1.0)
+    if minutes <= 3.0:
+        return 0.1, 1.2
+    if minutes <= 5.0:
+        return 0.15, 1.5
+    if minutes <= 15.0:
+        return 0.2, 2.0
+    if minutes <= 30.0:
+        return 0.25, 2.5
+    if minutes <= 60.0:
+        return 0.3, 3.2
+    if minutes <= 120.0:
+        return 0.35, 3.6
+    if minutes <= 240.0:
+        return 0.4, 4.0
+    return 0.45, 4.5
 
 
 class ScalpPingPong(Strategy):
@@ -227,8 +260,11 @@ class ScalpPingPong(Strategy):
         bar["volatility"] = price_vol
         target_bps = max(vol_bps, vol_floor)
         bar["target_volatility"] = abs_price * (target_bps / 10000.0)
-        vol_size = vol_bps * self.cfg.volatility_factor
-        vol_size = max(0.2, min(3.0, vol_size))
+        scaled_factor = _scaled_volatility_factor(tf_minutes, self.cfg.volatility_factor)
+        bar["volatility_factor"] = scaled_factor
+        vol_size = vol_bps * scaled_factor
+        clamp_min, clamp_max = _vol_size_bounds(tf_minutes)
+        vol_size = max(clamp_min, min(clamp_max, vol_size))
 
         trend_dir = 0
         if len(closes) >= trend_ma:
