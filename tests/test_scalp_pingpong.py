@@ -71,7 +71,9 @@ def test_scalp_pingpong_emits_limit_price():
     ]
     df = pd.DataFrame({"close": closes})
     strat = ScalpPingPong()
-    sig = strat.on_bar({"window": df, "symbol": "BTCUSDT", "exchange": "paper"})
+    sig = strat.on_bar(
+        {"window": df, "symbol": "BTCUSDT", "exchange": "paper", "atr": 1.0}
+    )
     assert sig is not None
     assert sig.post_only is True
     assert sig.metadata.get("post_only") is True
@@ -101,6 +103,7 @@ def test_scalp_pingpong_generates_trades_across_timeframes(timeframe, closes):
             "timeframe": timeframe,
             "symbol": "BTCUSDT",
             "exchange": "paper",
+            "atr": 1.0,
         }
     )
     assert sig is not None
@@ -274,3 +277,76 @@ def test_scalp_pingpong_backtest_records_maker_fill():
         assert fill_price <= limit_price + 1e-9
     else:
         assert fill_price >= limit_price - 1e-9
+
+
+def _synthetic_ohlcv(closes: list[float], step: int) -> pd.DataFrame:
+    length = len(closes)
+    return pd.DataFrame(
+        {
+            "timestamp": [i * step for i in range(length)],
+            "open": closes,
+            "high": [p + 0.6 for p in closes],
+            "low": [p - 0.6 for p in closes],
+            "close": closes,
+            "volume": [1_500] * length,
+        }
+    )
+
+
+@pytest.mark.parametrize("timeframe, step", [("5m", 300), ("4h", 14_400)])
+def test_scalp_pingpong_low_volatility_reduces_fills_and_fees(timeframe, step):
+    symbol = "SYM"
+    active_moves = [
+        100.0,
+        99.2,
+        98.4,
+        97.8,
+        99.5,
+        101.0,
+        99.8,
+        98.6,
+        97.4,
+        98.8,
+        100.2,
+        101.6,
+        99.9,
+        98.3,
+        97.1,
+        98.5,
+        100.1,
+        101.4,
+        100.0,
+        98.7,
+    ]
+    quiet_moves = [100.0 + 0.00005 * (i % 3) for i in range(40)]
+
+    high_vol_df = _synthetic_ohlcv(active_moves * 2, step)
+    low_vol_df = _synthetic_ohlcv(quiet_moves, step)
+
+    engine_active = EventDrivenBacktestEngine(
+        {symbol: high_vol_df},
+        [("scalp_pingpong", symbol)],
+        window=30,
+        verbose_fills=True,
+        risk_pct=0.01,
+        timeframes={symbol: timeframe},
+    )
+    result_active = engine_active.run()
+
+    engine_quiet = EventDrivenBacktestEngine(
+        {symbol: low_vol_df},
+        [("scalp_pingpong", symbol)],
+        window=30,
+        verbose_fills=True,
+        risk_pct=0.01,
+        timeframes={symbol: timeframe},
+    )
+    result_quiet = engine_quiet.run()
+
+    active_fees = sum(float(fill[8]) for fill in result_active["fills"])
+    quiet_fees = sum(float(fill[8]) for fill in result_quiet["fills"])
+
+    assert result_active["fill_count"] >= 1
+    assert result_quiet["fill_count"] == 0
+    assert quiet_fees == pytest.approx(0.0)
+    assert active_fees >= quiet_fees
