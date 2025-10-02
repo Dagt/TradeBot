@@ -100,7 +100,9 @@ class ScalpPingPong(Strategy):
     """Mean-reversion scalping strategy using z-score of returns."""
 
     name = "scalp_pingpong"
-    max_signal_strength = 6.0
+    # Keep the clamp for ``raw_size`` and the normalisation ceiling in sync so that the
+    # strategy can use the entire [0, 1] strength range when volatility sizing saturates.
+    max_signal_strength = 3.0
 
     def __init__(
         self,
@@ -266,7 +268,7 @@ class ScalpPingPong(Strategy):
         if self.max_signal_strength <= 0:
             return self.finalize_signal(bar, price, None)
         normalized = raw_size / self.max_signal_strength
-        effective_min = self.min_strength_fraction * 0.5
+        effective_min = self.min_strength_fraction
         if normalized < effective_min:
             return self.finalize_signal(bar, price, None)
         normalized = min(1.0, normalized)
