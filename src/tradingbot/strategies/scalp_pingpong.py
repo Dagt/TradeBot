@@ -80,7 +80,15 @@ class ScalpPingPongConfig:
     min_volatility_quantile: float = 0.25
     min_volatility_window_mult: float = 4.0
     min_volatility_fallbacks: dict[float, float] = field(
-        default_factory=lambda: {1.0: 0.1, 5.0: 0.3, 15.0: 0.5, 30.0: 0.7, 60.0: 0.9}
+        default_factory=lambda: {
+            1.0: 0.1,
+            5.0: 0.3,
+            15.0: 0.5,
+            30.0: 0.7,
+            60.0: 0.9,
+            120.0: 1.2,
+            240.0: 1.5,
+        }
     )
     trend_ma: int = 50
     trend_rsi_n: int = 50
@@ -171,13 +179,11 @@ class ScalpPingPong(Strategy):
             quant = float(recent.quantile(quantile))
             if math.isfinite(quant) and quant > 0:
                 dynamic = quant * 10000.0
+                dynamic *= 1.2
         if not math.isfinite(dynamic) or dynamic <= 0:
             dynamic = 0.0
-        if latest_bps > 0:
-            if dynamic <= 0:
-                dynamic = latest_bps
-            else:
-                dynamic = min(dynamic, latest_bps)
+        if latest_bps > 0 and dynamic <= 0:
+            dynamic = latest_bps
         if not math.isfinite(dynamic) or dynamic <= 0:
             return 0.0
         return dynamic
@@ -220,7 +226,7 @@ class ScalpPingPong(Strategy):
                 vol_floor = max(fallback_floor, cap_floor)
         self._last_vol_floor_bps = vol_floor
         bar["vol_floor_bps"] = vol_floor
-        if vol_bps < vol_floor:
+        if vol_bps < vol_floor * 0.9:
             return None
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * (vol_bps / 10000.0)
