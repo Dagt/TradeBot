@@ -28,6 +28,7 @@ PARAM_INFO = {
     "trend_ma": "Ventana para la media móvil de tendencia",
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
+    "trend_extreme_mult": "Multiplicador del umbral de tendencia para pausar operaciones",
     "trend_penalty_pct": "Penalización porcentual al z-score cuando la tendencia va en contra",
 }
 
@@ -68,6 +69,9 @@ class ScalpPingPongConfig:
     trend_threshold : float, optional
         Threshold (% over MA or RSI points) to treat the trend as strong,
         by default ``10.0``.
+    trend_extreme_mult : float, optional
+        Multiplicador del ``trend_threshold`` a partir del cual las señales
+        contrarias a la tendencia se deshabilitan, por defecto ``3.0``.
     trend_penalty_pct : float, optional
         Incremento porcentual requerido sobre el ``z_threshold`` cuando la
         tendencia va en contra, por defecto ``75.0``.
@@ -85,6 +89,7 @@ class ScalpPingPongConfig:
     trend_ma: int = 50
     trend_rsi_n: int = 50
     trend_threshold: float = 10.0
+    trend_extreme_mult: float = 3.0
     trend_penalty_pct: float = 75.0
 
 
@@ -231,20 +236,32 @@ class ScalpPingPong(Strategy):
         vol_size = max(0.2, min(3.0, vol_size))
 
         trend_dir = 0
-        if len(closes) >= trend_ma:
-            ma = closes.rolling(trend_ma).mean().iloc[-1]
-            if not pd.isna(ma) and ma != 0:
-                diff_pct = (price - ma) / ma * 100
-                if diff_pct > self.cfg.trend_threshold:
-                    trend_dir = 1
-                elif diff_pct < -self.cfg.trend_threshold:
-                    trend_dir = -1
-        elif len(closes) >= trend_rsi_n:
-            trsi = rsi(df, trend_rsi_n).iloc[-1]
-            if trsi > 50 + self.cfg.trend_threshold:
-                trend_dir = 1
-            elif trsi < 50 - self.cfg.trend_threshold:
-                trend_dir = -1
+        extreme_trend_dir = 0
+        trend_threshold = float(getattr(self.cfg, "trend_threshold", 0.0))
+        extreme_mult = max(1.0, float(getattr(self.cfg, "trend_extreme_mult", 3.0)))
+        if trend_threshold > 0:
+            if len(closes) >= trend_ma:
+                ma = closes.rolling(trend_ma).mean().iloc[-1]
+                if not pd.isna(ma) and ma != 0:
+                    diff_pct = (price - ma) / ma * 100
+                    if diff_pct > trend_threshold:
+                        trend_dir = 1
+                    elif diff_pct < -trend_threshold:
+                        trend_dir = -1
+                    if abs(diff_pct) >= trend_threshold * extreme_mult:
+                        extreme_trend_dir = 1 if diff_pct > 0 else -1
+            elif len(closes) >= trend_rsi_n:
+                trsi_series = rsi(df, trend_rsi_n)
+                if not trsi_series.empty:
+                    trsi_val = trsi_series.iloc[-1]
+                    if not pd.isna(trsi_val):
+                        bias = float(trsi_val) - 50.0
+                        if bias > trend_threshold:
+                            trend_dir = 1
+                        elif bias < -trend_threshold:
+                            trend_dir = -1
+                        if abs(bias) >= trend_threshold * extreme_mult:
+                            extreme_trend_dir = 1 if bias > 0 else -1
 
         penalty_mult = 1.0 + max(0.0, float(self.cfg.trend_penalty_pct)) / 100.0
         z_buy = float(self.cfg.z_threshold) * (penalty_mult if trend_dir == -1 else 1.0)
@@ -254,12 +271,21 @@ class ScalpPingPong(Strategy):
 
         if z <= -z_buy:
             side = "buy"
-            strength = max(0.05, min(2.5, abs(z) / z_buy))
+            strength = abs(z) / z_buy
         elif z >= z_sell:
             side = "sell"
-            strength = max(0.05, min(2.5, abs(z) / z_sell))
+            strength = abs(z) / z_sell
         else:
             return None
+        if (side == "buy" and extreme_trend_dir == -1) or (
+            side == "sell" and extreme_trend_dir == 1
+        ):
+            return None
+        if (side == "buy" and trend_dir == -1) or (
+            side == "sell" and trend_dir == 1
+        ):
+            strength *= 0.5
+        strength = max(0.05, min(2.5, strength))
         raw_size = max(0.0, min(3.0, strength * vol_size))
         if raw_size <= 0:
             return self.finalize_signal(bar, price, None)

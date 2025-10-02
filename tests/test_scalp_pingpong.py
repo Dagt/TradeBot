@@ -274,3 +274,93 @@ def test_scalp_pingpong_backtest_records_maker_fill():
         assert fill_price <= limit_price + 1e-9
     else:
         assert fill_price >= limit_price - 1e-9
+
+
+def _thirty_minute_trending_window() -> pd.DataFrame:
+    rows: list[dict[str, float]] = []
+    ts_index = pd.date_range("2022-02-01", periods=120, freq="30min")
+    price = 100.0
+    for idx, ts in enumerate(ts_index):
+        if idx < 48:
+            step = (-1) ** idx * 0.6
+        elif idx < 84:
+            step = 5.0 + 0.4 * (idx - 48)
+        else:
+            step = -5.5 - 0.35 * (idx - 84)
+        open_ = price
+        close = price + step
+        high = max(open_, close) + 0.35
+        low = min(open_, close) - 0.35
+        volume = 1_200.0 if idx < 48 else 2_400.0
+        rows.append(
+            {
+                "timestamp": int(ts.timestamp()),
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            }
+        )
+        price = close
+    return pd.DataFrame(rows)
+
+
+def _run_scalp_pingpong_backtest(
+    data: pd.DataFrame, extreme_mult: float
+) -> dict[str, object]:
+    engine = EventDrivenBacktestEngine(
+        {"SYM": data},
+        [("scalp_pingpong", "SYM")],
+        window=65,
+        latency=1,
+        verbose_fills=True,
+        timeframes={"SYM": "30m"},
+        risk_pct=1.0,
+    )
+    key = ("scalp_pingpong", "SYM")
+    svc = engine.risk[key]
+    cfg = ScalpPingPongConfig(
+        lookback=20,
+        z_threshold=0.15,
+        volatility_factor=0.05,
+        min_volatility=0.0,
+        trend_ma=90,
+        trend_rsi_n=60,
+        trend_threshold=3.0,
+        trend_extreme_mult=extreme_mult,
+        trend_penalty_pct=60.0,
+    )
+    engine.strategies[key] = ScalpPingPong(
+        cfg=cfg,
+        risk_service=svc,
+        timeframe="30m",
+    )
+    return engine.run()
+
+
+def _entry_trades_in_trend(fills: list[tuple], start_ts: int) -> list[tuple]:
+    return [fill for fill in fills if fill[1] == "order" and fill[0] >= start_ts]
+
+
+def _win_rate(fills: list[tuple]) -> float:
+    exits = [f for f in fills if f[1] != "order" and abs(f[4]) > 1e-9]
+    wins = sum(1 for f in exits if f[10] > 1e-9)
+    losses = sum(1 for f in exits if f[10] < -1e-9)
+    total = wins + losses
+    return wins / total if total else 0.0
+
+
+def test_scalp_pingpong_backtest_30m_extreme_trends_reduce_risk():
+    data = _thirty_minute_trending_window()
+    baseline = _run_scalp_pingpong_backtest(data, extreme_mult=50.0)
+    filtered = _run_scalp_pingpong_backtest(data, extreme_mult=2.0)
+
+    trend_start_ts = int(data["timestamp"].iloc[48])
+    baseline_entries = _entry_trades_in_trend(baseline["fills"], trend_start_ts)
+    filtered_entries = _entry_trades_in_trend(filtered["fills"], trend_start_ts)
+
+    assert baseline_entries, "Se esperaban operaciones en la fase tendencial base"
+    assert len(filtered_entries) < len(baseline_entries)
+
+    assert _win_rate(filtered["fills"]) > _win_rate(baseline["fills"])
