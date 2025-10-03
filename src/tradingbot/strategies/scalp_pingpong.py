@@ -29,6 +29,8 @@ PARAM_INFO = {
     "trend_rsi_n": "Ventana del RSI para medir tendencia",
     "trend_threshold": "Umbral para considerar la tendencia fuerte",
     "trend_penalty_pct": "Penalización porcentual al z-score cuando la tendencia va en contra",
+    "trend_extreme_multiplier": "Multiplicador del umbral de tendencia para pausar señales en sesgos extremos",
+    "counter_trend_strength_mult": "Factor de reducción del tamaño cuando la tendencia va en contra",
 }
 
 
@@ -97,6 +99,8 @@ class ScalpPingPongConfig:
     trend_rsi_n: int = 50
     trend_threshold: float = 10.0
     trend_penalty_pct: float = 75.0
+    trend_extreme_multiplier: float = 2.0
+    counter_trend_strength_mult: float = 0.5
 
 
 liquidity = LiquidityFilterManager()
@@ -275,19 +279,41 @@ class ScalpPingPong(Strategy):
         vol_size = max(clamp_min, min(clamp_max, vol_size))
 
         trend_dir = 0
+        trend_threshold = max(0.0, float(self.cfg.trend_threshold))
+        trend_extreme_mult = max(
+            1.0, float(getattr(self.cfg, "trend_extreme_multiplier", 3.0))
+        )
+        counter_trend_mult = float(
+            getattr(self.cfg, "counter_trend_strength_mult", 0.5)
+        )
+        if not math.isfinite(counter_trend_mult):
+            counter_trend_mult = 0.5
+        counter_trend_mult = max(0.0, min(1.0, counter_trend_mult))
         if len(closes) >= trend_ma:
             ma = closes.rolling(trend_ma).mean().iloc[-1]
             if not pd.isna(ma) and ma != 0:
                 diff_pct = (price - ma) / ma * 100
-                if diff_pct > self.cfg.trend_threshold:
+                extreme_threshold = trend_threshold * trend_extreme_mult
+                if trend_threshold > 0 and trend_extreme_mult > 1.0:
+                    if abs(diff_pct) >= extreme_threshold:
+                        return None
+                if diff_pct > trend_threshold:
                     trend_dir = 1
-                elif diff_pct < -self.cfg.trend_threshold:
+                elif diff_pct < -trend_threshold:
                     trend_dir = -1
         elif len(closes) >= trend_rsi_n:
             trsi = rsi(df, trend_rsi_n).iloc[-1]
-            if trsi > 50 + self.cfg.trend_threshold:
+            upper = 50 + trend_threshold
+            lower = 50 - trend_threshold
+            extreme_threshold = trend_threshold * trend_extreme_mult
+            if trend_threshold > 0 and trend_extreme_mult > 1.0:
+                extreme_upper = 50 + extreme_threshold
+                extreme_lower = 50 - extreme_threshold
+                if trsi >= extreme_upper or trsi <= extreme_lower:
+                    return None
+            if trsi > upper:
                 trend_dir = 1
-            elif trsi < 50 - self.cfg.trend_threshold:
+            elif trsi < lower:
                 trend_dir = -1
 
         penalty_mult = 1.0 + max(0.0, float(self.cfg.trend_penalty_pct)) / 100.0
@@ -298,12 +324,16 @@ class ScalpPingPong(Strategy):
 
         if z <= -z_buy:
             side = "buy"
-            strength = max(0.05, min(2.5, abs(z) / z_buy))
+            strength = abs(z) / z_buy
         elif z >= z_sell:
             side = "sell"
-            strength = max(0.05, min(2.5, abs(z) / z_sell))
+            strength = abs(z) / z_sell
         else:
             return None
+        strength = max(0.05, min(2.5, strength))
+        if (side == "buy" and trend_dir == -1) or (side == "sell" and trend_dir == 1):
+            strength *= counter_trend_mult
+            strength = max(0.05, min(2.5, strength))
         raw_size = max(0.0, min(3.0, strength * vol_size))
         if raw_size <= 0:
             return self.finalize_signal(bar, price, None)
