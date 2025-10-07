@@ -1,4 +1,5 @@
 import math
+from collections import defaultdict
 
 import pandas as pd
 
@@ -91,13 +92,131 @@ class MeanReversion(Strategy):
     name = "mean_reversion"
     max_signal_strength = 2.5
 
-    def __init__(self, **kwargs):
-        self.rsi_n = kwargs.get("rsi_n", 14)
+    TIMEFRAME_OVERRIDES: dict[str, dict[str, float | int | bool]] = {
+        "3m": {
+            "rsi_n": 18,
+            "trend_ma": 90,
+            "trend_rsi_n": 80,
+            "trend_ma_bps": 260.0,
+            "trend_rsi_shift": 8.0,
+            "trend_rsi_shift_max": 24.0,
+            "min_volatility": 0.8,
+            "vol_floor_quantile": 0.35,
+            "vol_floor_window": 180,
+            "vol_floor_min_periods": 45,
+            "strength_gain": 3.8,
+            "rsi_dev_floor": 8.0,
+            "rsi_dev_cap": 24.0,
+            "limit_span_multiplier": 1.15,
+            "target_distance_multiplier": 1.20,
+            "cooldown_bars": 5,
+            "time_stop": 18,
+            "only_buy_dip": False,
+        },
+        "5m": {
+            "rsi_n": 16,
+            "trend_ma": 80,
+            "trend_rsi_n": 70,
+            "trend_ma_bps": 220.0,
+            "trend_rsi_shift": 6.5,
+            "trend_rsi_shift_max": 20.0,
+            "min_volatility": 0.6,
+            "vol_floor_quantile": 0.30,
+            "vol_floor_window": 150,
+            "vol_floor_min_periods": 36,
+            "strength_gain": 3.6,
+            "rsi_dev_floor": 7.0,
+            "rsi_dev_cap": 22.0,
+            "limit_span_multiplier": 1.10,
+            "target_distance_multiplier": 1.15,
+            "cooldown_bars": 4,
+            "time_stop": 14,
+            "only_buy_dip": False,
+        },
+        "15m": {
+            "trend_ma": 70,
+            "trend_rsi_n": 60,
+            "trend_ma_bps": 190.0,
+            "trend_rsi_shift": 5.5,
+            "trend_rsi_shift_max": 18.0,
+            "min_volatility": 0.45,
+            "vol_floor_quantile": 0.28,
+            "vol_floor_window": 120,
+            "vol_floor_min_periods": 30,
+            "strength_gain": 3.2,
+            "rsi_dev_floor": 6.0,
+            "rsi_dev_cap": 20.0,
+            "limit_span_multiplier": 1.05,
+            "target_distance_multiplier": 1.10,
+            "cooldown_bars": 3,
+            "time_stop": 12,
+            "only_buy_dip": False,
+        },
+        "30m": {
+            "trend_ma": 60,
+            "trend_rsi_n": 55,
+            "trend_ma_bps": 180.0,
+            "trend_rsi_shift": 5.0,
+            "trend_rsi_shift_max": 16.0,
+            "min_volatility": 0.40,
+            "strength_gain": 2.8,
+            "rsi_dev_floor": 5.5,
+            "rsi_dev_cap": 18.0,
+            "limit_span_multiplier": 1.00,
+            "target_distance_multiplier": 1.05,
+            "cooldown_bars": 2,
+            "time_stop": 10,
+            "only_buy_dip": True,
+        },
+        "1h": {
+            "trend_ma": 60,
+            "trend_rsi_n": 50,
+            "trend_ma_bps": 160.0,
+            "trend_rsi_shift": 4.5,
+            "trend_rsi_shift_max": 14.0,
+            "min_volatility": 0.35,
+            "strength_gain": 2.6,
+            "rsi_dev_floor": 5.0,
+            "rsi_dev_cap": 16.0,
+            "cooldown_bars": 2,
+            "time_stop": 8,
+            "only_buy_dip": True,
+        },
+        "4h": {
+            "trend_ma": 55,
+            "trend_rsi_n": 45,
+            "trend_ma_bps": 140.0,
+            "trend_rsi_shift": 4.0,
+            "trend_rsi_shift_max": 12.0,
+            "min_volatility": 0.30,
+            "strength_gain": 2.2,
+            "rsi_dev_floor": 4.0,
+            "rsi_dev_cap": 14.0,
+            "cooldown_bars": 1,
+            "time_stop": 6,
+            "only_buy_dip": True,
+        },
+    }
 
+    def __init__(self, **kwargs):
         tf = str(kwargs.get("timeframe", "1m"))
+        overrides = self.TIMEFRAME_OVERRIDES.get(tf, {})
+        for key, value in overrides.items():
+            kwargs.setdefault(key, value)
+
         self.timeframe = tf
         tf_minutes = timeframe_to_minutes(tf)
         self._base_timeframe_minutes = tf_minutes
+
+        self.strength_gain = float(kwargs.get("strength_gain", 3.0))
+        self._rsi_dev_floor = float(kwargs.get("rsi_dev_floor", 5.0))
+        self._rsi_dev_cap = float(kwargs.get("rsi_dev_cap", 20.0))
+        self._limit_span_mult = float(kwargs.get("limit_span_multiplier", 1.0))
+        self._target_distance_mult = float(kwargs.get("target_distance_multiplier", 1.0))
+        self._cooldown_bars = int(kwargs.get("cooldown_bars", 0))
+        self._cooldowns: dict[str, int] = defaultdict(int)
+
+        self.rsi_n = int(kwargs.get("rsi_n", 14))
 
         trend_ma_min = kwargs.get("trend_ma", 50)
         self.trend_ma = max(1, int(trend_ma_min / tf_minutes))
@@ -169,6 +288,7 @@ class MeanReversion(Strategy):
 
         dev = rsi_series.rolling(self.rsi_n).std().iloc[-1]
         dev = 10.0 if pd.isna(dev) else float(dev)
+        dev = max(self._rsi_dev_floor, min(self._rsi_dev_cap, dev))
         upper = 50 + dev
         lower = 50 - dev
         return upper, lower
@@ -251,6 +371,13 @@ class MeanReversion(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
+        symbol = str(bar.get("symbol", "") or "")
+        cooldown = self._cooldown_bars
+        if cooldown > 0 and symbol:
+            remaining = self._cooldowns.get(symbol, 0)
+            if remaining > 0:
+                self._cooldowns[symbol] = remaining - 1
+                return None
         if len(df) < self.rsi_n + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"
@@ -367,13 +494,13 @@ class MeanReversion(Strategy):
             if not self._confirm_reversal(price_series, rsi_series, "sell"):
                 return self.finalize_signal(bar, price, None)
             deviation = (last_rsi - upper) / max(1.0, 100 - upper)
-            raw_strength = max(0.0, deviation * 3.0)
+            raw_strength = max(0.0, deviation * self.strength_gain)
             side = "sell"
         elif last_rsi < lower:
             if not self._confirm_reversal(price_series, rsi_series, "buy"):
                 return self.finalize_signal(bar, price, None)
             deviation = (lower - last_rsi) / max(1.0, lower)
-            raw_strength = max(0.0, deviation * 3.0)
+            raw_strength = max(0.0, deviation * self.strength_gain)
             side = "buy"
         else:
             return self.finalize_signal(bar, price, None)
@@ -404,24 +531,26 @@ class MeanReversion(Strategy):
         atr_abs = abs(float(atr_val)) if math.isfinite(atr_val) else 0.0
         anchor_gap = abs(float(anchor_price) - price)
 
+        span_mult = max(0.2, self._limit_span_mult)
         base_span = max(
-            abs_price * 0.0004,
-            atr_abs * 0.65 if atr_abs > 0 else 0.0,
-            tick_size * 4 if tick_size else 0.0,
+            abs_price * 0.0004 * span_mult,
+            (atr_abs * 0.65 if atr_abs > 0 else 0.0) * span_mult,
+            (tick_size * 4 if tick_size else 0.0) * span_mult,
         )
-        limit_span = max(base_span, anchor_gap)
+        limit_span = max(base_span, anchor_gap * span_mult)
         if not math.isfinite(limit_span) or limit_span <= 0:
-            limit_span = max(abs_price * 0.0004, tick_size * 2 if tick_size else 1e-6)
+            limit_span = max(abs_price * 0.0004 * span_mult, tick_size * 2 * span_mult if tick_size else 1e-6)
 
         if side == "buy":
             base_price = max(0.0, anchor_price - limit_span)
         else:
             base_price = anchor_price + limit_span
 
+        dist_mult = max(0.2, self._target_distance_mult)
         target_distance = max(
-            abs_price * 0.00012,
-            atr_abs * 0.2 if atr_abs > 0 else 0.0,
-            tick_size if tick_size else 0.0,
+            abs_price * 0.00012 * dist_mult,
+            (atr_abs * 0.2 if atr_abs > 0 else 0.0) * dist_mult,
+            (tick_size if tick_size else 0.0) * dist_mult,
         )
         if anchor_gap > 0:
             target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
@@ -431,8 +560,8 @@ class MeanReversion(Strategy):
 
         step_distance = max(
             target_distance * 0.5,
-            atr_abs * 0.12 if atr_abs > 0 else 0.0,
-            abs_price * 0.00008,
+            (atr_abs * 0.12 if atr_abs > 0 else 0.0) * dist_mult,
+            abs_price * 0.00008 * dist_mult,
         )
         if tick_size:
             step_distance = max(step_distance, tick_size)
@@ -441,7 +570,7 @@ class MeanReversion(Strategy):
 
         maker_distance = max(
             target_distance - step_distance,
-            tick_size if tick_size else target_distance * 0.5,
+            (tick_size if tick_size else target_distance * 0.5),
         )
         maker_distance = min(max(maker_distance, 0.0), limit_span)
         maker_initial = max(initial_offset, limit_span - maker_distance)
@@ -521,7 +650,10 @@ class MeanReversion(Strategy):
                 "max_hold": max_hold,
             }
 
-        return self.finalize_signal(bar, price, sig)
+        result = self.finalize_signal(bar, price, sig)
+        if result is not None and cooldown > 0 and symbol:
+            self._cooldowns[symbol] = cooldown
+        return result
 
 
 def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
