@@ -257,12 +257,17 @@ class MeanReversion(Strategy):
         self._base_timeframe_minutes = tf_minutes
 
         self.strength_gain = float(kwargs.get("strength_gain", 3.0))
+        self._base_strength_gain = self.strength_gain
         self._rsi_dev_floor = float(kwargs.get("rsi_dev_floor", 5.0))
         self._rsi_dev_cap = float(kwargs.get("rsi_dev_cap", 20.0))
         self._limit_span_mult = float(kwargs.get("limit_span_multiplier", 1.0))
+        self._base_limit_span_mult = self._limit_span_mult
         self._target_distance_mult = float(kwargs.get("target_distance_multiplier", 1.0))
+        self._base_target_distance_mult = self._target_distance_mult
         self._step_mult = max(0.0, float(kwargs.get("step_mult", 0.45)))
+        self._base_step_mult = self._step_mult
         self._chase_quotes = bool(kwargs.get("chase_quotes", True))
+        self._base_chase_quotes = self._chase_quotes
         maker_patience = kwargs.get("maker_patience")
         self._maker_patience_override = (
             max(0, int(maker_patience)) if maker_patience is not None else None
@@ -270,6 +275,7 @@ class MeanReversion(Strategy):
         self._min_strength = max(
             0.0, min(1.0, float(kwargs.get("min_strength", 0.0)))
         )
+        self._base_min_strength = self._min_strength
         self._span_vol_scaler = max(
             0.0, float(kwargs.get("span_vol_scaler", 0.35))
         )
@@ -313,6 +319,7 @@ class MeanReversion(Strategy):
             int(kwargs.get("vol_floor_min_periods", max(5, self.rsi_n))),
         )
         self.only_buy_dip = kwargs.get("only_buy_dip", tf in {"30m", "1h"})
+        self._base_only_buy_dip = self.only_buy_dip
         default_time_stop_bars = 0.0
         min_time_stop_bars = 1
         if tf_minutes >= 30.0:
@@ -352,15 +359,194 @@ class MeanReversion(Strategy):
         min_periods = max(1, min(window, max(1, scaled_min)))
         return window, min_periods
 
-    def auto_threshold(self, rsi_series: pd.Series) -> tuple[float, float]:
+    def auto_threshold(
+        self, rsi_series: pd.Series, *, lookback: int | None = None
+    ) -> tuple[float, float]:
         """Derive upper and lower RSI bounds from recent variability."""
 
-        dev = rsi_series.rolling(self.rsi_n).std().iloc[-1]
+        window = lookback or self.rsi_n
+        dev = rsi_series.rolling(window).std().iloc[-1]
         dev = 10.0 if pd.isna(dev) else float(dev)
         dev = max(self._rsi_dev_floor, min(self._rsi_dev_cap, dev))
         upper = 50 + dev
         lower = 50 - dev
         return upper, lower
+
+    def _adaptive_rsi_period(self, tf_minutes: float, window_size: int) -> int:
+        base_period = max(5, self.rsi_n)
+        if window_size <= base_period + 1:
+            return base_period
+
+        if tf_minutes <= 3.0:
+            factor = 0.7
+        elif tf_minutes <= 5.0:
+            factor = 0.78
+        elif tf_minutes <= 15.0:
+            factor = 0.9
+        else:
+            factor = 1.0
+
+        period = int(round(base_period * factor))
+        period = max(5, min(window_size - 1, period))
+        return period
+
+    def _detect_market_state(
+        self,
+        price_series: pd.Series,
+        returns: pd.Series,
+        rsi_series: pd.Series,
+        trend_dir: int,
+        vol_ratio: float,
+        tf_minutes: float,
+    ) -> tuple[str, dict[str, float]]:
+        lookback = min(len(price_series), max(12, int(round(90 / max(tf_minutes, 1.0)))))
+        if lookback < 6:
+            return "range", {"strength": 0.0}
+
+        window = price_series.iloc[-lookback:]
+        start_price = float(window.iloc[0])
+        end_price = float(window.iloc[-1])
+        if not math.isfinite(start_price) or not math.isfinite(end_price) or start_price == 0:
+            return "range", {"strength": 0.0}
+
+        drift = (end_price - start_price) / start_price
+        swing = (window.max() - window.min()) / start_price
+        swing = max(swing, 1e-6)
+        momentum = returns.iloc[-lookback:].mean() if len(returns) >= lookback else 0.0
+        rsi_tail = rsi_series.iloc[-min(len(rsi_series), lookback):]
+        rsi_drift = float(rsi_tail.diff().mean()) if len(rsi_tail) >= 2 else 0.0
+
+        tf_scale = math.sqrt(max(tf_minutes, 1.0) / 5.0)
+        trend_threshold = 0.0025 * tf_scale
+        breakout_threshold = 0.004 * tf_scale
+        drift_abs = abs(drift)
+        momentum_abs = abs(momentum)
+
+        regime_strength = drift_abs / swing
+        metrics = {
+            "strength": regime_strength,
+            "drift": drift,
+            "momentum": momentum,
+            "rsi_drift": rsi_drift,
+        }
+
+        if vol_ratio >= 1.45 and drift_abs >= breakout_threshold:
+            return "breakout", metrics
+        if drift_abs >= trend_threshold or (trend_dir != 0 and regime_strength > 0.35):
+            return "trend", metrics
+        if vol_ratio <= 0.9 and swing < 0.002 * tf_scale:
+            return "quiet", metrics
+        if momentum_abs <= trend_threshold * 0.3 and abs(rsi_drift) <= 0.4:
+            return "range", metrics
+        if vol_ratio >= 1.25:
+            return "volatile", metrics
+        return "range", metrics
+
+    def _dynamic_calibration(
+        self,
+        *,
+        tf_minutes: float,
+        market_state: str,
+        trend_dir: int,
+        vol_ratio: float,
+        regime_strength: float,
+    ) -> dict[str, float | bool | int]:
+        strength_gain = self._base_strength_gain
+        limit_span_mult = self._base_limit_span_mult
+        target_distance_mult = self._base_target_distance_mult
+        step_mult = self._base_step_mult
+        min_strength = self._base_min_strength
+        chase_quotes = self._base_chase_quotes
+        only_buy_dip = self._base_only_buy_dip
+        cooldown = self._cooldown_bars
+        maker_bias = 0
+
+        if tf_minutes <= 5.0:
+            limit_span_mult *= 0.82
+            target_distance_mult *= 0.78
+            step_mult *= 0.92
+            min_strength *= 0.7
+            strength_gain *= 1.08
+            cooldown = max(0, int(round(cooldown * 0.6)))
+            chase_quotes = True
+        elif tf_minutes <= 15.0:
+            limit_span_mult *= 0.9
+            target_distance_mult *= 0.88
+            min_strength *= 0.85
+            strength_gain *= 1.03
+            cooldown = max(0, int(round(cooldown * 0.8)))
+        elif tf_minutes >= 60.0:
+            limit_span_mult *= 1.12
+            target_distance_mult *= 1.1
+            step_mult *= 1.05
+            min_strength *= 1.05
+
+        if market_state == "trend":
+            bias = 1.0 + min(0.6, regime_strength)
+            limit_span_mult *= 1.05 * bias
+            target_distance_mult *= 1.12 * bias
+            min_strength *= 1.08
+            strength_gain *= 0.95
+            only_buy_dip = trend_dir >= 0 or only_buy_dip
+            maker_bias -= 1
+        elif market_state == "breakout":
+            limit_span_mult *= 0.75
+            target_distance_mult *= 0.9
+            min_strength *= 0.6
+            strength_gain *= 1.2
+            step_mult *= 1.15
+            chase_quotes = True
+            maker_bias -= 1
+        elif market_state == "volatile":
+            limit_span_mult *= 1.02
+            target_distance_mult *= 1.05
+            step_mult *= 1.12
+            min_strength *= 0.92
+            maker_bias -= 1
+        elif market_state == "quiet":
+            limit_span_mult *= 0.85
+            target_distance_mult *= 0.8
+            min_strength *= 0.75
+            strength_gain *= 1.1
+            step_mult *= 0.95
+        else:  # range
+            limit_span_mult *= 0.88
+            target_distance_mult *= 0.85
+            min_strength *= 0.82
+            step_mult *= 0.98
+
+        if vol_ratio >= 1.35:
+            maker_bias -= 1
+            chase_quotes = True
+            min_strength *= 0.9
+        elif vol_ratio <= 0.8:
+            limit_span_mult *= 0.9
+            target_distance_mult *= 0.82
+            step_mult *= 0.9
+
+        maker_bias = int(max(-2, min(1, maker_bias)))
+
+        rsi_period = self.rsi_n
+        if tf_minutes <= 5.0 or market_state in {"breakout", "quiet"}:
+            if market_state == "quiet":
+                rsi_period = max(5, int(round(self.rsi_n * 0.65)))
+            else:
+                rsi_period = max(5, int(round(self.rsi_n * 0.75)))
+        elif market_state == "trend":
+            rsi_period = max(5, int(round(self.rsi_n * 0.9)))
+
+        return {
+            "strength_gain": float(max(0.1, strength_gain)),
+            "limit_span_mult": float(max(0.1, limit_span_mult)),
+            "target_distance_mult": float(max(0.1, target_distance_mult)),
+            "step_mult": float(max(0.0, step_mult)),
+            "min_strength": float(max(0.0, min(1.0, min_strength))),
+            "chase_quotes": bool(chase_quotes),
+            "only_buy_dip": bool(only_buy_dip),
+            "cooldown_bars": int(max(0, cooldown)),
+            "maker_patience_bias": maker_bias,
+            "rsi_period": int(max(5, rsi_period)),
+        }
 
     def _trend_rsi_offset(self, recent_vol_bps: float) -> float:
         base = self.trend_rsi_shift
@@ -441,13 +627,15 @@ class MeanReversion(Strategy):
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         symbol = str(bar.get("symbol", "") or "")
-        cooldown = self._cooldown_bars
-        if len(df) < self.rsi_n + 1:
+        min_required = max(self.rsi_n, 6)
+        if len(df) < min_required + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"
         price_series = df[price_col]
         price = float(price_series.iloc[-1])
-        rsi_series = rsi(df, self.rsi_n)
+        tf_minutes = timeframe_to_minutes(bar.get("timeframe", self.timeframe))
+        rsi_period = self._adaptive_rsi_period(tf_minutes, len(df))
+        rsi_series = rsi(df, rsi_period)
         last_rsi = rsi_series.iloc[-1]
 
         bar_timeframe = bar.get("timeframe", self.timeframe)
@@ -524,12 +712,6 @@ class MeanReversion(Strategy):
                 target_vol = abs_price * max(target_candidate, vol)
         bar["target_volatility"] = target_vol
 
-        if cooldown > 0 and symbol:
-            remaining = self._cooldowns.get(symbol, 0)
-            if remaining > 0:
-                self._cooldowns[symbol] = remaining - 1
-                return None
-
         high = df.get("high")
         low = df.get("low")
         atr_val = 0.0
@@ -559,33 +741,65 @@ class MeanReversion(Strategy):
             elif trsi < 50 - trend_offset:
                 trend_dir = -1
 
-        upper, lower = self.auto_threshold(rsi_series)
+        market_state, regime_metrics = self._detect_market_state(
+            price_series,
+            returns,
+            rsi_series,
+            trend_dir,
+            vol_ratio,
+            tf_minutes,
+        )
+        calibration = self._dynamic_calibration(
+            tf_minutes=tf_minutes,
+            market_state=market_state,
+            trend_dir=trend_dir,
+            vol_ratio=vol_ratio,
+            regime_strength=float(regime_metrics.get("strength", 0.0)),
+        )
+
+        if calibration["rsi_period"] != rsi_period:
+            new_period = int(calibration["rsi_period"])
+            if len(df) >= new_period + 1:
+                rsi_series = rsi(df, new_period)
+                last_rsi = rsi_series.iloc[-1]
+                rsi_period = new_period
+
+        cooldown_dynamic = max(0, int(calibration["cooldown_bars"]))
+        if cooldown_dynamic > 0 and symbol:
+            remaining = self._cooldowns.get(symbol, 0)
+            if remaining > 0:
+                self._cooldowns[symbol] = remaining - 1
+                return None
+
+        upper, lower = self.auto_threshold(rsi_series, lookback=rsi_period)
         if trend_dir == 1:
             upper += trend_offset
         elif trend_dir == -1:
             lower -= trend_offset
 
+        strength_gain = float(calibration["strength_gain"])
         raw_strength = 0.0
         if last_rsi > upper:
             if not self._confirm_reversal(price_series, rsi_series, "sell"):
                 return self.finalize_signal(bar, price, None)
             deviation = (last_rsi - upper) / max(1.0, 100 - upper)
-            raw_strength = max(0.0, deviation * self.strength_gain)
+            raw_strength = max(0.0, deviation * strength_gain)
             side = "sell"
         elif last_rsi < lower:
             if not self._confirm_reversal(price_series, rsi_series, "buy"):
                 return self.finalize_signal(bar, price, None)
             deviation = (lower - last_rsi) / max(1.0, lower)
-            raw_strength = max(0.0, deviation * self.strength_gain)
+            raw_strength = max(0.0, deviation * strength_gain)
             side = "buy"
         else:
             return self.finalize_signal(bar, price, None)
 
-        if side == "sell" and trend_dir == 1 and self.only_buy_dip:
+        only_buy_dip = bool(calibration["only_buy_dip"])
+        if side == "sell" and trend_dir == 1 and only_buy_dip:
             return self.finalize_signal(bar, price, None)
 
         strength = _normalized_strength(raw_strength)
-        eff_min_strength = max(0.0, self._min_strength)
+        eff_min_strength = max(0.0, float(calibration["min_strength"]))
         if eff_min_strength > 0.0:
             if vol_ratio >= 1.05:
                 high_adj = self._min_strength_high_vol_mult / (vol_ratio ** 0.5)
@@ -617,7 +831,7 @@ class MeanReversion(Strategy):
 
         span_boost = 1.0 + self._span_vol_scaler * (vol_ratio - 1.0)
         span_boost = max(0.5, min(1.9, span_boost))
-        span_mult = max(0.2, self._limit_span_mult * span_boost)
+        span_mult = max(0.2, float(calibration["limit_span_mult"]) * span_boost)
         base_span = max(
             abs_price * 0.0004 * span_mult,
             (atr_abs * 0.65 if atr_abs > 0 else 0.0) * span_mult,
@@ -634,7 +848,7 @@ class MeanReversion(Strategy):
 
         target_boost = 1.0 + self._target_vol_scaler * (vol_ratio - 1.0)
         target_boost = max(0.5, min(1.8, target_boost))
-        dist_mult = max(0.2, self._target_distance_mult * target_boost)
+        dist_mult = max(0.2, float(calibration["target_distance_mult"]) * target_boost)
         target_distance = max(
             abs_price * 0.00012 * dist_mult,
             (atr_abs * 0.2 if atr_abs > 0 else 0.0) * dist_mult,
@@ -671,7 +885,7 @@ class MeanReversion(Strategy):
         else:
             limit_price = max(limit_price, anchor_price)
         sig.limit_price = max(0.0, limit_price)
-        chase_orders = self._chase_quotes or vol_ratio >= 1.05
+        chase_orders = bool(calibration["chase_quotes"]) or vol_ratio >= 1.05
         if self._maker_patience_override is not None:
             maker_patience = self._maker_patience_override
         else:
@@ -683,18 +897,19 @@ class MeanReversion(Strategy):
                 maker_patience = 3
             if tf_minutes <= 5.0:
                 maker_patience = max(maker_patience, 2)
-        maker_patience = max(0, int(maker_patience))
+        maker_patience = max(0, int(maker_patience + int(calibration["maker_patience_bias"])))
         meta = {
             "base_price": base_price,
             "limit_offset": abs(limit_span),
             "initial_offset": abs(initial_offset),
             "offset_step": abs(step_offset),
             "max_offset": abs(max_offset),
-            "step_mult": max(0.0, self._step_mult),
+            "step_mult": max(0.0, float(calibration["step_mult"])),
             "chase": chase_orders,
             "maker_initial_offset": abs(maker_initial),
             "maker_patience": maker_patience,
             "post_only": True,
+            "market_state": market_state,
         }
         if tick_size:
             meta["tick_size"] = tick_size
@@ -736,8 +951,9 @@ class MeanReversion(Strategy):
             }
 
         result = self.finalize_signal(bar, price, sig)
-        if result is not None and cooldown > 0 and symbol:
-            self._cooldowns[symbol] = cooldown
+        cooldown_dynamic = max(0, int(calibration["cooldown_bars"]))
+        if result is not None and cooldown_dynamic > 0 and symbol:
+            self._cooldowns[symbol] = cooldown_dynamic
         return result
 
 
