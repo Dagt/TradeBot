@@ -262,9 +262,9 @@ class RiskManager:
 
         if price is not None and stop is not None:
             if side in {"buy", "long"} and float(price) <= float(stop):
-                return "close"
+                return "stop_loss"
             if side in {"sell", "short"} and float(price) >= float(stop):
-                return "close"
+                return "stop_loss"
 
         if signal:
             sig_side = signal.get("side")
@@ -282,7 +282,7 @@ class RiskManager:
                 if strength < cur_strength:
                     _set(trade, "strength", strength)
                     if strength <= 0:
-                        return "close"
+                        return "take_profit"
                     return "scale_out"
         return "hold"
 
