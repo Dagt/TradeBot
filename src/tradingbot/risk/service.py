@@ -494,6 +494,14 @@ class RiskService:
         partial_tp = None
         ptp_done = False
         current_strength = None
+        def _store_exit_reason(reason: str | None) -> None:
+            if not reason:
+                return
+            if isinstance(trade, dict):
+                trade["_exit_reason"] = reason
+            else:
+                setattr(trade, "_exit_reason", reason)
+
         if isinstance(trade, dict):
             price = trade.get("current_price")
             trail_done = trade.get("_trail_done")
@@ -518,6 +526,7 @@ class RiskService:
                         else float(entry) - float(price)
                     )
                     if move < 0.5 * float(atr):
+                        _store_exit_reason("close")
                         return "close"
         else:
             price = getattr(trade, "current_price", None)
@@ -540,6 +549,7 @@ class RiskService:
                         else float(entry) - float(price)
                     )
                     if move < 0.5 * float(atr):
+                        _store_exit_reason("close")
                         return "close"
         price_val = None
         if price is not None:
@@ -612,6 +622,7 @@ class RiskService:
                         cur_strength_val = float(sig_strength_val)
         if exit_requested:
             partial_allowed = False
+            _store_exit_reason("close")
 
         if (
             partial_allowed
@@ -665,9 +676,20 @@ class RiskService:
                         setattr(trade, "strength", new_strength)
                         setattr(trade, "_ptp_done", True)
                     if new_strength <= 0.0:
-                        return "close"
+                        _store_exit_reason("take_profit")
+                        return "take_profit"
                     return "scale_out"
-        return self.rm.manage_position(trade, signal)
+        decision = self.rm.manage_position(trade, signal)
+        if decision in {"close", "stop_loss", "take_profit"}:
+            reason = decision
+            if decision == "close":
+                reason = getattr(trade, "_exit_reason", None)
+                if isinstance(trade, dict):
+                    reason = trade.get("_exit_reason", reason)
+            if not reason:
+                reason = "close"
+            _store_exit_reason(reason)
+        return decision
 
     # ------------------------------------------------------------------
     # Price tracking and risk checks

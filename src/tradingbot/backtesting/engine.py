@@ -160,6 +160,7 @@ class Order:
     latency: int | None = field(default=None, compare=False)
     post_only: bool = field(default=False, compare=False)
     trailing_pct: float | None = field(default=None, compare=False)
+    reason: str = field(default="order", compare=False)
 
 
 @dataclass(frozen=True)
@@ -606,16 +607,16 @@ class EventDrivenBacktestEngine:
                     base_spread_bps = None
             if base_spread is None:
                 if base_spread_bps is None:
-                    base_spread_bps = 1.5 if market_type == "spot" else 2.5
+                    base_spread_bps = 0.0
                 base_spread = price_scale * (base_spread_bps / 10000.0)
             base_spread = float(base_spread)
             if base_spread <= 0.0:
-                base_spread = max(price_scale * 1e-6, 1e-9)
+                base_spread = 0.0
             volume_impact_cfg = None
             if isinstance(cfg, Mapping):
                 volume_impact_cfg = cfg.get("slippage_volume_impact", cfg.get("volume_impact"))
             if volume_impact_cfg is None:
-                volume_impact = 0.1 if market_type == "spot" else 0.2
+                volume_impact = 0.0
             else:
                 try:
                     volume_impact = float(volume_impact_cfg)
@@ -722,7 +723,7 @@ class EventDrivenBacktestEngine:
         def _fallback_fee(exchange: str) -> tuple[float, float]:
             cfg = exchange_configs.get(exchange)
             if not exchange_configs:
-                return 1.0, 8.0
+                return 1.0, 10.0
 
             market_type = None
             if isinstance(cfg, Mapping):
@@ -735,12 +736,12 @@ class EventDrivenBacktestEngine:
                     market_type = "perp"
 
             if market_type == "spot":
-                return 1.0, 8.0
+                return 1.0, 10.0
 
             if market_type == "perp":
-                return 2.0, 5.0
+                return 2.0, 10.0
 
-            return 1.0, 8.0
+            return 1.0, 10.0
 
         if fee_bps is not None:
             default_maker_bps = float(fee_bps)
@@ -1146,6 +1147,12 @@ class EventDrivenBacktestEngine:
                         trade["_trail_done"] = True
                         trade["current_price"] = price
                         decision = svc.manage_position(trade)
+                        if isinstance(trade, dict):
+                            exit_reason = trade.pop("_exit_reason", None)
+                        else:
+                            exit_reason = getattr(trade, "_exit_reason", None)
+                            if exit_reason is not None:
+                                setattr(trade, "_exit_reason", None)
                         if decision in {"scale_in", "scale_out"}:
                             target = svc.calc_position_size(
                                 trade.get("strength", 1.0), price, clamp=False
@@ -1212,11 +1219,12 @@ class EventDrivenBacktestEngine:
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
-                        elif decision == "close":
+                        elif decision in {"close", "stop_loss", "take_profit"}:
                             delta_qty = -pos_qty
                             pending_qty = abs(delta_qty)
                             if pending_qty > constraints.min_qty:
                                 side = "sell" if pos_qty > 0 else "buy"
+                                reason_tag = exit_reason or decision
                                 exchange = self.strategy_exchange[(strat, sym)]
                                 base_latency = self.exchange_latency.get(
                                     exchange, self.latency
@@ -1268,6 +1276,7 @@ class EventDrivenBacktestEngine:
                                     latency=None,
                                     post_only=False,
                                     trailing_pct=None,
+                                    reason=reason_tag,
                                 )
                                 orders.append(order)
                                 heapq.heappush(order_queue, order)
@@ -1595,7 +1604,7 @@ class EventDrivenBacktestEngine:
                     fills.append(
                         (
                             timestamp,
-                            "order",
+                            order.reason or "order",
                             order.side,
                             price,
                             fill_qty,
@@ -1726,7 +1735,7 @@ class EventDrivenBacktestEngine:
                         fills.append(
                             (
                                 timestamp,
-                                reason or "exit",
+                                reason or "close",
                                 side,
                                 exit_price,
                                 exit_qty,
@@ -1811,6 +1820,12 @@ class EventDrivenBacktestEngine:
                         trade["current_price"] = mark_price
                         sig_obj = sig.__dict__ if hasattr(sig, "__dict__") else sig
                         decision = svc.manage_position(trade, sig_obj)
+                        if isinstance(trade, dict):
+                            exit_reason = trade.pop("_exit_reason", None)
+                        else:
+                            exit_reason = getattr(trade, "_exit_reason", None)
+                            if exit_reason is not None:
+                                setattr(trade, "_exit_reason", None)
                         raw_limit = (
                             sig.get("limit_price")
                             if isinstance(sig, dict)
@@ -1833,13 +1848,13 @@ class EventDrivenBacktestEngine:
                         elif hasattr(sig, "__dict__"):
                             setattr(sig, "limit_price", stored_limit)
                         svc.mark_price(symbol, mark_price)
-                        if decision in {"close", "scale_in", "scale_out"}:
+                        if decision in {"close", "scale_in", "scale_out", "stop_loss", "take_profit"}:
                             limit_price = mark_price
                             if isinstance(sig, dict):
                                 sig["limit_price"] = limit_price
                             elif hasattr(sig, "__dict__"):
                                 setattr(sig, "limit_price", limit_price)
-                        if decision == "close":
+                        if decision in {"close", "stop_loss", "take_profit"}:
                             delta_qty = -pos_qty
                         elif decision in {"scale_in", "scale_out"}:
                             target = svc.calc_position_size(
@@ -1851,7 +1866,7 @@ class EventDrivenBacktestEngine:
                         qty_raw = abs(delta_qty)
                         if qty_raw < constraints.min_qty:
                             continue
-                        if decision == "close":
+                        if decision in {"close", "stop_loss", "take_profit"}:
                             side = "buy" if delta_qty > 0 else "sell"
                         else:
                             side = (
@@ -1859,6 +1874,9 @@ class EventDrivenBacktestEngine:
                                 if delta_qty > 0
                                 else ("sell" if trade["side"] == "buy" else "buy")
                             )
+                        reason_tag = "order"
+                        if decision in {"close", "stop_loss", "take_profit"}:
+                            reason_tag = exit_reason or decision
                         post_only = bool(getattr(sig, "post_only", False))
                         if post_only:
                             enforced_limit = self._enforce_post_only_limit(
@@ -1930,6 +1948,7 @@ class EventDrivenBacktestEngine:
                             latency=None,
                             post_only=post_only,
                             trailing_pct=None,
+                            reason=reason_tag,
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)
@@ -2101,6 +2120,7 @@ class EventDrivenBacktestEngine:
                             latency=None,
                             post_only=False,
                             trailing_pct=None,
+                            reason="stop_loss",
                         )
                         orders.append(order)
                         heapq.heappush(order_queue, order)
@@ -2123,6 +2143,24 @@ class EventDrivenBacktestEngine:
             if i == max_len - 1:
                 last_index = i
                 break
+
+        snapshot_idx = max(0, last_index)
+        end_positions_snapshot: list[dict[str, Any]] = []
+        for (strat_name, symbol), svc in self.risk.items():
+            qty = svc.account.current_exposure(symbol)[0]
+            constraints = self._strategy_constraints((strat_name, symbol))
+            if abs(qty) > constraints.min_qty:
+                price_idx = min(snapshot_idx, data_lengths[symbol] - 1)
+                mark_price = float(data_arrays[symbol]["close"][price_idx])
+                end_positions_snapshot.append(
+                    {
+                        "strategy": strat_name,
+                        "symbol": symbol,
+                        "qty": qty,
+                        "mark_price": mark_price,
+                        "notional": qty * mark_price,
+                    }
+                )
 
         # Liquidate remaining positions
         for (strat_name, symbol), svc in self.risk.items():
@@ -2297,6 +2335,7 @@ class EventDrivenBacktestEngine:
             "cancel_count": cancel_count,
             "cancel_ratio": cancel_ratio,
             "fills": fills if collect_fills else [],
+            "end_positions_mtm": end_positions_snapshot,
         }
         log.info(
             "Backtest finalizado: equity %.2f, pnl %.2f, fills %d, drawdown %.2f%%",
