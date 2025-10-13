@@ -94,155 +94,107 @@ class MeanReversion(Strategy):
 
     TIMEFRAME_OVERRIDES: dict[str, dict[str, float | int | bool]] = {
         "3m": {
-            "rsi_n": 17,
-            "trend_ma": 85,
-            "trend_rsi_n": 75,
-            "trend_ma_bps": 235.0,
-            "trend_rsi_shift": 7.5,
-            "trend_rsi_shift_max": 22.5,
-            "min_volatility": 0.52,
-            "vol_floor_quantile": 0.24,
-            "vol_floor_window": 160,
-            "vol_floor_min_periods": 40,
-            "strength_gain": 3.6,
-            "rsi_dev_floor": 9.0,
-            "rsi_dev_cap": 26.0,
-            "limit_span_multiplier": 1.16,
-            "target_distance_multiplier": 1.30,
-            "cooldown_bars": 2,
-            "time_stop": 15,
+            "rsi_n": 18,
+            "trend_ma": 90,
+            "trend_rsi_n": 80,
+            "trend_ma_bps": 260.0,
+            "trend_rsi_shift": 8.0,
+            "trend_rsi_shift_max": 24.0,
+            "min_volatility": 0.8,
+            "vol_floor_quantile": 0.35,
+            "vol_floor_window": 180,
+            "vol_floor_min_periods": 45,
+            "strength_gain": 3.8,
+            "rsi_dev_floor": 8.0,
+            "rsi_dev_cap": 24.0,
+            "limit_span_multiplier": 1.15,
+            "target_distance_multiplier": 1.20,
+            "cooldown_bars": 5,
+            "time_stop": 18,
             "only_buy_dip": False,
-            "chase_quotes": True,
-            "maker_patience": 3,
-            "step_mult": 0.38,
-            "min_strength": 0.18,
-            "span_vol_scaler": 0.55,
-            "target_vol_scaler": 0.45,
-            "min_strength_low_vol_mult": 1.5,
-            "min_strength_high_vol_mult": 0.55,
         },
         "5m": {
-            "rsi_n": 15,
-            "trend_ma": 75,
-            "trend_rsi_n": 65,
-            "trend_ma_bps": 205.0,
-            "trend_rsi_shift": 6.0,
-            "trend_rsi_shift_max": 18.0,
-            "min_volatility": 0.42,
-            "vol_floor_quantile": 0.20,
-            "vol_floor_window": 120,
-            "vol_floor_min_periods": 30,
-            "strength_gain": 3.4,
-            "rsi_dev_floor": 8.5,
-            "rsi_dev_cap": 23.0,
-            "limit_span_multiplier": 1.08,
-            "target_distance_multiplier": 1.22,
-            "cooldown_bars": 2,
-            "time_stop": 12,
+            "rsi_n": 16,
+            "trend_ma": 80,
+            "trend_rsi_n": 70,
+            "trend_ma_bps": 220.0,
+            "trend_rsi_shift": 6.5,
+            "trend_rsi_shift_max": 20.0,
+            "min_volatility": 0.6,
+            "vol_floor_quantile": 0.30,
+            "vol_floor_window": 150,
+            "vol_floor_min_periods": 36,
+            "strength_gain": 3.6,
+            "rsi_dev_floor": 7.0,
+            "rsi_dev_cap": 22.0,
+            "limit_span_multiplier": 1.10,
+            "target_distance_multiplier": 1.15,
+            "cooldown_bars": 4,
+            "time_stop": 14,
             "only_buy_dip": False,
-            "chase_quotes": True,
-            "maker_patience": 3,
-            "step_mult": 0.34,
-            "min_strength": 0.15,
-            "span_vol_scaler": 0.50,
-            "target_vol_scaler": 0.40,
-            "min_strength_low_vol_mult": 1.4,
-            "min_strength_high_vol_mult": 0.6,
         },
         "15m": {
-            "trend_ma": 65,
-            "trend_rsi_n": 55,
-            "trend_ma_bps": 168.0,
-            "trend_rsi_shift": 5.0,
-            "trend_rsi_shift_max": 16.0,
-            "min_volatility": 0.36,
-            "vol_floor_quantile": 0.20,
-            "vol_floor_window": 105,
-            "vol_floor_min_periods": 26,
-            "strength_gain": 3.1,
-            "rsi_dev_floor": 5.2,
-            "rsi_dev_cap": 17.5,
-            "limit_span_multiplier": 1.01,
-            "target_distance_multiplier": 1.08,
-            "cooldown_bars": 0,
-            "time_stop": 11,
+            "trend_ma": 70,
+            "trend_rsi_n": 60,
+            "trend_ma_bps": 190.0,
+            "trend_rsi_shift": 5.5,
+            "trend_rsi_shift_max": 18.0,
+            "min_volatility": 0.45,
+            "vol_floor_quantile": 0.28,
+            "vol_floor_window": 120,
+            "vol_floor_min_periods": 30,
+            "strength_gain": 3.2,
+            "rsi_dev_floor": 6.0,
+            "rsi_dev_cap": 20.0,
+            "limit_span_multiplier": 1.05,
+            "target_distance_multiplier": 1.10,
+            "cooldown_bars": 3,
+            "time_stop": 12,
             "only_buy_dip": False,
-            "chase_quotes": True,
-            "maker_patience": 2,
-            "step_mult": 0.26,
-            "min_strength": 0.0,
-            "span_vol_scaler": 0.45,
-            "target_vol_scaler": 0.35,
-            "min_strength_low_vol_mult": 1.3,
-            "min_strength_high_vol_mult": 0.5,
         },
         "30m": {
-            "trend_ma": 55,
-            "trend_rsi_n": 50,
-            "trend_ma_bps": 162.0,
-            "trend_rsi_shift": 4.5,
-            "trend_rsi_shift_max": 14.0,
-            "min_volatility": 0.30,
-            "strength_gain": 2.7,
-            "rsi_dev_floor": 5.0,
-            "rsi_dev_cap": 16.0,
-            "limit_span_multiplier": 0.96,
-            "target_distance_multiplier": 1.10,
-            "cooldown_bars": 1,
-            "time_stop": 9,
+            "trend_ma": 60,
+            "trend_rsi_n": 55,
+            "trend_ma_bps": 180.0,
+            "trend_rsi_shift": 5.0,
+            "trend_rsi_shift_max": 16.0,
+            "min_volatility": 0.40,
+            "strength_gain": 2.8,
+            "rsi_dev_floor": 5.5,
+            "rsi_dev_cap": 18.0,
+            "limit_span_multiplier": 1.00,
+            "target_distance_multiplier": 1.05,
+            "cooldown_bars": 2,
+            "time_stop": 10,
             "only_buy_dip": True,
-            "chase_quotes": True,
-            "maker_patience": 2,
-            "step_mult": 0.25,
-            "min_strength": 0.07,
-            "span_vol_scaler": 0.40,
-            "target_vol_scaler": 0.32,
-            "min_strength_low_vol_mult": 1.25,
-            "min_strength_high_vol_mult": 0.55,
         },
         "1h": {
-            "trend_ma": 55,
-            "trend_rsi_n": 45,
-            "trend_ma_bps": 148.0,
-            "trend_rsi_shift": 4.2,
-            "trend_rsi_shift_max": 12.0,
-            "min_volatility": 0.26,
-            "strength_gain": 2.5,
-            "rsi_dev_floor": 4.5,
-            "rsi_dev_cap": 13.5,
-            "cooldown_bars": 1,
-            "time_stop": 7,
+            "trend_ma": 60,
+            "trend_rsi_n": 50,
+            "trend_ma_bps": 160.0,
+            "trend_rsi_shift": 4.5,
+            "trend_rsi_shift_max": 14.0,
+            "min_volatility": 0.35,
+            "strength_gain": 2.6,
+            "rsi_dev_floor": 5.0,
+            "rsi_dev_cap": 16.0,
+            "cooldown_bars": 2,
+            "time_stop": 8,
             "only_buy_dip": True,
-            "chase_quotes": True,
-            "maker_patience": 2,
-            "step_mult": 0.24,
-            "min_strength": 0.05,
-            "span_vol_scaler": 0.35,
-            "target_vol_scaler": 0.28,
-            "min_strength_low_vol_mult": 1.2,
-            "min_strength_high_vol_mult": 0.6,
         },
         "4h": {
-            "trend_ma": 48,
-            "trend_rsi_n": 40,
-            "trend_ma_bps": 120.0,
-            "trend_rsi_shift": 3.6,
-            "trend_rsi_shift_max": 10.5,
-            "min_volatility": 0.24,
-            "strength_gain": 2.1,
-            "rsi_dev_floor": 3.6,
-            "rsi_dev_cap": 12.5,
+            "trend_ma": 55,
+            "trend_rsi_n": 45,
+            "trend_ma_bps": 140.0,
+            "trend_rsi_shift": 4.0,
+            "trend_rsi_shift_max": 12.0,
+            "min_volatility": 0.30,
+            "strength_gain": 2.2,
+            "rsi_dev_floor": 4.0,
+            "rsi_dev_cap": 14.0,
             "cooldown_bars": 1,
             "time_stop": 6,
             "only_buy_dip": True,
-            "chase_quotes": True,
-            "maker_patience": 1,
-            "step_mult": 0.22,
-            "min_strength": 0.04,
-            "span_vol_scaler": 0.28,
-            "target_vol_scaler": 0.24,
-            "min_strength_low_vol_mult": 1.15,
-            "min_strength_high_vol_mult": 0.65,
         },
     }
 
@@ -261,27 +213,6 @@ class MeanReversion(Strategy):
         self._rsi_dev_cap = float(kwargs.get("rsi_dev_cap", 20.0))
         self._limit_span_mult = float(kwargs.get("limit_span_multiplier", 1.0))
         self._target_distance_mult = float(kwargs.get("target_distance_multiplier", 1.0))
-        self._step_mult = max(0.0, float(kwargs.get("step_mult", 0.45)))
-        self._chase_quotes = bool(kwargs.get("chase_quotes", True))
-        maker_patience = kwargs.get("maker_patience")
-        self._maker_patience_override = (
-            max(0, int(maker_patience)) if maker_patience is not None else None
-        )
-        self._min_strength = max(
-            0.0, min(1.0, float(kwargs.get("min_strength", 0.0)))
-        )
-        self._span_vol_scaler = max(
-            0.0, float(kwargs.get("span_vol_scaler", 0.35))
-        )
-        self._target_vol_scaler = max(
-            0.0, float(kwargs.get("target_vol_scaler", 0.25))
-        )
-        self._min_strength_low_vol_mult = max(
-            0.1, float(kwargs.get("min_strength_low_vol_mult", 1.2))
-        )
-        self._min_strength_high_vol_mult = max(
-            0.1, float(kwargs.get("min_strength_high_vol_mult", 0.6))
-        )
         self._cooldown_bars = int(kwargs.get("cooldown_bars", 0))
         self._cooldowns: dict[str, int] = defaultdict(int)
 
@@ -437,11 +368,69 @@ class MeanReversion(Strategy):
             or rsi_ma_slope >= -rsi_tol
         )
 
+    def _execution_profile(
+        self,
+        *,
+        vol_bps: float,
+        trend_dir: int,
+        tf_minutes: float,
+    ) -> dict[str, float | int]:
+        """Adapt execution parameters based on volatility and trend."""
+
+        span_mult = max(0.2, self._limit_span_mult)
+        dist_mult = max(0.2, self._target_distance_mult)
+        base_step_ratio = 0.55 if tf_minutes <= 3.0 else 0.45
+        base_chase = 0.45 if tf_minutes <= 5.0 else 0.35
+        maker_patience = 2 if tf_minutes <= 5.0 else 1
+
+        floor = max(self.min_volatility, 1e-9)
+        if not math.isfinite(vol_bps) or vol_bps <= 0:
+            ratio = 0.4
+        else:
+            ratio = vol_bps / floor if floor > 0 else 1.0
+        ratio = max(0.3, min(ratio, 4.0))
+
+        if ratio < 1.0:
+            tighten = 0.65 + 0.35 * ratio
+            span_mult *= tighten
+            dist_mult *= max(0.55, tighten)
+            base_step_ratio = max(0.4, base_step_ratio * 0.85)
+            base_chase *= 0.9
+            maker_patience = max(maker_patience, 2)
+        elif ratio > 1.6:
+            widen = min(1.45, 0.9 + 0.22 * ratio)
+            span_mult *= widen
+            dist_mult *= min(1.6, 1.0 + 0.28 * (ratio - 1.0))
+            base_step_ratio = min(0.75, base_step_ratio * 1.15)
+            base_chase = min(0.65, base_chase * 1.15)
+        else:
+            base_step_ratio = min(0.65, max(0.45, base_step_ratio))
+
+        if trend_dir != 0:
+            trend_bias = 0.9 if ratio <= 1.4 else 0.95
+            span_mult *= trend_bias
+            dist_mult *= trend_bias
+            base_chase = min(0.7, base_chase * 1.1)
+            maker_patience = max(maker_patience, 2)
+
+        return {
+            "span_mult": max(0.2, span_mult),
+            "dist_mult": max(0.2, dist_mult),
+            "step_ratio": min(0.8, max(0.35, base_step_ratio)),
+            "chase_step": min(0.8, max(0.25, base_chase)),
+            "maker_patience": int(max(1, maker_patience)),
+        }
+
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         symbol = str(bar.get("symbol", "") or "")
         cooldown = self._cooldown_bars
+        if cooldown > 0 and symbol:
+            remaining = self._cooldowns.get(symbol, 0)
+            if remaining > 0:
+                self._cooldowns[symbol] = remaining - 1
+                return None
         if len(df) < self.rsi_n + 1:
             return None
         price_col = "close" if "close" in df.columns else "price"
@@ -506,12 +495,6 @@ class MeanReversion(Strategy):
         base_minutes = self._base_timeframe_minutes or tf_minutes
         if vol_floor_bps > 0 and tf_minutes > 0 and base_minutes > 0:
             scaled_floor = vol_floor_bps * math.sqrt(tf_minutes / base_minutes)
-        vol_ratio = 1.0
-        if scaled_floor > 1e-9:
-            vol_ratio = vol_bps / max(scaled_floor, 1e-9)
-        vol_ratio = max(0.2, min(3.5, vol_ratio))
-        if scaled_floor <= 1e-9 and self.vol_floor_quantile > 0 and vol_bps <= 0:
-            return None
         if scaled_floor > 0 and vol_bps < scaled_floor:
             return None
         abs_price = max(abs(price), 1e-9)
@@ -523,12 +506,6 @@ class MeanReversion(Strategy):
             if math.isfinite(target_candidate) and target_candidate > 0:
                 target_vol = abs_price * max(target_candidate, vol)
         bar["target_volatility"] = target_vol
-
-        if cooldown > 0 and symbol:
-            remaining = self._cooldowns.get(symbol, 0)
-            if remaining > 0:
-                self._cooldowns[symbol] = remaining - 1
-                return None
 
         high = df.get("high")
         low = df.get("low")
@@ -585,15 +562,7 @@ class MeanReversion(Strategy):
             return self.finalize_signal(bar, price, None)
 
         strength = _normalized_strength(raw_strength)
-        eff_min_strength = max(0.0, self._min_strength)
-        if eff_min_strength > 0.0:
-            if vol_ratio >= 1.05:
-                high_adj = self._min_strength_high_vol_mult / (vol_ratio ** 0.5)
-                eff_min_strength *= max(0.1, min(1.0, high_adj))
-            elif vol_ratio < 0.9:
-                low_adj = self._min_strength_low_vol_mult * (1.0 + (0.9 - vol_ratio))
-                eff_min_strength *= max(0.1, min(3.0, low_adj))
-        if strength <= 0.0 or strength < eff_min_strength:
+        if strength <= 0.0:
             return self.finalize_signal(bar, price, None)
 
         sig = Signal(side, strength)
@@ -615,9 +584,12 @@ class MeanReversion(Strategy):
         atr_abs = abs(float(atr_val)) if math.isfinite(atr_val) else 0.0
         anchor_gap = abs(float(anchor_price) - price)
 
-        span_boost = 1.0 + self._span_vol_scaler * (vol_ratio - 1.0)
-        span_boost = max(0.5, min(1.9, span_boost))
-        span_mult = max(0.2, self._limit_span_mult * span_boost)
+        exec_profile = self._execution_profile(
+            vol_bps=vol_bps,
+            trend_dir=trend_dir,
+            tf_minutes=tf_minutes,
+        )
+        span_mult = float(exec_profile["span_mult"])
         base_span = max(
             abs_price * 0.0004 * span_mult,
             (atr_abs * 0.65 if atr_abs > 0 else 0.0) * span_mult,
@@ -632,9 +604,7 @@ class MeanReversion(Strategy):
         else:
             base_price = anchor_price + limit_span
 
-        target_boost = 1.0 + self._target_vol_scaler * (vol_ratio - 1.0)
-        target_boost = max(0.5, min(1.8, target_boost))
-        dist_mult = max(0.2, self._target_distance_mult * target_boost)
+        dist_mult = float(exec_profile["dist_mult"])
         target_distance = max(
             abs_price * 0.00012 * dist_mult,
             (atr_abs * 0.2 if atr_abs > 0 else 0.0) * dist_mult,
@@ -646,8 +616,9 @@ class MeanReversion(Strategy):
 
         initial_offset = max(0.0, limit_span - target_distance)
 
+        step_ratio = float(exec_profile["step_ratio"])
         step_distance = max(
-            target_distance * 0.5,
+            target_distance * step_ratio,
             (atr_abs * 0.12 if atr_abs > 0 else 0.0) * dist_mult,
             abs_price * 0.00008 * dist_mult,
         )
@@ -671,29 +642,16 @@ class MeanReversion(Strategy):
         else:
             limit_price = max(limit_price, anchor_price)
         sig.limit_price = max(0.0, limit_price)
-        chase_orders = self._chase_quotes or vol_ratio >= 1.05
-        if self._maker_patience_override is not None:
-            maker_patience = self._maker_patience_override
-        else:
-            if vol_ratio >= 1.4:
-                maker_patience = 1
-            elif vol_ratio >= 0.85:
-                maker_patience = 2
-            else:
-                maker_patience = 3
-            if tf_minutes <= 5.0:
-                maker_patience = max(maker_patience, 2)
-        maker_patience = max(0, int(maker_patience))
         meta = {
             "base_price": base_price,
             "limit_offset": abs(limit_span),
             "initial_offset": abs(initial_offset),
             "offset_step": abs(step_offset),
             "max_offset": abs(max_offset),
-            "step_mult": max(0.0, self._step_mult),
-            "chase": chase_orders,
+            "step_mult": float(exec_profile["chase_step"]),
+            "chase": True,
             "maker_initial_offset": abs(maker_initial),
-            "maker_patience": maker_patience,
+            "maker_patience": int(exec_profile["maker_patience"]),
             "post_only": True,
         }
         if tick_size:
