@@ -292,6 +292,8 @@ class MeanReversion(Strategy):
         )
         self._cooldown_bars = int(kwargs.get("cooldown_bars", 0))
         self._cooldowns: dict[str, int] = defaultdict(int)
+        self._signal_gaps: defaultdict[str, int] = defaultdict(lambda: 99)
+        self._last_signal_side: dict[str, str] = {}
 
         self.rsi_n = int(kwargs.get("rsi_n", 14))
 
@@ -362,14 +364,72 @@ class MeanReversion(Strategy):
         return window, min_periods
 
     def auto_threshold(
-        self, rsi_series: pd.Series, *, lookback: int | None = None
+        self,
+        rsi_series: pd.Series,
+        *,
+        lookback: int | None = None,
+        vol_ratio: float = 1.0,
+        tf_minutes: float = 5.0,
+        aggressiveness: float = 1.0,
+        market_state: str = "range",
     ) -> tuple[float, float]:
-        """Derive upper and lower RSI bounds from recent variability."""
+        """Derive adaptive RSI bounds based on recent variability.
+
+        Besides the historical dispersion of RSI values we blend in
+        information about the current volatility regime, timeframe and the
+        aggressiveness requested by the calibration layer. Higher
+        aggressiveness tightens the thresholds so we engage quicker, while
+        slow or quiet markets widen the band to avoid over-trading.
+        """
 
         window = lookback or self.rsi_n
         dev = rsi_series.rolling(window).std().iloc[-1]
         dev = 10.0 if pd.isna(dev) else float(dev)
-        dev = max(self._rsi_dev_floor, min(self._rsi_dev_cap, dev))
+
+        vol_adj = 1.0
+        if vol_ratio >= 1.4:
+            vol_adj += 0.28 + 0.12 * math.tanh(vol_ratio - 1.4)
+        elif vol_ratio <= 0.8:
+            vol_adj -= 0.18 * (0.8 - vol_ratio)
+
+        if tf_minutes <= 5.0:
+            tf_adj = 0.85
+        elif tf_minutes <= 15.0:
+            tf_adj = 0.9
+        elif tf_minutes >= 60.0:
+            tf_adj = 1.08
+        else:
+            tf_adj = 1.0
+
+        regime_adj = 1.0
+        if market_state == "quiet":
+            regime_adj *= 1.12
+        elif market_state == "breakout":
+            regime_adj *= 0.9
+        elif market_state == "trend":
+            regime_adj *= 0.95
+
+        aggr_adj = 1.0
+        aggr_delta = aggressiveness - 1.0
+        if aggr_delta > 0:
+            aggr_adj -= min(0.32, aggr_delta * 0.35)
+        elif aggr_delta < 0:
+            aggr_adj -= max(-0.25, aggr_delta * 0.28)
+
+        mix = max(0.4, vol_adj * tf_adj * regime_adj * aggr_adj)
+
+        dynamic_floor = self._rsi_dev_floor
+        if aggr_delta > 0:
+            dynamic_floor = max(3.5, dynamic_floor * (1.0 - min(0.35, aggr_delta * 0.4)))
+        dynamic_cap = self._rsi_dev_cap
+        if vol_ratio >= 1.65:
+            dynamic_cap *= 1.1
+        elif aggr_delta < -0.25:
+            dynamic_cap *= 1.05
+
+        dev *= mix
+        dev = max(dynamic_floor, min(dynamic_cap, dev))
+
         upper = 50 + dev
         lower = 50 - dev
         return upper, lower
@@ -462,6 +522,7 @@ class MeanReversion(Strategy):
         only_buy_dip = self._base_only_buy_dip
         cooldown = self._cooldown_bars
         maker_bias = 0
+        aggressiveness = 1.0
 
         if tf_minutes <= 5.0:
             limit_span_mult *= 0.86
@@ -471,6 +532,7 @@ class MeanReversion(Strategy):
             strength_gain *= 0.96
             base_cooldown = max(cooldown, self._cooldown_bars)
             cooldown = max(1, int(math.ceil(base_cooldown * 1.25)))
+            aggressiveness += 0.22
         elif tf_minutes <= 15.0:
             limit_span_mult *= 0.9
             target_distance_mult *= 0.88
@@ -478,11 +540,13 @@ class MeanReversion(Strategy):
             strength_gain *= 0.98
             base_cooldown = max(cooldown, self._cooldown_bars)
             cooldown = max(0, int(round(base_cooldown * 1.05)))
+            aggressiveness += 0.12
         elif tf_minutes >= 60.0:
             limit_span_mult *= 1.12
             target_distance_mult *= 1.1
             step_mult *= 1.05
             min_strength *= 1.05
+            aggressiveness -= 0.08
 
         if market_state == "trend":
             bias = 1.0 + min(0.6, regime_strength)
@@ -493,6 +557,7 @@ class MeanReversion(Strategy):
             if self._base_only_buy_dip:
                 only_buy_dip = trend_dir >= 0
             maker_bias -= 1
+            aggressiveness += 0.18 * (1.0 + regime_strength)
         elif market_state == "breakout":
             limit_span_mult *= 0.75
             target_distance_mult *= 0.9
@@ -501,12 +566,14 @@ class MeanReversion(Strategy):
             step_mult *= 1.15
             chase_quotes = True
             maker_bias -= 1
+            aggressiveness += 0.35 + regime_strength * 0.4
         elif market_state == "volatile":
             limit_span_mult *= 1.02
             target_distance_mult *= 1.05
             step_mult *= 1.12
             min_strength *= 0.92
             maker_bias -= 1
+            aggressiveness += 0.2
         elif market_state == "quiet":
             limit_span_mult *= 0.85
             target_distance_mult *= 0.8
@@ -514,22 +581,32 @@ class MeanReversion(Strategy):
             strength_gain *= 0.92
             step_mult *= 0.95
             cooldown = max(cooldown, int(math.ceil(self._cooldown_bars * 1.5)))
+            aggressiveness -= 0.22
         else:  # range
             limit_span_mult *= 0.88
             target_distance_mult *= 0.85
             min_strength *= 0.92
             strength_gain *= 0.97
             step_mult *= 0.98
+            aggressiveness += 0.05
 
         if vol_ratio >= 1.35:
             maker_bias -= 1
             chase_quotes = True
             min_strength *= 0.9
+            aggressiveness += 0.22
+        elif vol_ratio >= 1.15:
+            aggressiveness += 0.15
         elif vol_ratio <= 0.8:
             limit_span_mult *= 0.9
             target_distance_mult *= 0.82
             step_mult *= 0.9
             min_strength *= 1.12
+            aggressiveness -= 0.18
+        elif vol_ratio <= 0.6:
+            aggressiveness -= 0.26
+
+        aggressiveness = max(0.55, min(1.85, aggressiveness))
 
         maker_bias = int(max(-2, min(1, maker_bias)))
 
@@ -539,6 +616,16 @@ class MeanReversion(Strategy):
             min_strength_floor = max(min_strength_floor, 0.18)
         elif tf_minutes <= 15.0:
             min_strength_floor = max(min_strength_floor, 0.08)
+
+        if aggressiveness > 1.05:
+            decay = max(0.45, 1.0 - (aggressiveness - 1.0) * 0.5)
+            min_strength *= decay
+            min_strength_floor *= max(0.45, 1.0 - (aggressiveness - 1.0) * 0.6)
+        elif aggressiveness < 0.9:
+            boost = 1.0 + (0.9 - aggressiveness) * 0.45
+            min_strength *= boost
+            min_strength_floor *= boost
+
         min_strength = max(min_strength, min_strength_floor)
         min_strength = min(1.0, min_strength)
 
@@ -562,6 +649,7 @@ class MeanReversion(Strategy):
             "cooldown_bars": int(max(0, cooldown)),
             "maker_patience_bias": maker_bias,
             "rsi_period": int(max(5, rsi_period)),
+            "aggressiveness": float(aggressiveness),
         }
 
     def _trend_rsi_offset(self, recent_vol_bps: float) -> float:
@@ -642,9 +730,11 @@ class MeanReversion(Strategy):
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
-        symbol = str(bar.get("symbol", "") or "")
+        actual_symbol = str(bar.get("symbol", "") or "")
+        gap_symbol = actual_symbol or "__default__"
+        self._signal_gaps[gap_symbol] += 1
         min_required = max(self.rsi_n, 6)
-        if len(df) < min_required + 1:
+        if len(df) < min_required:
             return None
         price_col = "close" if "close" in df.columns else "price"
         price_series = df[price_col]
@@ -688,7 +778,7 @@ class MeanReversion(Strategy):
         vol_bps = vol * 10000 if math.isfinite(vol) and vol > 0 else 0.0
 
         vol_floor_bps = self.min_volatility
-        symbol = str(bar.get("symbol", "") or "")
+        symbol = actual_symbol
         if (
             symbol
             and self.vol_floor_quantile > 0
@@ -773,6 +863,9 @@ class MeanReversion(Strategy):
             regime_strength=float(regime_metrics.get("strength", 0.0)),
         )
 
+        aggressiveness = float(calibration.get("aggressiveness", 1.0))
+        aggressiveness = max(0.55, min(1.85, aggressiveness))
+
         if calibration["rsi_period"] != rsi_period:
             new_period = int(calibration["rsi_period"])
             if len(df) >= new_period + 1:
@@ -781,13 +874,40 @@ class MeanReversion(Strategy):
                 rsi_period = new_period
 
         cooldown_dynamic = max(0, int(calibration["cooldown_bars"]))
-        if cooldown_dynamic > 0 and symbol:
-            remaining = self._cooldowns.get(symbol, 0)
+        if aggressiveness > 1.1:
+            cooldown_dynamic = int(
+                max(
+                    0,
+                    round(
+                        cooldown_dynamic
+                        * max(0.35, 1.0 - (aggressiveness - 1.0) * 0.85)
+                    ),
+                )
+            )
+        elif aggressiveness < 0.9:
+            cooldown_dynamic = int(
+                round(
+                    cooldown_dynamic
+                    * (1.0 + (0.9 - aggressiveness) * 1.1)
+                )
+            )
+            cooldown_dynamic = max(0, cooldown_dynamic)
+        if aggressiveness >= 1.2 and cooldown_dynamic < 3:
+            cooldown_dynamic = 3
+        if cooldown_dynamic > 0 and actual_symbol:
+            remaining = self._cooldowns.get(gap_symbol, 0)
             if remaining > 0:
-                self._cooldowns[symbol] = remaining - 1
+                self._cooldowns[gap_symbol] = remaining - 1
                 return None
 
-        upper, lower = self.auto_threshold(rsi_series, lookback=rsi_period)
+        upper, lower = self.auto_threshold(
+            rsi_series,
+            lookback=rsi_period,
+            vol_ratio=vol_ratio,
+            tf_minutes=tf_minutes,
+            aggressiveness=aggressiveness,
+            market_state=market_state,
+        )
         if trend_dir == 1:
             upper += trend_offset
         elif trend_dir == -1:
@@ -814,6 +934,20 @@ class MeanReversion(Strategy):
         if side == "sell" and trend_dir == 1 and only_buy_dip:
             return self.finalize_signal(bar, price, None)
 
+        gap = self._signal_gaps[gap_symbol]
+        prev_side = self._last_signal_side.get(gap_symbol)
+        aggr_delta = aggressiveness - 1.0
+        if aggr_delta > 0:
+            raw_strength *= 1.0 + min(0.4, aggr_delta * 0.45)
+        if gap <= 3 and prev_side == side:
+            penalty = 1.0 + max(0, 3 - gap) * 0.41 * max(1.0, 1.0 + aggr_delta)
+            raw_strength /= max(1.0, penalty)
+            if gap >= 3:
+                raw_strength *= 0.94
+            elif gap == 2:
+                raw_strength *= 0.88
+            else:
+                raw_strength *= 0.82
         strength = _normalized_strength(raw_strength)
         eff_min_strength = max(0.0, float(calibration["min_strength"]))
         if eff_min_strength > 0.0:
@@ -823,8 +957,16 @@ class MeanReversion(Strategy):
             elif vol_ratio < 0.9:
                 low_adj = self._min_strength_low_vol_mult * (1.0 + (0.9 - vol_ratio))
                 eff_min_strength *= max(0.1, min(3.0, low_adj))
-        if strength <= 0.0 or strength < eff_min_strength:
+        if strength <= 0.0:
             return self.finalize_signal(bar, price, None)
+        borderline_signal = False
+        if strength < eff_min_strength:
+            if aggr_delta > 0 and raw_strength > 0:
+                strength = eff_min_strength * 0.5
+                eff_min_strength = strength
+                borderline_signal = True
+            else:
+                return self.finalize_signal(bar, price, None)
 
         sig = Signal(side, strength)
 
@@ -857,6 +999,11 @@ class MeanReversion(Strategy):
         if not math.isfinite(limit_span) or limit_span <= 0:
             limit_span = max(abs_price * 0.0004 * span_mult, tick_size * 2 * span_mult if tick_size else 1e-6)
 
+        if aggressiveness > 1.0:
+            limit_span /= 1.0 + (aggressiveness - 1.0) * 0.85
+        else:
+            limit_span *= 1.0 + (1.0 - aggressiveness) * 0.35
+
         if side == "buy":
             base_price = max(0.0, anchor_price - limit_span)
         else:
@@ -874,6 +1021,11 @@ class MeanReversion(Strategy):
             target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
         target_distance = min(target_distance, limit_span)
 
+        if aggressiveness > 1.0:
+            target_distance /= 1.0 + (aggressiveness - 1.0) * 0.8
+        else:
+            target_distance *= 1.0 + (1.0 - aggressiveness) * 0.3
+
         initial_offset = max(0.0, limit_span - target_distance)
 
         step_distance = max(
@@ -884,6 +1036,10 @@ class MeanReversion(Strategy):
         if tick_size:
             step_distance = max(step_distance, tick_size)
         step_distance = min(step_distance, limit_span)
+        if aggressiveness > 1.0:
+            step_distance /= 1.0 + (aggressiveness - 1.0) * 0.75
+        else:
+            step_distance *= 1.0 + (1.0 - aggressiveness) * 0.25
         step_offset = step_distance
 
         maker_distance = max(
@@ -901,7 +1057,11 @@ class MeanReversion(Strategy):
         else:
             limit_price = max(limit_price, anchor_price)
         sig.limit_price = max(0.0, limit_price)
-        chase_orders = bool(calibration["chase_quotes"]) or vol_ratio >= 1.05
+        chase_orders = (
+            bool(calibration["chase_quotes"])
+            or vol_ratio >= 1.05
+            or aggressiveness >= 1.15
+        )
         if self._maker_patience_override is not None:
             maker_patience = self._maker_patience_override
         else:
@@ -914,6 +1074,11 @@ class MeanReversion(Strategy):
             if tf_minutes <= 5.0:
                 maker_patience = max(maker_patience, 2)
         maker_patience = max(0, int(maker_patience + int(calibration["maker_patience_bias"])))
+        if aggressiveness > 1.1:
+            maker_patience = max(1, int(round(maker_patience / (1.0 + (aggressiveness - 1.0) * 0.8))))
+        elif aggressiveness < 0.9:
+            maker_patience = int(round(maker_patience * (1.0 + (0.9 - aggressiveness) * 0.9)))
+            maker_patience = max(0, maker_patience)
         meta = {
             "base_price": base_price,
             "limit_offset": abs(limit_span),
@@ -926,16 +1091,22 @@ class MeanReversion(Strategy):
             "maker_patience": maker_patience,
             "post_only": True,
             "market_state": market_state,
+            "aggressiveness": aggressiveness,
         }
         if tick_size:
             meta["tick_size"] = tick_size
         sig.metadata.update(meta)
+        qty_base = strength * 0.45
+        if aggr_delta > 0:
+            qty_base += min(0.18, aggr_delta * 0.2)
         partial_tp = {
-            "qty_pct": min(0.6, max(0.22, strength * 0.5)),
-            "atr_multiple": max(1.2, 0.85 + strength * 0.4),
+            "qty_pct": min(0.7, max(0.22, qty_base)),
+            "atr_multiple": max(1.1, (0.85 + strength * 0.35) / max(0.75, 1.0 + max(0.0, aggr_delta) * 0.25)),
             "mode": "scale_out",
         }
         max_hold = max(8, int(round(24 / max(tf_minutes, 1.0))))
+        if aggr_delta > 0.2:
+            max_hold = max(4, int(round(max_hold / (1.0 + min(0.6, aggr_delta)))))
         sig.metadata['partial_take_profit'] = partial_tp
         sig.metadata['max_hold_bars'] = max_hold
         sig.post_only = True
@@ -964,12 +1135,17 @@ class MeanReversion(Strategy):
                 "strength": strength,
                 "partial_take_profit": partial_tp,
                 "max_hold": max_hold,
+                "aggressiveness": aggressiveness,
             }
 
         result = self.finalize_signal(bar, price, sig)
-        cooldown_dynamic = max(0, int(calibration["cooldown_bars"]))
-        if result is not None and cooldown_dynamic > 0 and symbol:
-            self._cooldowns[symbol] = cooldown_dynamic
+        if borderline_signal and cooldown_dynamic < 1:
+            cooldown_dynamic = 1
+        if result is not None:
+            self._signal_gaps[gap_symbol] = 0
+            if actual_symbol and cooldown_dynamic > 0:
+                self._cooldowns[gap_symbol] = cooldown_dynamic
+            self._last_signal_side[gap_symbol] = result.side
         return result
 
 
