@@ -67,6 +67,30 @@ def _pivot_price(df: pd.DataFrame, side: str, lookback: int = 5) -> float | None
         return None
     return result if math.isfinite(result) else None
 
+
+def _book_context(bar: dict) -> tuple[float | None, float | None, float | None, float | None]:
+    """Return best bid/ask plus derived mid price and spread if available."""
+
+    bid = _best_quote(bar, "buy")
+    ask = _best_quote(bar, "sell")
+
+    spread = None
+    mid = None
+    if bid is not None and ask is not None:
+        try:
+            bid_val = float(bid)
+            ask_val = float(ask)
+        except (TypeError, ValueError):
+            bid_val = math.nan
+            ask_val = math.nan
+        else:
+            if math.isfinite(bid_val) and math.isfinite(ask_val) and ask_val > bid_val > 0:
+                spread = ask_val - bid_val
+                mid = bid_val + spread * 0.5
+                bid = bid_val
+                ask = ask_val
+    return bid, ask, mid, spread
+
 PARAM_INFO = {
     "rsi_n": "Ventana para el cálculo del RSI",
     "trend_ma": "Ventana para la media móvil de tendencia",
@@ -512,6 +536,7 @@ class MeanReversion(Strategy):
         trend_dir: int,
         vol_ratio: float,
         regime_strength: float,
+        weak_vol: bool = False,
     ) -> dict[str, float | bool | int]:
         strength_gain = self._base_strength_gain
         limit_span_mult = self._base_limit_span_mult
@@ -547,6 +572,14 @@ class MeanReversion(Strategy):
             step_mult *= 1.05
             min_strength *= 1.05
             aggressiveness -= 0.08
+
+        if weak_vol:
+            limit_span_mult *= 0.82
+            target_distance_mult *= 0.78
+            step_mult *= 0.88
+            min_strength *= 1.08
+            aggressiveness -= 0.12
+            maker_bias += 1
 
         if market_state == "trend":
             bias = 1.0 + min(0.6, regime_strength)
@@ -590,7 +623,14 @@ class MeanReversion(Strategy):
             step_mult *= 0.98
             aggressiveness += 0.05
 
-        if vol_ratio >= 1.35:
+        if vol_ratio >= 1.65:
+            maker_bias -= 1
+            chase_quotes = True
+            min_strength *= 0.85
+            strength_gain *= 1.08
+            step_mult *= 1.15
+            aggressiveness += 0.28
+        elif vol_ratio >= 1.35:
             maker_bias -= 1
             chase_quotes = True
             min_strength *= 0.9
@@ -796,6 +836,7 @@ class MeanReversion(Strategy):
             if math.isfinite(floor_candidate) and floor_candidate > 0:
                 vol_floor_bps = max(vol_floor_bps, floor_candidate)
 
+        raw_floor_bps = vol_floor_bps
         scaled_floor = vol_floor_bps
         base_minutes = self._base_timeframe_minutes or tf_minutes
         if vol_floor_bps > 0 and tf_minutes > 0 and base_minutes > 0:
@@ -806,8 +847,13 @@ class MeanReversion(Strategy):
         vol_ratio = max(0.2, min(3.5, vol_ratio))
         if scaled_floor <= 1e-9 and self.vol_floor_quantile > 0 and vol_bps <= 0:
             return None
+        weak_vol = False
         if scaled_floor > 0 and vol_bps < scaled_floor:
-            return None
+            floor_from_quantile = raw_floor_bps > (self.min_volatility + 1e-9)
+            tolerance = 0.0 if floor_from_quantile else scaled_floor * 0.15
+            if vol_bps + tolerance < scaled_floor:
+                return None
+            weak_vol = True
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
         bar["volatility"] = price_vol
@@ -861,6 +907,7 @@ class MeanReversion(Strategy):
             trend_dir=trend_dir,
             vol_ratio=vol_ratio,
             regime_strength=float(regime_metrics.get("strength", 0.0)),
+            weak_vol=weak_vol,
         )
 
         aggressiveness = float(calibration.get("aggressiveness", 1.0))
@@ -900,6 +947,11 @@ class MeanReversion(Strategy):
                 self._cooldowns[gap_symbol] = remaining - 1
                 return None
 
+        regime_strength = float(regime_metrics.get("strength", 0.0))
+        drift_metric = float(regime_metrics.get("drift", 0.0))
+        momentum_metric = float(regime_metrics.get("momentum", 0.0))
+        rsi_drift_metric = float(regime_metrics.get("rsi_drift", 0.0))
+
         upper, lower = self.auto_threshold(
             rsi_series,
             lookback=rsi_period,
@@ -930,6 +982,36 @@ class MeanReversion(Strategy):
         else:
             return self.finalize_signal(bar, price, None)
 
+        if raw_strength > 0:
+            trend_penalty = 1.0
+            if side == "sell" and trend_dir == 1:
+                trend_penalty += max(0.0, regime_strength * 1.15)
+                trend_penalty += max(0.0, momentum_metric) * 6.0
+                trend_penalty += max(0.0, drift_metric) * 4.0
+            elif side == "buy" and trend_dir == -1:
+                trend_penalty += max(0.0, regime_strength * 1.15)
+                trend_penalty += max(0.0, -momentum_metric) * 6.0
+                trend_penalty += max(0.0, -drift_metric) * 4.0
+            if market_state in {"breakout", "trend"}:
+                trend_penalty += max(0.0, regime_strength - 0.25) * 0.8
+            if weak_vol:
+                trend_penalty += 0.35
+            if trend_penalty > 1.0:
+                raw_strength /= trend_penalty
+
+            alignment_boost = 0.0
+            if side == "buy" and trend_dir == 1:
+                alignment_boost = max(0.0, min(0.35, regime_strength * 0.4 + rsi_drift_metric * 0.05))
+            elif side == "sell" and trend_dir == -1:
+                alignment_boost = max(0.0, min(0.35, regime_strength * 0.4 - rsi_drift_metric * 0.05))
+            if vol_ratio >= 1.35:
+                alignment_boost += min(0.25, (vol_ratio - 1.35) * 0.3)
+            if alignment_boost > 0:
+                raw_strength *= 1.0 + alignment_boost
+
+            if weak_vol:
+                raw_strength *= 0.82
+
         only_buy_dip = bool(calibration["only_buy_dip"])
         if side == "sell" and trend_dir == 1 and only_buy_dip:
             return self.finalize_signal(bar, price, None)
@@ -957,6 +1039,8 @@ class MeanReversion(Strategy):
             elif vol_ratio < 0.9:
                 low_adj = self._min_strength_low_vol_mult * (1.0 + (0.9 - vol_ratio))
                 eff_min_strength *= max(0.1, min(3.0, low_adj))
+            if weak_vol:
+                eff_min_strength *= 1.1
         if strength <= 0.0:
             return self.finalize_signal(bar, price, None)
         borderline_signal = False
@@ -975,6 +1059,8 @@ class MeanReversion(Strategy):
             anchor_price = _pivot_price(df, side, lookback=6)
         if anchor_price is None or anchor_price <= 0:
             anchor_price = price
+
+        best_bid, best_ask, mid_price, spread = _book_context(bar)
 
         try:
             tick_size = float(bar.get("tick_size", 0.0) or 0.0)
@@ -997,7 +1083,13 @@ class MeanReversion(Strategy):
         )
         limit_span = max(base_span, anchor_gap * span_mult)
         if not math.isfinite(limit_span) or limit_span <= 0:
-            limit_span = max(abs_price * 0.0004 * span_mult, tick_size * 2 * span_mult if tick_size else 1e-6)
+            limit_span = max(
+                abs_price * 0.0004 * span_mult,
+                tick_size * 2 * span_mult if tick_size else 1e-6,
+            )
+        if spread is not None and spread > 0:
+            spread_floor = spread * (1.1 if vol_ratio >= 1.0 else 0.9)
+            limit_span = max(limit_span, spread_floor)
 
         if aggressiveness > 1.0:
             limit_span /= 1.0 + (aggressiveness - 1.0) * 0.85
@@ -1020,6 +1112,9 @@ class MeanReversion(Strategy):
         if anchor_gap > 0:
             target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
         target_distance = min(target_distance, limit_span)
+        if spread is not None and spread > 0:
+            spread_cap = spread * (0.75 if aggressiveness >= 1.0 else 0.95)
+            target_distance = min(target_distance, max(spread_cap, tick_size or 0.0))
 
         if aggressiveness > 1.0:
             target_distance /= 1.0 + (aggressiveness - 1.0) * 0.8
@@ -1036,6 +1131,8 @@ class MeanReversion(Strategy):
         if tick_size:
             step_distance = max(step_distance, tick_size)
         step_distance = min(step_distance, limit_span)
+        if spread is not None and spread > 0:
+            step_distance = max(step_distance, min(limit_span, spread * 0.45))
         if aggressiveness > 1.0:
             step_distance /= 1.0 + (aggressiveness - 1.0) * 0.75
         else:
@@ -1054,14 +1151,22 @@ class MeanReversion(Strategy):
         limit_price = base_price + direction * initial_offset
         if side == "buy":
             limit_price = min(limit_price, anchor_price)
+            if mid_price is not None:
+                limit_price = min(limit_price, mid_price)
         else:
             limit_price = max(limit_price, anchor_price)
+            if mid_price is not None:
+                limit_price = max(limit_price, mid_price)
         sig.limit_price = max(0.0, limit_price)
         chase_orders = (
             bool(calibration["chase_quotes"])
             or vol_ratio >= 1.05
             or aggressiveness >= 1.15
         )
+        if not chase_orders and spread is not None and spread > 0:
+            tight_spread = spread / max(abs_price, 1e-9)
+            if tight_spread <= 0.0008:
+                chase_orders = True
         if self._maker_patience_override is not None:
             maker_patience = self._maker_patience_override
         else:
@@ -1079,6 +1184,14 @@ class MeanReversion(Strategy):
         elif aggressiveness < 0.9:
             maker_patience = int(round(maker_patience * (1.0 + (0.9 - aggressiveness) * 0.9)))
             maker_patience = max(0, maker_patience)
+        if weak_vol:
+            maker_patience = max(maker_patience, 2 + (1 if tf_minutes > 5.0 else 0))
+        min_offset = abs_price * 0.00005
+        if tick_size:
+            min_offset = max(min_offset, tick_size)
+        if spread is not None and spread > 0:
+            min_offset = max(min_offset, spread * 0.25)
+
         meta = {
             "base_price": base_price,
             "limit_offset": abs(limit_span),
@@ -1092,9 +1205,15 @@ class MeanReversion(Strategy):
             "post_only": True,
             "market_state": market_state,
             "aggressiveness": aggressiveness,
+            "decay": 0.55 if vol_ratio >= 1.1 else 0.6,
+            "min_offset": min_offset,
         }
         if tick_size:
             meta["tick_size"] = tick_size
+        if mid_price is not None:
+            meta["mid_price"] = mid_price
+        if spread is not None:
+            meta["spread"] = spread
         sig.metadata.update(meta)
         qty_base = strength * 0.45
         if aggr_delta > 0:
