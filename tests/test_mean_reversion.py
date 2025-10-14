@@ -114,7 +114,9 @@ def _const_rsi(val: float):
 def test_trend_detection_1m(monkeypatch):
     df = pd.DataFrame({"close": list(range(1, 100))})
     monkeypatch.setattr(mr, "rsi", _const_rsi(56))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (55, 45))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (55, 45)
+    )
     strat = MeanReversion(timeframe="1m")
     sig = strat.on_bar({"window": df})
     assert sig is None
@@ -123,7 +125,9 @@ def test_trend_detection_1m(monkeypatch):
 def test_trend_detection_5m(monkeypatch):
     df = pd.DataFrame({"close": list(range(1, 100))})
     monkeypatch.setattr(mr, "rsi", _const_rsi(56))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (55, 45))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (55, 45)
+    )
     strat = MeanReversion(timeframe="5m")
     sig = strat.on_bar({"window": df})
     assert sig is None
@@ -146,7 +150,9 @@ def _slow_market_df() -> pd.DataFrame:
 def test_trend_filter_blocks_countertrend_sells(monkeypatch):
     df = _strong_trend_df()
     monkeypatch.setattr(mr, "rsi", _const_rsi(70))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    )
     strat = MeanReversion(
         timeframe="1m",
         trend_ma_bps=40.0,
@@ -160,7 +166,9 @@ def test_trend_filter_blocks_countertrend_sells(monkeypatch):
 def test_trend_filter_preserves_slow_rebounds(monkeypatch):
     df = _slow_market_df()
     monkeypatch.setattr(mr, "rsi", _const_rsi(70))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    )
     strat = MeanReversion(
         timeframe="1m",
         trend_ma_bps=40.0,
@@ -199,7 +207,9 @@ def test_mean_reversion_multi_timeframe_time_stop(monkeypatch):
         }
     )
     monkeypatch.setattr(mr, "rsi", _const_rsi(50))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    )
 
     risk = DummyRiskService("buy")
     strat = MeanReversion(timeframe="1h", time_stop=6, min_volatility=0, risk_service=risk)
@@ -230,7 +240,9 @@ def test_mean_reversion_multi_timeframe_time_stop(monkeypatch):
 
 def test_low_volatility_windows_block_signals(monkeypatch):
     monkeypatch.setattr(mr, "rsi", _const_rsi(20))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    )
 
     prices = []
     price = 100.0
@@ -266,7 +278,9 @@ def test_low_volatility_windows_block_signals(monkeypatch):
 
 def test_mean_reversion_backtest_vol_floor_reduces_fees(monkeypatch):
     monkeypatch.setattr(mr, "rsi", _const_rsi(20))
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60, 40))
+    monkeypatch.setattr(
+        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    )
 
     prices = []
     segments = []
@@ -338,7 +352,11 @@ def test_mean_reversion_relaxed_confirmation_backtest(monkeypatch):
         return pd.Series(rsi_values[: len(data)], index=data.index)
 
     monkeypatch.setattr(mr, "rsi", fake_rsi)
-    monkeypatch.setattr(MeanReversion, "auto_threshold", lambda self, series: (60.0, 40.0))
+    monkeypatch.setattr(
+        MeanReversion,
+        "auto_threshold",
+        lambda self, series, **_: (60.0, 40.0),
+    )
 
     strat = MeanReversion(timeframe="15m", rsi_n=5, min_volatility=0.0)
     closes = df["close"].to_numpy()
