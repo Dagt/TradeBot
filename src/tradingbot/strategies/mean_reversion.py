@@ -99,6 +99,13 @@ PARAM_INFO = {
     "trend_rsi_shift": "Desplazamiento base del RSI para filtrar tendencias",
     "trend_rsi_shift_max": "Límite máximo del desplazamiento dinámico del RSI",
     "min_volatility": "Volatilidad mínima reciente en bps",
+    "upper_rsi_floor": "Nivel mínimo de RSI considerado sobrecompra",
+    "lower_rsi_ceiling": "Nivel máximo de RSI considerado sobreventa",
+    "upper_rsi_cap": "Límite máximo para el umbral superior dinámico del RSI",
+    "lower_rsi_cap": "Límite inferior para el umbral inferior dinámico del RSI",
+    "exit_rsi_neutral_high": "Zona neutral superior del RSI para cerrar largos",
+    "exit_rsi_neutral_low": "Zona neutral inferior del RSI para cerrar cortos",
+    "trend_exit": "Habilita el cierre basado en reversión de tendencia/RSI",
 }
 
 
@@ -357,20 +364,97 @@ class MeanReversion(Strategy):
                 min_time_stop_bars = 3
             default_time_stop_bars = float(min_time_stop_bars)
 
-        self._time_stop_target_bars = 0
-        self._min_time_stop_bars = 0
-        time_stop_param = float(kwargs.get("time_stop", default_time_stop_bars))
-        if time_stop_param > 0:
-            target_bars = int(math.ceil(time_stop_param))
-            target_bars = max(min_time_stop_bars, target_bars)
-            self._time_stop_target_bars = target_bars
-            self._min_time_stop_bars = min_time_stop_bars
-
-        self._time_stop_minutes = self._time_stop_target_bars * tf_minutes if self._time_stop_target_bars else 0
+        hold_param = kwargs.get("time_stop", kwargs.get("min_hold_bars", default_time_stop_bars))
+        try:
+            hold_param = float(hold_param)
+        except (TypeError, ValueError):
+            hold_param = 0.0
+        if hold_param > 0:
+            base_hold = int(math.ceil(hold_param))
+            base_hold = max(min_time_stop_bars, base_hold)
+        else:
+            base_hold = 0
+        self._base_min_hold_bars = base_hold
+        self._min_time_stop_bars = max(1, min_time_stop_bars)
         self.time_stop = 0
         self._open_bars: dict[str, int] = {}
+
+        self._trend_exit_enabled = bool(kwargs.get("trend_exit", True))
+        neutral_high = float(kwargs.get("exit_rsi_neutral_high", 55.0))
+        neutral_low = float(kwargs.get("exit_rsi_neutral_low", 45.0))
+        if not math.isfinite(neutral_high):
+            neutral_high = 55.0
+        if not math.isfinite(neutral_low):
+            neutral_low = 45.0
+        if neutral_low > neutral_high:
+            neutral_low, neutral_high = neutral_high, neutral_low
+        self._exit_rsi_neutral_high = min(99.0, max(neutral_high, neutral_low + 1.0))
+        self._exit_rsi_neutral_low = max(1.0, min(neutral_low, self._exit_rsi_neutral_high - 1.0))
+
+        upper_floor = float(kwargs.get("upper_rsi_floor", 70.0))
+        lower_ceiling = float(kwargs.get("lower_rsi_ceiling", 30.0))
+        upper_cap = float(kwargs.get("upper_rsi_cap", 96.0))
+        lower_cap = float(kwargs.get("lower_rsi_cap", 4.0))
+        self._upper_rsi_floor = max(50.0, min(99.0, upper_floor))
+        self._lower_rsi_ceiling = min(50.0, max(1.0, lower_ceiling))
+        self._upper_rsi_cap = max(self._upper_rsi_floor + 1.0, min(99.5, upper_cap))
+        self._lower_rsi_cap = min(self._lower_rsi_ceiling - 1.0, max(0.0, lower_cap))
+        if self._lower_rsi_cap < 0.0:
+            self._lower_rsi_cap = 0.0
+        if self._lower_rsi_cap >= self._lower_rsi_ceiling:
+            self._lower_rsi_cap = max(0.0, self._lower_rsi_ceiling - 1.0)
+
         self.risk_service = kwargs.get("risk_service")
         self._rq = RollingQuantileCache()
+
+    def _scaled_min_hold_bars(self, tf_minutes: float) -> int:
+        base_minutes = self._base_timeframe_minutes or tf_minutes
+        if (
+            self._base_min_hold_bars <= 0
+            or tf_minutes <= 0
+            or base_minutes is None
+            or base_minutes <= 0
+        ):
+            return 0
+        desired_minutes = self._base_min_hold_bars * base_minutes
+        scaled_bars = int(math.ceil(desired_minutes / tf_minutes))
+        min_bars = self._min_time_stop_bars or 1
+        return max(min_bars, scaled_bars)
+
+    def _maybe_exit_for_trend(
+        self,
+        bar: dict,
+        price: float,
+        trade: dict | None,
+        *,
+        hold_bars: int,
+        min_hold_bars: int,
+        last_rsi: float,
+        trend_dir: int,
+        market_state: str,
+    ) -> Signal | None:
+        if not self._trend_exit_enabled or trade is None:
+            return None
+        if hold_bars < max(1, min_hold_bars):
+            return None
+        if isinstance(trade, dict):
+            side_value = trade.get("side")
+        else:
+            side_value = getattr(trade, "side", None)
+        side = str(side_value or "").lower()
+        if side not in {"buy", "sell"}:
+            return None
+        neutral_high = self._exit_rsi_neutral_high
+        neutral_low = self._exit_rsi_neutral_low
+        market_trending = market_state in {"trend", "breakout"}
+        exit_side = "sell" if side == "buy" else "buy"
+        if side == "buy":
+            if last_rsi >= neutral_high or (market_trending and trend_dir < 0):
+                return self.finalize_signal(bar, price, Signal(exit_side, 1.0))
+        else:
+            if last_rsi <= neutral_low or (market_trending and trend_dir > 0):
+                return self.finalize_signal(bar, price, Signal(exit_side, 1.0))
+        return None
 
     def _vol_floor_windows(self, tf_minutes: float) -> tuple[int, int]:
         base_minutes = self._base_timeframe_minutes or tf_minutes
@@ -454,8 +538,16 @@ class MeanReversion(Strategy):
         dev *= mix
         dev = max(dynamic_floor, min(dynamic_cap, dev))
 
-        upper = 50 + dev
-        lower = 50 - dev
+        upper = max(self._upper_rsi_floor, 50 + dev)
+        lower = min(self._lower_rsi_ceiling, 50 - dev)
+        upper = min(self._upper_rsi_cap, upper)
+        lower = max(self._lower_rsi_cap, lower)
+        if upper <= lower:
+            mid = (self._upper_rsi_floor + self._lower_rsi_ceiling) * 0.5
+            upper = min(self._upper_rsi_cap, max(upper, mid + 5.0))
+            lower = max(self._lower_rsi_cap, min(lower, mid - 5.0))
+            if upper <= lower:
+                upper = min(self._upper_rsi_cap, max(upper, lower + 1.0))
         return upper, lower
 
     def _adaptive_rsi_period(self, tf_minutes: float, window_size: int) -> int:
@@ -786,27 +878,17 @@ class MeanReversion(Strategy):
 
         bar_timeframe = bar.get("timeframe", self.timeframe)
         tf_minutes = timeframe_to_minutes(bar_timeframe)
-        base_minutes = self._base_timeframe_minutes
-        if self._time_stop_target_bars <= 0 or tf_minutes <= 0:
-            time_stop_bars = 0
-        else:
-            desired_minutes = self._time_stop_target_bars * base_minutes
-            scaled_bars = int(math.ceil(desired_minutes / tf_minutes))
-            min_bars = self._min_time_stop_bars or 1
-            time_stop_bars = max(min_bars, scaled_bars)
-        self.time_stop = time_stop_bars
-
-        if time_stop_bars and self.risk_service is not None and bar.get("symbol"):
-            sym = bar["symbol"]
-            trade = self.risk_service.get_trade(sym)
+        min_hold_bars = self._scaled_min_hold_bars(tf_minutes)
+        self.time_stop = 0
+        trade = None
+        hold_bars = 0
+        if self.risk_service is not None and actual_symbol:
+            trade = self.risk_service.get_trade(actual_symbol)
             if trade:
-                cnt = self._open_bars.get(sym, 0) + 1
-                self._open_bars[sym] = cnt
-                if cnt >= time_stop_bars:
-                    side_exit = "sell" if trade.get("side") == "buy" else "buy"
-                    return self.finalize_signal(bar, price, Signal(side_exit, 1.0))
+                hold_bars = self._open_bars.get(actual_symbol, 0) + 1
+                self._open_bars[actual_symbol] = hold_bars
             else:
-                self._open_bars[sym] = 0
+                self._open_bars[actual_symbol] = 0
 
         returns = price_series.pct_change().dropna()
         vol_series = (
@@ -888,9 +970,22 @@ class MeanReversion(Strategy):
                     trend_dir = -1
         elif len(df) >= self.trend_rsi_n:
             trsi = rsi(df, self.trend_rsi_n).iloc[-1]
-            if trsi > 50 + trend_offset:
+            neutral_shift = max(0.5, trend_offset * 0.4)
+            upper_neutral = min(
+                self._upper_rsi_floor,
+                max(55.0, 60.0 + neutral_shift),
+            )
+            lower_neutral = max(
+                self._lower_rsi_ceiling,
+                min(45.0, 40.0 - neutral_shift),
+            )
+            if lower_neutral >= upper_neutral:
+                mid = (upper_neutral + lower_neutral) * 0.5
+                upper_neutral = mid + 1.0
+                lower_neutral = mid - 1.0
+            if trsi > upper_neutral:
                 trend_dir = 1
-            elif trsi < 50 - trend_offset:
+            elif trsi < lower_neutral:
                 trend_dir = -1
 
         market_state, regime_metrics = self._detect_market_state(
@@ -901,6 +996,18 @@ class MeanReversion(Strategy):
             vol_ratio,
             tf_minutes,
         )
+        exit_signal = self._maybe_exit_for_trend(
+            bar,
+            price,
+            trade,
+            hold_bars=hold_bars,
+            min_hold_bars=min_hold_bars,
+            last_rsi=last_rsi,
+            trend_dir=trend_dir,
+            market_state=market_state,
+        )
+        if exit_signal is not None:
+            return exit_signal
         calibration = self._dynamic_calibration(
             tf_minutes=tf_minutes,
             market_state=market_state,
