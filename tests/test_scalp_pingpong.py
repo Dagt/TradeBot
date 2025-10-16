@@ -274,3 +274,16 @@ def test_scalp_pingpong_backtest_records_maker_fill():
         assert fill_price <= limit_price + 1e-9
     else:
         assert fill_price >= limit_price - 1e-9
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        ("{\"1\": 0.2, \"5\": 0.4}", 0.4),
+        ("[(1, 0.15), (15, 0.45)]", 0.45),
+        ("1:0.12,5:0.34", 0.34),
+    ],
+)
+def test_fallback_floor_accepts_serialised_inputs(payload, expected):
+    strat = ScalpPingPong(min_volatility_fallbacks=payload)
+    assert strat._fallback_vol_floor(5.0) == pytest.approx(expected)
