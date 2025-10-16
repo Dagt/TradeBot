@@ -3,7 +3,7 @@ import math
 import pandas as pd
 from tradingbot.execution.order_types import Order
 from tradingbot.strategies import mean_reversion as mr
-from tradingbot.strategies.base import Signal, timeframe_to_minutes
+from tradingbot.strategies.base import Signal
 from tradingbot.strategies.mean_reversion import (
     MeanReversion,
     _normalized_strength,
@@ -195,47 +195,76 @@ class DummyRiskService:
     def manage_position(self, trade, sig):
         return "hold"
 
+    def calc_position_size(self, strength, price, **kwargs):  # noqa: ANN001
+        return float(strength or 0.0)
 
-def test_mean_reversion_multi_timeframe_time_stop(monkeypatch):
-    df = pd.DataFrame(
-        {
-            "open": [100 + 0.2 * i for i in range(60)],
-            "high": [100 + 0.2 * i + 0.1 for i in range(60)],
-            "low": [100 + 0.2 * i - 0.1 for i in range(60)],
-            "close": [100 + 0.2 * i for i in range(60)],
-            "volume": [50.0] * 60,
-        }
+    @staticmethod
+    def initial_stop(price, side, atr):  # noqa: ANN001
+        if str(side).lower() == "buy":
+            return float(price) - float(atr or 0.0)
+        return float(price) + float(atr or 0.0)
+
+    @staticmethod
+    def update_signal_strength(symbol, strength):  # noqa: ANN001
+        return None
+
+
+def test_mean_reversion_trend_exit_respects_min_hold():
+    strat = MeanReversion(timeframe="1h", time_stop=9, min_volatility=0)
+    trade = {"side": "buy"}
+    bar = {"symbol": "X"}
+    price = 100.0
+
+    signal = strat._maybe_exit_for_trend(
+        bar,
+        price,
+        trade,
+        hold_bars=2,
+        min_hold_bars=3,
+        last_rsi=82.0,
+        trend_dir=-1,
+        market_state="trend",
     )
-    monkeypatch.setattr(mr, "rsi", _const_rsi(50))
-    monkeypatch.setattr(
-        MeanReversion, "auto_threshold", lambda self, series, **_: (60, 40)
+    assert signal is None
+
+    signal = strat._maybe_exit_for_trend(
+        bar,
+        price,
+        trade,
+        hold_bars=3,
+        min_hold_bars=3,
+        last_rsi=82.0,
+        trend_dir=-1,
+        market_state="trend",
     )
+    assert signal is not None
+    assert signal.side == "sell"
 
-    risk = DummyRiskService("buy")
-    strat = MeanReversion(timeframe="1h", time_stop=6, min_volatility=0, risk_service=risk)
-    bar_minutes = timeframe_to_minutes("4h")
-    expected_bars = max(
-        strat._min_time_stop_bars or 1,
-        math.ceil(
-            strat._time_stop_target_bars
-            * strat._base_timeframe_minutes
-            / bar_minutes
-        ),
+
+def test_mean_reversion_time_stop_exit_triggers():
+    strat = MeanReversion(timeframe="15m", time_stop=6, min_volatility=0)
+    trade = {"side": "sell"}
+    bar = {"symbol": "Y"}
+    price = 150.0
+
+    signal = strat._maybe_time_stop_exit(
+        bar,
+        price,
+        trade,
+        hold_bars=5,
+        max_hold_bars=6,
     )
-    assert expected_bars >= 3
+    assert signal is None
 
-    symbol = "X"
-    for idx in range(1, expected_bars):
-        sig = strat.on_bar({"window": df, "timeframe": "4h", "symbol": symbol, "volume": 50.0})
-        assert sig is None
-        assert strat.time_stop == expected_bars
-        assert strat._open_bars[symbol] == idx
-
-    exit_sig = strat.on_bar({"window": df, "timeframe": "4h", "symbol": symbol, "volume": 50.0})
-    assert exit_sig is not None
-    assert exit_sig.side == "sell"
-    assert strat.time_stop == expected_bars
-    assert strat._open_bars[symbol] == expected_bars
+    signal = strat._maybe_time_stop_exit(
+        bar,
+        price,
+        trade,
+        hold_bars=6,
+        max_hold_bars=6,
+    )
+    assert signal is not None
+    assert signal.side == "buy"
 
 
 def test_low_volatility_windows_block_signals(monkeypatch):

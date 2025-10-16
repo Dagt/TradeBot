@@ -76,25 +76,42 @@ def test_momentum_cooldown_scales():
     assert strat_slow.cooldown_bars == 1
 
 
-def test_mean_reversion_time_stop_scales():
-    df = _make_ohlcv(80)
-    strat_fast = MeanReversion(timeframe="1m", time_stop=10, min_volatility=0)
-    strat_slow = MeanReversion(timeframe="1h", time_stop=10, min_volatility=0)
+def test_mean_reversion_hold_windows_scale():
+    strat_fast = MeanReversion(
+        timeframe="1m",
+        min_hold_bars=4,
+        time_stop=10,
+        min_volatility=0,
+    )
+    strat_slow = MeanReversion(
+        timeframe="1h",
+        min_hold_bars=4,
+        time_stop=10,
+        min_volatility=0,
+    )
     strat_default_30m = MeanReversion(timeframe="30m", min_volatility=0)
     strat_default_1h = MeanReversion(timeframe="1h", min_volatility=0)
 
-    strat_fast.on_bar({"window": df, "timeframe": "1m", "symbol": "X"})
-    strat_slow.on_bar({"window": df, "timeframe": "1h", "symbol": "X"})
-    strat_default_30m.on_bar({"window": df, "timeframe": "30m", "symbol": "X"})
-    strat_default_1h.on_bar({"window": df, "timeframe": "1h", "symbol": "X"})
+    assert strat_fast._base_min_hold_bars == 4
+    assert strat_slow._base_min_hold_bars == 4
+    assert strat_fast._base_max_hold_bars == 10
+    assert strat_slow._base_max_hold_bars == 10
 
-    assert strat_fast.time_stop == 10
-    assert strat_slow.time_stop == 10
-    assert strat_default_30m.time_stop == 5
-    assert strat_default_1h.time_stop == 3
+    assert strat_default_30m._base_min_hold_bars == 1
+    assert strat_default_30m._base_max_hold_bars == 9
+    assert strat_default_1h._base_min_hold_bars == 0
+    assert strat_default_1h._base_max_hold_bars == 7
 
-    strat_slow.on_bar({"window": df, "timeframe": "4h", "symbol": "X"})
-    assert strat_slow.time_stop == 3
+    assert strat_fast._scaled_min_hold_bars(1.0) == 4
+    assert strat_slow._scaled_min_hold_bars(60.0) == 4
+    assert strat_slow._scaled_min_hold_bars(240.0) == 1
+    assert strat_fast._scaled_max_hold_bars(1.0) == 10
+    assert strat_slow._scaled_max_hold_bars(60.0) == 10
+    assert strat_slow._scaled_max_hold_bars(240.0) == 3
+    assert strat_default_30m._scaled_min_hold_bars(30.0) == 1
+    assert strat_default_30m._scaled_max_hold_bars(30.0) == 9
+    assert strat_default_1h._scaled_min_hold_bars(60.0) == 0
+    assert strat_default_1h._scaled_max_hold_bars(60.0) == 7
 
 
 def test_scalp_pingpong_lookback_scales():
