@@ -151,6 +151,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.45,
             "min_strength_low_vol_mult": 1.7,
             "min_strength_high_vol_mult": 0.6,
+            "min_edge_bps": 32.0,
+            "cost_floor_bps": 18.0,
         },
         "5m": {
             "rsi_n": 15,
@@ -179,6 +181,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
+            "min_edge_bps": 26.0,
+            "cost_floor_bps": 15.0,
         },
         "15m": {
             "trend_ma": 65,
@@ -206,6 +210,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.35,
             "min_strength_low_vol_mult": 1.45,
             "min_strength_high_vol_mult": 0.55,
+            "min_edge_bps": 18.0,
+            "cost_floor_bps": 11.0,
         },
         "30m": {
             "trend_ma": 55,
@@ -231,6 +237,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.32,
             "min_strength_low_vol_mult": 1.35,
             "min_strength_high_vol_mult": 0.6,
+            "min_edge_bps": 15.0,
+            "cost_floor_bps": 10.0,
         },
         "1h": {
             "trend_ma": 55,
@@ -254,6 +262,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.28,
             "min_strength_low_vol_mult": 1.25,
             "min_strength_high_vol_mult": 0.65,
+            "min_edge_bps": 13.0,
+            "cost_floor_bps": 9.0,
         },
         "4h": {
             "trend_ma": 48,
@@ -276,6 +286,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.24,
             "min_strength_low_vol_mult": 1.15,
             "min_strength_high_vol_mult": 0.65,
+            "min_edge_bps": 11.0,
+            "cost_floor_bps": 8.0,
         },
     }
 
@@ -321,6 +333,8 @@ class MeanReversion(Strategy):
         self._min_strength_high_vol_mult = max(
             0.1, float(kwargs.get("min_strength_high_vol_mult", 0.6))
         )
+        self._min_edge_bps = max(0.0, float(kwargs.get("min_edge_bps", 12.0)))
+        self._cost_floor_bps = max(0.0, float(kwargs.get("cost_floor_bps", 8.0)))
         self._cooldown_bars = int(kwargs.get("cooldown_bars", 0))
         self._cooldowns: dict[str, int] = defaultdict(int)
         self._signal_gaps: defaultdict[str, int] = defaultdict(lambda: 99)
@@ -1253,6 +1267,25 @@ class MeanReversion(Strategy):
         maker_distance = min(max(maker_distance, 0.0), limit_span)
         maker_initial = max(initial_offset, limit_span - maker_distance)
         max_offset = limit_span if limit_span > 0 else initial_offset
+
+        expected_edge_bps = 0.0
+        if anchor_price > 0:
+            expected_edge_bps = (target_distance / anchor_price) * 10000.0
+        edge_floor = self._min_edge_bps
+        cost_floor = self._cost_floor_bps
+        if vol_ratio >= 1.1:
+            cost_floor *= 1.0 + min(0.6, (vol_ratio - 1.0) * 0.65)
+            edge_floor *= 1.0 + min(0.5, (vol_ratio - 1.0) * 0.45)
+        elif vol_ratio <= 0.85:
+            cost_floor *= 0.85
+            edge_floor *= 0.9
+        if market_state == "quiet":
+            edge_floor *= 1.1
+        elif market_state == "breakout":
+            edge_floor *= 0.9
+        edge_threshold = max(edge_floor, cost_floor)
+        if expected_edge_bps < edge_threshold:
+            return self.finalize_signal(bar, price, None)
 
         direction = -1.0 if side == "sell" else 1.0
         limit_price = base_price + direction * initial_offset
