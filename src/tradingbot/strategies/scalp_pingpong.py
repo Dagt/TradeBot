@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+import math
+from ast import literal_eval
+from typing import Any
 
 import pandas as pd
-
-import math
 
 from .base import (
     Strategy,
@@ -136,8 +138,22 @@ class ScalpPingPong(Strategy):
 
     def _fallback_vol_floor(self, tf_minutes: float) -> float:
         mapping = getattr(self.cfg, "min_volatility_fallbacks", {}) or {}
+
+        if isinstance(mapping, str):
+            mapping = self._parse_mapping_string(mapping)
+
+        if isinstance(mapping, list):
+            try:
+                mapping = dict(mapping)
+            except (TypeError, ValueError):
+                mapping = {}
+
+        if not isinstance(mapping, dict):
+            mapping = {}
+
         if not mapping:
             return 0.1
+
         try:
             items = sorted((float(k), float(v)) for k, v in mapping.items())
         except (TypeError, ValueError):
@@ -148,6 +164,40 @@ class ScalpPingPong(Strategy):
             if tf_minutes <= minute_mark:
                 return floor
         return floor
+
+    def _parse_mapping_string(self, payload: str) -> dict[Any, Any]:
+        """Attempt to decode fallback mappings from serialized strings."""
+
+        payload = payload.strip()
+        if not payload:
+            return {}
+
+        for parser in (json.loads, literal_eval):
+            try:
+                parsed = parser(payload)
+            except Exception:
+                continue
+            else:
+                if isinstance(parsed, dict):
+                    return parsed
+                if isinstance(parsed, list):
+                    try:
+                        return dict(parsed)
+                    except (TypeError, ValueError):
+                        return {}
+                # If it's a scalar we cannot use it
+                return {}
+
+        # Handle simple comma separated ``k:v`` strings, e.g. ``"1:0.1,5:0.3"``
+        result: dict[Any, Any] = {}
+        try:
+            parts = [segment.strip() for segment in payload.split(",") if segment.strip()]
+            for part in parts:
+                key, value = (item.strip() for item in part.split(":", 1))
+                result[key] = value
+        except ValueError:
+            return {}
+        return result
 
     def _dynamic_vol_floor(
         self,
