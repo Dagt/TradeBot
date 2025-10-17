@@ -151,8 +151,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.45,
             "min_strength_low_vol_mult": 1.7,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 32.0,
-            "cost_floor_bps": 18.0,
+            "min_edge_bps": 12.0,
+            "cost_floor_bps": 6.0,
         },
         "5m": {
             "rsi_n": 15,
@@ -181,8 +181,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 26.0,
-            "cost_floor_bps": 15.0,
+            "min_edge_bps": 12.0,
+            "cost_floor_bps": 6.0,
         },
         "15m": {
             "trend_ma": 65,
@@ -210,8 +210,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.35,
             "min_strength_low_vol_mult": 1.45,
             "min_strength_high_vol_mult": 0.55,
-            "min_edge_bps": 18.0,
-            "cost_floor_bps": 11.0,
+            "min_edge_bps": 10.0,
+            "cost_floor_bps": 6.0,
         },
         "30m": {
             "trend_ma": 55,
@@ -237,8 +237,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.32,
             "min_strength_low_vol_mult": 1.35,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 15.0,
-            "cost_floor_bps": 10.0,
+            "min_edge_bps": 9.0,
+            "cost_floor_bps": 6.0,
         },
         "1h": {
             "trend_ma": 55,
@@ -262,8 +262,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.28,
             "min_strength_low_vol_mult": 1.25,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 13.0,
-            "cost_floor_bps": 9.0,
+            "min_edge_bps": 8.0,
+            "cost_floor_bps": 5.0,
         },
         "4h": {
             "trend_ma": 48,
@@ -286,8 +286,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.24,
             "min_strength_low_vol_mult": 1.15,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 11.0,
-            "cost_floor_bps": 8.0,
+            "min_edge_bps": 6.0,
+            "cost_floor_bps": 4.0,
         },
     }
 
@@ -948,8 +948,11 @@ class MeanReversion(Strategy):
             floor_from_quantile = raw_floor_bps > (self.min_volatility + 1e-9)
             tolerance = 0.0 if floor_from_quantile else scaled_floor * 0.15
             if vol_bps + tolerance < scaled_floor:
-                return None
-            weak_vol = True
+                # En mercados muy tranquilos seguimos operando pero marcamos weak_vol
+                # para que la calibración reduzca tamaño/agresividad en vez de abortar señales.
+                weak_vol = True
+            else:
+                weak_vol = True
         abs_price = max(abs(price), 1e-9)
         price_vol = abs_price * vol if math.isfinite(vol) and vol > 0 else 0.0
         bar["volatility"] = price_vol
@@ -1060,8 +1063,8 @@ class MeanReversion(Strategy):
                 )
             )
             cooldown_dynamic = max(0, cooldown_dynamic)
-        if aggressiveness >= 1.2 and cooldown_dynamic < 3:
-            cooldown_dynamic = 3
+        if aggressiveness >= 1.2 and cooldown_dynamic < 1:
+            cooldown_dynamic = 1
         if cooldown_dynamic > 0 and actual_symbol:
             remaining = self._cooldowns.get(gap_symbol, 0)
             if remaining > 0:
@@ -1234,8 +1237,11 @@ class MeanReversion(Strategy):
             target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
         target_distance = min(target_distance, limit_span)
         if spread is not None and spread > 0:
-            spread_cap = spread * (0.75 if aggressiveness >= 1.0 else 0.95)
-            target_distance = min(target_distance, max(spread_cap, tick_size or 0.0))
+            # Asegurar que el objetivo no sea inferior a un múltiplo del spread/tick,
+            # pero sin superar el span máximo permitido.
+            spread_floor = max(spread * (0.75 if aggressiveness >= 1.0 else 0.95), tick_size or 0.0)
+            target_distance = max(target_distance, spread_floor)
+            target_distance = min(target_distance, limit_span)
 
         if aggressiveness > 1.0:
             target_distance /= 1.0 + (aggressiveness - 1.0) * 0.8
@@ -1342,7 +1348,7 @@ class MeanReversion(Strategy):
             "chase": chase_orders,
             "maker_initial_offset": abs(maker_initial),
             "maker_patience": maker_patience,
-            "post_only": True,
+            "post_only": not chase_orders,
             "market_state": market_state,
             "aggressiveness": aggressiveness,
             "decay": 0.55 if vol_ratio >= 1.1 else 0.6,
@@ -1368,7 +1374,8 @@ class MeanReversion(Strategy):
             max_hold = max(4, int(round(max_hold / (1.0 + min(0.6, aggr_delta)))))
         sig.metadata['partial_take_profit'] = partial_tp
         sig.metadata['max_hold_bars'] = max_hold
-        sig.post_only = True
+        # Permitir taker cuando la calibración indique perseguir cotizaciones
+        sig.post_only = not chase_orders
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 strength,
