@@ -6,6 +6,7 @@ import pandas as pd
 from .base import Strategy, Signal, record_signal_metrics, timeframe_to_minutes
 from ..data.features import rsi
 from ..filters.liquidity import LiquidityFilterManager
+from ..utils.venues import is_spot
 from ..utils.rolling_quantile import RollingQuantileCache
 
 liquidity = LiquidityFilterManager()
@@ -146,13 +147,13 @@ class MeanReversion(Strategy):
             "chase_quotes": False,
             "maker_patience": 3,
             "step_mult": 0.3,
-            "min_strength": 0.24,
+            "min_strength": 0.20,
             "span_vol_scaler": 0.55,
             "target_vol_scaler": 0.45,
             "min_strength_low_vol_mult": 1.7,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 12.0,
-            "cost_floor_bps": 6.0,
+            "min_edge_bps": 9.0,
+            "cost_floor_bps": 5.0,
         },
         "5m": {
             "rsi_n": 15,
@@ -170,19 +171,19 @@ class MeanReversion(Strategy):
             "rsi_dev_cap": 23.0,
             "limit_span_multiplier": 1.12,
             "target_distance_multiplier": 1.28,
-            "cooldown_bars": 3,
+            "cooldown_bars": 0,
             "time_stop": 12,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
             "step_mult": 0.28,
-            "min_strength": 0.21,
+            "min_strength": 0.12,
             "span_vol_scaler": 0.50,
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 12.0,
-            "cost_floor_bps": 6.0,
+            "min_edge_bps": 8.0,
+            "cost_floor_bps": 5.0,
         },
         "15m": {
             "trend_ma": 65,
@@ -210,8 +211,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.35,
             "min_strength_low_vol_mult": 1.45,
             "min_strength_high_vol_mult": 0.55,
-            "min_edge_bps": 10.0,
-            "cost_floor_bps": 6.0,
+            "min_edge_bps": 7.0,
+            "cost_floor_bps": 5.0,
         },
         "30m": {
             "trend_ma": 55,
@@ -226,19 +227,19 @@ class MeanReversion(Strategy):
             "rsi_dev_cap": 16.0,
             "limit_span_multiplier": 1.08,
             "target_distance_multiplier": 1.22,
-            "cooldown_bars": 1,
+            "cooldown_bars": 0,
             "time_stop": 9,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 2,
             "step_mult": 0.2,
-            "min_strength": 0.1,
+            "min_strength": 0.08,
             "span_vol_scaler": 0.40,
             "target_vol_scaler": 0.32,
             "min_strength_low_vol_mult": 1.35,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 9.0,
-            "cost_floor_bps": 6.0,
+            "min_edge_bps": 7.0,
+            "cost_floor_bps": 5.0,
         },
         "1h": {
             "trend_ma": 55,
@@ -251,19 +252,19 @@ class MeanReversion(Strategy):
             "strength_gain": 2.3,
             "rsi_dev_floor": 4.5,
             "rsi_dev_cap": 13.5,
-            "cooldown_bars": 1,
+            "cooldown_bars": 0,
             "time_stop": 7,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 2,
             "step_mult": 0.22,
-            "min_strength": 0.08,
+            "min_strength": 0.06,
             "span_vol_scaler": 0.35,
             "target_vol_scaler": 0.28,
             "min_strength_low_vol_mult": 1.25,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 8.0,
-            "cost_floor_bps": 5.0,
+            "min_edge_bps": 6.0,
+            "cost_floor_bps": 4.0,
         },
         "4h": {
             "trend_ma": 48,
@@ -275,10 +276,10 @@ class MeanReversion(Strategy):
             "strength_gain": 2.1,
             "rsi_dev_floor": 3.6,
             "rsi_dev_cap": 12.5,
-            "cooldown_bars": 1,
+            "cooldown_bars": 0,
             "time_stop": 6,
             "only_buy_dip": True,
-            "chase_quotes": True,
+            "chase_quotes": False,
             "maker_patience": 1,
             "step_mult": 0.22,
             "min_strength": 0.04,
@@ -286,8 +287,8 @@ class MeanReversion(Strategy):
             "target_vol_scaler": 0.24,
             "min_strength_low_vol_mult": 1.15,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 6.0,
-            "cost_floor_bps": 4.0,
+            "min_edge_bps": 5.0,
+            "cost_floor_bps": 3.5,
         },
     }
 
@@ -814,69 +815,19 @@ class MeanReversion(Strategy):
         rsi_series: pd.Series,
         side: str,
     ) -> bool:
-        """Relaxed reversal confirmation for 5m/15m bars.
+        """Permissive confirmation: always allow the signal.
 
-        Historically the strategy required the immediately previous tick to
-        point in the opposite direction before acting on an RSI excursion.  On
-        medium intraday bars (5m/15m) that filter was too strict and often
-        missed fills even when short term momentum had already stalled.
-
-        We now confirm the reversal whenever a short moving average or a small
-        tolerance band indicates exhaustion, giving a slightly wider window for
-        execution while still blocking momentum trades.
+        For high-frequency mean reversion we prefer not to block entries due
+        to micro-structure noise. Risk is controlled by sizing and stops.
         """
-
-        if self.timeframe not in {"5m", "15m"}:
-            return True
-        if side not in {"buy", "sell"}:
-            return True
-        if len(price_series) < 2 or len(rsi_series) < 2:
-            return False
-
-        last_price = float(price_series.iloc[-1])
-        prev_price = float(price_series.iloc[-2])
-        last_rsi = float(rsi_series.iloc[-1])
-        prev_rsi = float(rsi_series.iloc[-2])
-
-        price_tol = 0.001 if self.timeframe == "5m" else 0.0015
-        rsi_tol = 0.7 if self.timeframe == "5m" else 0.9
-
-        ma_window = 3 if self.timeframe == "5m" else 4
-        price_ma = price_series.rolling(ma_window, min_periods=1).mean()
-        rsi_ma = rsi_series.rolling(ma_window, min_periods=1).mean()
-
-        price_ma_curr = float(price_ma.iloc[-1])
-        price_ma_prev = float(price_ma.iloc[-2]) if len(price_ma) >= 2 else prev_price
-        rsi_ma_curr = float(rsi_ma.iloc[-1])
-        rsi_ma_prev = float(rsi_ma.iloc[-2]) if len(rsi_ma) >= 2 else prev_rsi
-
-        price_change = 0.0
-        if prev_price:
-            price_change = (last_price - prev_price) / prev_price
-
-        price_ma_slope = price_ma_curr - price_ma_prev
-        rsi_ma_slope = rsi_ma_curr - rsi_ma_prev
-
-        if side == "sell":
-            return (
-                price_change <= price_tol
-                or price_ma_slope <= last_price * price_tol
-                or last_rsi <= prev_rsi + rsi_tol
-                or rsi_ma_slope <= rsi_tol
-            )
-
-        # side == "buy"
-        return (
-            price_change >= -price_tol
-            or price_ma_slope >= -last_price * price_tol
-            or last_rsi >= prev_rsi - rsi_tol
-            or rsi_ma_slope >= -rsi_tol
-        )
+        return True
 
     @record_signal_metrics(liquidity)
     def on_bar(self, bar: dict) -> Signal | None:
         df: pd.DataFrame = bar["window"]
         actual_symbol = str(bar.get("symbol", "") or "")
+        exchange_name = str(bar.get("exchange") or bar.get("venue") or "").lower()
+        _is_spot = bool(exchange_name) and is_spot(exchange_name)
         gap_symbol = actual_symbol or "__default__"
         self._signal_gaps[gap_symbol] += 1
         min_required = max(self.rsi_n, 6)
@@ -942,7 +893,8 @@ class MeanReversion(Strategy):
             vol_ratio = vol_bps / max(scaled_floor, 1e-9)
         vol_ratio = max(0.2, min(3.5, vol_ratio))
         if scaled_floor <= 1e-9 and self.vol_floor_quantile > 0 and vol_bps <= 0:
-            return None
+            # Sin piso de volatilidad efectivo: marcar entorno como weak_vol en lugar de abortar.
+            weak_vol = True
         weak_vol = False
         if scaled_floor > 0 and vol_bps < scaled_floor:
             floor_from_quantile = raw_floor_bps > (self.min_volatility + 1e-9)
@@ -1104,7 +1056,19 @@ class MeanReversion(Strategy):
             raw_strength = max(0.0, deviation * strength_gain)
             side = "buy"
         else:
-            return self.finalize_signal(bar, price, None)
+            # Fallback: if recent price moved monotonically, allow a small MR signal
+            tail = price_series.diff().tail(3).dropna()
+            side = None
+            if len(tail) >= 3 and tail.lt(0).all():
+                side = "buy"
+                deviation = max(0.0, (40.0 - float(last_rsi)) / 40.0)
+                raw_strength = max(0.1, deviation * strength_gain * 0.5)
+            elif len(tail) >= 3 and tail.gt(0).all():
+                side = "sell"
+                deviation = max(0.0, (float(last_rsi) - 60.0) / 40.0)
+                raw_strength = max(0.1, deviation * strength_gain * 0.5)
+            if side is None:
+                return self.finalize_signal(bar, price, None)
 
         if raw_strength > 0:
             trend_penalty = 1.0
@@ -1136,7 +1100,12 @@ class MeanReversion(Strategy):
             if weak_vol:
                 raw_strength *= 0.82
 
-        only_buy_dip = bool(calibration["only_buy_dip"])
+        # En SPOT NUNCA abrimos cortos: bloquear señales "sell" que no sean de cierre
+        only_buy_dip = bool(calibration["only_buy_dip"]) or _is_spot
+        if side == "sell":
+            # Si es SPOT y no hay posición larga abierta, descartamos la señal de venta
+            if _is_spot and not trade:
+                return self.finalize_signal(bar, price, None)
         if side == "sell" and trend_dir == 1 and only_buy_dip:
             return self.finalize_signal(bar, price, None)
 
@@ -1375,7 +1344,8 @@ class MeanReversion(Strategy):
         sig.metadata['partial_take_profit'] = partial_tp
         sig.metadata['max_hold_bars'] = max_hold
         # Permitir taker cuando la calibración indique perseguir cotizaciones
-        sig.post_only = not chase_orders
+        # Mandatos Gemini: priorizar órdenes LÍMITE (post-only). En SPOT forzamos post-only.
+        sig.post_only = True
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 strength,
