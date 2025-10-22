@@ -136,23 +136,23 @@ class MeanReversion(Strategy):
             "vol_floor_quantile": 0.28,
             "vol_floor_window": 160,
             "vol_floor_min_periods": 40,
-            "strength_gain": 3.2,
+            "strength_gain": 3.7,
             "rsi_dev_floor": 9.0,
             "rsi_dev_cap": 26.0,
-            "limit_span_multiplier": 1.18,
-            "target_distance_multiplier": 1.34,
+            "limit_span_multiplier": 1.05,
+            "target_distance_multiplier": 1.10,
             "cooldown_bars": 3,
             "time_stop": 15,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
-            "step_mult": 0.3,
-            "min_strength": 0.20,
+            "step_mult": 0.4,
+            "min_strength": 0.10,
             "span_vol_scaler": 0.55,
-            "target_vol_scaler": 0.45,
+            "target_vol_scaler": 0.42,
             "min_strength_low_vol_mult": 1.7,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 9.0,
+            "min_edge_bps": 8.0,
             "cost_floor_bps": 5.0,
         },
         "5m": {
@@ -166,24 +166,24 @@ class MeanReversion(Strategy):
             "vol_floor_quantile": 0.24,
             "vol_floor_window": 120,
             "vol_floor_min_periods": 30,
-            "strength_gain": 3.1,
+            "strength_gain": 3.5,
             "rsi_dev_floor": 8.5,
             "rsi_dev_cap": 23.0,
-            "limit_span_multiplier": 1.12,
-            "target_distance_multiplier": 1.28,
+            "limit_span_multiplier": 1.00,
+            "target_distance_multiplier": 1.08,
             "cooldown_bars": 0,
             "time_stop": 12,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
             "step_mult": 0.28,
-            "min_strength": 0.12,
+            "min_strength": 0.08,
             "span_vol_scaler": 0.50,
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 8.0,
-            "cost_floor_bps": 5.0,
+            "min_edge_bps": 7.0,
+            "cost_floor_bps": 4.5,
         },
         "15m": {
             "trend_ma": 65,
@@ -1258,7 +1258,7 @@ class MeanReversion(Strategy):
             edge_floor *= 1.1
         elif market_state == "breakout":
             edge_floor *= 0.9
-        edge_threshold = max(edge_floor, cost_floor)
+        if tf_minutes -le 5.0:\n            edge_floor *= 0.9\n            cost_floor *= 0.9\n        edge_threshold = max(edge_floor, cost_floor)
         if expected_edge_bps < edge_threshold:
             return self.finalize_signal(bar, price, None)
 
@@ -1338,9 +1338,15 @@ class MeanReversion(Strategy):
             "atr_multiple": max(1.1, (0.85 + strength * 0.35) / max(0.75, 1.0 + max(0.0, aggr_delta) * 0.25)),
             "mode": "scale_out",
         }
+        if tf_minutes <= 5.0:
+            # Más agresivo en TFs pequeños: tomar parciales antes y con mayor tamaño
+            partial_tp["atr_multiple"] = max(0.9, float(partial_tp.get("atr_multiple", 1.1)) * 0.85)
+            partial_tp["qty_pct"] = min(0.85, max(0.3, float(partial_tp.get("qty_pct", 0.4)) + 0.1))
         max_hold = max(8, int(round(24 / max(tf_minutes, 1.0))))
         if aggr_delta > 0.2:
             max_hold = max(4, int(round(max_hold / (1.0 + min(0.6, aggr_delta)))))
+        if tf_minutes <= 5.0:
+            max_hold = max(5, int(round(max_hold * 0.75)))
         sig.metadata['partial_take_profit'] = partial_tp
         sig.metadata['max_hold_bars'] = max_hold
         # Permitir taker cuando la calibración indique perseguir cotizaciones
