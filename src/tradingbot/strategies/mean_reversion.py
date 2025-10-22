@@ -169,21 +169,21 @@ class MeanReversion(Strategy):
             "strength_gain": 3.5,
             "rsi_dev_floor": 8.5,
             "rsi_dev_cap": 23.0,
-            "limit_span_multiplier": 1.00,
-            "target_distance_multiplier": 1.08,
+            "limit_span_multiplier": 0.95,
+            "target_distance_multiplier": 0.98,
             "cooldown_bars": 0,
             "time_stop": 12,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
-            "step_mult": 0.28,
+            "step_mult": 0.35,
             "min_strength": 0.08,
             "span_vol_scaler": 0.50,
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 7.0,
-            "cost_floor_bps": 4.5,
+            "min_edge_bps": 6.0,
+            "cost_floor_bps": 4.0,
         },
         "15m": {
             "trend_ma": 65,
@@ -1205,6 +1205,13 @@ class MeanReversion(Strategy):
         if anchor_gap > 0:
             target_distance = max(target_distance, min(anchor_gap * 0.25, limit_span))
         target_distance = min(target_distance, limit_span)
+        if spread is not None and spread > 0 and tf_minutes <= 5.0 and (vol_ratio <= 1.1):
+            # Tight spread, reduce target distance to boost maker fills
+            target_distance *= 0.85
+            if tick_size:
+                target_distance = max(target_distance, tick_size)
+            target_distance = min(target_distance, limit_span)
+
         if spread is not None and spread > 0:
             # Asegurar que el objetivo no sea inferior a un múltiplo del spread/tick,
             # pero sin superar el span máximo permitido.
@@ -1411,5 +1418,6 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df["slippage"] = df["position"].abs() * slippage
 
     return df[["signal", "position", "fee", "slippage"]]
+
 
 
