@@ -1170,14 +1170,14 @@ class MeanReversion(Strategy):
         span_boost = max(0.5, min(1.9, span_boost))
         span_mult = max(0.2, float(calibration["limit_span_mult"]) * span_boost)
         base_span = max(
-            abs_price * 0.0004 * span_mult,
+            abs_price * (0.0003 if tf_minutes <= 5.0 else 0.0004) * span_mult,
             (atr_abs * 0.65 if atr_abs > 0 else 0.0) * span_mult,
             (tick_size * 4 if tick_size else 0.0) * span_mult,
         )
         limit_span = max(base_span, anchor_gap * span_mult)
         if not math.isfinite(limit_span) or limit_span <= 0:
             limit_span = max(
-                abs_price * 0.0004 * span_mult,
+                abs_price * (0.0003 if tf_minutes <= 5.0 else 0.0004) * span_mult,
                 tick_size * 2 * span_mult if tick_size else 1e-6,
             )
         if spread is not None and spread > 0:
@@ -1198,7 +1198,7 @@ class MeanReversion(Strategy):
         target_boost = max(0.5, min(1.8, target_boost))
         dist_mult = max(0.2, float(calibration["target_distance_mult"]) * target_boost)
         target_distance = max(
-            abs_price * 0.00012 * dist_mult,
+            abs_price * (0.00010 if tf_minutes <= 5.0 else 0.00012) * dist_mult,
             (atr_abs * 0.2 if atr_abs > 0 else 0.0) * dist_mult,
             (tick_size if tick_size else 0.0) * dist_mult,
         )
@@ -1229,7 +1229,7 @@ class MeanReversion(Strategy):
         step_distance = max(
             target_distance * 0.5,
             (atr_abs * 0.12 if atr_abs > 0 else 0.0) * dist_mult,
-            abs_price * 0.00008 * dist_mult,
+            abs_price * ((0.00006 if tf_minutes <= 5.0 else 0.00008)) * dist_mult,
         )
         if tick_size:
             step_distance = max(step_distance, tick_size)
@@ -1361,7 +1361,12 @@ class MeanReversion(Strategy):
         sig.metadata['max_hold_bars'] = max_hold
         # Permitir taker cuando la calibración indique perseguir cotizaciones
         # Mandatos Gemini: priorizar órdenes LÍMITE (post-only). En SPOT forzamos post-only.
-        sig.post_only = True
+        spread_val = float(spread) if (spread is not None) else 0.0
+        tight_spread = (spread_val / max(abs_price, 1e-9)) <= 0.0006 if spread_val > 0 else False
+        post_only = not chase_orders
+        if _is_spot:
+            post_only = not (chase_orders and (tf_minutes <= 5.0) and (vol_ratio >= 1.2 or tight_spread))
+        sig.post_only = post_only
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
                 strength,
@@ -1421,6 +1426,10 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df["slippage"] = df["position"].abs() * slippage
 
     return df[["signal", "position", "fee", "slippage"]]
+
+
+
+
 
 
 
