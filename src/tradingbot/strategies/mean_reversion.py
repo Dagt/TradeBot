@@ -1265,7 +1265,10 @@ class MeanReversion(Strategy):
             edge_floor *= 1.1
         elif market_state == "breakout":
             edge_floor *= 0.9
-        if tf_minutes -le 5.0:\n            edge_floor *= 0.9\n            cost_floor *= 0.9\n        edge_threshold = max(edge_floor, cost_floor)
+        if tf_minutes <= 5.0:
+            edge_floor *= 0.9
+            cost_floor *= 0.9
+        edge_threshold = max(edge_floor, cost_floor)
         if expected_edge_bps < edge_threshold:
             return self.finalize_signal(bar, price, None)
 
