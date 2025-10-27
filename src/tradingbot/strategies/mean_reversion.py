@@ -126,33 +126,33 @@ class MeanReversion(Strategy):
 
     TIMEFRAME_OVERRIDES: dict[str, dict[str, float | int | bool]] = {
         "3m": {
-            "rsi_n": 17,
-            "trend_ma": 85,
-            "trend_rsi_n": 75,
-            "trend_ma_bps": 235.0,
-            "trend_rsi_shift": 7.5,
-            "trend_rsi_shift_max": 22.5,
-            "min_volatility": 0.58,
-            "vol_floor_quantile": 0.28,
-            "vol_floor_window": 160,
-            "vol_floor_min_periods": 40,
-            "strength_gain": 3.7,
-            "rsi_dev_floor": 9.0,
-            "rsi_dev_cap": 26.0,
-            "limit_span_multiplier": 1.05,
-            "target_distance_multiplier": 1.10,
-            "cooldown_bars": 3,
-            "time_stop": 15,
+            "rsi_n": 15,
+            "trend_ma": 80,
+            "trend_rsi_n": 60,
+            "trend_ma_bps": 220.0,
+            "trend_rsi_shift": 6.5,
+            "trend_rsi_shift_max": 20.0,
+            "min_volatility": 0.52,
+            "vol_floor_quantile": 0.25,
+            "vol_floor_window": 140,
+            "vol_floor_min_periods": 35,
+            "strength_gain": 4.0,
+            "rsi_dev_floor": 8.0,
+            "rsi_dev_cap": 24.0,
+            "limit_span_multiplier": 0.90,
+            "target_distance_multiplier": 0.90,
+            "cooldown_bars": 0,
+            "time_stop": 12,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
-            "step_mult": 0.4,
-            "min_strength": 0.10,
-            "span_vol_scaler": 0.55,
-            "target_vol_scaler": 0.42,
-            "min_strength_low_vol_mult": 1.7,
+            "step_mult": 0.45,
+            "min_strength": 0.08,
+            "span_vol_scaler": 0.50,
+            "target_vol_scaler": 0.40,
+            "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.6,
-            "min_edge_bps": 8.0,
+            "min_edge_bps": 5.0,
             "cost_floor_bps": 5.0,
         },
         "5m": {
@@ -166,24 +166,24 @@ class MeanReversion(Strategy):
             "vol_floor_quantile": 0.24,
             "vol_floor_window": 120,
             "vol_floor_min_periods": 30,
-            "strength_gain": 3.5,
+            "strength_gain": 3.6,
             "rsi_dev_floor": 8.5,
             "rsi_dev_cap": 23.0,
-            "limit_span_multiplier": 0.95,
-            "target_distance_multiplier": 0.98,
+            "limit_span_multiplier": 0.90,
+            "target_distance_multiplier": 0.95,
             "cooldown_bars": 0,
             "time_stop": 12,
             "only_buy_dip": False,
             "chase_quotes": False,
             "maker_patience": 3,
-            "step_mult": 0.35,
-            "min_strength": 0.06,
+            "step_mult": 0.40,
+            "min_strength": 0.05,
             "span_vol_scaler": 0.50,
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
             "min_strength_high_vol_mult": 0.65,
-            "min_edge_bps": 6.0,
-            "cost_floor_bps": 4.0,
+            "min_edge_bps": 5.0,
+            "cost_floor_bps": 5.0,
         },
         "15m": {
             "trend_ma": 65,
@@ -515,8 +515,10 @@ class MeanReversion(Strategy):
         elif vol_ratio <= 0.8:
             vol_adj -= 0.18 * (0.8 - vol_ratio)
 
-        if tf_minutes <= 5.0:
-            tf_adj = 0.85
+        if tf_minutes <= 3.0:
+            tf_adj = 0.65
+        elif tf_minutes <= 5.0:
+            tf_adj = 0.72
         elif tf_minutes <= 15.0:
             tf_adj = 0.9
         elif tf_minutes >= 60.0:
@@ -1056,17 +1058,16 @@ class MeanReversion(Strategy):
             raw_strength = max(0.0, deviation * strength_gain)
             side = "buy"
         else:
-            # Fallback: if recent price moved monotonically, allow a small MR signal
-            tail = price_series.diff().tail(3).dropna()
+            # Fallback micro-MR for small TFs: price deviation vs short EMA
             side = None
-            if len(tail) >= 3 and tail.lt(0).all():
-                side = "buy"
-                deviation = max(0.0, (40.0 - float(last_rsi)) / 40.0)
-                raw_strength = max(0.1, deviation * strength_gain * 0.5)
-            elif len(tail) >= 3 and tail.gt(0).all():
-                side = "sell"
-                deviation = max(0.0, (float(last_rsi) - 60.0) / 40.0)
-                raw_strength = max(0.1, deviation * strength_gain * 0.5)
+            if tf_minutes <= 15.0 and len(price_series) >= 7:
+                ema = price_series.ewm(span=7, adjust=False).mean().iloc[-1]
+                dev_abs = abs(float(price) - float(ema))
+                # trigger if deviation exceeds 6-8 bps
+                dev_floor = abs_price * (0.00006 if tf_minutes <= 5.0 else 0.00008)
+                if dev_abs >= dev_floor:
+                    side = "buy" if price < ema else "sell"
+                    raw_strength = max(0.1, min(0.8, (dev_abs / max(abs_price, 1e-9)) * 12000.0) * (strength_gain * 0.2))
             if side is None:
                 return self.finalize_signal(bar, price, None)
 
@@ -1374,6 +1375,9 @@ class MeanReversion(Strategy):
         post_only = not chase_orders
         if _is_spot:
             post_only = not (chase_orders and (tf_minutes <= 5.0) and (vol_ratio >= 1.2 or tight_spread))
+        # En ausencia de exchange/venue explícitos, conservar post-only por defecto
+        if not exchange_name:
+            post_only = True
         sig.post_only = post_only
         if self.risk_service is not None:
             qty = self.risk_service.calc_position_size(
@@ -1434,6 +1438,9 @@ def generate_signals(data: pd.DataFrame, params: dict) -> pd.DataFrame:
     df["slippage"] = df["position"].abs() * slippage
 
     return df[["signal", "position", "fee", "slippage"]]
+
+
+
 
 
 
