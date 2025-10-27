@@ -177,7 +177,7 @@ class MeanReversion(Strategy):
             "chase_quotes": False,
             "maker_patience": 3,
             "step_mult": 0.35,
-            "min_strength": 0.08,
+            "min_strength": 0.06,
             "span_vol_scaler": 0.50,
             "target_vol_scaler": 0.40,
             "min_strength_low_vol_mult": 1.6,
@@ -1275,13 +1275,21 @@ class MeanReversion(Strategy):
         direction = -1.0 if side == "sell" else 1.0
         limit_price = base_price + direction * initial_offset
         if side == "buy":
-            limit_price = min(limit_price, anchor_price)
-            if mid_price is not None:
-                limit_price = min(limit_price, mid_price)
+            if tf_minutes <= 15.0:
+                # En TFs cortos, anclar directamente al mejor bid para aumentar maker fills
+                limit_price = anchor_price
+            else:
+                limit_price = min(limit_price, anchor_price)
+                if mid_price is not None:
+                    limit_price = min(limit_price, mid_price)
         else:
-            limit_price = max(limit_price, anchor_price)
-            if mid_price is not None:
-                limit_price = max(limit_price, mid_price)
+            if tf_minutes <= 15.0:
+                # En TFs cortos, anclar directamente al mejor ask
+                limit_price = anchor_price
+            else:
+                limit_price = max(limit_price, anchor_price)
+                if mid_price is not None:
+                    limit_price = max(limit_price, mid_price)
         sig.limit_price = max(0.0, limit_price)
         chase_orders = (
             bool(calibration["chase_quotes"])
