@@ -334,8 +334,8 @@ class MeanReversion(Strategy):
         self._min_strength_high_vol_mult = max(
             0.1, float(kwargs.get("min_strength_high_vol_mult", 0.6))
         )
-        self._min_edge_bps = max(0.0, float(kwargs.get("min_edge_bps", 12.0)))
-        self._cost_floor_bps = max(0.0, float(kwargs.get("cost_floor_bps", 8.0)))
+        self._min_edge_bps = max(0.0, float(kwargs.get("min_edge_bps", 4.0)))
+        self._cost_floor_bps = max(0.0, float(kwargs.get("cost_floor_bps", 4.0)))
         self._cooldown_bars = int(kwargs.get("cooldown_bars", 0))
         self._cooldowns: dict[str, int] = defaultdict(int)
         self._signal_gaps: defaultdict[str, int] = defaultdict(lambda: 99)
@@ -1269,6 +1269,16 @@ class MeanReversion(Strategy):
         if tf_minutes <= 5.0:
             edge_floor *= 0.9
             cost_floor *= 0.9
+        # Additional relaxations for short TFs and tight spreads to boost fills
+        tight_spread_local = False
+        if spread is not None and spread > 0:
+            tight_spread_local = (spread / max(abs_price, 1e-9)) <= 0.0006
+        if tf_minutes <= 15.0:
+            edge_floor *= 0.85
+            cost_floor *= 0.9
+            if tight_spread_local:
+                edge_floor *= 0.85
+                cost_floor *= 0.9
         edge_threshold = max(edge_floor, cost_floor)
         if expected_edge_bps < edge_threshold:
             return self.finalize_signal(bar, price, None)
