@@ -12,14 +12,14 @@ from ..utils.rolling_quantile import RollingQuantileCache
 liquidity = LiquidityFilterManager()
 
 
-def _normalized_strength(raw: float, *, center: float = 0.68) -> float:
+def _normalized_strength(raw: float, *, center: float = 0.50) -> float:
     """Map the raw strength into ``[0, 1]`` with a smooth non-linear scale."""
 
     if not math.isfinite(raw) or raw <= 0:
         return 0.0
 
-    stretch = 1.25
-    slope = 1.65
+    stretch = 1.50
+    slope = 1.80
 
     scaled = math.log1p(raw * stretch)
     adjusted = (scaled - center) * slope
@@ -195,23 +195,23 @@ class MeanReversion(Strategy):
             "vol_floor_quantile": 0.22,
             "vol_floor_window": 105,
             "vol_floor_min_periods": 26,
-            "strength_gain": 3.1,
+            "strength_gain": 3.4,
             "rsi_dev_floor": 5.2,
             "rsi_dev_cap": 17.5,
-            "limit_span_multiplier": 1.12,
-            "target_distance_multiplier": 1.18,
+            "limit_span_multiplier": 0.92,
+            "target_distance_multiplier": 0.94,
             "cooldown_bars": 0,
             "time_stop": 11,
             "only_buy_dip": False,
-            "chase_quotes": False,
+            "chase_quotes": True,
             "maker_patience": 2,
-            "step_mult": 0.22,
-            "min_strength": 0.08,
+            "step_mult": 0.30,
+            "min_strength": 0.06,
             "span_vol_scaler": 0.45,
             "target_vol_scaler": 0.35,
             "min_strength_low_vol_mult": 1.45,
             "min_strength_high_vol_mult": 0.55,
-            "min_edge_bps": 7.0,
+            "min_edge_bps": 5.0,
             "cost_floor_bps": 5.0,
         },
         "30m": {
@@ -1307,21 +1307,21 @@ class MeanReversion(Strategy):
             or vol_ratio >= 1.05
             or aggressiveness >= 1.15
         )
-        if not chase_orders and spread is not None and spread > 0:
+        if spread is not None and spread > 0:
             tight_spread = spread / max(abs_price, 1e-9)
-            if tight_spread <= 0.0008:
+            if tight_spread <= 0.0004:
                 chase_orders = True
         if self._maker_patience_override is not None:
             maker_patience = self._maker_patience_override
         else:
-            if vol_ratio >= 1.4:
+            if tf_minutes <= 5.0:
+                maker_patience = 1
+            elif vol_ratio >= 1.4:
                 maker_patience = 1
             elif vol_ratio >= 0.85:
                 maker_patience = 2
             else:
-                maker_patience = 3
-            if tf_minutes <= 5.0:
-                maker_patience = max(maker_patience, 2)
+                maker_patience = 2
         maker_patience = max(0, int(maker_patience + int(calibration["maker_patience_bias"])))
         if aggressiveness > 1.1:
             maker_patience = max(1, int(round(maker_patience / (1.0 + (aggressiveness - 1.0) * 0.8))))
